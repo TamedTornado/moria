@@ -7,11 +7,14 @@ Product One is a reusable sparse voxel-world library plus two consumers: the wal
 Experiential requirements have the following testable meanings:
 
 - **Walkable in under five seconds:** elapsed monotonic time from process entry to `DemoState::Playing`, with player input enabled and the collision neighborhood ready, is less than 5,000 ms on each named acceptance machine.
-- **Surface update within two rendered frames:** `WorldEditWrite` stamps rendered frame `N` at the consumer's submit call. Every affected terrain, water, registered-object, and dressing presentation is present in the render world extracted for frame `N + 2` or earlier, including when frame `N` has zero fixed ticks or submission is after its fixed-drain cutoff. Collision and queries see committed truth in the first eligible fixed tick. `EditCommitted` and `EditSurfaceReady` record submit, commit, and render-extract-ready frame indices.
+- **Surface update within two rendered frames:** `WorldEditWrite` stamps rendered frame `N` at the consumer's submit call. Every affected terrain, water, registered-object (including an active Horizon aggregate repartition), and dressing presentation is extracted, GPU-buffer-prepared/removed, and queued by the renderer for frame `N + 2` or earlier, including when frame `N` has zero fixed ticks or submission is after its fixed-drain cutoff. Collision and queries see committed truth in the first eligible fixed tick. `EditCommitted` and `EditSurfaceReady` record submit, commit, and renderer-ready frame indices.
 - **No visible hitch for the representative carve:** while applying one 3 m-radius hillside dig on an acceptance machine, no rendered-frame interval may exceed 33.3 ms, and the two-frame surface-ready contract must also pass. This threshold catches an obvious missed 60 Hz frame while allowing the asynchronous two-frame contract to be measured independently.
 - **Exact reload:** after save/load, every edited voxel's material, density, and reserved state byte equals the pre-save value; generated, unedited samples equal the same seed/config output. Derived meshes and dressing are intentionally regenerated and are not compared byte-for-byte.
 - **Negligible detailed cost for idle wilderness:** untouched bricks outside an active band have no allocated 4,096-voxel array and no mesh. Their truth is represented by the seed/config plus, where needed, a compact procedural or uniform descriptor.
 - **Forest dependency metadata remains sparse:** registered-object surface dependencies are fixed-size bounds plus a shared lazy analytic predicate, never retained coordinate sets; the complete immutable object index is capped at 16 MiB and only active objects probe at most 128 sparse delta bricks for authored eligibility.
+- **Distant forests cannot resurrect base truth:** each 64 m Horizon object cell is rebuilt from current dependency eligibility. Intact trees contribute aggregate cards; edited trees are excluded and use revisioned owner-filtered coarse payloads (or empty tombstones), with eviction, transition, and load governed by the same token/readiness lifecycle.
+- **Feasibility before breadth:** the byte-identical full curated forest must pass simultaneous content/index/startup Gate F1, then the representative and maximum-candidate 3 m carves must pass the complete production render path on the M4 in Gate F2. Failure blocks broad generation, final assets/dressing, traversal polish, persistence, and full benchmarks; targets are not tuned to turn a failure green.
+- **Synchronous query cost is public API:** rays are limited to 64 m/448 cells, capsules to the player/camera envelope, sweeps to 12 m and 8,192 candidates, contact results to 512, and diagnostics to bounded pages. Exact limits, complexity, rejection behavior, and M4 timing proof are in [api.md](api.md).
 - **Graphics memory below approximately 2 GB:** the portable implementation records application-requested GPU allocation estimates, but this does not prove resident driver/backend memory. The original product target remains unproven unless an acceptance harness supplies resident evidence; estimate-only substitution is the explicit Design Divergence below and has not been approved.
 
 ## Selected stack
@@ -46,7 +49,7 @@ assets/config + seed + generated curated manifest + sparse ruin stamp
 
 `moria-world` owns a private `WorldStore`. A consumer observes it with the read-only `WorldRead` system parameter and requests changes by submitting `WorldEditCommand` through `WorldEditWrite`, which stamps publication time. Accepted changes produce immutable result messages. Rendering is derived from the same store through library-owned plugins; a consumer can configure or observe it but cannot inject a mesh as world truth.
 
-Generation is addressable: a `ColumnEvaluator` and `BaseVoxelEvaluator` calculate any requested column, brick classification, or voxel from the seed, curated parameters, and manifest. The whole 1 km x 1 km x 256 m volume is never expanded. Active bricks are classified as procedural/uniform/detailed, and only bricks crossing a surface, containing an edit, or explicitly requested for raw inspection allocate voxel arrays. Edit deltas outlive active detail and overlay base evaluation.
+Generation is addressable: a `ColumnEvaluator` and `BaseVoxelEvaluator` calculate any requested column, brick classification, or voxel from the seed, curated parameters, and manifest. The whole 1 km x 1 km x 256 m volume is never expanded. A compact 32 m dependency/activation grid and 4 m sample grid keep forest queries bounded while sharing one 16 MiB retained-index cap. Active bricks are classified as procedural/uniform/detailed, and only bricks crossing a surface, containing an edit, or explicitly requested for raw inspection allocate voxel arrays. Edit deltas outlive active detail and overlay base evaluation.
 
 Frame input is collected in `PreUpdate`. Fixed-rate movement, solid collision, water-state changes, edit commits, and activation decisions run in ordered `FixedUpdate` sets at 60 Hz. Background generation and mesh jobs operate on immutable snapshots. Their results are installed and visually interpolated in `Update`/`PostUpdate`; camera, UI, lighting, and diagnostics remain per-frame. The exact sets and dependencies are in [systems.md](systems.md).
 
@@ -142,6 +145,10 @@ cargo run --release -p moria-bench -- --scenario carve-storm --output target/ben
 # Rebuild or verify the deterministic curated manifest
 cargo run -p moria-curate -- generate
 cargo run -p moria-curate -- check
+
+# Blocking feasibility gates (release build on the 32 GB M4 acceptance machine)
+cargo run --release -p moria-curate -- prove-forest --output target/feasibility/forest.json
+cargo run --release -p moria-bench -- --scenario feasibility-carve --resolution 2560x1440 --forest-proof target/feasibility/forest.json --output target/feasibility/carve.json
 ```
 
 Normal development uses the dev profile, not `--release`; release is reserved for acceptance benchmarks. CI runs the first four commands in the shown order and also runs `moria-curate check`. GPU/platform acceptance is a separate headed job on the named machines.
@@ -165,6 +172,7 @@ Normal development uses the dev profile, not `--release`; release is reserved fo
 - Tests never sleep or open a window for logic. Use `MinimalPlugins`, seed only required state, and advance a controlled count of fixed ticks. Rendering correctness is verified with headed acceptance scenes and human visual review.
 - Static water has no flow/pressure simulation; granular materials have no settling; reserved voxel state has no behavior; registered objects have no dynamics; excluded game systems must not acquire placeholder ECS types.
 - Cargo dev profiles use `opt-level = 1` for project code and `opt-level = 3` for dependencies. Native release uses `lto = "thin"` and `codegen-units = 1`. No wasm profile is added because web is not a Product One target.
+- Follow [implementation-plan.md](implementation-plan.md): issues `G1`, `V1`, `T1`, `S1`, and `B1` cannot start until digest-matched F1 and F2 artifacts pass on the M4. Any gate failure immediately requires a reviewed TDD revision describing the measured bottleneck and redesign before more implementation; do not weaken workload/content/timing thresholds or substitute a partial pipeline.
 
 ## Verification strategy
 
@@ -172,7 +180,7 @@ Pure tests cover coordinate conversion, deterministic column/voxel evaluation, e
 
 Headless `App` tests use `MinimalPlugins`, public messages, and explicit fixed-tick advancement to verify plugin boundaries, ordered state transitions, activation/eviction, edit messages, player collision, paddling, and invalid operations. Scripted integration tests run N controlled fixed ticks with semantic intent, then assert ECS/world properties. They never assume one `app.update()` equals one fixed tick.
 
-Rendering, GPU integration, startup time, frame pacing, and allocation estimates require headed runs. The two benchmark scenarios and a manual visual checklist cover those; [benchmarks.md](benchmarks.md) defines the measurement windows and pass conditions.
+Rendering, GPU integration, startup time, frame pacing, and allocation estimates require headed runs. Before implementation breadth, F1 validates the checked-in full forest/index and F2 validates the complete carve/query path on the M4. The later flythrough/carve-storm scenarios and manual visual checklist cover full acceptance; [benchmarks.md](benchmarks.md) defines measurements and [implementation-plan.md](implementation-plan.md) defines dependency gates.
 
 ## Design coverage and divergences
 
@@ -188,6 +196,7 @@ Every design entity maps to a type in [data-model.md](data-model.md), every cons
 | Run/sprint/jump/paddle, voxel collision, orbit camera, cave light | Semantic intents, 60 Hz solid sweep/response, static-water state, per-frame camera/light |
 | Dig/place and all diagnostic toggles through supported operations | Read-only `WorldRead`/diagnostic pages, `WorldEditWrite`, revision barriers, public focus/telemetry APIs |
 | Two-rendered-frame 3 m carve and no hitch | Submit/commit/render-extract frame stamps, priority worker lane, explicit benchmark thresholds |
+| High-risk sequencing | Blocking full-manifest F1 and production carve/query F2 before downstream feature breadth |
 | Single-slot exact delta persistence under 50 MB | Base-relative sorted deltas, atomic zstd file, identity/checksum validation, round-trip scenario |
 | Flythrough/carve-storm evidence with machine identity | Separate public-API benchmark consumer, metric schema, acceptance matrix, provisional Linux baseline |
 | Explicit excluded systems | No registered runtime plugins/data/assets for dynamic fluids, granular settling, object dynamics, ecology, game loops, AI, multiplayer, or scripting |
@@ -198,6 +207,6 @@ Every design entity maps to a type in [data-model.md](data-model.md), every cons
 - **Planned substitute:** the implementation can portably enforce only an instrumented ledger of application-requested buffers/textures/render targets below 2,000 MiB. Driver/backend residency and overhead remain untracked.
 - **Rationale:** no reviewed provider covering resident graphics allocations on both named Metal and NVIDIA/Vulkan acceptance machines is specified, and inventing one would be an unsupported technical claim. The ledger remains useful for optimization and comparisons.
 - **User-visible/acceptance impact:** a ledger-passing build can still exceed 2 GB actual resident graphics memory. Reports therefore set `product_target_proven:false` and overall `passed:false` with `resident_graphics_memory_unproven` unless resident evidence is attached or Product explicitly approves the estimate substitution.
-- **Approval required:** Product must either approve the estimate-only criterion and provide an approval ID recorded in reports, or approve a later TDD amendment naming acceptance-machine resident measurement providers. No approval is currently recorded.
+- **Approval required:** Product must either approve the estimate-only criterion and provide an approval ID recorded in reports, or approve a later TDD amendment naming acceptance-machine resident measurement providers. No approval is currently recorded. Regardless of all other green gates, final release status and issue `B1` cannot report Product One acceptance while this evidence/approval remains unresolved.
 
 This is the only known Design Divergence. Features explicitly excluded by the design have no runtime system.

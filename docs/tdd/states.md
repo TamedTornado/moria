@@ -136,13 +136,17 @@ Properties:
 - pinned chunks cannot enter `EvictPending`;
 - eviction does not remove a `BrickDelta`.
 
+Horizon object cells use the parallel private lifecycle `Absent -> Requested { token, source_revision } -> Building { token, source_revision } -> Resident { token, source_revision } -> EvictPending -> Absent`. `Building` snapshots all tree IDs assigned to the cell and partitions them into intact aggregate cards versus owner-filtered derived payloads from one coherent delta revision. An edit or load affecting any member supersedes the token; an older result is discarded even if the cell key is unchanged. A Far/Horizon transition retains the prior logical presentation until the new cell batch is render-acknowledged. Edit-pinned cells cannot evict. Normal eviction removes aggregate/derived entities and GPU buffers but not deltas or immutable base descriptors, and reactivation always repartitions from current deltas instead of restoring a prior resident payload. `LoadWorldCompleted` waits for every active affected cell to become `Resident` at the post-swap source revision.
+
 ## Benchmark runner states
 
 ```rust
 pub enum BenchmarkState {
     Boot,
+    VerifyingFeasibilityInput,
     Loading,
     Warmup,
+    QueryCostProbe,
     Running,
     Saving,
     RoundTrip,
@@ -153,15 +157,19 @@ pub enum BenchmarkState {
 ```
 
 - `Boot` parses arguments and starts process/cold-start timing.
+- `VerifyingFeasibilityInput` is used only by `feasibility-carve`; it verifies the F1 schema/pass bit, artifact hash, M4 identity, and exact git/world/manifest digest before any headed work. Failure writes a failed carve-feasibility report and never runs the edit.
 - `Loading` uses the normal world readiness contract at the scenario start point.
 - `Warmup` runs the scripted initial view for 300 rendered frames; warmup frames are excluded from FPS distributions but cold-start remains the earlier process-to-ready measurement.
-- `Running` executes one complete flythrough or carve-storm script and captures metrics.
+- `QueryCostProbe` is used only by `feasibility-carve` after warmup. It runs the bounded active/cold query cases and representative per-frame bundle from [api.md](api.md), then enters `Running` only if limits, candidate counters, and M4 timing budgets pass.
+- `Running` executes the selected feasibility-carve, flythrough, or carve-storm script and captures its contracted metrics.
 - `Saving` is entered by carve storm and invokes the public save request; flythrough transitions directly to reporting and records the current slot size (zero for a clean isolated run).
 - `RoundTrip` tells the headed app to return after saving; the process orchestrator runs a presentation-disabled headless app, loads through the public protocol, and appends exact-restore evidence.
 - `Reporting` validates mandatory metrics/machine fields, atomically writes JSON, and computes pass/failure reasons. For carve storm it runs only after `RoundTrip`; for flythrough it follows `Running`.
 - `Complete` returns process exit code 0. `Failed` attempts a report with error context, then exits 1. Argument failures exit 2 before app construction.
 
 Scenario state advances only on explicit waypoint/edit/readiness/save completion events, never after arbitrary sleeps. The benchmark has a configurable watchdog solely to fail a stuck run; timeout never fabricates missing values.
+
+For `feasibility-carve`, `Running` performs the clean-world signature and stress roles and then goes directly to `Reporting`; it does not save or round-trip. Reporting validates every named production trace stage and exact render-extraction barrier count against `CarveFeasibilityReport`. The final flythrough/carve-storm paths skip the two feasibility-only states and retain their lifecycle above.
 
 ## State-specific rendering summary
 

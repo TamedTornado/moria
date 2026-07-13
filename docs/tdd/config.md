@@ -79,13 +79,22 @@ The listed values implement the required feature character; visual/geometric acc
 | `objects.index_cell_size_m` | `u8` | `32` | Immutable runtime placement-index cell edge. |
 | `objects.max_index_cells_per_object` | `u8` | `16` | Bound for the raw-shape plus surface-dependency index AABB. |
 | `objects.max_index_entries_per_cell` | `u16` | `1024` | Bound for deterministic activation and edit-dependency queries. |
+| `objects.sample_index_cell_size_m` | `u8` | `4` | Fine horizontal cell used by synchronous base-voxel queries; matches a brick width. |
+| `objects.max_sample_cells_per_object` | `u8` | `16` | Bound for raw-shape insertion into the fine sample index. |
+| `objects.max_sample_entries_per_cell` | `u8` | `64` | Hard per-voxel object-candidate bound used by public query complexity. |
+| `objects.max_edit_dependency_candidates` | `u16` | `256` | Maximum broad-phase placements for any legal radius-3 m edit center in the curated forest/hillside proof domain. |
+| `objects.max_affected_objects_per_edit` | `u8` | `64` | Maximum exact dependency hits/readiness-barrier object roots for one supported edit. |
 | `objects.max_dependency_bricks_per_object` | `u16` | `128` | Bound for sparse delta probes by one lazy dependency footprint. |
 | `objects.max_retained_index_bytes` | `u32` | `16_777_216` | 16 MiB cap including compact records, grid storage/capacity, keys, and allocator padding. |
 | `ruin_stamp` | UTF-8 path | `stamps/ruin_p1.ron` | One sparse cut-stone stamp with staircase. |
 
 `ObjectGenConfig` also contains Q8 voxel-shape ranges: birch trunk radius 0.20–0.35 m and height 8–14 m, pine trunk radius 0.25–0.45 m and height 10–18 m, canopy radii 2–4 m, bush radii 0.5–1.2 m, boulder radii 0.5–1.8 m, stump radius 0.25–0.55 m/height 0.25–0.75 m, and rock radii 0.15–0.6 m. Stable placement hashes choose within ranges; all values quantize to Q8. These analytic shapes make the non-ruin objects material and solid-collision truth while shared GLB assets provide their intact high-detail presentation. The ruin instead uses the configured sparse stamp for truth and always-voxel-derived presentation.
 
-Tree/bush/object counts are generated from eligible biome area, not spawned as disconnected decorations. Placement generation walks a seed-keyed candidate order and rejects a candidate whose raw fixed-point solid shape shares any voxel with an already accepted non-ruin shape or intersects any authored coordinate of the transformed ruin stamp; it continues until configured density/count contracts pass or rejects the seed as incuratable. This preserves the required dense forest without allowing an intact shared GLB to cover voxels attributed to another placement. The manifest validator independently repeats the exact disjointness check. It computes only fixed-size raw/dependency bounds per placement; dependency coordinates are never expanded or retained. It also requires exactly one ruin, at least one cliff/outcrop tagged with visible strata, one cave route, one aquifer crossing, one ore crossing, one lake, and one river, plus placements of both tree species, bushes, boulders, stumps, and rocks inside the flythrough's visible corridor.
+Tree/bush/object counts are generated from eligible biome area, not spawned as disconnected decorations. Let `forest_area_m2` and `eligible_land_area_m2` be the exact raster-cell counts reported by curation. The manifest requires `tree_count >= ceil(forest_area_m2 / 25)`, `bush_count >= ceil(forest_area_m2 * 450 / 10_000)`, and each prop count at least `ceil(eligible_land_area_m2 * configured_per_hectare / 10_000)`. Birch and pine counts are each at least the floor of the minimum tree count times their configured 55/45 percentage. Tree anchor X/Z distance is at least 5 m for every pair; this spacing does not waive voxel-shape disjointness.
+
+Every tree canopy radius must be in 2–4 m. Each species must include at least 16 lower-range placements with maximum horizontal canopy radius in `[2.0, 2.5]` m and at least 16 upper-range placements in `[3.5, 4.0]` m, ensuring the checked forest proves the stated range rather than selecting only the easiest small canopy. The forest route-clearance volume is the configured player capsule swept along the piecewise-linear forest route with its horizontal radius expanded to exactly 3 m; no registered-object solid voxel may intersect that volume anywhere on the tagged forest segment. The route must still traverse the qualifying forest area rather than skirting its boundary.
+
+Placement generation walks a seed-keyed candidate order and rejects a candidate whose raw fixed-point solid shape shares any voxel with an already accepted non-ruin shape or intersects any authored coordinate of the transformed ruin stamp; it continues until all area, count, species, spacing, canopy-bin, route-clearance, index, and edit-candidate contracts pass together or rejects the seed as incuratable. This preserves the required dense forest without allowing an intact shared GLB to cover voxels attributed to another placement. The manifest validator independently repeats the exact disjointness check. It computes only fixed-size raw/dependency bounds per placement; dependency coordinates are never expanded or retained. Deterministic radius-3 m center enumeration over tagged forest/hillside surface cells must also prove the 256 broad-candidate and 64 exact-hit edit caps and record the maximum-candidate target for the carve feasibility gate. The validator also requires exactly one ruin, at least one cliff/outcrop tagged with visible strata, one cave route, one aquifer crossing, one ore crossing, one lake, and one river, plus placements of both tree species, bushes, boulders, stumps, and rocks inside the flythrough's visible corridor.
 
 ## Material configuration
 
@@ -131,7 +140,7 @@ pub struct StreamingConfig {
 | `Near` | 0–64 m | 0.25 m surface/cave mesh; detailed only at boundaries/collision/edits | Full trees/bushes/props/dressing |
 | `Middle` | 64–160 m | 0.5 m sampled surface mesh; cave interiors omitted unless focus is underground | Full registered objects, reduced dressing |
 | `Far` | 160–320 m | 1 m surface mesh | Tree/object LOD, no small dressing |
-| `Horizon` | 320–720 m | 4 m column-derived terrain/water mesh | Tree clusters/impostor cards only |
+| `Horizon` | 320–720 m | 4 m column-derived terrain/water mesh | Revisioned 64 m tree cells: intact cards plus edited per-ID 4 m payloads |
 
 The 720 m horizon covers the farthest corner from any point in a 1 km square. LOD distances use camera/player focus and frustum visibility; physics/mutation focus always requests authoritative 0.25 m samples independent of visual LOD. Persisted edits are resampled into coarse distant meshes; cave voids are intentionally not rendered at far distance because they are occluded by the surface.
 
@@ -217,8 +226,11 @@ Diagnostics remain keyboard-driven as required, while standard gamepad movement/
 | `grass_middle_density_scale` | `f32` | `0.25` | Distance reduction. |
 | `object_visibility_m` | `u16` | `320` | Full objects through far band. |
 | `cluster_visibility_m` | `u16` | `720` | Horizon tree clusters. |
+| `horizon_object_cell_size_m` | `u8` | `64` | Aligned aggregate ownership cell; equals the Horizon terrain tile width. |
+| `horizon_derived_lod_m` | `f32` | `4.0` | Current-truth owner-filtered LOD for dependency-edited Horizon trees. |
+| `max_horizon_tree_members_per_cell` | `u16` | `1024` | Validation cap on sorted base-plus-derived IDs in one cell; overflow rejects the manifest and is never truncated. |
 
-Terrain uses CPU dual contouring with material-aware feature constraints, shared texture arrays, triplanar projection, distance LOD, frustum culling, and transition skirts. Detailed policy is in [rendering.md](rendering.md). The renderer must use Bevy/wgpu portable shader features only and compile for Metal, Vulkan, and DirectX-class backends. No shader buffer uses a 64-bit atomic type.
+Terrain uses CPU dual contouring with material-aware feature constraints, shared texture arrays, triplanar projection, distance LOD, frustum culling, and transition skirts. The Horizon member cap bounds aggregate repartition/install work and GPU-visible instance counts; it does not cap edits or silently omit placements. Detailed policy is in [rendering.md](rendering.md). The renderer must use Bevy/wgpu portable shader features only and compile for Metal, Vulkan, and DirectX-class backends. No shader buffer uses a 64-bit atomic type.
 
 ## Benchmark configuration
 
@@ -235,8 +247,15 @@ Terrain uses CPU dual contouring with material-aware feature constraints, shared
 | `cold_start_max_ms` | 5000 | Process to control ready. |
 | `graphics_memory_max_bytes` | `2_097_152_000` | Product resident-graphics-memory target; the portable application ledger is a proxy only pending product approval or resident measurement. |
 | `save_max_bytes` | `50_000_000` | Heavily defaced compressed slot. |
+| `forest_object_validation_max_ms` | `1000` | M4 F1 budget for production object validation plus both index tables. |
+| `forest_object_index_build_max_ms` | `250` | M4 F1 subset budget for index construction. |
+| `carve_object_dependency_max_ms` | `1.0` | M4 F2 combined dirty-discovery and dependency-eligibility budget. |
+| `query_frame_critical_p99_ms` | `1.0` | Per-call M4 bound for synchronous frame-critical public queries. |
+| `query_normal_bundle_p99_ms` | `2.0` | M4 bound for one representative movement/camera/debug query bundle. |
+| `query_frame_critical_max_ms` | `4.0` | No measured frame-critical public query may exceed this. |
+| `query_cells_page_p99/max_ms` | `4.0 / 8.0` | M4 inspection-only maximum diagnostic page bounds. |
 
-The carve storm alternates dig and place in a deterministic sequence but finishes with heavy visible defacement; reverting an edit exactly to base is omitted from the measured save-size set because it would correctly remove that delta. Exact paths and metric aggregation are in [benchmarks.md](benchmarks.md).
+The first three timing fields are feasibility gates, not user-tunable quality settings: a failing report requires implementation/TDD review and cannot rewrite them. The carve storm alternates dig and place in a deterministic sequence but finishes with heavy visible defacement; reverting an edit exactly to base is omitted from the measured save-size set because it would correctly remove that delta. Exact paths and metric aggregation are in [benchmarks.md](benchmarks.md) and gate sequencing is in [implementation-plan.md](implementation-plan.md).
 
 ## Cargo profiles
 

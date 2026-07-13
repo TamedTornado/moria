@@ -43,7 +43,7 @@ fn solid_collision(v: Voxel, materials: &MaterialRegistry) -> bool {
 | Material | `MaterialId`, `MaterialDef`, registry | Immutable library resource |
 | Geological Feature | `FeatureInstance` plus pure signed-field evaluators | Manifest/base generation |
 | Water Body | `WaterBodyDef` plus derived water volume/mesh | Manifest/base generation |
-| Voxel Object | `ObjectPlacement`, `VoxelObjectShape`, derived render root | Base generation and presentation |
+| Voxel Object | `ObjectPlacement`, `VoxelObjectShape`, per-placement render root or revisioned `HorizonObjectCell` payload | Base generation and presentation |
 | Surface Dressing | `DressingInstance`, `SurfaceAnchor` | Revision-derived presentation only |
 | Ruin Point of Interest | `RuinPoi`, `SparseVoxelStamp` | Generated placement plus one authored stamp |
 | Player | `Player`, `CharacterBody`, `PlayerIntent`, `WaterContact` | Demo ECS components |
@@ -88,13 +88,22 @@ pub struct CuratedManifest {
 }
 ```
 
-`objects` is the canonical serialized order, sorted by `ObjectId`. Runtime constructs one private immutable `ObjectSpatialIndex` during manifest validation and retains it only on success: a 32 m horizontal uniform grid stored as sorted occupied `GridCell { key, members: Vec<u32> }` values, plus one fixed-size `ObjectIndexRecord { raw_bounds, dependency_bounds }` per placement. Each placement is inserted into every cell touched by `dependency_bounds`; activation exact-filters against `raw_bounds`, while edit dirtying uses the lazy `dependency_contains` predicate defined below. No dependency coordinate vector, bitmap, or per-voxel shape expansion is retained. Validation rejects an object touching more than 16 grid cells, a dependency footprint touching more than 128 voxel bricks, a cell containing more than 1,024 placements, or total retained index capacity above 16 MiB; these limits are configuration contracts, not silent truncation. The checked accounting is `record_capacity * size_of::<ObjectIndexRecord>() + cell_capacity * size_of::<GridCell>() + sum(member_capacity * size_of::<u32>()) + 16 * (2 + occupied_cell_count)`; the final term conservatively charges allocator metadata for each vector allocation. This `retained_index_bytes` includes all dependency metadata and reserved capacities and is reported in startup telemetry.
+`objects` is the canonical serialized order, sorted by `ObjectId`. Runtime constructs one private immutable `ObjectSpatialIndex` during manifest validation and retains it only on success. It has one fixed-size `ObjectIndexRecord { raw_bounds, dependency_bounds }` per placement and two sorted horizontal tables:
 
-The same validation rejects `ObjectShapeOverlap { lower_id, higher_id, first_voxel }` when two non-ruin raw shape evaluators are both solid at any voxel coordinate, and `ObjectRuinOverlap { object_id, first_voxel }` when a non-ruin raw shape is solid at any transformed authored ruin-stamp coordinate, including an explicit air-carve coordinate. Candidate pairs come from the grid, exact intersection scans use lexicographic voxel order, and the first reported conflict is ordered by `(lower_id, higher_id, first_voxel)`. Thus every accepted non-ruin placement owns its complete raw voxel shape and may safely use an unmasked authored root. ID lookup binary-searches the already sorted manifest vector rather than retaining a companion map. The compact index records are derived memory and are neither saved nor exposed as mutable state.
+- a 32 m `DependencyGridCell { key, members: Vec<u32> }` table indexes `dependency_bounds` for activation and edit dirty discovery; and
+- a 4 m `SampleGridCell { key, members: Vec<u32> }` table indexes `raw_bounds` so a synchronous voxel evaluation tests at most 64 analytic object shapes rather than scanning a dense 32 m cell.
+
+Members are manifest indices sorted by `ObjectId`. Both tables exact-filter their respective bounds/predicates; the fine table does not change base precedence. No dependency coordinate vector, bitmap, per-voxel shape expansion, or duplicate ID lookup map is retained. Validation rejects an object touching more than 16 cells in either table, a dependency footprint touching more than 128 voxel bricks, a dependency cell containing more than 1,024 placements, a sample cell containing more than 64 placements, any supported radius-3 m edit broad phase exceeding 256 placements or exact dependency result exceeding 64 placements, or total retained index capacity above 16 MiB. These limits are configuration contracts, not silent truncation.
+
+Checked memory accounting is `record_capacity * size_of::<ObjectIndexRecord>() + sum(table_cell_capacity * size_of::<TableCell>()) + sum(all_member_capacities * size_of::<u32>()) + 16 * (2 + dependency_occupied_cells + sample_occupied_cells)`. The allocator term covers both outer vectors and every occupied-cell member vector. `retained_index_bytes` therefore includes both grids, fixed records, dependency metadata, reserved capacity, keys, and allocator padding and is reported in startup telemetry. Runtime validation/build timing includes count/spacing/canopy/route/disjointness validation plus construction of both tables; F1 caps the combined phase at 1,000 ms and the table-build subset at 250 ms on the M4.
+
+The same validation rejects `ObjectShapeOverlap { lower_id, higher_id, first_voxel }` when two non-ruin raw shape evaluators are both solid at any voxel coordinate, and `ObjectRuinOverlap { object_id, first_voxel }` when a non-ruin raw shape is solid at any transformed authored ruin-stamp coordinate, including an explicit air-carve coordinate. Candidate pairs come from the dependency grid, exact intersection scans use lexicographic voxel order, and the first reported conflict is ordered by `(lower_id, higher_id, first_voxel)`. It also emits exact `ForestContractViolation` variants for area/count/species, spacing, canopy range-bin, route clearance, sample/dependency/Horizon cell capacity, edit-candidate capacity, validation time, and retained bytes. Thus every accepted non-ruin placement owns its complete raw voxel shape and may safely use an unmasked authored root. ID lookup binary-searches the already sorted manifest vector rather than retaining a companion map. The compact index records are derived memory and are neither saved nor exposed as mutable state.
 
 `WorldSeed` plus `RegionConfig` is the base-world identity. `parameters_digest` is SHA-256 over canonical RON config bytes and the ruin-stamp content; the implementation uses a small SHA-256 crate only for this identity check. The digest is not a save-version mechanism. `moria-curate generate` deterministically searches feature candidates from the seed and writes `assets/config/curated_manifest.ron`; `check` regenerates it in memory, compares canonical values, and validates all feature contracts. The manifest is generated metadata, not hand-sculpted terrain. Runtime rejects a seed/config/manifest mismatch before opening the world.
 
-`TraversalRoute` is an ordered list of generated waypoints with semantic tags: meadow, forest, river, lake, cliff_top, rock_shelves, ruin_stair_bottom/top, cave_mouth, aquifer, ore_vein, and cave_floor. It is public observation data used by the demo spawn and benchmark script, not a source of voxel overrides. The curator accepts a seed only if the route is connected by `solid_collision` queries, the entrance/floor elevation contract passes, the river/lake occupy carved basins, both tree species occur in the forest, and the aquifer and iron feature intersect the cave route.
+The manifest contains at most 16 generated `FeatureInstance` records/evaluator dispatches; repeated strata are represented parametrically by one stratum evaluator rather than an unbounded record list. This cap is validated before `WorldReady` and is the `F <= 16` term in public query costs.
+
+`TraversalRoute` is an ordered list of generated waypoints with semantic tags: meadow, forest, river, lake, cliff_top, rock_shelves, ruin_stair_bottom/top, cave_mouth, aquifer, ore_vein, cave_floor, and `signature_carve_hillside`. It contains at most 64 waypoints. The signature tag identifies an in-bounds solid hillside at which a radius-3 m dig creates a capsule-clear through-route; it is metadata, not a voxel override. Route data is public observation used by demo spawn and benchmark scripts. The curator accepts a seed only if the route is connected by `solid_collision` queries, the entrance/floor elevation contract passes, the river/lake occupy carved basins, both tree species occur in the forest, the aquifer and iron feature intersect the cave route, and the signature carve target passes its before/after pure occupancy oracle.
 
 ### Column
 
@@ -212,7 +221,7 @@ struct BrickRecord {
 
 `WorldStore` and all fields are private to `moria-world`. A procedural classifier uses conservative density bounds to mark bricks wholly air, water, or one geology material without evaluating all voxels. A brick crossing any density/material boundary becomes detailed only while required for collision, mutation, raw inspection, or mesh production. A mutated brick's current detail can be evicted after its `BrickDelta` is retained; reactivation regenerates base and reapplies that delta.
 
-`DirtyFlags` distinguishes collision/query truth, mesh, seam, water, authored-object visuals, surface anchors, and dressing. An edit increments the global revision once, assigns that revision to every changed brick, and dirties changed bricks plus face-neighbor mesh seams. The object index batch-queries the sorted changed coordinates and returns placements whose lazy `ObjectSurfaceDependency` contains at least one of them; every returned non-ruin ID sets `authored-object visuals`, including when a matching coordinate's own base source is terrain or ruin. This lookup and the mesh snapshot builder use the same extraction stencil defined below, so a boundary input cannot affect an object primitive without dirtying that object. `Ruin(ObjectId)` does not set that flag because ruin presentation is owned by the always-voxel-derived terrain chunk path already dirtied for the changed brick and seams. A changed support surface sets `surface anchors`. The authored-object flag drives the intact/voxel-derived vegetation/prop transition or rebuilds an already-derived root, while the latter regenerates dressing and never invents object physics. Edge/corner sampling comes from the immutable snapshot and does not require dirtying chunks whose outputs cannot depend on the changed sample. Background results carry `(brick, revision, lod)` and are discarded if the current revision differs.
+`DirtyFlags` distinguishes collision/query truth, mesh, seam, water, registered-object visuals, Horizon-cell aggregate membership, surface anchors, and dressing. An edit increments the global revision once, assigns that revision to every changed brick, and dirties changed bricks plus face-neighbor mesh seams. The object index batch-queries the sorted changed coordinates and returns placements whose lazy `ObjectSurfaceDependency` contains at least one of them; every returned non-ruin ID sets `registered-object visuals`, including when a matching coordinate's own base source is terrain or ruin. A returned Horizon-visible tree also dirties its anchor-owned `HorizonCellKey`, whether eligibility changed or only its derived payload changed. This lookup and the mesh snapshot builder use the same extraction stencil defined below, so a boundary input cannot affect an object primitive without dirtying both its per-placement and Horizon consumers. `Ruin(ObjectId)` does not set those flags because ruin presentation is owned by the always-voxel-derived terrain chunk path already dirtied for the changed brick and seams. A changed support surface sets `surface anchors`. The registered-object flag drives the intact/voxel-derived vegetation/prop transition or rebuilds an already-derived payload, while the latter regenerates dressing and never invents object physics. Edge/corner sampling comes from the immutable snapshot and does not require dirtying chunks whose outputs cannot depend on the changed sample. Background results carry their source key, request token, desired LOD, and relevant content revision and are discarded if any no longer match.
 
 Bricks are not modeled as ECS entities in the authoritative store. Derived render chunks are entities with `TerrainChunk { key: RenderChunkKey, lod, revision }`; a key covers one near brick or an aligned group of horizontal bricks at coarser surface LOD. This distinction prevents Bevy queries—including Bevy 0.19 resource-backed entities—from becoming a mutation channel.
 
@@ -305,7 +314,28 @@ fn dependency_contains(placement: &ObjectPlacement, coord: VoxelCoord) -> bool {
 
 Checked subtraction outside the region is false. This is exactly the union of every extractor input associated with a base owner cell of `NonRuinObject(id)` at every supported object LOD; it includes object cells and the adjacent terrain/ruin halo that can affect the object's position, normal, material weights, emission, or occlusion. `dependency_bounds` is the raw voxel AABB expanded by the minimum/maximum union-stencil offsets and clipped to the region, so it is a conservative constant-size broad phase. Dirty discovery, delta intersection, and snapshot construction use the same stencil definition and `dependency_contains`; changing a coordinate outside this mathematical set cannot change the owner-filtered payload. An explicit sorted-set enumerator exists only under `cfg(test)` as a small-shape oracle and is never used during manifest loading, startup, streaming, or normal extraction.
 
-Only a non-ruin `Object(ObjectId)` has `AuthoredObjectVisualState::Intact | VoxelDerived { revision }`. Its authored root is eligible exactly when `delta_intersects_dependency(id)` is false. That query enumerates only the at-most-128 brick coordinates overlapped by `dependency_bounds`, probes the sparse `BTreeMap<BrickCoord, BrickDelta>`, and tests only present `VoxelDelta` coordinates with `dependency_contains`, returning on the first match. With `b <= 128`, `D` delta bricks, `m` stored deltas in those bricks, and stencil size `s <= 512`, its worst-case work is `O(b log D + m*s)`, allocation is `O(1)`, and inactive objects are never queried merely to establish eligibility. This condition guarantees that every extraction input equals base, for which the configured GLB is the intentional authored presentation of the raw analytic object shape. Any object-, terrain-, or ruin-attributed dependency delta atomically removes the GLB and installs a revisioned mesh that emits only current surface primitives routed to that ID. The GLB is restored only after all such deltas exactly revert to base; reverting merely the object-attributed cells while an adjacent boundary delta remains cannot restore it. Because overlap validation guarantees that every accepted raw shape cell is routed to its own ID, terrain chunks emit none of the object's primitives in either state.
+Only a non-ruin `Object(ObjectId)` has dependency eligibility `Intact | VoxelDerived { revision }`; this is independent of its current distance band. It is `Intact` exactly when `delta_intersects_dependency(id)` is false. That query enumerates only the at-most-128 brick coordinates overlapped by `dependency_bounds`, probes the sparse `BTreeMap<BrickCoord, BrickDelta>`, and tests only present `VoxelDelta` coordinates with `dependency_contains`, returning on the first match. With `b <= 128`, `D` delta bricks, `m` stored deltas in those bricks, and stencil size `s <= 512`, its worst-case work is `O(b log D + m*s)`, allocation is `O(1)`, and inactive objects are never queried merely to establish eligibility. This condition guarantees that every extraction input equals base, for which an authored GLB or base Horizon card is the intentional presentation of the raw analytic object shape. Any object-, terrain-, or ruin-attributed dependency delta excludes both authored forms and selects an owner-filtered current-truth payload at the active LOD. Authored presentation returns only after all such deltas exactly revert to base; reverting merely the object-attributed cells while an adjacent boundary delta remains cannot restore it. Because overlap validation guarantees that every accepted raw shape cell is routed to its own ID, terrain chunks emit none of the object's primitives in either state.
+
+Horizon-visible trees are assigned by anchor position to one 64 m `HorizonCellKey` aligned relative to the region minimum; assignment never depends on activation or edits. A resident Horizon cell is one logical revisioned payload:
+
+```rust
+struct HorizonObjectCell {
+    key: HorizonCellKey,
+    token: u64,
+    source_revision: u64,
+    base_card_ids: Vec<ObjectId>,
+    derived: Vec<HorizonDerivedObject>,
+}
+
+struct HorizonDerivedObject {
+    id: ObjectId,
+    revision: u64,
+    // The mesh may be empty when current truth contains no owned surface.
+    mesh: Option<DerivedMeshKey>,
+}
+```
+
+Both vectors are sorted by `ObjectId`, disjoint, and contain every Horizon-visible tree assigned to the cell exactly once: an `Intact` tree contributes one base card ID, while a `VoxelDerived` tree is absent from the cluster and contributes one owner-filtered 4 m derived record, including an empty tombstone for a fully removed tree. Non-tree objects are intentionally culled beyond `object_visibility_m` and therefore are not members of the Horizon-visible set. `source_revision` is the world revision whose sparse deltas were snapshotted for all members. A task may install only if its token and cell's desired source revision still match; the entire cluster buffer, derived records, and removals swap as one deferred batch. Immutable base card descriptors may be cached by `(WorldIdentity, HorizonCellKey)`, but filtered membership, derived payloads, installed entities, and GPU buffers may not be reused by cell key alone. They are discarded on eviction or keyed by a digest of the exact relevant deltas, and activation always re-evaluates eligibility from the current delta map. Thus eviction, reactivation, and load cannot resurrect a base card from stale aggregate state.
 
 A `Ruin(ObjectId)` instead has `RuinVisualState::VoxelDerived { revision }` from initial activation onward, while its cells route to `TerrainChunk`. Editing or exactly reverting stamped ruin cells merely advances that voxel-derived chunk mesh to current world revision; it never adds or restores a GLB. Edits spanning an object boundary retain the base partition per coordinate: object-attributed parts belong to that object's root and terrain/ruin-attributed parts belong to terrain chunks. These are presentation states only; collision/material queries always use current voxel values. Edits to support terrain do not cause felling or physics—the registered placement remains static as required—but any support edit in its surface dependency is visually represented by the derived root until that boundary returns to base.
 
@@ -347,6 +377,96 @@ repeated sorted bricks:
 The outer zstd stream uses level 3 to keep interactive saves fast. No version field or migration dispatcher exists, honoring the single-version scope. A wrong magic, seed/digest mismatch, out-of-bounds coordinate, duplicate/unsorted index, invalid material ID, checksum failure, or decompression failure returns `LoadError` and leaves the current world unchanged. On successful load, base world identity is established first, all deltas are validated in a staging map, and the map is swapped atomically into `WorldStore` before nearby derived content is rebuilt.
 
 `u32` counts cap the format and satisfy the 32-bit counter constraint. The heavy-defacement benchmark must remain below 50,000,000 compressed bytes. Save size is measured from the final file, not an estimate.
+
+## Feasibility evidence
+
+The pre-implementation gates use two serializable reports separate from the final `BenchmarkReport`. Both share `BuildProfile`, `WorldIdentity`, and `MachineProfile`, use RFC 3339 timestamps, store sorted failure reasons, and validate `passed == failure_reasons.is_empty()`.
+
+```rust
+pub struct ForestFeasibilityReport {
+    pub schema: String, // "moria-product-one-forest-feasibility"
+    pub timestamp_utc: String,
+    pub passed: bool,
+    pub failure_reasons: Vec<String>,
+    pub build: BuildProfile,
+    pub world: WorldIdentity,
+    pub manifest_sha256: String,
+    pub machine: MachineProfile,
+    pub forest_area_m2: u32,
+    pub eligible_land_area_m2: u32,
+    pub object_counts: BTreeMap<String, u32>,
+    pub required_object_counts: BTreeMap<String, u32>,
+    pub species_counts: BTreeMap<String, u32>,
+    pub minimum_tree_spacing_q8: u32,
+    pub canopy_min_q8: u16,
+    pub canopy_max_q8: u16,
+    pub canopy_range_bins: BTreeMap<String, u32>,
+    pub minimum_route_clearance_q8: u32,
+    pub overlap_conflicts: u32,
+    pub first_conflict: Option<String>,
+    pub object_index: ObjectIndexEvidence,
+    pub worst_edit_target: WorstEditTargetEvidence,
+}
+
+pub struct WorstEditTargetEvidence {
+    pub center: WorldPointQ8,
+    pub broad_candidates: u16,
+    pub exact_dependency_ids: u16,
+    pub dependency_bricks: u16,
+    pub tie_break_rank: u32,
+}
+
+pub struct CarveFeasibilityReport {
+    pub schema: String, // "moria-product-one-carve-feasibility"
+    pub timestamp_utc: String,
+    pub passed: bool,
+    pub failure_reasons: Vec<String>,
+    pub build: BuildProfile,
+    pub world: WorldIdentity,
+    pub manifest_sha256: String,
+    pub forest_report_sha256: String,
+    pub machine: MachineProfile,
+    pub resolution: [u32; 2],
+    pub backend: String,
+    pub cold_start_ms: f64,
+    pub trials: Vec<CarveTrialEvidence>, // one signature + one stress role
+    pub query_costs: QueryCostEvidence,
+}
+
+pub struct CarveTrialEvidence {
+    pub role: CarveTrialRole,
+    pub center: WorldPointQ8,
+    pub submitted_frame: u64,
+    pub committed_frame: u64,
+    pub ready_frame: u64,
+    pub maximum_frame_ms: f64,
+    pub traversable: bool,
+    pub changed_voxels: u32,
+    pub changed_bricks: u16,
+    pub stage_timings_ms: BTreeMap<String, f64>,
+    pub stage_counts: BTreeMap<String, u64>,
+    pub barrier_expected_items: u32,
+    pub barrier_renderer_ready_items: u32,
+    pub horizon_partition_checked: bool,
+    pub horizon_excluded_base_cards: u16,
+    pub horizon_derived_records: u16,
+}
+
+pub enum CarveTrialRole { Signature, MaximumCandidateStress }
+
+pub struct QueryCostEvidence {
+    pub sample_counts: BTreeMap<String, u32>,
+    pub cold_inactive_calls: BTreeMap<String, Distribution>,
+    pub frame_critical_calls: BTreeMap<String, Distribution>,
+    pub normal_bundle_ms: Distribution,
+    pub column_ms: Distribution,
+    pub diagnostic_metadata_page_ms: Distribution,
+    pub diagnostic_cells_page_ms: Distribution,
+    pub observed_work_maxima: BTreeMap<String, u64>,
+}
+```
+
+Required carve stage keys are `edit-stage`, `dirty-discovery`, `dependency-eligibility`, `snapshot`, `terrain-mesh`, `object-mesh`, `seams`, `dressing-remove`, `dressing-install`, `bevy-install`, `render-extract`, `gpu-upload`, and `render-queue`. A legitimate no-work branch records count `0` and elapsed time rather than omitting its key. `dirty-discovery + dependency-eligibility <= 1.0 ms` is evaluated per stress trial, not from rounded distributions. Report validators reject non-finite times, wrong M4/Metal/resolution/profile identity, manifest-digest mismatch, missing keys, count/cap violations, and expected/renderer-ready barrier inequality. Failed artifacts are immutable inputs to review and are never rewritten as passing reports.
 
 ## Benchmark data
 
@@ -477,10 +597,18 @@ pub struct StreamingEvidence {
     pub object_index: ObjectIndexEvidence,
 }
 pub struct ObjectIndexEvidence {
+    pub validation_ms: f64,
     pub build_ms: f64,
     pub retained_bytes: u64,
+    pub retained_byte_categories: BTreeMap<String, u64>,
     pub placement_records: u32,
-    pub grid_entries: u32,
+    pub dependency_grid_entries: u32,
+    pub sample_grid_entries: u32,
+    pub max_dependency_cell_entries: u16,
+    pub max_sample_cell_entries: u8,
+    pub max_horizon_tree_members_per_cell: u16,
+    pub max_edit_candidates: u16,
+    pub max_edit_affected_objects: u8,
     pub max_dependency_bricks: u16,
     pub dependency_coordinate_allocation_bytes: u64,
 }
@@ -491,7 +619,8 @@ Fallback/warning/tag/band vectors are sorted and duplicate-free; category maps s
 ## Relationship invariants
 
 - `current_voxel(coord) == delta(coord).unwrap_or(base(seed, config, manifest, coord))` for every in-bounds coordinate.
-- A render chunk, dressing instance, water patch, and collision response names the world revision from which it was derived; stale task output can never replace a newer revision.
+- A render chunk, Horizon object-cell payload, dressing instance, water patch, and collision response names the world/content revision from which it was derived; stale task output can never replace a newer relevant revision.
+- For each resident Horizon cell, sorted `base_card_ids` and `derived.id` values are disjoint and their union equals exactly the Horizon-visible tree IDs assigned to that cell; any ID with a dependency delta occurs only in `derived`, even when its mesh is empty.
 - Regenerated base provenance is total and unique at every coordinate; `solid_presentation_owner` maps every current solid cell to exactly one normal-world presentation path without changing `solid_collision`, and exact delta reversion preserves that routing.
 - Every `ObjectPlacement.anchor` is supported by generated solid collision, and every displayed registered object has exactly one placement ID. A ruin placement additionally has a valid connected stair path.
 - Every dressing instance has one eligible current surface anchor; changing the anchor revision removes it before regeneration.

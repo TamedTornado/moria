@@ -531,3 +531,105 @@ The compact dependency footprint, exact lazy membership, sparse-delta eligibilit
 ### Approval
 
 Approved.
+
+## Auditor Turn — 2026-07-13T18:10:31Z
+
+Mode: continue
+
+Responding to: 2026-07-13T16:45:36Z
+
+### Prior Findings Status
+
+1. Status: resolved
+   Prior finding: Region-wide materialized `ObjectSurfaceDependency` coordinate sets defeated sparse activation and omitted their startup/memory cost from the object-index bound.
+   Evidence: `docs/tdd/data-model.md` — Seed, region, and generated metadata retains fixed-size raw/dependency bounds and two bounded indices under the inclusive 16 MiB cap; Objects, ruin, and dressing defines lazy `dependency_contains` and an at-most-128-brick sparse-delta probe without retained dependency coordinates. `docs/tdd/systems.md` — Generation systems constructs these records without enumerating coordinates and requires explicit-oracle equivalence plus full-manifest timing/allocation evidence. `docs/tdd/config.md` and `docs/tdd/benchmarks.md` retain the 128-brick, zero-coordinate-allocation, startup, and complete-index acceptance limits.
+   Notes: The current files still consistently implement the compact mathematical-set interpretation approved in the prior turn. No regression was found in its retained-memory accounting, eligibility query, or verification contracts.
+
+### New Findings
+
+1. Severity: major
+   Origin: emergent
+   Section: `docs/tdd/rendering.md` — Terrain extraction / Registered objects and forest scale; `docs/tdd/systems.md` — Object and dressing systems; `docs/tdd/config.md` — Streaming and task configuration
+   Issue: The edited-object current-truth lifecycle is defined only for per-placement authored or voxel-derived roots, while the Horizon band makes cell-level tree cards/clusters the exclusive non-ruin presentation. The TDD does not define whether a horizon aggregate excludes, rebuilds, or substitutes a placement whose `ObjectSurfaceDependency` has a persisted delta. Consequently an edited or fully removed tree can legally reappear as its base silhouette after the player moves away, after eviction/reactivation, or after save/load into a view where that placement is represented by a cluster. The aggregate also has no revision/dirty/readiness ownership rule comparable to the per-object root, so the stated exactly-once presentation partition cannot be proved across the Far-to-Horizon transition.
+   Evidence: `docs/tdd/rendering.md` — Terrain extraction says Horizon object cards/clusters are the exclusive non-ruin presentation in that band, and Registered objects and forest scale allows generated cluster/impostor cards per spatial cell; the same section defines dependency-delta transitions only as authored per-object root to owner-filtered per-object mesh. `docs/tdd/config.md` sets individual object visibility to 320 m and Horizon tree clusters to 720 m, making the aggregate path part of the required four-band presentation rather than unreachable optimization. `docs/tdd/systems.md` — `spawn_registered_object_visuals`, `refresh_modified_object_visuals`, and their tests guarantee exactly one authored/derived root per active placement but never specify cluster membership, invalidation, revision matching, exact reversion, or save/load reactivation for edited placements. `docs/design-document.md` — Present smooth material truth and Save and load require visible surfaces to derive from current voxel truth and restored edits exactly. This became visible in this re-review because the prior fixes made the per-object dependency lifecycle precise enough to trace its consumers through every distance band; the Horizon consumer remains outside that lifecycle.
+   Required change: clarify contract by defining a revision-aware Horizon policy for placements with dependency deltas. For example, rebuild the affected cell aggregate while excluding ineligible base cards and supply a current-truth derived horizon representation for each excluded placement, or retain a bounded per-placement derived LOD instead of aggregating it. Specify cluster dirty discovery, activation/eviction/reactivation and exact-reversion behavior, spatial/provenance ownership, and when an active aggregate participates in `EditSurfaceReady`. Add transition tests covering intact -> edited -> Horizon, Horizon eviction/reactivation, save/load directly into Horizon, full object removal, and exact dependency reversion, asserting that base cards do not resurrect edited truth and that aggregate plus derived payloads contain each visible non-ruin placement exactly once.
+
+### Questions For Coder
+
+1. When a tree with a persistent dependency delta enters the Horizon band, should its base card be removed from the cell cluster and replaced by an owner-filtered derived horizon payload, or should edited placements remain individual derived roots at a bounded coarse LOD?
+
+### Answers To Coder
+
+No coder questions were pending for this turn.
+
+### Notes To Coder
+
+The compact dependency/index work remains approved. This finding does not require materializing dependencies or changing voxel provenance; it requires carrying the already-defined eligibility result into the cell-level Horizon representation so distance-band transitions cannot resurrect base object visuals.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-13T18:19:30Z
+
+Mode: continue
+
+Responding to: 2026-07-13T18:10:31Z
+
+### Responses To Findings
+
+1. Addressed. Horizon is now governed by the same `ObjectSurfaceDependency` eligibility as per-placement LODs. Each revisioned 64 m cell partitions its sorted visible tree IDs into intact base cards and excluded per-ID owner-filtered 4 m derived payloads; a fully removed tree receives an empty ownership tombstone and cannot regain a card. Cell tokens/source revisions, atomic group installation, dirty discovery, edit pinning/readiness, Far/Horizon transition, eviction/reactivation, load invalidation, and exact reversion are explicit.
+
+### Answers To Auditor
+
+1. The base card is removed from the cell cluster and replaced by an owner-filtered derived Horizon payload. This keeps intact trees aggregated while making edited trees current-truth and independently revisioned; a fully removed tree has an acknowledged empty tombstone. Edited placements do not remain at their Near/Far root LOD in Horizon.
+
+### TDD Changes Made
+
+- Revised `data-model.md` with anchor-owned `HorizonCellKey`, exact base/derived partition and tombstone invariants, revision/token/cache rules, dirty flags, report evidence, and a 1,024-tree validation cap.
+- Revised `systems.md` and `states.md` with bounded cell enumeration, current-delta partition construction, atomic install, relevant-edit/load invalidation, pin/evict/reactivate behavior, stale-result rejection, and the requested transition/removal/reload/reversion tests.
+- Revised `rendering.md`, `assets.md`, and `config.md` so Horizon cards are base-only shared assets, edited trees use dynamic owner-filtered 4 m payloads, non-tree props cull at 320 m, and no filtered aggregate can be reused by cell key alone.
+- Revised `api.md`, `overview.md`, `implementation-plan.md`, and `benchmarks.md` so active Horizon batches participate in `EditSurfaceReady`, Gate F2 forces this path, and feasibility evidence records the partition and cell-cap metrics.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The compact dependency/index design is unchanged: Horizon membership enumeration reuses the existing 32 m dependency grid, stores no third runtime index or dependency coordinate sets, and validates the per-cell count in one sorted manifest pass. The logical exactly-once invariant covers every Horizon-visible tree; bushes and props are intentionally outside that set because their configured visibility ends at 320 m.
+
+## Auditor Turn — 2026-07-13T18:22:51Z
+
+Mode: approved
+
+Responding to: 2026-07-13T18:19:30Z
+
+### Prior Findings Status
+
+1. Status: resolved
+   Prior finding: Horizon tree aggregates could resurrect base silhouettes for edited or removed trees because they were outside the per-placement dependency/revision lifecycle.
+   Evidence: `docs/tdd/data-model.md` — Objects, ruin, and dressing defines an anchor-owned `HorizonObjectCell` whose sorted `base_card_ids` and revisioned `derived` records form an exact disjoint partition, with ineligible or fully removed trees represented only by owner-filtered payloads or empty tombstones; `docs/tdd/systems.md` — Object and dressing systems rebuilds affected desired/resident cells from the current delta snapshot, rejects stale token/revision results, pins active edit work, invalidates affected cells on load, and specifies transition/removal/eviction/reactivation/load/reversion tests; `docs/tdd/rendering.md` — Registered objects and forest scale makes the filtered cell payload the exclusive Horizon tree presentation and permits only immutable base descriptors to survive cell eviction; `docs/tdd/api.md` — World edit protocol includes aggregate membership changes, derived replacements, and tombstones in `EditSurfaceReady` through GPU prepare/free and render-queue acknowledgement.
+   Notes: The revised contract carries the existing `ObjectSurfaceDependency` eligibility result into Horizon rather than inventing a second truth rule. It covers activation, Far-to-Horizon handoff, edits while resident, full removal, eviction/reactivation, save/load, exact dependency reversion, stale work, and exactly-once membership. The bounded cell cap and Gate F2 active-Horizon stress path make the aggregate lifecycle implementable and acceptance-testable without adding a region-wide index or retained dependency coordinates.
+
+### New Findings
+
+No new findings.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+No coder questions were pending for this turn.
+
+### Notes To Coder
+
+The requested revision-aware Horizon policy is now consistent across the data model, runtime scheduling, rendering ownership, state transitions, public edit/load barriers, assets, configuration, feasibility gates, and benchmark evidence. The previously approved compact dependency representation and adjacent-boundary correctness remain intact.
+
+### Approval
+
+Approved.
+
+All issues resolved. TDD approved.

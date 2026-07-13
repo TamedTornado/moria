@@ -114,8 +114,9 @@ The ruin's visible terrain mesh is extracted from stamped/current voxel truth on
 
 - region/bounds and feature intersection checks;
 - solid-collision-based route traversal with the configured capsule;
-- meadow/forest area and two-species/object-density checks;
+- meadow/forest eligible area; density-derived tree/bush/prop counts; 55/45 species minima; 5 m pairwise tree spacing; per-species lower/upper canopy-range bins; and 3 m registered-object clearance through the forest route, all on the same placement set;
 - exact non-ruin raw solid-shape disjointness and non-ruin/ruin-stamp authored-coordinate disjointness, reporting stable IDs and the first conflicting voxel;
+- both immutable index-table caps, complete retained-byte accounting, and deterministic worst-case radius-3 m forest/hillside edit candidate/affected-ID selection;
 - carved river/lake bed checks;
 - cliff gradient and visible tilted-strata checks;
 - cave mouth/floor elevation, clearance, and connectivity checks;
@@ -123,6 +124,8 @@ The ruin's visible terrain mesh is extracted from stamped/current voxel truth on
 - ruin support/stair connectivity checks.
 
 CI failure instructs the implementer to rerun generation only after an intentional authoritative config/stamp change. A new manifest changes `parameters_digest` and is incompatible with the one-version save, so the checked-in demo slot must be cleared for development; no migration is invented.
+
+The additional `moria-curate prove-forest` command runs all checks above against the byte-identical checked-in manifest through the production runtime validator and adds M4 timing/memory evidence. It fails unless object validation is <=1,000 ms, index construction is <=250 ms, retained index memory including both grids is <=16 MiB, and dependency-coordinate allocation is zero. Passing density with undersized canopies, route obstruction, overlap, excessive index memory, or object-open overrun is not a partial success. The digest-matched headed F2 run separately proves that this same full manifest remains inside the <5,000 ms process-to-ready contract. These are blocking gates as specified in [implementation-plan.md](implementation-plan.md).
 
 ## Shared render asset resources
 
@@ -141,7 +144,7 @@ struct WorldRenderAssets {
 
 This resource is globally unique. Every repeated entity clones handles from it. Per-object transforms/IDs/LOD state are components. Loading code deduplicates texture/mesh handles by path and ledger ID; no spawn system calls `materials.add` or `meshes.add` for each instance.
 
-Terrain meshes are dynamic per chunk and therefore unique `Mesh` handles, but every chunk shares one terrain material. Water patch meshes are dynamic and share one water material. Raw voxel instances share one cube mesh/material. Dynamic handles are removed on eviction after render extraction no longer references them and the graphics ledger is decremented.
+Terrain meshes are dynamic per chunk and therefore unique `Mesh` handles, but every chunk shares one terrain material. Water patch meshes are dynamic and share one water material. Raw voxel instances share one cube mesh/material. Horizon base-card textures/geometry are immutable shared assets; the cell instance buffer is revision-filtered membership, and an edited tree's owner-filtered coarse mesh is a dynamic derived handle rather than a cached base card. Horizon cell eviction removes those instance/derived buffers after render extraction releases them. All dynamic handles are removed on eviction and the graphics ledger is decremented.
 
 ## Placeholder strategy
 

@@ -78,9 +78,67 @@ impl WorldRead<'_, '_> {
 }
 ```
 
-Queries are synchronous, side-effect free from the consumer's perspective, and always overlay committed deltas on deterministic base evaluation. They may populate an internal memoization cache through interior implementation details, but the return value cannot depend on cache state. An in-bounds query never fails merely because a brick is inactive; procedural evaluation supplies the answer. `QueryError::OutOfBounds` is returned outside the region. `QueryError::NotReady` is possible before `WorldReady`. No query returns a mutable reference.
+Queries are synchronous, side-effect free from the consumer's perspective, and always overlay committed deltas on deterministic base evaluation. They may populate an internal memoization cache through interior implementation details, but the return value cannot depend on cache state. An in-bounds query never fails merely because a brick is inactive; procedural evaluation supplies the answer. `QueryError::OutOfBounds` is returned outside the region and `QueryError::NotReady` is possible before `WorldReady`. Invalid masks/shapes and requests beyond the limits below return `QueryError::LimitExceeded(QueryLimitKind)` before traversal and never return a truncated/partial result. No query returns a mutable reference.
 
-`Vec3Q8` is three signed Q8 metre components. `WorldRayQ8` contains a Q8 origin and normalized Q16 direction. `CapsuleQ8` contains a Q8 center, radius, and vertical half-segment. `SweepResult` contains `safe_fraction_q16: u16` (`0..=65535`), end capsule, and a coordinate-sorted `Vec<WorldHit>`. `WorldBounds` contains min-inclusive/max-exclusive Q8 corners. Constructors validate normalization, nonnegative sizes, and integer overflow before a query runs.
+These are hard Product One API limits, chosen to cover the 9 m orbit camera, 1.8 m player capsule, per-tick movement, 64 m debug targeting, and paged diagnostic views while keeping synchronous work inside the 60 Hz frame budget:
+
+```rust
+pub const MAX_RAY_DISTANCE_Q8: u32 = 16_384;       // 64 m
+pub const MAX_RAY_VOXEL_VISITS: u16 = 448;
+pub const MIN_CAPSULE_RADIUS_Q8: u16 = 32;          // 0.125 m
+pub const MAX_CAPSULE_RADIUS_Q8: u16 = 128;         // 0.5 m
+pub const MAX_CAPSULE_HALF_SEGMENT_Q8: u16 = 192;  // 0.75 m; max total height 2.5 m
+pub const MAX_SWEEP_DISPLACEMENT_Q8: u16 = 3_072;  // Euclidean length, 12 m
+pub const MAX_SWEEP_CANDIDATE_TESTS: u16 = 8_192;
+pub const MAX_OVERLAP_CANDIDATE_TESTS: u16 = 512;
+pub const MAX_QUERY_HITS: u16 = 512;
+pub const MAX_COLUMN_RUNS: u16 = 64;
+pub const MAX_ROUTE_WAYPOINTS: u16 = 64;
+pub const MAX_BASE_FEATURE_EVALUATORS: u8 = 16;
+
+pub enum QueryError {
+    NotReady,
+    OutOfBounds,
+    InvalidInput,
+    LimitExceeded(QueryLimitKind),
+    SnapshotExpired,
+}
+pub enum QueryLimitKind {
+    RayDistance,
+    RayVoxelVisits,
+    CapsuleRadius,
+    CapsuleHeight,
+    SweepDisplacement,
+    SweepCandidateWork,
+    ResultCount,
+    ColumnRuns,
+    DiagnosticBricks,
+    DiagnosticCells,
+    DiagnosticChunks,
+    DiagnosticFocuses,
+}
+```
+
+The object index separately caps exact base-object candidates at 64 for any 4 m sample cell, and manifest validation caps the fixed terrain/geology/cave/ore/aquifer/water/ruin evaluator chain at 16. A scalar voxel evaluation therefore cannot fall back to scanning a 32 m forest cell, arbitrary feature vector, or the complete manifest. `ray_cast` uses deterministic 3-D DDA and rejects zero/unnormalized direction or an empty mask as `InvalidInput`, and a distance above 64 m as `LimitExceeded(RayDistance)`; the DDA stops after at most 448 visited voxels. Capsule radius must be 0.125–0.5 m and vertical half-segment at most 0.75 m. `sweep_capsule` additionally rejects Euclidean displacement above 12 m or a radius/height/displacement combination whose conservative centerline-DDA-expanded broad phase exceeds 8,192 voxel candidates. This combined work check permits the full-height player for short fixed-tick sweeps and the 0.18 m camera probe for its 9 m cast without permitting the pathological maximum height and distance together. `overlap_capsule` tests at most 512 broad-phase cells under the dimension limits. Sweep/overlap return at most 512 exact hits; exceeding that invariant returns `LimitExceeded(ResultCount)` rather than silently dropping contacts.
+
+The complexity and allocation contract for every synchronous public read is:
+
+| Query | Input/result bound | Worst-case work and allocation |
+|---|---|---|
+| `identity`, `bounds` | One immutable value/reference | `O(1)`, no allocation |
+| `sample_voxel`, `sample_point` | One in-bounds coordinate | `O(log D + 64 + F)`, no allocation; `D` is delta bricks and `F <= 16` is the fixed generated-feature evaluator count |
+| `sample_column` | One in-bounds X/Z, at most 64 ordered runs | `O(F + R)`, `R <= 64`; one result vector capped at 64 |
+| `ray_cast` | 64 m / 448 voxels, zero or one hit | `O(448 * (log D + 64 + F))`, no work-sized allocation |
+| `overlap_capsule` | dimensions above, at most 512 candidates / 512 hits | `O(512 * (log D + 64 + F) + H log H)`, `H <= 512` result allocation |
+| `sweep_capsule` | 12 m and 8,192 candidate cap / 512 contacts | `O(8192 * (log D + 64 + F) + H log H)`, `H <= 512`; one bounded result vector |
+| `water_surface_at` | one in-bounds X/Z; exactly two curated water bodies | `O(2)`, no allocation |
+| `route` | at most 64 immutable waypoints | `O(1)`, borrowed immutable slice/reference |
+| `active_band` | one valid brick | `O(log A)`, no allocation; `A` is active brick records |
+| `diagnostic_snapshot` | page limits below | `O(log A + B + C + Foc)` or `O(log A + B*4096 + C + Foc)` with cells; bounded owned page only |
+
+These are algorithmic maxima, not sufficient performance evidence. Gate F2 in [implementation-plan.md](implementation-plan.md) measures 256 distinct, previously unsampled inactive-forest calls, 1,000 normal player/camera/debug query bundles after ordinary renderer warmup, 128 maximum column/metadata pages, and 128 two-brick cell pages on the M4. Frame-critical calls must each have p99 at most 1.0 ms, the normal bundle p99 at most 2.0 ms, and no measured call above 4.0 ms. `sample_column` and a metadata-only diagnostic page have p99 at most 1.0 ms; a maximum cell-bearing diagnostic page has p99 at most 4.0 ms and no sample above 8.0 ms. The harness records iteration counts and rejects repeated coordinates in the cold set. A failure blocks downstream work; cache warming cannot be the only passing evidence.
+
+`Vec3Q8` is three signed Q8 metre components. `WorldRayQ8` contains a Q8 origin and normalized Q16 direction. `CapsuleQ8` contains a Q8 center, radius, and vertical half-segment. `SweepResult` contains `safe_fraction_q16: u16` (`0..=65535`), end capsule, and a coordinate-sorted `Vec<WorldHit>`. `WorldBounds` contains min-inclusive/max-exclusive Q8 corners. Constructors validate normalization, the limits above, and integer overflow before a query runs.
 
 `WorldSample` contains coordinate, material ID, density, state byte, `material_present`, `solid_collision`, `water_volume`, and current world revision. The three booleans are computed by the exact predicates in [data-model.md](data-model.md); they are not aliases. `QueryMask::SOLID` selects only `solid_collision`, `QueryMask::WATER` selects only `water_volume`, and their union selects either; it has no gameplay faction/category semantics. `WorldHit` contains hit voxel, Q8 hit point, a quantized face/gradient normal, material, matched class, distance, and revision.
 
@@ -92,7 +150,7 @@ The diagnostic observation is a bounded immutable page, not store access:
 pub struct DiagnosticPageRequest {
     pub snapshot: Option<DiagnosticSnapshotToken>, // None starts a snapshot
     pub after_brick: Option<BrickCoord>,
-    pub max_bricks: u16,       // 1..=1024; <=64 when include_cells
+    pub max_bricks: u16,       // 1..=256; <=2 when include_cells
     pub include_cells: bool,
 }
 pub struct DiagnosticPage {
@@ -116,7 +174,9 @@ pub struct DiagnosticBrick {
 }
 ```
 
-Only currently active or explicitly inspected bricks are enumerable. `DiagnosticCell` contains local index, material, density, `material_present`, `solid_collision`, and `water_volume`; with `include_cells`, all 4,096 cells are returned for each page brick so empty and partial cells remain inspectable. `DiagnosticRenderChunk` contains key, Q8 bounds, LOD, band, revision, and resident/pending phase. `DiagnosticFocus` contains public focus ID, position, and purpose. Render chunks/focuses included are those intersecting or contributing to the returned brick page; an empty terminal page returns the remaining zero-brick focus markers once. The first page's token identifies the active-index generation; if activation, dirty/task state, focus, or revision changes before a later page, that request returns `QueryError::SnapshotExpired` and the caller restarts with `snapshot: None`, preventing mixed-generation pages without retaining an unbounded copy. Internally, ordered active-brick/chunk indices make page construction `O(log A + B + C + F)` without cells and `O(log A + B*4096 + C + F)` with cells, where `B <= max_bricks`; it never scans the 4-billion-voxel region. Returned vectors own immutable values and reveal no entity/store handles. The demo diagnostic renderer, benchmark coverage capture, and an external consumer all call this exact method; there is no crate-private diagnostic feed.
+Only currently active or explicitly inspected bricks are enumerable. `max_bricks == 0` is `InvalidInput`, values above 256 return `LimitExceeded(DiagnosticBricks)`, and `include_cells && max_bricks > 2` returns `LimitExceeded(DiagnosticCells)` before snapshot creation. `DiagnosticCell` contains local index, material, density, `material_present`, `solid_collision`, and `water_volume`; with `include_cells`, all 4,096 cells are returned for each page brick so empty and partial cells remain inspectable. A cell-bearing page is therefore capped at 8,192 cells. `DiagnosticRenderChunk` contains key, Q8 bounds, LOD, band, revision, and resident/pending phase; a page contains at most 512 chunks and 16 focuses. Exceeding either cap returns `LimitExceeded(DiagnosticChunks|DiagnosticFocuses)` and causes the caller to retry with a smaller `max_bricks`; it never truncates. `DiagnosticFocus` contains public focus ID, position, and purpose. Render chunks/focuses included are those intersecting or contributing to the returned brick page; an empty terminal page returns the remaining zero-brick focus markers once. The first page's token identifies the active-index generation; if activation, dirty/task state, focus, or revision changes before a later page, that request returns `QueryError::SnapshotExpired` and the caller restarts with `snapshot: None`, preventing mixed-generation pages without retaining an unbounded copy. Internally, ordered active-brick/chunk indices make page construction `O(log A + B + C + F)` without cells and `O(log A + B*4096 + C + F)` with cells, where `B <= max_bricks`, `C <= 512`, and `F <= 16`; it never scans the 4-billion-voxel region. Returned vectors own immutable values and reveal no entity/store handles. The demo diagnostic renderer, benchmark coverage capture, and an external consumer all call this exact method; there is no crate-private diagnostic feed.
+
+Boundary/property tests call every query at zero/minimum, exact maximum, and one unit beyond each applicable limit; cover negative coordinates, region faces/corners, diagonal ray DDA, zero displacement, maximum legal player and camera shapes, the exact 8,192-candidate sweep estimate, 513 synthetic contacts, 65 column runs, 65 route points, 257 metadata bricks, three cell-bearing bricks, 513 chunks, and 17 focuses; and assert deterministic `QueryError` before any partial output. Brute-force small-world oracles verify hit ordering, safe fractions, and no missed solid/water samples. Instrumented counters assert the advertised candidate/voxel/object-evaluator maxima for both active and inactive bricks.
 
 ## World edit protocol
 
@@ -180,7 +240,7 @@ For one accepted request, the library:
 3. Commits a nonempty batch atomically in `FixedUpdate`, updates deltas, and increments the revision once. A valid no-effect batch keeps the current revision.
 4. Emits exactly one `EditCommitted`, including a sorted, duplicate-free brick list. Zero-effect valid edits still emit `EditCommitted` with `changed_voxels = 0` and immediately emit `EditSurfaceReady` for the same frame.
 5. Makes all queries and collision see the new revision immediately after commit.
-6. Rebuilds dirty terrain/water seams and dressing and refreshes every intersected registered-object visual; emits exactly one `EditSurfaceReady` only after all affected terrain, water, object, and dressing presentation for that revision has been installed or removed.
+6. Rebuilds dirty terrain/water seams and dressing and refreshes every intersected registered-object visual. For an affected active Horizon cell, refresh means repartitioning its base-card aggregate and per-ID current-truth payloads at the edit revision; aggregate card removal, an empty removal tombstone, and derived-buffer replacement are barrier items just like a per-placement root. The library emits exactly one `EditSurfaceReady` only after all affected terrain, water, object, Horizon aggregate, and dressing presentation for that revision has been installed or removed in the main world, extracted, GPU-buffer-prepared or freed, and queued/acknowledged by the render sub-app for the named frame.
 
 There is no API for setting a voxel, submitting a mesh, replacing a brick, or modifying deltas. The selected material and target ray belong to the consumer debug tool, not to the world library.
 
@@ -203,7 +263,7 @@ pub struct RemoveFocusSource { pub id: u32 }
 
 Consumers publish focus messages; they cannot activate or evict individual bricks. The demo maintains stable sources for player and camera and adds a short-lived inspection/mutation focus at the debug ray hit. The streamer combines all sources with configured band radii and priorities. Removing focus may evict derived detail, but committed deltas remain. `active_band` is observational and exists for the visualizer/benchmarks.
 
-An accepted edit pins its affected bricks and face neighbors until collision truth, meshes, seams, registered-object visuals, and dressing reach the edit revision. Activation pressure cannot evict pinned work. Queue saturation returns `SubmitError::QueueFull` before acceptance; it never accepts an edit it cannot schedule for the two-frame target.
+An accepted edit pins its affected bricks and face neighbors and any affected active Horizon object cell until collision truth, meshes, seams, registered-object presentations, and dressing reach the edit revision. An absent Horizon cell is not activated solely for the edit; when later requested it builds from current deltas. Activation pressure cannot evict pinned work or discharge a readiness barrier by hiding it. Queue saturation returns `SubmitError::QueueFull` before acceptance; it never accepts an edit it cannot schedule for the two-frame target.
 
 ## Save/load protocol
 
@@ -281,15 +341,16 @@ The tool defaults to a 3 m radius for the signature demonstration and cycles onl
 ## Benchmark CLI and output
 
 ```text
-moria-bench --scenario <flythrough|carve-storm>
+moria-bench --scenario <feasibility-carve|flythrough|carve-storm>
             --output <path.json>
             [--resolution <WIDTHxHEIGHT>]
             [--seed <u64>]
+            [--forest-proof <path.json>]
 ```
 
 Unknown/missing arguments, non-curated seed, invalid resolution, or unwritable output exits with code 2 and prints a concise error. A runtime/contract failure exits 1 after writing a report with `passed: false` and failure reasons when possible. A complete passing run exits 0. The default resolution is 2560x1440 for the discrete target; the Mac acceptance harness explicitly supplies 1920x1080 and 2560x1440 runs. Benchmark runs must be release builds; a debug build records `passed: false` and identifies the profile.
 
-The flythrough follows manifest waypoints through every required scene and changes active bands naturally. The carve storm submits public `WorldEditCommand` values through `WorldEditWrite` at scripted valid hillside targets, waits for each commit/surface-ready pair, then saves through `SaveWorldRequest`. The runner writes one self-contained JSON report atomically. Metric semantics and durations are in [benchmarks.md](benchmarks.md).
+`feasibility-carve` requires the F1 artifact, exact M4/Metal/release/2560x1440 environment, and matching git/world/manifest digests; it writes the separate `CarveFeasibilityReport` and exercises the full production stages in [implementation-plan.md](implementation-plan.md). The flythrough follows manifest waypoints through every required scene and changes active bands naturally. The carve storm submits public `WorldEditCommand` values through `WorldEditWrite` at scripted valid hillside targets, waits for each commit/surface-ready pair, then saves through `SaveWorldRequest`. The runner writes its selected self-contained JSON report atomically. Metric semantics and durations are in [benchmarks.md](benchmarks.md).
 
 ## Errors and observability
 
@@ -310,4 +371,4 @@ impl WorldTelemetryRead<'_, '_> {
 }
 ```
 
-Counts exposed to GPU buffers are checked `u32`; host elapsed times and cumulative frame indices may be `u64`. Telemetry cannot return store references or edit data values.
+`edit_observations` is a borrowed chronological view of the latest values in a fixed 256-entry ring; `QueueDepths` includes a monotonic `dropped_edit_observations` count. The demo/benchmark polls every frame and any nonzero drop invalidates its run rather than permitting an unbounded process-lifetime vector. Every other telemetry method is `O(1)` and allocation-free; the slice is `O(1)` to obtain and has at most 256 values. Counts exposed to GPU buffers are checked `u32`; host elapsed times and cumulative frame indices may be `u64`. Telemetry cannot return store references or edit data values. Boundary tests fill 256 entries, insert the 257th, and assert stable chronological wrap plus an incremented drop count.
