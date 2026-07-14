@@ -1,0 +1,1054 @@
+[
+  {
+    "id": "M-001",
+    "title": "[setup] Scaffold the Rust workspace and contributor rules",
+    "labels": [
+      "setup",
+      "auto"
+    ],
+    "depends_on": [],
+    "body": "**Category:** setup\n**Automation:** auto\n**Depends on:** None\n**Produces:** `Cargo.toml`, `Cargo.lock`, `AGENTS.md`, `crates/moria-world/Cargo.toml`, `crates/moria-world/src/lib.rs`, `crates/moria-demo/Cargo.toml`, `crates/moria-demo/src/main.rs`, `crates/moria-bench/Cargo.toml`, `crates/moria-bench/src/main.rs`, `crates/moria-curate/Cargo.toml`, `crates/moria-curate/src/main.rs`\n\n## Description\n\nCreate the four-package Rust 2024/Bevy 0.19 workspace, thin crate entry points, required dependencies, Cargo profiles, root asset directories, and the exact repository operating rules required for later agents. Implements the repository design document and all TDD files.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `docs/tdd/overview.md` — selected stack, package tree, profiles, and exact `AGENTS.md` contents\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] `cargo check --workspace` succeeds for all four packages with a committed lockfile.\n- [ ] `AGENTS.md` contains every required command, naming rule, public-boundary rule, schedule rule, and feasibility-gate rule from the TDD.\n- [ ] The root profiles use dev opt-level 1, dependency opt-level 3, and release thin LTO with one codegen unit.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-002",
+    "title": "[setup] Add deterministic headless test infrastructure",
+    "labels": [
+      "setup",
+      "auto"
+    ],
+    "depends_on": [
+      "M-001"
+    ],
+    "body": "**Category:** setup\n**Automation:** auto\n**Depends on:** `M-001`\n**Produces:** `crates/moria-world/src/testing.rs`, `crates/moria-world/tests/external_boundary.rs`, `crates/moria-demo/tests/headless_demo.rs`\n\n## Description\n\nAdd the shared Bevy headless harness, explicit fixed-tick advancement helper, external-consumer test crate, and test directory layout used by all later slices. Implements `overview.md` Verification strategy and `systems.md` Tests and fixed-time helper.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-001` — compilable workspace and package boundaries\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] `run_fixed_ticks` advances exactly the requested number of `FixedUpdate` executions without sleeping or opening a window.\n- [ ] External tests can import only the `moria-world` facade and fail to access private store modules.\n- [ ] A minimal headless demo test runs with `MinimalPlugins` and no renderer.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-003",
+    "title": "[config] Define and validate Product One configuration",
+    "labels": [
+      "config",
+      "auto"
+    ],
+    "depends_on": [
+      "M-001",
+      "M-002"
+    ],
+    "body": "**Category:** config\n**Automation:** auto\n**Depends on:** `M-001`, `M-002`\n**Produces:** `crates/moria-world/src/config/mod.rs`, `assets/config/product_one_region.ron`, `assets/config/presentation.ron`, `assets/config/input.ron`\n\n## Description\n\nImplement typed, deny-unknown-fields RON schemas and cross-field validation for authoritative region, streaming, mutation, player, camera, rendering, benchmark, and input values. Implements `config.md` Configuration ownership through Input defaults.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-001` — asset root and world crate\n- `docs/tdd/config.md` — normative fields, defaults, and invariants\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Checked-in RON values exactly match the normative TDD defaults and invalid present files never silently fall back.\n- [ ] Generation-affecting fields are separated from presentation/input/runtime values for digest calculation.\n- [ ] Validation rejects invalid bounds, voxel/brick scale, band ordering, queue limits, player shapes, and action bindings with typed errors.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-004",
+    "title": "[component] Add coordinate, material, and voxel truth types",
+    "labels": [
+      "component",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-003"
+    ],
+    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** `M-002`, `M-003`\n**Produces:** `crates/moria-world/src/storage/coordinates.rs`, `crates/moria-world/src/storage/voxel.rs`, `assets/materials/materials.ron`\n\n## Description\n\nDefine the Voxel Brick, Voxel, and Material design entities with fixed-width Q8 coordinates, bounded brick construction, a four-byte cell value, the canonical registry, and distinct material-present, water-volume, and solid-collision predicates. Implements `data-model.md` Coordinate and scalar conventions and Material and voxel truth.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-003` — validated bounds and material configuration defaults\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Negative-coordinate floor conversion, all region faces, brick local ordering, and max-exclusive bounds match the contract.\n- [ ] `Voxel` is exactly four bytes; canonical IDs 0–13, hardness, granular flags, collision classes, and placeable palette validate exactly.\n- [ ] The three truth predicates remain distinct and use density 128 only for solid collision.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-005",
+    "title": "[component] Define world identity and curated metadata contracts",
+    "labels": [
+      "component",
+      "auto"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-004"
+    ],
+    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** `M-003`, `M-004`\n**Produces:** `crates/moria-world/src/generation/model.rs`, `crates/moria-world/src/generation/manifest.rs`, `crates/moria-world/src/objects/model.rs`\n\n## Description\n\nAdd the World Seed, Base Region metadata, Column, Geological Feature, Water Body, Voxel Object, Surface Dressing, Ruin Point of Interest, route, and curated-manifest value contracts with canonical ordering and limits. Implements `data-model.md` Seed, region, and generated metadata and Objects, ruin, and dressing.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-004` — coordinate, material, voxel, and stable ID types\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Manifest serialization is canonical, objects sort by `ObjectId`, and route/feature counts enforce the 64/16 limits.\n- [ ] The parameter digest covers canonical authoritative config plus ruin-stamp content, but excludes presentation and input values.\n- [ ] All metadata coordinates, transforms, water footprints, and feature bounds validate in-region before use.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-006",
+    "title": "[component] Add feasibility and benchmark report schemas",
+    "labels": [
+      "component",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-004",
+      "M-005"
+    ],
+    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** `M-002`, `M-004`, `M-005`\n**Produces:** `crates/moria-world/src/telemetry/reports.rs`, `crates/moria-world/src/telemetry/report_validation.rs`\n\n## Description\n\nImplement the exact serializable F1, F2, benchmark, machine, build, allocation, coverage, save, and distribution types plus structural validators. Implements `data-model.md` Feasibility evidence and Benchmark data and `benchmarks.md` JSON report contract.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-005` — world identity and route types\n- `docs/tdd/benchmarks.md` — required/null rules and failure semantics\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Validators reject missing keys/stages, non-finite values, unsorted failure reasons, inconsistent pass bits, and invalid scenario-specific nullability.\n- [ ] Report JSON uses the required schema strings, lowercase-kebab enums, fixed-width counters, and deterministic map/vector ordering.\n- [ ] Graphics evidence cannot claim the product target from the application ledger alone without resident evidence or an approval ID.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-007",
+    "title": "[setup] Scaffold world texture placeholders",
+    "labels": [
+      "setup",
+      "auto"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-004"
+    ],
+    "body": "**Category:** setup\n**Automation:** auto\n**Depends on:** `M-003`, `M-004`\n**Produces:** `assets/materials/terrain_albedo.ktx2`, `assets/materials/terrain_normal.ktx2`, `assets/materials/terrain_orm.ktx2`, `assets/materials/water_normal.ktx2`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`, `crates/moria-world/src/presentation/asset_ids.rs`\n\n## Description\n\nCreate stable runtime paths and keyed generated texture placeholders with matching array layouts, neutral fallback layers, budgets, licenses, and validation fixtures. Implements `assets.md` Directory and inventory, Textures, and Placeholder strategy.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-004` — canonical material layer order\n- `docs/tdd/assets.md` — texture formats and placeholder requirements\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Terrain arrays expose 14 matching layers/mips with correct sRGB versus linear semantics; the water texture has its stable path.\n- [ ] Placeholder IDs, dimensions, formats, budgets, and generated provenance are declared in both asset manifests.\n- [ ] No per-instance texture or material is introduced.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-008",
+    "title": "[setup] Scaffold mixed-tree LOD placeholders",
+    "labels": [
+      "setup",
+      "auto"
+    ],
+    "depends_on": [
+      "M-007"
+    ],
+    "body": "**Category:** setup\n**Automation:** auto\n**Depends on:** `M-007`\n**Produces:** `assets/vegetation/birch_near.glb`, `assets/vegetation/birch_mid.glb`, `assets/vegetation/birch_far.glb`, `assets/vegetation/pine_near.glb`, `assets/vegetation/pine_mid.glb`, `assets/vegetation/pine_far.glb`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`, `crates/moria-world/src/presentation/asset_ids.rs`\n\n## Description\n\nCreate stable birch/pine LOD asset IDs and code-generated GLB placeholders with distinct silhouettes, final bounds/origins, shared-material keys, and production LOD counts. Implements `assets.md` Meshes and animation and Placeholder strategy.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-007` — shared asset manifests and conventions\n- `M-005` — concrete TreeA/TreeB species identities\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] All six GLBs use metres, Y-up, support-center origins, finite indexed geometry, and matching per-species bounds across LODs.\n- [ ] Triangle budgets and shared material keys validate without allocating unique instance materials.\n- [ ] The loader-visible stable IDs do not change when final art replaces these files.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-009",
+    "title": "[setup] Scaffold understory placeholders",
+    "labels": [
+      "setup",
+      "auto"
+    ],
+    "depends_on": [
+      "M-008"
+    ],
+    "body": "**Category:** setup\n**Automation:** auto\n**Depends on:** `M-008`\n**Produces:** `assets/vegetation/bush_near.glb`, `assets/vegetation/bush_far.glb`, `assets/vegetation/grass_cluster.glb`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`, `crates/moria-world/src/presentation/asset_ids.rs`\n\n## Description\n\nCreate stable bush and grass/clutter IDs with bounded generated GLB placeholders that preserve final origins, bounds, batching, and shared-handle behavior. Implements `assets.md` Directory and inventory and Placeholder strategy.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-008` — asset manifest conventions\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Bush near/far and grass cluster files load with finite indexed geometry and final support-origin conventions.\n- [ ] Budget and license entries identify generated placeholder provenance and shared vegetation material keys.\n- [ ] Validation proves repeated dressing can clone handles rather than create assets per instance.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-010",
+    "title": "[setup] Scaffold Horizon tree-card placeholders",
+    "labels": [
+      "setup",
+      "auto"
+    ],
+    "depends_on": [
+      "M-009"
+    ],
+    "body": "**Category:** setup\n**Automation:** auto\n**Depends on:** `M-009`\n**Produces:** `assets/vegetation/tree_horizon_cards.ktx2`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`, `crates/moria-world/src/presentation/asset_ids.rs`\n\n## Description\n\nCreate the stable Horizon card atlas ID and a generated two-species color/normal/opacity placeholder compatible with revision-filtered 64 m cell instances. Implements `assets.md` Textures and Placeholder strategy and `rendering.md` Registered objects.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-009` — vegetation manifest conventions\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] The card atlas loads through the final texture/material path and distinguishes both species silhouettes.\n- [ ] Format, mip, alpha-coverage, budget, and generated-license validation pass.\n- [ ] Fallback use is observable as an asset warning and cannot silently pass release benchmarks.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-011",
+    "title": "[setup] Scaffold prop placeholders",
+    "labels": [
+      "setup",
+      "auto"
+    ],
+    "depends_on": [
+      "M-010"
+    ],
+    "body": "**Category:** setup\n**Automation:** auto\n**Depends on:** `M-010`\n**Produces:** `assets/props/boulder.glb`, `assets/props/stump.glb`, `assets/props/rock.glb`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`, `crates/moria-world/src/presentation/asset_ids.rs`\n\n## Description\n\nCreate stable boulder, stump, and rock IDs with low-poly generated GLB placeholders sized to the analytic object ranges and wired for shared handles. Implements `assets.md` Directory and inventory, Meshes and animation, and Placeholder strategy.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-010` — completed shared asset manifests\n- `M-005` — prop shape contracts\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Each prop loads at the declared support origin with finite attributes and the required bounds.\n- [ ] Variant selection can use a stable placement hash without producing unique materials.\n- [ ] Budgets and generated provenance validate.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-012",
+    "title": "[setup] Scaffold the explorer placeholder",
+    "labels": [
+      "setup",
+      "auto"
+    ],
+    "depends_on": [
+      "M-011"
+    ],
+    "body": "**Category:** setup\n**Automation:** auto\n**Depends on:** `M-011`\n**Produces:** `assets/player/explorer.glb`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`, `crates/moria-world/src/presentation/asset_ids.rs`\n\n## Description\n\nCreate the stable explorer asset ID and a capsule-proportioned generated GLB fallback preserving final bounds, skeleton/clip names, and collision independence. Implements `assets.md` Meshes and animation and Placeholder strategy.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-011` — asset manifest conventions\n- `M-003` — player capsule dimensions\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] The file loads at the correct origin and exposes `Idle`, `Run`, `Sprint`, `Jump`, `Fall`, and `Paddle` clip names or the declared static fallback behavior.\n- [ ] The mesh stays within the explorer triangle budget and is never used as collision truth.\n- [ ] Fallback use is recorded in asset evidence.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-013",
+    "title": "[system] Load and validate shared render assets",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-007",
+      "M-008",
+      "M-009",
+      "M-010",
+      "M-011",
+      "M-012"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-007`, `M-008`, `M-009`, `M-010`, `M-011`, `M-012`\n**Produces:** `crates/moria-world/src/presentation/assets.rs`, `crates/moria-world/src/presentation/validation.rs`, `crates/moria-world/tests/asset_schema.rs`\n\n## Description\n\nImplement `WorldRenderAssets`, stable path loading, shared-handle deduplication, schema/budget/license checks, and typed readiness/fallback errors for every placeholder-backed production asset. Implements `assets.md` Shared render asset resources and Import and validation pipeline.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-007`–`M-012` — complete stable placeholder inventory\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Asset validation checks paths, registry/array agreement, finite meshes, origins, LODs, clip names, triangle budgets, licenses, and unsupported bindings.\n- [ ] Repeated entities clone the same mesh/material handles and no spawn path calls `materials.add` per instance.\n- [ ] Corrupt required assets fail startup; declared decorative fallbacks remain observable.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-014",
+    "title": "[system] Implement deterministic terrain and biome evaluation",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-004",
+      "M-005"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-003`, `M-004`, `M-005`\n**Produces:** `crates/moria-world/src/generation/terrain.rs`, `crates/moria-world/src/generation/biome.rs`, `crates/moria-world/tests/generation_properties.rs`\n\n## Description\n\nImplement fixed-point addressable broad terrain, meadow/forest biome, topsoil/subsoil, column-run, and conservative brick classification evaluators without expanding the region. Implements `systems.md` Pure evaluators and `config.md` Authoritative region configuration.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-003` — authoritative generation parameters\n- `M-004` — coordinates and materials\n- `M-005` — column and manifest contracts\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Evaluation is byte-identical across coordinate order, cache state, and parallel partitions and uses no authoritative floating transcendental results.\n- [ ] Columns cover the entire vertical interval with ordered non-overlapping runs and no more than 64 runs.\n- [ ] Untouched uniform/procedural bricks can be classified without allocating 4,096 voxels.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-015",
+    "title": "[system] Implement analytic object truth and presentation ownership",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-004",
+      "M-005",
+      "M-014"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-004`, `M-005`, `M-014`\n**Produces:** `crates/moria-world/src/objects/shapes.rs`, `crates/moria-world/src/objects/provenance.rs`, `crates/moria-world/tests/object_shapes.rs`\n\n## Description\n\nImplement fixed-point tree, bush, boulder, stump, and rock shape sampling, base precedence/provenance, and the exclusive solid-presentation-owner predicate. Implements `data-model.md` Objects, ruin, and dressing and `rendering.md` Registered objects.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-005` — object placements and quantized shape types\n- `M-014` — terrain base evaluator\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Shape sampling is deterministic, in bounds, and assigns wood/leaf or host-rock materials as specified.\n- [ ] Current voxel composition preserves regenerated base provenance across edits and exact reversion.\n- [ ] Every current solid sample has exactly one terrain/ruin or non-ruin object presentation owner, while collision remains unchanged.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-016",
+    "title": "[system] Build the bounded immutable object index",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-005",
+      "M-015"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-002`, `M-005`, `M-015`\n**Produces:** `crates/moria-world/src/objects/index.rs`, `crates/moria-world/src/objects/dependency.rs`, `crates/moria-world/tests/object_index_properties.rs`\n\n## Description\n\nImplement the 32 m dependency grid, 4 m sample grid, compile-time extraction stencil, lazy dependency predicate, disjointness validation, and checked retained-memory accounting. Implements `data-model.md` Seed metadata index contracts and `systems.md` Pure evaluators.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-015` — analytic shapes and provenance\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Index results equal brute-force sorted oracles and enforce all 16-cell, 128-brick, 1,024/64-cell, 256-candidate, 64-hit, 1,024-Horizon-member, and 16 MiB caps.\n- [ ] No raw-shape or dependency coordinate set is retained; dependency-coordinate allocation evidence stays zero.\n- [ ] Overlap errors name stable IDs and the lexicographically first object/object or object/ruin coordinate before readiness.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-017",
+    "title": "[system] Generate the checked-in forest manifest",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-005",
+      "M-014",
+      "M-016"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-003`, `M-005`, `M-014`, `M-016`\n**Produces:** `crates/moria-world/src/curation/forest.rs`, `crates/moria-world/src/curation/serialization.rs`, `crates/moria-curate/src/search.rs`, `assets/config/curated_manifest.ron`\n\n## Description\n\nImplement deterministic forest/object candidate search, canonical manifest generation/checking, and simultaneous density, species, canopy, clearance, disjointness, and worst-edit-target contracts. Implements `assets.md` Curated manifest and `implementation-plan.md` Gate F1.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-016` — bounded index and exact overlap/dependency queries\n- `M-014` — terrain/biome eligibility\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] The manifest meets the 120,000 m² forest, formula-derived counts, 55/45 species minima, 5 m spacing, per-species canopy bins, and 3 m route clearance together.\n- [ ] `moria-curate generate` is deterministic and `check` byte-compares canonical values without manual manifest edits.\n- [ ] Worst legal radius-3 m stress target selection uses the required lexicographic objective/tie-break and remains inside every candidate cap.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-018",
+    "title": "[integration] Implement and pass the forest feasibility gate",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-006",
+      "M-013",
+      "M-016",
+      "M-017"
+    ],
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** `M-006`, `M-013`, `M-016`, `M-017`\n**Produces:** `crates/moria-curate/src/main.rs`, `crates/moria-world/src/telemetry/forest_feasibility.rs`, `target/feasibility/forest.json`\n\n## Description\n\nAdd the production `prove-forest` command and immutable F1 report validation, then run it in release mode on the named 32 GB M4 acceptance machine so its digest-matched artifact authorizes F2. Implements `implementation-plan.md` Gate F1 and `benchmarks.md` Pre-implementation feasibility evidence.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-017` — byte-identical full forest manifest\n- `M-006` — exact report schema\n- Named M4 hardware — required timing evidence\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] The command regenerates, byte-compares, runtime-validates, and reports every required count, conflict witness, index category, timing, and stress target field.\n- [ ] The M4 artifact proves validation ≤1,000 ms, index build ≤250 ms, retained index ≤16 MiB, zero dependency-coordinate allocation, and all content/cap contracts.\n- [ ] A failing artifact remains `passed:false` and blocks `M-040`; thresholds or workload are not rewritten.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-019",
+    "title": "[system] Implement sparse authoritative world storage",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-004",
+      "M-005",
+      "M-014",
+      "M-015"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-004`, `M-005`, `M-014`, `M-015`\n**Produces:** `crates/moria-world/src/storage/store.rs`, `crates/moria-world/src/storage/brick.rs`, `crates/moria-world/tests/store_properties.rs`\n\n## Description\n\nImplement the private procedural/uniform/detailed brick store, sorted delta overlay, current-voxel composition, revisions, dirty flags, and compact eviction-safe truth. Implements `data-model.md` Sparse brick store and Relationship invariants.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-014` — base evaluators\n- `M-015` — object provenance\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] `current_voxel` always equals delta-or-base with unique regenerated provenance and a monotonic revision.\n- [ ] Untouched inactive uniform/procedural bricks allocate no detailed array or mesh truth.\n- [ ] Detailed eviction retains deltas, and reactivation regenerates the exact current voxel values.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-020",
+    "title": "[system] Expose bounded sample and column reads",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-019"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-019`\n**Produces:** `crates/moria-world/src/query/mod.rs`, `crates/moria-world/src/query/sample.rs`, `crates/moria-world/tests/query_samples.rs`\n\n## Description\n\nImplement the private-field `WorldRead` system parameter for identity, bounds, voxel/point/column sampling, water surface, route, and active-band observations. Implements `api.md` Read-only world observations.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-019` — authoritative store and base overlay\n- `M-005` — public immutable value types\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] In-bounds reads overlay committed deltas even when bricks are inactive and return typed `NotReady`/`OutOfBounds` errors otherwise.\n- [ ] Sample results expose material, density, state, all three truth predicates, and current revision without mutable references.\n- [ ] Column and route results enforce 64-run/64-waypoint limits and deterministic ordering.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-021",
+    "title": "[system] Add deterministic bounded ray casting",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-020"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-020`\n**Produces:** `crates/moria-world/src/query/ray.rs`, `crates/moria-world/tests/query_ray.rs`\n\n## Description\n\nImplement normalized-Q16 3-D DDA ray casting for solid/water masks with fixed work limits, deterministic hits, and no work-sized allocation. Implements `api.md` Read-only query limits.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-020` — current sample API\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Legal rays visit at most 448 voxels over at most 64 m and return coordinate-stable hit point, normal, class, material, distance, and revision.\n- [ ] Zero/unnormalized directions, empty masks, overflow, and one-unit-over-limit inputs fail before traversal with the specified error.\n- [ ] Boundary, corner, diagonal, active/inactive, and brute-force oracle cases agree.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-022",
+    "title": "[system] Add bounded capsule overlap and sweep queries",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-020"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-020`\n**Produces:** `crates/moria-world/src/query/capsule.rs`, `crates/moria-world/tests/query_capsule.rs`\n\n## Description\n\nImplement generic capsule overlap/sweep detection, fixed-capacity candidate deduplication, safe fractions, and sorted contacts independently of player response. Implements `api.md` Read-only world observations and `systems.md` Collision and movement systems.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-020` — current solid/water sampling\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Radius, height, 12 m displacement, 8,192 sweep candidates, 512 overlap candidates, and 512 hit limits reject before partial output.\n- [ ] Sweep returns the largest collision-free Q16 fraction and stable coordinate/normal ordering for ties.\n- [ ] Exact-max, one-over, zero-displacement, 513-contact, active/inactive, and brute-force oracle tests pass.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-023",
+    "title": "[system] Expose focus and paged diagnostic contracts",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-020"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-020`\n**Produces:** `crates/moria-world/src/query/diagnostics.rs`, `crates/moria-world/src/streaming/focus.rs`, `crates/moria-world/tests/diagnostic_pages.rs`\n\n## Description\n\nImplement public focus messages and immutable snapshot-token diagnostic pages for active bricks, cells, chunks, and focus markers without exposing entities or store handles. Implements `api.md` Activation and inspection and bounded diagnostic observation.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-020` — read-only system parameter and active-band observation\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Pages sort lexicographically, enforce 256 metadata bricks or two cell-bearing bricks, 512 chunks, 16 focuses, and never truncate over-limit results.\n- [ ] Activation/revision/task/focus changes expire tokens so callers cannot mix page generations.\n- [ ] A terminal empty page and full 8,192-cell page follow the documented focus/chunk inclusion and cost contract.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-024",
+    "title": "[state] Implement world lifecycle and readiness",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-013",
+      "M-019",
+      "M-020"
+    ],
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** `M-013`, `M-019`, `M-020`\n**Produces:** `crates/moria-world/src/lifecycle.rs`, `crates/moria-world/src/plugin.rs`, `crates/moria-world/tests/world_lifecycle.rs`\n\n## Description\n\nImplement `MoriaWorldPlugin`, ordered feature-plugin composition, private lifecycle transitions, typed open errors, presentation-disabled mode, and exactly-once readiness. Implements `api.md` Startup and readiness and `states.md` World lifecycle.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-013` — asset readiness and validation\n- `M-019` — private store\n- `M-020` — public read boundary\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Only `Uninitialized -> Loading -> Ready|Failed` is legal; queries/edits are unavailable before readiness and fatal worlds cannot spawn content.\n- [ ] `WorldReady` fires exactly once only after validated identity, support collision, initial view requirements, and fallback-ready object handles.\n- [ ] Presentation-disabled mode registers no render/water/object/dressing systems while retaining truth, queries, edits, streaming, and persistence boundaries.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-025",
+    "title": "[state] Plan active distance bands from focus sources",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-023",
+      "M-024"
+    ],
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** `M-023`, `M-024`\n**Produces:** `crates/moria-world/src/streaming/planner.rs`, `crates/moria-world/src/streaming/lifecycle.rs`, `crates/moria-world/tests/streaming_plan.rs`\n\n## Description\n\nImplement sorted focus-driven Near/Middle/Far/Horizon activation, LOD-change, prefetch, pin, hysteresis, and eviction plans with explicit priorities and tokenized chunk states. Implements `systems.md` Focus and streaming systems and `states.md` Chunk lifecycle.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-023` — public focus sources\n- `M-003` — four-band configuration\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Priorities order edit, collision, camera, inspection, near, far, and prefetch work; unchanged focuses do not re-enqueue duplicates.\n- [ ] Pinned edit work cannot evict, and loss of focus never removes deltas or deterministic placement.\n- [ ] Token, revision, LOD, and band transitions reject stale lifecycle results deterministically.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-026",
+    "title": "[system] Materialize and evict sparse bricks",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-019",
+      "M-025"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-019`, `M-025`\n**Produces:** `crates/moria-world/src/streaming/materialize.rs`, `crates/moria-world/src/streaming/evict.rs`, `crates/moria-world/tests/materialization.rs`\n\n## Description\n\nImplement budgeted background brick classification/detail creation and inactive-detail cleanup using immutable tokenized payloads. Implements `systems.md` materialize_bricks and evict_inactive_detail.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-019` — sparse brick representations\n- `M-025` — desired purpose/band queues\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Only boundaries, deltas, raw inspection, collision, or mesh needs allocate detailed arrays; uniform wilderness stays compact.\n- [ ] At most one matching `(brick, revision, purpose)` result installs and stale results are discarded.\n- [ ] Eviction releases unpinned detail and derived entities while retaining delta and registry metadata.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-027",
+    "title": "[system] Add edit submission limits and idempotency",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-020",
+      "M-024"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-020`, `M-024`\n**Produces:** `crates/moria-world/src/mutation/api.rs`, `crates/moria-world/tests/edit_submission.rs`\n\n## Description\n\nImplement private-envelope `WorldEditWrite::submit`, rendered-frame stamping, queue reservation, request-ID uniqueness, load/readiness gating, and typed synchronous rejection. Implements `api.md` World edit protocol.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-024` — lifecycle state\n- `M-020` — public coordinate/material types\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Only 0.25–3 m legal dig/place requests enqueue; invalid material, strength, duplicate ID, full queue, not-ready, and load-in-progress fail with the documented typed result.\n- [ ] Accepted commands preserve the caller request ID and publication frame and sort by request ID within a drained batch.\n- [ ] A synchronous error produces no later edit lifecycle message.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-028",
+    "title": "[system] Implement deterministic spherical edit staging",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-019",
+      "M-027"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-019`, `M-027`\n**Produces:** `crates/moria-world/src/mutation/kernel.rs`, `crates/moria-world/src/mutation/staging.rs`, `crates/moria-world/tests/edit_kernel.rs`\n\n## Description\n\nImplement the fixed-point closed-sphere kernel, 70% full core, hardness-scaled dig falloff, place falloff, bounds clipping, and sorted immutable staging records. Implements `data-model.md` Material and voxel truth and `systems.md` validate_and_stage_edits.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-019` — current truth and base provenance\n- `M-027` — validated requests\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Only cell centers in the mathematical sphere stage; dig never increases and place never decreases density.\n- [ ] Full-strength inner dig clears every solid material; zero density canonicalizes to air/zero state/flags and placement can displace water.\n- [ ] Starting truth plus ordered requests yields byte-identical sorted staged records across runs.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-029",
+    "title": "[system] Commit edits atomically into base-relative deltas",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-028"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-028`\n**Produces:** `crates/moria-world/src/mutation/commit.rs`, `crates/moria-world/tests/edit_commit.rs`\n\n## Description\n\nApply one staged request at a fixed-tick boundary, update exact base-relative deltas, revisions, dirty bricks/face seams, pins, and sorted commit results without partial visibility. Implements `api.md` World edit protocol and `systems.md` commit_edits.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-028` — immutable old/new staging records\n- `M-019` — store and delta map\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Every post-system query observes the entire pre- or post-request state, and collision sees committed truth immediately.\n- [ ] A changed request increments revision exactly once and emits one commit with sorted duplicate-free bricks; exact base reversion removes cells/empty delta bricks.\n- [ ] A valid no-op preserves revision and emits zero-change commit plus same-frame readiness.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-030",
+    "title": "[system] Discover edit dependencies and protect stale object writes",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-016",
+      "M-029"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-016`, `M-029`\n**Produces:** `crates/moria-world/src/mutation/dirty.rs`, `crates/moria-world/src/objects/eligibility.rs`, `crates/moria-world/tests/edit_dependencies.rs`\n\n## Description\n\nUse changed-brick masks and the immutable index to discover exact affected non-ruin IDs, evaluate base-relative eligibility without allocation, dirty Horizon owners, and reject stale dependency results. Implements `systems.md` Mutation and Object systems and `data-model.md` lazy dependency eligibility.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-016` — shared extraction stencil and bounded index\n- `M-029` — sorted changed coordinates and revision\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Discovery returns sorted unique IDs equal to a brute-force dependency oracle for object-, terrain-, ruin-, boundary-, and exact-revert edits.\n- [ ] Eligibility probes at most 128 sparse delta bricks, allocates no dependency collection, and restores intact only after the complete dependency equals base.\n- [ ] Every result carries source revision/token so an older eligibility decision cannot replace newer truth.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-031",
+    "title": "[system] Extract owner-partitioned terrain meshes",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-015",
+      "M-019",
+      "M-029"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-015`, `M-019`, `M-029`\n**Produces:** `crates/moria-world/src/terrain/snapshot.rs`, `crates/moria-world/src/terrain/dual_contour.rs`, `crates/moria-world/tests/mesh_extraction.rs`\n\n## Description\n\nImplement immutable halo snapshots and deterministic material-aware CPU dual contouring over global solid truth, then filter primitives by exclusive terrain/ruin or object owner. Implements `rendering.md` Terrain extraction and `systems.md` Terrain meshing systems.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-015` — provenance/owner predicate\n- `M-019` — revisioned current samples\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Organic, rock/ore, masonry, and edit-cut policies produce finite bounded vertices and valid `u32` indices without changing collision truth.\n- [ ] Terrain/ruin and per-object filtered outputs are disjoint and their union equals unfiltered global extraction exactly once.\n- [ ] Material IDs/weights use same-owner solid samples, exclude air/water, and remain within four weighted layers.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-032",
+    "title": "[system] Close chunk and LOD seams",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-025",
+      "M-031"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-025`, `M-031`\n**Produces:** `crates/moria-world/src/terrain/tiles.rs`, `crates/moria-world/src/terrain/seams.rs`, `crates/moria-world/tests/mesh_seams.rs`\n\n## Description\n\nImplement aligned Near/Middle/Far/Horizon surface tile ownership, brick-sized cave chunks, same-LOD canonical borders, fine-side transition skirts, and dirty-neighbor task selection. Implements `rendering.md` Chunk seams and LOD.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-031` — pure owner-partitioned extractor\n- `M-025` — desired bands and LODs\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Tile sizes/strides are 4/16/32/64 m and 0.25/0.5/1/4 m respectively; distant cave interiors remain omitted unless focused underground.\n- [ ] Adjacent same-LOD edges match, transition skirts close mixed-LOD cracks, and skirts never become collision truth.\n- [ ] An edit schedules only affected tile/cave keys plus mathematically dependent seams and object stencil consumers.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-033",
+    "title": "[system] Transition active objects between authored and derived roots",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-013",
+      "M-030",
+      "M-031",
+      "M-025"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-013`, `M-030`, `M-031`, `M-025`\n**Produces:** `crates/moria-world/src/objects/presentation.rs`, `crates/moria-world/tests/object_transitions.rs`\n\n## Description\n\nImplement Near/Middle/Far activation and atomic `Intact <-> VoxelDerived` transitions using shared authored handles or current owner-filtered meshes without changing voxel truth. Implements `systems.md` Object and dressing systems and `rendering.md` Registered objects.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-013` — shared asset handles\n- `M-030` — exact eligibility and revisions\n- `M-031` — owner-filtered extraction\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Each active visible non-ruin ID has exactly one logical authored or revision-matched derived root; terrain chunks never emit its primitives.\n- [ ] Adjacent terrain/ruin dependency edits remove authored roots, and exact object-cell reversion cannot restore them while another dependency delta remains.\n- [ ] Ruin IDs never spawn authored roots, and no object gains physics, health, growth, fire, or settling components.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-034",
+    "title": "[state] Implement revision-safe Horizon object cells",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-030",
+      "M-031",
+      "M-033"
+    ],
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** `M-030`, `M-031`, `M-033`\n**Produces:** `crates/moria-world/src/objects/horizon.rs`, `crates/moria-world/tests/horizon_lifecycle.rs`\n\n## Description\n\nImplement 64 m Horizon cell partitioning, derived tombstones, atomic Far/Horizon handoff, edit/load invalidation, eviction/reactivation, and token/revision stale-result rejection. Implements `data-model.md` HorizonObjectCell and `states.md` Chunk lifecycle.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-030` — eligibility and cell dirtying\n- `M-033` — nearer-band object ownership\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Sorted base-card and derived ID lists are disjoint and their union equals all assigned visible trees; edited/erased trees never retain a base card.\n- [ ] Old groups remain until the complete new partition is render-ready, then exactly one logical owner remains; stale tokens/revisions cannot install.\n- [ ] Eviction drops filtered payloads, reactivation recomputes from current deltas, and only immutable base descriptors may cache by cell key.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-035",
+    "title": "[system] Derive revision-anchored dressing",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-013",
+      "M-029",
+      "M-031"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-013`, `M-029`, `M-031`\n**Produces:** `crates/moria-world/src/objects/dressing.rs`, `crates/moria-world/tests/dressing_properties.rs`\n\n## Description\n\nImplement deterministic topsoil surface anchors and revisioned grass/clutter batches with immediate old-anchor removal and shared handles. Implements `rendering.md` Dressing and `systems.md` derive_dressing.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-031` — current mesh surface snapshots\n- `M-029` — dirty anchor revisions\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Dressing exists only on current upward-facing topsoil above the normal threshold and never on water, ceilings, steep faces, cut stone, or empty cells.\n- [ ] Dirty commits remove the old batch before revised deterministic instances install; unchanged revisions reproduce identical keys/transforms.\n- [ ] Near uses configured density, Middle uses 25%, and Far/Horizon omit dressing.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-036",
+    "title": "[system] Render static water from generated definitions",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-005",
+      "M-020",
+      "M-025",
+      "M-031"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-005`, `M-020`, `M-025`, `M-031`\n**Produces:** `crates/moria-world/src/presentation/water.rs`, `crates/moria-world/tests/static_water.rs`\n\n## Description\n\nImplement water-volume observation and revisioned static horizontal lake/river patches clipped to declared footprints and current carved banks. Implements `rendering.md` Water and `systems.md` Water and environmental presentation.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-005` — water body definitions\n- `M-020` — public water sampling\n- `M-031` — current terrain surfaces\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Water material remains non-solid, uses a fixed level/footprint, and never propagates flow, pressure, drain, or neighbor writes.\n- [ ] Only patches intersecting edited banks/beds rebuild; level remains constant and mesh output is disposable.\n- [ ] All water meshes share one material handle and stream with their requested band.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-037",
+    "title": "[system] Add portable shared world materials and shaders",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-007",
+      "M-010",
+      "M-013",
+      "M-031",
+      "M-036"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-007`, `M-010`, `M-013`, `M-031`, `M-036`\n**Produces:** `assets/shaders/terrain.wgsl`, `assets/shaders/water.wgsl`, `assets/shaders/vegetation.wgsl`, `assets/shaders/raw_voxel.wgsl`, `crates/moria-world/src/presentation/materials.rs`\n\n## Description\n\nImplement Bevy material extensions for triplanar material arrays, static water, shared vegetation instances, and raw voxels using portable WGSL and 32-bit GPU fields. Implements `rendering.md` Material transitions and Portability and shader rules and `assets.md` Shaders.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-007` — stable texture arrays\n- `M-031` — terrain vertex material attributes\n- `M-036` — water patches\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Shaders use no 64-bit atomics, vendor subgroup assumptions, Metal-only path, bindless requirement, or backend fork.\n- [ ] Terrain consumes four IDs/weights with correct color-space semantics; water animation and vegetation wind remain presentation-only.\n- [ ] Shader parse/asset tests pass and release benchmark mode treats shader fallback as fatal.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-038",
+    "title": "[system] Install revision-matched render payloads and account memory",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-032",
+      "M-033",
+      "M-034",
+      "M-035",
+      "M-036",
+      "M-037"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-032`, `M-033`, `M-034`, `M-035`, `M-036`, `M-037`\n**Produces:** `crates/moria-world/src/presentation/install.rs`, `crates/moria-world/src/presentation/gpu_ledger.rs`, `crates/moria-world/tests/render_install.rs`\n\n## Description\n\nImplement token/revision/LOD-checked mesh/entity swaps and removals plus checked allocation accounting for shared and dynamic GPU resources. Implements `rendering.md` Edit update path and Graphics memory accounting.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-032`–`M-037` — terrain, object, dressing, water, and material payloads\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Only current token/revision/desired-LOD results install; stale outputs are discarded/rescheduled and empty results remove old entities.\n- [ ] Edit-related multi-item swaps use one deferred main-world batch and normal LOD transitions expose no blank chunk.\n- [ ] The ledger deduplicates shared assets, tracks every specified category with checked `u32` item sizes and `u64` totals, and marks driver overhead untracked.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-039",
+    "title": "[system] Acknowledge complete edit surfaces from the render sub-app",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-027",
+      "M-029",
+      "M-030",
+      "M-038"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-027`, `M-029`, `M-030`, `M-038`\n**Produces:** `crates/moria-world/src/mutation/barrier.rs`, `crates/moria-world/src/telemetry/edit_trace.rs`, `crates/moria-world/tests/edit_readiness.rs`\n\n## Description\n\nImplement revisioned completion barriers, the fixed production trace ring, and render-sub-app extraction/GPU prepare/free/queue acknowledgements before exactly-once surface readiness. Implements `api.md` World edit protocol and `systems.md` queue_priority_surface_jobs.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-027` — submission frame/deadline\n- `M-030` — complete affected item discovery\n- `M-038` — installed/removed payloads and GPU accounting\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Every required terrain, seam, water, object root, Horizon aggregate/derived/tombstone, and dressing key is acknowledged exactly once before `EditSurfaceReady`.\n- [ ] All 13 required trace stages record timings/counts, including explicit zero-work records, in a fixed 256-entry allocation-free timed-path ring.\n- [ ] Zero-fixed-tick, after-drain-cutoff, stale-result, queue-saturation, and pinned-eviction tests preserve the submit+2/commit+2 protocol or reject synchronously.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-040",
+    "title": "[integration] Implement and pass the production carve feasibility gate",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-006",
+      "M-018",
+      "M-021",
+      "M-022",
+      "M-023",
+      "M-024",
+      "M-026",
+      "M-028",
+      "M-029",
+      "M-030",
+      "M-032",
+      "M-034",
+      "M-035",
+      "M-038",
+      "M-039"
+    ],
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** `M-006`, `M-018`, `M-021`, `M-022`, `M-023`, `M-024`, `M-026`, `M-028`, `M-029`, `M-030`, `M-032`, `M-034`, `M-035`, `M-038`, `M-039`\n**Produces:** `crates/moria-bench/src/scenarios/feasibility_carve.rs`, `crates/moria-bench/src/capture/query_cost.rs`, `crates/moria-world/src/telemetry/carve_feasibility.rs`, `target/feasibility/carve.json`\n\n## Description\n\nImplement the public-API clean-world signature/stress scenario, query-cost probe, stage/barrier validator, and immutable F2 report, then run the digest-matched release gate on M4/Metal at 2560×1440. Implements `implementation-plan.md` Gate F2 and `benchmarks.md` Pre-implementation feasibility evidence.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-018` — passing immutable F1 artifact\n- `M-021`–`M-039` — complete production query/edit/render slice\n- Named M4/Metal hardware — required headed evidence\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Both roles start from empty deltas, use no private reset/write path, meet submit+2/commit+2, <33.3 ms, traversability, full stage/barrier, object/dressing, and active-Horizon proof conditions.\n- [ ] The query subrun executes the exact cold/max/normal bundles and meets every p99/max/candidate limit; stress dirty discovery plus eligibility is ≤1.0 ms.\n- [ ] The normal full-manifest startup is <5,000 ms with no fallback, stale install, overflow, or missing stage; any failure blocks `M-041` onward and requires reviewed TDD revision.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-041",
+    "title": "[system] Generate tilted strata, ore, and aquifer volumes",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-040",
+      "M-014"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-040`, `M-014`\n**Produces:** `crates/moria-world/src/generation/geology.rs`, `crates/moria-world/tests/geology_properties.rs`\n\n## Description\n\nExtend the fixed-point base evaluators with parametric tilted limestone/sandstone/shale/granite strata, finite gravel aquifer band, and branching iron vein. Implements `config.md` Geology and feature constraints and `systems.md` Generation systems.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-040` — passing feasibility pair\n- `M-014` — deterministic base terrain evaluator\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] The evaluator chain remains at most 16 features and obeys cave/ore/aquifer/host/topsoil precedence.\n- [ ] Declared cliff/cutaway samples visibly expose tilted bands and cave-route aquifer/iron wall samples return the expected material.\n- [ ] Evaluation stays addressable, order-independent, and allocation-free per voxel apart from bounded caches.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-042",
+    "title": "[system] Generate the connected karst cave route",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-040",
+      "M-041"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-040`, `M-041`\n**Produces:** `crates/moria-world/src/generation/cave.rs`, `crates/moria-world/tests/cave_route.rs`\n\n## Description\n\nImplement the connected fixed-point spline/chamber cave field and route oracle from a surface mouth near 0 m to a floor at -40±2 m. Implements `config.md` Cave constraints and `design-document.md` continuous-depth run.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-041` — geology hosts and crossings\n- `M-003` — cave clearance/slope configuration\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] The route stays void, connected, at least 3 m wide/high, within 35° slope, and traversable with the configured capsule.\n- [ ] Entrance and floor elevations meet tolerance and the route intersects declared aquifer and iron features on exposed walls.\n- [ ] No level transition, structural-integrity, cave-in, or dynamic navigation system is added.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-043",
+    "title": "[system] Generate carved river and lake bodies",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-040",
+      "M-014",
+      "M-036"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-040`, `M-014`, `M-036`\n**Produces:** `crates/moria-world/src/generation/water.rs`, `crates/moria-world/tests/water_generation.rs`\n\n## Description\n\nImplement deterministic river-channel and lake-basin generation before static water assignment, including footprints, bed profiles, and curator oracles. Implements `config.md` Water constraints and `design-document.md` Generate the curated seed region.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-014` — terrain evaluator\n- `M-036` — static water observation/presentation\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] The river is 10 m wide/2 m deep and the lake is at least 80 m across/6 m deep in genuinely carved non-water beds.\n- [ ] Water occurs only inside the two declared footprints between bed and fixed surface and remains non-solid.\n- [ ] No flow, pressure, flood, drain, waterfall, splash, or dynamic-fluid state exists.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-044",
+    "title": "[system] Add the sparse cut-stone ruin and staircase",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-040",
+      "M-005",
+      "M-031"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-040`, `M-005`, `M-031`\n**Produces:** `crates/moria-world/src/generation/stamp.rs`, `assets/stamps/ruin_p1.ron`, `crates/moria-world/tests/ruin_stamp.rs`\n\n## Description\n\nImplement the sole hand-authored sparse cut-stone/air stamp, quarter-turn placement, digest participation, POI tags, support checks, and always-voxel-derived ruin presentation. Implements `assets.md` Ruin stamp and `rendering.md` Registered objects.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-005` — sparse stamp/POI types\n- `M-031` — terrain/ruin extraction owner\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Runs are sorted, non-overlapping, in bounds, cut-stone/explicit-air only, and include entrance/stair-bottom/stair-top tags.\n- [ ] The intact staircase passes connected capsule/0.3 m step traversal, and ruin placement conflicts fail before readiness.\n- [ ] Activation, edit, erase, and exact reversion always use revisioned terrain-chunk meshes and never a ruin GLB.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-045",
+    "title": "[system] Curate the complete feature route and manifest",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-017",
+      "M-041",
+      "M-042",
+      "M-043",
+      "M-044"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-017`, `M-041`, `M-042`, `M-043`, `M-044`\n**Produces:** `crates/moria-world/src/curation/features.rs`, `crates/moria-world/src/curation/route.rs`, `assets/config/curated_manifest.ron`\n\n## Description\n\nExtend deterministic curation and runtime validation to the full meadow, forest, water, cliff, shelves, ruin, cave, aquifer, ore, floor, and signature-carve feature set. Implements `assets.md` Curated manifest and `config.md` feature/route constraints.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-017` — canonical forest manifest search\n- `M-041`–`M-044` — complete generated feature evaluators\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] All required semantic route tags occur once in connected order within 64 waypoints and the signature carve pure oracle opens a capsule-clear path.\n- [ ] Runtime regeneration matches canonical manifest values and validates water beds, exposed strata, cave crossings, ruin support/stairs, counts, disjointness, and bounds.\n- [ ] The manifest contains generated metadata only—no expanded voxels, terrain heightmap, baked scene, or hand-placed landscape.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-046",
+    "title": "[integration] Wire the complete generated world and distance presentation",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-024",
+      "M-025",
+      "M-026",
+      "M-032",
+      "M-034",
+      "M-035",
+      "M-036",
+      "M-045"
+    ],
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** `M-024`, `M-025`, `M-026`, `M-032`, `M-034`, `M-035`, `M-036`, `M-045`\n**Produces:** `crates/moria-world/src/lib.rs`, `crates/moria-world/src/generation/mod.rs`, `crates/moria-world/src/presentation/mod.rs`, `crates/moria-world/tests/world_integration.rs`\n\n## Description\n\nCompose the complete generated-region, store, query, streaming, terrain, water, object, dressing, presentation, and telemetry plugins behind the public facade. Implements `overview.md` Plugin composition and `implementation-plan.md` G1.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-045` — complete curated world metadata\n- Existing independently tested world plugins\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] A headless external consumer opens the full fixed seed, observes every feature through public reads, and never imports private modules.\n- [ ] Near/Middle/Far/Horizon focus transitions preserve deterministic truth, sparse idle wilderness, current edited distant surfaces, and bounded queues.\n- [ ] Initial activation requests only collision/visible needs and satisfies the supported readiness conditions without scanning the region.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-047",
+    "title": "[system] Encode and atomically save base-relative deltas",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-040",
+      "M-019",
+      "M-029"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-040`, `M-019`, `M-029`\n**Produces:** `crates/moria-world/src/persistence/encode.rs`, `crates/moria-world/src/persistence/save.rs`, `crates/moria-world/tests/save_format.rs`\n\n## Description\n\nImplement sorted immutable delta snapshots, exact uncompressed layout/checksum, zstd level-3 encoding, asynchronous write, flush, and atomic sibling rename for the single slot. Implements `data-model.md` Edit delta set and save file and `api.md` Save/load protocol.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-019` — sorted base-relative delta map\n- `M-029` — exact reversion cleanup\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Identical identity/deltas produce deterministic bytes containing no base-equal cell, mesh, dressing, player, camera, time, or benchmark data.\n- [ ] In-flight save observes its request revision despite later edits, reports final filesystem bytes/counts, and allows only one disk operation.\n- [ ] Write failure preserves the previous slot because rename is last and emits one typed terminal result.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-048",
+    "title": "[state] Stage and atomically swap loaded deltas",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-047",
+      "M-027"
+    ],
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** `M-047`, `M-027`\n**Produces:** `crates/moria-world/src/persistence/load.rs`, `crates/moria-world/src/persistence/transaction.rs`, `crates/moria-world/tests/load_transaction.rs`\n\n## Description\n\nImplement asynchronous decode/validation and the library-owned Idle→Staging→SwapPending→Rebuilding transaction with coherent reads and a one-tick atomic swap. Implements `api.md` Save/load protocol and `states.md` World transaction lifecycle.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-047` — exact save codec\n- `M-027` — edit/load synchronous gating\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Wrong magic/identity/bounds/order/material/checksum/compression fails without changing truth; absent startup slot is empty while explicit absent load is `NotFound`.\n- [ ] Accepted pre-load edits finish before staging; later edits and concurrent disk requests get typed rejection/busy results.\n- [ ] Success swaps once, increments revision once, and no query or moving external consumer observes a partial delta map.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-049",
+    "title": "[integration] Rebuild active content after load",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-034",
+      "M-035",
+      "M-036",
+      "M-038",
+      "M-048"
+    ],
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** `M-034`, `M-035`, `M-036`, `M-038`, `M-048`\n**Produces:** `crates/moria-world/src/persistence/rebuild.rs`, `crates/moria-world/tests/load_rebuild.rs`\n\n## Description\n\nInvalidate and rebuild every active collision, terrain, water, object, Horizon, and dressing item intersecting old or loaded deltas before the sole load-success terminal event. Implements `api.md` Save/load protocol and `states.md` Chunk lifecycle.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-048` — atomic post-swap revision\n- Revisioned presentation systems\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] `LoadWorldCompleted` fires only after all active derived items are current and transaction state returns to Idle.\n- [ ] Stale pre-load task results cannot install; active Horizon cells repartition from the post-swap map and edited trees cannot resurrect cards.\n- [ ] Failure before swap leaves truth/presentation unchanged; failure after swap is treated only as a fatal invariant error.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-050",
+    "title": "[system] Populate full forest-scale object visuals",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-040",
+      "M-045",
+      "M-046"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-040`, `M-045`, `M-046`\n**Produces:** `crates/moria-world/src/objects/spawn.rs`, `crates/moria-world/tests/forest_activation.rs`\n\n## Description\n\nActivate the complete curated birch, pine, bush, boulder, stump, and rock population through immutable index queries, shared handles, visibility ranges, and authored/derived LOD policies. Implements `implementation-plan.md` V1 and `rendering.md` Registered objects and forest scale.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-045` — complete placement population\n- `M-046` — integrated streaming/presentation\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Activation spawns exactly indexed IDs in Near/Middle/Far, uses Horizon cells for distant trees, and eviction/reactivation preserves identical placement ownership.\n- [ ] Every repeated object shares mesh/material handles and visibility/culling policy; no per-instance asset allocation occurs.\n- [ ] Simulation identity and collision stay independent of visual LOD/culling and no dynamic object behavior is added.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-051",
+    "title": "[system] Batch the complete meadow and forest dressing",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-040",
+      "M-045",
+      "M-050",
+      "M-035"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-040`, `M-045`, `M-050`, `M-035`\n**Produces:** `crates/moria-world/src/objects/dressing_batches.rs`, `crates/moria-world/tests/dressing_scale.rs`\n\n## Description\n\nScale deterministic anchor derivation into shared grass/small-clutter batches for the full meadow/forest while preserving revision correctness and distance density. Implements `implementation-plan.md` V1 and `rendering.md` Dressing.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-035` — correct per-anchor derivation\n- `M-050` — full object exclusion population\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Near density is 5/m², Middle is 25%, and farther bands omit dressing without changing truth.\n- [ ] Object/water exclusions and support revisions prevent overlap/floating after activation, edits, eviction, and reactivation.\n- [ ] Batches share handles, stay within checked `u32` counts, and contribute to the graphics ledger.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-052",
+    "title": "[system] Map physical controls to durable semantic intent",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-003"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-002`, `M-003`\n**Produces:** `crates/moria-demo/src/input/mod.rs`, `crates/moria-demo/tests/action_input.rs`\n\n## Description\n\nImplement project-owned keyboard/mouse/gamepad action mapping, dead zones/sensitivity, continuous axes, and latched player/debug/UI edges before fixed simulation. Implements `api.md` Player and camera action contracts and `systems.md` Input systems.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-003` — checked-in input mappings and timing values\n- `M-002` — fixed-tick harness\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Gameplay/debug modules contain no physical device codes; one edge maps once and survives zero fixed ticks but is consumed at most once across multiple ticks.\n- [ ] Slider focus/drag suppresses and clears movement/camera-capture/debug latches while leaving time/Tab active.\n- [ ] Default bindings match the TDD and no rebinding UI is introduced.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-053",
+    "title": "[system] Resolve player movement against voxel truth",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-022",
+      "M-046",
+      "M-052"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-022`, `M-046`, `M-052`\n**Produces:** `crates/moria-demo/src/player/movement.rs`, `crates/moria-demo/src/player/collision.rs`, `crates/moria-demo/tests/player_movement.rs`\n\n## Description\n\nImplement fixed-60 Hz camera-relative run/sprint/jump/gravity, generic contact detection, deterministic slide/ground/step response, bounds clamping, and post-step non-overlap. Implements `api.md` move_character contract and `systems.md` Collision and movement systems.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-022` — generic public capsule sweep/overlap\n- `M-052` — durable semantic intent\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Movement respects configured speed/acceleration, four-contact response, 0.125 m substeps, 0.3 m step-up, walkable slope, grounding, and jump gating.\n- [ ] A non-overlapping start ends in bounds and not overlapping any solid-collision voxel; movement never samples render meshes.\n- [ ] A freshly committed carve is traversable on the next fixed tick through public queries.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-054",
+    "title": "[state] Implement grounded, airborne, and paddling locomotion",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-036",
+      "M-053"
+    ],
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** `M-036`, `M-053`\n**Produces:** `crates/moria-demo/src/player/locomotion.rs`, `crates/moria-demo/tests/locomotion_states.rs`\n\n## Description\n\nImplement the derived one-transition-per-tick locomotion modes and surface-only static-water paddle response after solid movement. Implements `states.md` Player locomotion state and `systems.md` update_water_contact.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-053` — grounded/contact/velocity state\n- `M-036` — static water samples\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Every legal transition and priority is implemented; jump is rejected while airborne/paddling and paddling always references a qualifying water body.\n- [ ] Paddling pins the configured surface offset, uses paddle speed/drag, suppresses gravity/jump, and never enters an underwater state.\n- [ ] Water-edge exit resolves to grounded or airborne without treating water as solid.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-055",
+    "title": "[ui] Add the orbit camera and underground light",
+    "labels": [
+      "ui",
+      "auto"
+    ],
+    "depends_on": [
+      "M-022",
+      "M-046",
+      "M-053"
+    ],
+    "body": "**Category:** ui\n**Automation:** auto\n**Depends on:** `M-022`, `M-046`, `M-053`\n**Produces:** `crates/moria-demo/src/camera/mod.rs`, `crates/moria-demo/src/player/light.rs`, `crates/moria-demo/tests/camera_light.rs`\n\n## Description\n\nImplement per-frame orbit/zoom smoothing followed by public solid capsule clamp, fixed-pose interpolation, and player-attached depth/sky-controlled cave light. Implements `api.md` Player and camera contracts and `rendering.md` Player, camera, and cave lighting.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-022` — camera-safe public sweep\n- `M-053` — fixed player pose\n- `M-003` — camera/light settings\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Yaw/pitch/distance clamp to config and smoothing cannot push the final probe/near plane into solid matter; zero-safe distance uses target margin.\n- [ ] Camera collision ignores water and render triangles and remains correct in caves and after edits.\n- [ ] The light enables/fades only from presentation depth/sky exposure and has no gameplay effect.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-056",
+    "title": "[ui] Add public-API dig and place controls",
+    "labels": [
+      "ui",
+      "auto"
+    ],
+    "depends_on": [
+      "M-021",
+      "M-027",
+      "M-039",
+      "M-052",
+      "M-055"
+    ],
+    "body": "**Category:** ui\n**Automation:** auto\n**Depends on:** `M-021`, `M-027`, `M-039`, `M-052`, `M-055`\n**Produces:** `crates/moria-demo/src/debug_tools/edit.rs`, `crates/moria-demo/tests/debug_edit.rs`\n\n## Description\n\nImplement the Debug Operation design entity through camera-ray targeting, mutually exclusive dig/place state, the 3 m proof radius, placeable-material cycling, request lifecycle display, and one-open-request input freeze. Implements `api.md` Debug tool contract.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-021` — public solid ray cast\n- `M-027` — public edit submission\n- `M-052` — semantic debug edges\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Dig centers on the first solid hit; place offsets one radius along its normal; no hit submits nothing and shows one-frame `No target`.\n- [ ] Material cycling uses only the exact placeable seed palette and both operations have keyboard bindings.\n- [ ] The tool resumes only on matching terminal/readiness events and never accesses voxel storage, deltas, or private meshes.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-057",
+    "title": "[ui] Render bounded brick, voxel, and streaming diagnostics",
+    "labels": [
+      "ui",
+      "auto"
+    ],
+    "depends_on": [
+      "M-023",
+      "M-037",
+      "M-052"
+    ],
+    "body": "**Category:** ui\n**Automation:** auto\n**Depends on:** `M-023`, `M-037`, `M-052`\n**Produces:** `crates/moria-demo/src/debug_tools/visualizers.rs`, `crates/moria-demo/tests/diagnostic_adapter.rs`\n\n## Description\n\nImplement independently combinable brick-boundary, raw-voxel, and streaming-band views solely from paged public diagnostics and telemetry. Implements `api.md` Debug tool contract and `rendering.md` Raw-voxel and brick views.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-023` — snapshot-token pages and focus API\n- `M-037` — raw-voxel shader\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Raw mode displays every material-present cell in at most two requested bricks per page with distinct solid, water, and partial styles, never expanding the region.\n- [ ] Brick/streaming views show required status, chunk LOD/band, and focus markers and restart cursors when snapshot expires.\n- [ ] An external consumer page sequence matches the demo adapter; debug buffers are separately counted and disabled in acceptance runs unless requested.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-058",
+    "title": "[ui] Add the diagnostic HUD and fixed time slider",
+    "labels": [
+      "ui",
+      "auto"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-052",
+      "M-056"
+    ],
+    "body": "**Category:** ui\n**Automation:** auto\n**Depends on:** `M-003`, `M-052`, `M-056`\n**Produces:** `crates/moria-demo/src/hud/mod.rs`, `crates/moria-demo/src/hud/time_slider.rs`, `crates/moria-demo/tests/time_slider.rs`\n\n## Description\n\nImplement the minimal HUD plus always-present 06:00–20:00 slider, pointer/focus behavior, per-edge quarter-hour adjustment, fixed sun/sky mapping, and contract warnings. Implements `api.md` Player and camera action contracts and `systems.md` Water and environmental presentation.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-003` — environment/UI defaults\n- `M-052` — UI semantic actions\n- `M-056` — tool/save result state\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Pointer mapping, endpoints, clamping, 0.25-hour steps, focus retention/suppression, and no-change-without-input tests pass.\n- [ ] Time never advances automatically and changes only sun/sky/ambient presentation.\n- [ ] HUD shows tool/material, time, save/load result, frame rate, default controls, and contract warnings without adding settings/inventory UI.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-059",
+    "title": "[state] Implement the demo application flow",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-024",
+      "M-048",
+      "M-049",
+      "M-052",
+      "M-058"
+    ],
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** `M-024`, `M-048`, `M-049`, `M-052`, `M-058`\n**Produces:** `crates/moria-demo/src/flow/mod.rs`, `crates/moria-demo/src/main.rs`, `crates/moria-demo/tests/demo_states.rs`\n\n## Description\n\nImplement Boot, LoadingWorld, Playing, SuspendedForLoad, and FatalError entry/exit gates, typed errors, control reset, save/load UX, and thin binary wiring. Implements `states.md` Demo state map.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-024` — world readiness/errors\n- `M-048`–`M-049` — library load transaction\n- `M-052` — action latches\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Boot lasts at most one update; Loading enters Playing only after every readiness condition and clears loading-era input.\n- [ ] Only Playing enables movement/camera/debug/save; load freezes controls/focus until terminal result without being a library precondition.\n- [ ] Fatal errors disable new world work and display typed diagnostics; no extra menu/gameplay states are added.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-060",
+    "title": "[integration] Prove the continuous playable route with placeholders",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-046",
+      "M-050",
+      "M-051",
+      "M-053",
+      "M-054",
+      "M-055",
+      "M-056",
+      "M-057",
+      "M-058",
+      "M-059"
+    ],
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** `M-046`, `M-050`, `M-051`, `M-053`, `M-054`, `M-055`, `M-056`, `M-057`, `M-058`, `M-059`\n**Produces:** `crates/moria-demo/tests/continuous_route.rs`, `crates/moria-demo/src/main.rs`\n\n## Description\n\nWire the placeholder-backed demo slice and scripted semantic-intent integration test covering meadow, forest, water, cliff shelves, ruin stairs, cave mouth, aquifer, ore, and floor without privileged operations. Implements `implementation-plan.md` T1 and `rendering.md` Visual acceptance route.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-046` — complete generated world\n- `M-050`–`M-059` — full placeholder presentation and interaction\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Controlled fixed ticks move the configured capsule continuously through every route tag, including jump/steps, paddling, and the -40 m cave floor, with no teleport or level transition.\n- [ ] The signature public dig becomes visible/readiness-complete and immediately capsule-traversable; place produces matching material/collision.\n- [ ] The demo imports only the `moria-world` facade and contains no private truth, mesh, or activation path.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-061",
+    "title": "[state] Implement benchmark CLI, lifecycle, and metric capture",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-006",
+      "M-040",
+      "M-046",
+      "M-049"
+    ],
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** `M-006`, `M-040`, `M-046`, `M-049`\n**Produces:** `crates/moria-bench/src/main.rs`, `crates/moria-bench/src/state.rs`, `crates/moria-bench/src/capture/mod.rs`, `crates/moria-bench/tests/cli_reports.rs`\n\n## Description\n\nExtend the feasibility runner into the full headed benchmark FSM, strict CLI, process/startup timing, frame/allocation/streaming capture, machine profiling, watchdog, and atomic report writing. Implements `api.md` Benchmark CLI and output and `states.md` Benchmark runner states.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-006` — exact report schema/validators\n- `M-040` — headed runner foundation\n- `M-046` — full world consumer\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] CLI exit codes are 2 for argument/output errors, 1 for runtime/contract failure with report when possible, and 0 only for a complete validated pass.\n- [ ] State advances only on explicit readiness/scenario/save/round-trip/report events; warmup is exactly 300 rendered frames and watchdog never fabricates metrics.\n- [ ] Reports include complete build/world/assets/machine/resolution/object-index fields, atomically rename JSON, and never merge profiles.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-062",
+    "title": "[system] Drive the complete scripted flythrough",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-060",
+      "M-061"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-060`, `M-061`\n**Produces:** `crates/moria-bench/src/scenarios/flythrough.rs`, `crates/moria-bench/tests/flythrough_contract.rs`\n\n## Description\n\nImplement the continuous 120-second route-tagged Catmull-Rom camera scenario with public focus, normal streaming, underground light, scene dwell coverage, and flythrough-specific report rules. Implements `benchmarks.md` Scripted flythrough.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-060` — proven continuous route\n- `M-061` — benchmark FSM/capture\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] The camera remains in bounds/collision-free, never teleports, visits every required scene for at least one measured second, and enters every active band.\n- [ ] FPS/frame-time, cold-start, allocations, queues/counts, identities, clean-slot size, and coverage are populated with flythrough nullability rules.\n- [ ] Fallbacks, missing coverage, arithmetic FPS <60, p95 >16.67 ms, cold start ≥5,000 ms, or monotonic allocation growth fail validation.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-063",
+    "title": "[system] Drive carve storm, heavy save, and exact round trip",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-047",
+      "M-049",
+      "M-060",
+      "M-061"
+    ],
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** `M-047`, `M-049`, `M-060`, `M-061`\n**Produces:** `crates/moria-bench/src/scenarios/carve_storm.rs`, `crates/moria-bench/src/scenarios/round_trip.rs`, `crates/moria-bench/tests/carve_storm_contract.rs`\n\n## Description\n\nImplement 128 deterministic public radius-3 m edits, per-request readiness/truth checks, signature traversal, heavy-defacement save, and a second presentation-disabled public load comparison. Implements `benchmarks.md` Carve storm and heavy save.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-047`–`M-049` — save/load/rebuild protocol\n- `M-060` — signature gameplay slice\n- `M-061` — benchmark capture\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Targets cover soil/subsoil, strata, aquifer/ore cave wall, registered-object material, and reversible place/dig; every edit waits for matching commit/readiness and samples inside/outside truth.\n- [ ] Final workload has at least 100 non-base spheres across at least 32 bricks/region cells, saves under 50,000,000 bytes, and reports all latency/hitch fields.\n- [ ] Round trip compares every delta voxel byte plus deterministic unedited samples, identity, and absence of derived bytes through public load with presentation disabled.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-064",
+    "title": "[integration] Add milestone capture and acceptance-run automation",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-062",
+      "M-063"
+    ],
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** `M-062`, `M-063`\n**Produces:** `crates/moria-bench/src/capture/milestones.rs`, `crates/moria-curate/src/captures.rs`\n\n## Description\n\nImplement tagged public-control capture automation and acceptance command orchestration for first terrain, tunnel carve, geology cutaway, dressed world, playable run, and benchmark-result artifacts without loading special scenes. Implements `assets.md` Milestone outputs and `benchmarks.md` Acceptance matrix.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-062`–`M-063` — complete benchmark scenarios\n- `M-057`–`M-058` — public presentation controls\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Capture metadata records seed/config digest, tagged camera, time, diagnostics, and public edit request; outputs go under `target/captures`, never runtime assets or saves.\n- [ ] Acceptance orchestration preserves resolution/assets/bands and records M4 1080p/1440p and provisional/verified Linux profiles separately.\n- [ ] Resident-memory absence keeps overall acceptance false unless reviewed evidence or approval is supplied; automation never substitutes the ledger silently.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-065",
+    "title": "[setup] Acquire shipping world texture assets",
+    "labels": [
+      "setup",
+      "manual"
+    ],
+    "depends_on": [
+      "M-064"
+    ],
+    "body": "**Category:** setup\n**Automation:** manual\n**Depends on:** `M-064`\n**Produces:** `assets/incoming/M-065/terrain_albedo.ktx2`, `assets/incoming/M-065/terrain_normal.ktx2`, `assets/incoming/M-065/terrain_orm.ktx2`, `assets/incoming/M-065/water_normal.ktx2`, `assets/incoming/M-065/provenance.md`\n\n## Description\n\nObtain the production terrain material arrays and water normal texture after placeholder-backed gameplay, automated waves, and the initial wiring audit, preserving the approved stable format and layer contract. Implements `assets.md` Textures and Asset lifecycle ordering.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-007` — validated stable placeholder paths/specification\n- `M-064` — completed placeholder-backed product/capture wiring\n- Pipeline initial wiring audit — must pass before acquisition begins\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Incoming files preserve 14-layer order, dimensions/mips, color spaces, Basis/KTX2 portability, and water texture semantics.\n- [ ] Provenance records source, author, license, modifications, and evidence that redistribution is allowed.\n- [ ] No runtime file is replaced in this manual issue.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-066",
+    "title": "[integration] Wire acquired world texture assets",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-065",
+      "M-064"
+    ],
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** `M-065`, `M-064`\n**Produces:** `assets/materials/terrain_albedo.ktx2`, `assets/materials/terrain_normal.ktx2`, `assets/materials/terrain_orm.ktx2`, `assets/materials/water_normal.ktx2`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`\n\n## Description\n\nInstall the acquired world texture bundle at the existing stable paths, update factual budget/license metadata, and validate material/shader integration without changing IDs. Implements `assets.md` Import and validation pipeline.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-065` — licensed incoming textures\n- `M-007` — placeholder-backed loader contract\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Installed arrays match registry layers/formats/mips and preserve all stable IDs and shader paths.\n- [ ] License and actual memory-budget entries reflect the acquired files and pass release asset validation.\n- [ ] No fallback warning remains for this bundle and representative terrain/water material loading succeeds.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-067",
+    "title": "[setup] Acquire shipping mixed-tree LOD assets",
+    "labels": [
+      "setup",
+      "manual"
+    ],
+    "depends_on": [
+      "M-064"
+    ],
+    "body": "**Category:** setup\n**Automation:** manual\n**Depends on:** `M-064`\n**Produces:** `assets/incoming/M-067/birch_near.glb`, `assets/incoming/M-067/birch_mid.glb`, `assets/incoming/M-067/birch_far.glb`, `assets/incoming/M-067/pine_near.glb`, `assets/incoming/M-067/pine_mid.glb`, `assets/incoming/M-067/pine_far.glb`, `assets/incoming/M-067/provenance.md`\n\n## Description\n\nObtain production birch and pine near/mid/far meshes after placeholder-backed gameplay and initial wiring audit, preserving species silhouettes, support origins, final bounds, and shared-material conventions. Implements `assets.md` Meshes and animation and Asset lifecycle ordering.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-008` — stable tree LOD specification\n- `M-064` — completed placeholder-backed slice\n- Pipeline initial wiring audit — must pass before acquisition begins\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] All six incoming GLBs meet metres/Y-up/+Z, applied transforms, finite indexed geometry, matching origins/bounds, and triangle budgets.\n- [ ] Birch and pine remain visually distinct across LODs and use declared shared material keys.\n- [ ] Provenance and redistribution licensing are complete; runtime placeholders remain untouched.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-068",
+    "title": "[integration] Wire acquired mixed-tree LOD assets",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-067",
+      "M-050"
+    ],
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** `M-067`, `M-050`\n**Produces:** `assets/vegetation/birch_near.glb`, `assets/vegetation/birch_mid.glb`, `assets/vegetation/birch_far.glb`, `assets/vegetation/pine_near.glb`, `assets/vegetation/pine_mid.glb`, `assets/vegetation/pine_far.glb`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`\n\n## Description\n\nInstall acquired birch/pine LODs at stable paths and validate forest-scale bounds, budgets, licenses, shared handles, and authored/derived transition compatibility. Implements `assets.md` Shared render asset resources and Import pipeline.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-067` — licensed incoming tree files\n- `M-050` — completed placeholder-backed forest logic\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] All stable IDs, paths, transforms, and LOD mappings remain unchanged; validation accepts actual geometry/budgets/licenses.\n- [ ] Dense-forest spawning still clones shared handles and object edits still swap atomically to owner-filtered derived roots.\n- [ ] No tree LOD fallback remains.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-069",
+    "title": "[setup] Acquire shipping understory assets",
+    "labels": [
+      "setup",
+      "manual"
+    ],
+    "depends_on": [
+      "M-064"
+    ],
+    "body": "**Category:** setup\n**Automation:** manual\n**Depends on:** `M-064`\n**Produces:** `assets/incoming/M-069/bush_near.glb`, `assets/incoming/M-069/bush_far.glb`, `assets/incoming/M-069/grass_cluster.glb`, `assets/incoming/M-069/provenance.md`\n\n## Description\n\nObtain production bush LODs and grass cluster art after the placeholder gameplay slice and initial wiring audit, preserving bounds, support anchors, alpha/shared-material behavior, and batching. Implements `assets.md` Meshes and animation and Asset lifecycle ordering.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-009` — stable understory specification\n- `M-064` — completed placeholder-backed slice\n- Pipeline initial wiring audit — must pass before acquisition begins\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Incoming files meet format/origin/bounds/finite-geometry/budget contracts and use declared shared materials.\n- [ ] Grass/bush silhouette and alpha behavior are suitable for near/middle density without unique materials.\n- [ ] Complete provenance and redistribution licensing accompany the files; runtime placeholders remain untouched.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-070",
+    "title": "[integration] Wire acquired understory assets",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-069",
+      "M-051"
+    ],
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** `M-069`, `M-051`\n**Produces:** `assets/vegetation/bush_near.glb`, `assets/vegetation/bush_far.glb`, `assets/vegetation/grass_cluster.glb`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`\n\n## Description\n\nInstall acquired bush/grass files at stable paths and validate LOD, batching, dressing anchors, budgets, and licenses in the completed world. Implements `assets.md` Import and validation pipeline and `rendering.md` Dressing.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-069` — licensed incoming understory files\n- `M-051` — completed placeholder-backed dressing batching\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Stable IDs and batch/shared-handle behavior remain unchanged; release asset validation passes actual files.\n- [ ] Near/Middle density and dirty-anchor removal continue to use current truth with no floating dressing or per-instance material creation.\n- [ ] No understory fallback remains.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-071",
+    "title": "[setup] Acquire the shipping Horizon card atlas",
+    "labels": [
+      "setup",
+      "manual"
+    ],
+    "depends_on": [
+      "M-064"
+    ],
+    "body": "**Category:** setup\n**Automation:** manual\n**Depends on:** `M-064`\n**Produces:** `assets/incoming/M-071/tree_horizon_cards.ktx2`, `assets/incoming/M-071/provenance.md`\n\n## Description\n\nObtain the production two-species Horizon color/normal/opacity atlas after placeholder gameplay and initial wiring audit, preserving stable texture format, alpha coverage, and silhouette continuity. Implements `assets.md` Textures and Asset lifecycle ordering.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-010` — stable Horizon atlas specification\n- `M-064` — completed placeholder-backed slice\n- Pipeline initial wiring audit — must pass before acquisition begins\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Incoming atlas supplies matching birch/pine silhouettes with mip-aware opacity in the required portable KTX2 format.\n- [ ] Bounds/transition appearance is compatible with the existing base-card descriptors and instance layout.\n- [ ] Provenance and redistribution licensing are complete; runtime placeholder remains untouched.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-072",
+    "title": "[integration] Wire acquired Horizon card atlas",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-071",
+      "M-034"
+    ],
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** `M-071`, `M-034`\n**Produces:** `assets/vegetation/tree_horizon_cards.ktx2`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`\n\n## Description\n\nInstall the acquired atlas at its stable path and validate memory, licenses, Far/Horizon transitions, and revision-filtered membership without altering object identity. Implements `assets.md` Shared render asset resources and `rendering.md` Horizon objects.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-071` — licensed incoming atlas\n- `M-034` — completed Horizon lifecycle\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] The atlas loads under the existing ID/material path and passes mip/alpha/format/budget/license validation.\n- [ ] Intact cards, edited derived records, erased tombstones, eviction/reactivation, and stale-result rejection remain unchanged.\n- [ ] No Horizon-card fallback warning remains.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-073",
+    "title": "[setup] Acquire shipping prop assets",
+    "labels": [
+      "setup",
+      "manual"
+    ],
+    "depends_on": [
+      "M-064"
+    ],
+    "body": "**Category:** setup\n**Automation:** manual\n**Depends on:** `M-064`\n**Produces:** `assets/incoming/M-073/boulder.glb`, `assets/incoming/M-073/stump.glb`, `assets/incoming/M-073/rock.glb`, `assets/incoming/M-073/provenance.md`\n\n## Description\n\nObtain production boulder, stump, and rock mesh assets after placeholder gameplay and initial wiring audit, preserving analytic-shape-scale bounds, support origins, variants, and shared materials. Implements `assets.md` Meshes and animation and Asset lifecycle ordering.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-011` — stable prop specification\n- `M-064` — completed placeholder-backed slice\n- Pipeline initial wiring audit — must pass before acquisition begins\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Incoming GLBs meet format/origin/finite-geometry/budget contracts and remain visually compatible with voxel-backed collision ranges.\n- [ ] Any embedded variants are named for stable placement-hash selection and share declared material keys.\n- [ ] Complete provenance and redistribution licensing accompany the files; runtime placeholders remain untouched.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-074",
+    "title": "[integration] Wire acquired prop assets",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-073",
+      "M-050"
+    ],
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** `M-073`, `M-050`\n**Produces:** `assets/props/boulder.glb`, `assets/props/stump.glb`, `assets/props/rock.glb`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`\n\n## Description\n\nInstall acquired props at stable paths and validate actual bounds, budgets, licenses, shared-handle spawning, and derived-object transitions. Implements `assets.md` Import and validation pipeline.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-073` — licensed incoming prop files\n- `M-050` — completed placeholder-backed object population\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Stable IDs/variant mapping remain unchanged and release asset validation accepts all actual files.\n- [ ] Forest-scale props still share handles and use voxel truth for collision while dependency edits use derived roots.\n- [ ] No prop fallback remains.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-075",
+    "title": "[setup] Acquire the shipping explorer asset",
+    "labels": [
+      "setup",
+      "manual"
+    ],
+    "depends_on": [
+      "M-064"
+    ],
+    "body": "**Category:** setup\n**Automation:** manual\n**Depends on:** `M-064`\n**Produces:** `assets/incoming/M-075/explorer.glb`, `assets/incoming/M-075/provenance.md`\n\n## Description\n\nObtain the production third-person explorer model and required locomotion animation clips after placeholder gameplay and initial wiring audit, preserving the stable origin, bounds, skeleton, and clip contract. Implements `assets.md` Meshes and animation and Asset lifecycle ordering.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-012` — stable explorer specification\n- `M-060` — completed placeholder-backed traversal\n- Pipeline initial wiring audit — must pass before acquisition begins\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] Incoming GLB is metres/Y-up/+Z with applied transforms, support origin, finite geometry, and ≤40,000 triangles.\n- [ ] It contains named `Idle`, `Run`, `Sprint`, `Jump`, `Fall`, and `Paddle` clips compatible with existing locomotion state.\n- [ ] Complete provenance and redistribution licensing accompany the file; runtime placeholder remains untouched.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-076",
+    "title": "[integration] Wire acquired explorer asset",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-075",
+      "M-060"
+    ],
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** `M-075`, `M-060`\n**Produces:** `assets/player/explorer.glb`, `assets/manifests/asset_budgets.ron`, `assets/manifests/asset_licenses.ron`\n\n## Description\n\nInstall the acquired explorer at its stable path and validate clips, budgets, licenses, fixed-pose interpolation, and continued capsule-authoritative traversal. Implements `assets.md` Import and validation pipeline and `rendering.md` Player.\n\n## Inputs\n\nWhat must exist before this issue can be worked:\n- `M-075` — licensed incoming explorer\n- `M-053`–`M-055` — completed traversal/camera presentation\n\n## Acceptance Criteria\n\nSpecific, testable conditions. The issue is done when ALL of these are true:\n- [ ] The existing stable ID loads all required clips with no fallback and passes geometry/budget/license validation.\n- [ ] Animation follows grounded/airborne/paddling presentation while collision remains the configured capsule and never the GLB.\n- [ ] Continuous route, cave light, and camera behavior remain unchanged.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  }
+]
