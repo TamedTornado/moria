@@ -7,13 +7,13 @@ Product One is a reusable sparse voxel-world library plus two consumers: the wal
 Experiential requirements have the following testable meanings:
 
 - **Walkable in under five seconds:** elapsed monotonic time from process entry to `DemoState::Playing`, with player input enabled and the collision neighborhood ready, is less than 5,000 ms on each named acceptance machine.
-- **Surface update within two rendered frames:** `WorldEditWrite` stamps rendered frame `N` at the consumer's submit call. Every affected terrain, water, registered-object (including an active Horizon aggregate repartition), and dressing presentation is extracted, GPU-buffer-prepared/removed, and queued by the renderer for frame `N + 2` or earlier, including when frame `N` has zero fixed ticks or submission is after its fixed-drain cutoff. Collision and queries see committed truth in the first eligible fixed tick. `EditCommitted` and `EditSurfaceReady` record submit, commit, and renderer-ready frame indices.
-- **No visible hitch for the representative carve:** while applying one 3 m-radius hillside dig on an acceptance machine, no rendered-frame interval may exceed 33.3 ms, and the two-frame surface-ready contract must also pass. This threshold catches an obvious missed 60 Hz frame while allowing the asynchronous two-frame contract to be measured independently.
+- **Mutation is progressive and workload-shaped:** the public edit protocol accepts bounded atomic edits and larger progressive operations. A progressive operation is partitioned into deterministic brick batches; consumers receive monotonic acceptance, truth-commit, primary-presentation, and full-reconciliation progress. Colony games may keep many worker-sized edits in flight, while an RPG may submit one landscape-scale destructive operation. Neither workload requires the complete logical edit, every distant representation, and every GPU acknowledgement to finish within an arbitrary number of rendered frames.
+- **Mutation never steals the frame:** on acceptance hardware, mutation work may not produce a rendered-frame interval above 33.3 ms. Gate F2 separately proves a 3 m interactive carve, eight concurrent colony-style edit streams over a 32 m x 32 m x 16 m designation volume, and a progressive 16 m-radius catastrophic carve. The gate measures admission latency, time to first truth and first primary presentation, sustained brick throughput, fairness, and full reconciliation instead of conflating them into one whole-operation deadline.
 - **Exact reload:** after save/load, every edited voxel's material, density, and reserved state byte equals the pre-save value; generated, unedited samples equal the same seed/config output. Derived meshes and dressing are intentionally regenerated and are not compared byte-for-byte.
 - **Negligible detailed cost for idle wilderness:** untouched bricks outside an active band have no allocated 4,096-voxel array and no mesh. Their truth is represented by the seed/config plus, where needed, a compact procedural or uniform descriptor.
 - **Forest dependency metadata remains sparse:** registered-object surface dependencies are fixed-size bounds plus a shared lazy analytic predicate, never retained coordinate sets; the complete immutable object index is capped at 16 MiB and only active objects probe at most 128 sparse delta bricks for authored eligibility.
 - **Distant forests cannot resurrect base truth:** each 64 m Horizon object cell is rebuilt from current dependency eligibility. Intact trees contribute aggregate cards; edited trees are excluded and use revisioned owner-filtered coarse payloads (or empty tombstones), with eviction, transition, and load governed by the same token/readiness lifecycle.
-- **Feasibility before breadth:** the byte-identical full curated forest must pass simultaneous content/index/startup Gate F1, then the representative and maximum-candidate 3 m carves must pass the complete production render path on the M4 in Gate F2. Failure blocks broad generation, final assets/dressing, traversal polish, persistence, and full benchmarks; targets are not tuned to turn a failure green.
+- **Feasibility before breadth:** the byte-identical full curated forest must pass simultaneous content/index/startup Gate F1, then the interactive, colony-volume, and catastrophic-mutation workloads must pass the production mutation and render path on the M4 in Gate F2. Failure blocks broad generation, final assets/dressing, traversal polish, persistence, and full benchmarks; targets are not tuned to turn a failure green.
 - **Synchronous query cost is public API:** rays are limited to 64 m/448 cells, capsules to the player/camera envelope, sweeps to 12 m and 8,192 candidates, contact results to 512, and diagnostics to bounded pages. Exact limits, complexity, rejection behavior, and M4 timing proof are in [api.md](api.md).
 - **Graphics memory below approximately 2 GB:** the portable implementation records application-requested GPU allocation estimates, but this does not prove resident driver/backend memory. The original product target remains unproven unless an acceptance harness supplies resident evidence; estimate-only substitution is the explicit Design Divergence below and has not been approved.
 
@@ -44,10 +44,10 @@ assets/config + seed + generated curated manifest + sparse ruin stamp
                        /                     \
                       v                       v
             moria-demo binary         moria-bench binary
-        player/camera/debug UI       scripted path/carve storm
+        player/camera/debug UI       scripted path/mutation loads
 ```
 
-`moria-world` owns a private `WorldStore`. A consumer observes it with the read-only `WorldRead` system parameter and requests changes by submitting `WorldEditCommand` through `WorldEditWrite`, which stamps publication time. Accepted changes produce immutable result messages. Rendering is derived from the same store through library-owned plugins; a consumer can configure or observe it but cannot inject a mesh as world truth.
+`moria-world` owns a private `WorldStore`. A consumer observes it with the read-only `WorldRead` system parameter and requests changes by submitting `WorldEditCommand` through `WorldEditWrite`, which stamps publication time. Commands describe matter changes, not game semantics: a fortress designation remains game-layer planning whose workers submit edits, while a spell may submit one progressive volume operation. Accepted changes produce immutable lifecycle messages. Rendering is derived from the same store through library-owned plugins; a consumer can configure or observe it but cannot inject a mesh as world truth.
 
 Generation is addressable: a `ColumnEvaluator` and `BaseVoxelEvaluator` calculate any requested column, brick classification, or voxel from the seed, curated parameters, and manifest. The whole 1 km x 1 km x 256 m volume is never expanded. A compact 32 m dependency/activation grid and 4 m sample grid keep forest queries bounded while sharing one 16 MiB retained-index cap. Active bricks are classified as procedural/uniform/detailed, and only bricks crossing a surface, containing an edit, or explicitly requested for raw inspection allocate voxel arrays. Edit deltas outlive active detail and overlay base evaluation.
 
@@ -94,7 +94,7 @@ crates/
     Cargo.toml
     src/
       main.rs           # argument parsing and app construction only
-      scenarios/        # flythrough and carve-storm scripts
+      scenarios/        # flythrough and mutation-workload scripts
       capture/          # metric windows, machine profile, JSON report
   moria-curate/
     Cargo.toml
@@ -140,7 +140,7 @@ cargo run -p moria-demo
 
 # Run benchmark scenarios (headed, release build)
 cargo run --release -p moria-bench -- --scenario flythrough --output target/bench/flythrough.json
-cargo run --release -p moria-bench -- --scenario carve-storm --output target/bench/carve-storm.json
+cargo run --release -p moria-bench -- --scenario mutation-workloads --output target/bench/mutation-workloads.json
 
 # Rebuild or verify the deterministic curated manifest
 cargo run -p moria-curate -- generate
@@ -148,7 +148,7 @@ cargo run -p moria-curate -- check
 
 # Blocking feasibility gates (release build on the 32 GB M4 acceptance machine)
 cargo run --release -p moria-curate -- prove-forest --output target/feasibility/forest.json
-cargo run --release -p moria-bench -- --scenario feasibility-carve --resolution 2560x1440 --forest-proof target/feasibility/forest.json --output target/feasibility/carve.json
+cargo run --release -p moria-bench -- --scenario feasibility-mutation --resolution 2560x1440 --forest-proof target/feasibility/forest.json --output target/feasibility/mutation.json
 ```
 
 Normal development uses the dev profile, not `--release`; release is reserved for acceptance benchmarks. CI runs the first four commands in the shown order and also runs `moria-curate check`. GPU/platform acceptance is a separate headed job on the named machines.
@@ -180,7 +180,7 @@ Pure tests cover coordinate conversion, deterministic column/voxel evaluation, e
 
 Headless `App` tests use `MinimalPlugins`, public messages, and explicit fixed-tick advancement to verify plugin boundaries, ordered state transitions, activation/eviction, edit messages, player collision, paddling, and invalid operations. Scripted integration tests run N controlled fixed ticks with semantic intent, then assert ECS/world properties. They never assume one `app.update()` equals one fixed tick.
 
-Rendering, GPU integration, startup time, frame pacing, and allocation estimates require headed runs. Before implementation breadth, F1 validates the checked-in full forest/index and F2 validates the complete carve/query path on the M4. The later flythrough/carve-storm scenarios and manual visual checklist cover full acceptance; [benchmarks.md](benchmarks.md) defines measurements and [implementation-plan.md](implementation-plan.md) defines dependency gates.
+Rendering, GPU integration, startup time, frame pacing, and allocation estimates require headed runs. Before implementation breadth, F1 validates the checked-in full forest/index and F2 validates the complete interactive/colony/catastrophic mutation paths on the M4. The later flythrough/mutation-workload scenarios and manual visual checklist cover full acceptance; [benchmarks.md](benchmarks.md) defines measurements and [implementation-plan.md](implementation-plan.md) defines dependency gates.
 
 ## Design coverage and divergences
 
@@ -198,7 +198,7 @@ Every design entity maps to a type in [data-model.md](data-model.md), every cons
 | Two-rendered-frame 3 m carve and no hitch | Submit/commit/render-extract frame stamps, priority worker lane, explicit benchmark thresholds |
 | High-risk sequencing | Blocking full-manifest F1 and production carve/query F2 before downstream feature breadth |
 | Single-slot exact delta persistence under 50 MB | Base-relative sorted deltas, atomic zstd file, identity/checksum validation, round-trip scenario |
-| Flythrough/carve-storm evidence with machine identity | Separate public-API benchmark consumer, metric schema, acceptance matrix, provisional Linux baseline |
+| Flythrough/mutation-workload evidence with machine identity | Separate public-API benchmark consumer, metric schema, acceptance matrix, provisional Linux baseline |
 | Explicit excluded systems | No registered runtime plugins/data/assets for dynamic fluids, granular settling, object dynamics, ecology, game loops, AI, multiplayer, or scripting |
 
 ### Design Divergence: resident graphics-memory evidence

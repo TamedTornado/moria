@@ -104,7 +104,7 @@ pub struct StampRun {
 
 Linear order matches brick voxel order generalized to stamp dimensions. Runs are sorted, non-overlapping, in bounds, and use only `cut_stone` or explicit air-carve palette values. Tags include `stair_bottom`, `stair_top`, and `entrance`. The stamp is sparse and small enough to validate/expand at placement; it has one intact staircase whose tread rise/run passes the configured capsule/step traversal test. Orientation is restricted to quarter turns around Y so voxel sampling is exact. The stamp's SHA-256 content digest participates in world identity and save compatibility.
 
-The ruin's visible terrain mesh is extracted from stamped/current voxel truth on initial activation and on every affected world revision. There is no ruin GLB, separate ruin collision mesh, authored intact visual, or privileged staircase entity. Exact edit reversion produces a new voxel-derived mesh revision rather than restoring an authored root. All dirty ruin chunks and seams participate in the originating request's `EditSurfaceReady` barrier through render-extraction acknowledgement.
+The ruin's visible terrain mesh is extracted from stamped/current voxel truth on initial activation and on every affected world revision. There is no ruin GLB, separate ruin collision mesh, authored intact visual, or privileged staircase entity. Exact edit reversion produces a new voxel-derived mesh revision rather than restoring an authored root. All dirty ruin chunks and seams participate in the originating request's reconciliation accounting through render-extraction acknowledgement.
 
 ## Curated manifest
 

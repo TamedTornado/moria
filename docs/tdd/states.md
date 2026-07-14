@@ -127,7 +127,7 @@ enum ChunkPhase {
 }
 ```
 
-The normal path is `Absent -> Requested -> Materializing -> Meshing -> Resident`. A compact uniform chunk with no surface may skip `Meshing` and become resident metadata-only. New focus/edits can supersede any requested/materializing/meshing token; results with old tokens are discarded. A resident edit moves back to `Meshing` while retaining the previous visual for no more than two frames. Loss of all focus plus hysteresis moves to `EvictPending -> Absent` unless pinned.
+The normal path is `Absent -> Requested -> Materializing -> Meshing -> Resident`. A compact uniform chunk with no surface may skip `Meshing` and become resident metadata-only. New focus/edits can supersede any requested/materializing/meshing token; results with old tokens are discarded. A resident edit moves back to `Meshing` while retaining the previous derived visual until the revision-matched replacement or removal is installed. Primary-focus chunks receive edit priority; background chunks reconcile under the bounded fair scheduler. Loss of all focus plus hysteresis moves to `EvictPending -> Absent` unless pinned by a committed batch.
 
 Properties:
 
@@ -157,19 +157,19 @@ pub enum BenchmarkState {
 ```
 
 - `Boot` parses arguments and starts process/cold-start timing.
-- `VerifyingFeasibilityInput` is used only by `feasibility-carve`; it verifies the F1 schema/pass bit, artifact hash, M4 identity, and exact git/world/manifest digest before any headed work. Failure writes a failed carve-feasibility report and never runs the edit.
+- `VerifyingFeasibilityInput` is used only by `feasibility-mutation`; it verifies the F1 schema/pass bit, artifact hash, M4 identity, and exact git/world/manifest digest before any headed work. Failure writes a failed mutation-feasibility report and never runs the workload.
 - `Loading` uses the normal world readiness contract at the scenario start point.
 - `Warmup` runs the scripted initial view for 300 rendered frames; warmup frames are excluded from FPS distributions but cold-start remains the earlier process-to-ready measurement.
-- `QueryCostProbe` is used only by `feasibility-carve` after warmup. It runs the bounded active/cold query cases and representative per-frame bundle from [api.md](api.md), then enters `Running` only if limits, candidate counters, and M4 timing budgets pass.
-- `Running` executes the selected feasibility-carve, flythrough, or carve-storm script and captures its contracted metrics.
-- `Saving` is entered by carve storm and invokes the public save request; flythrough transitions directly to reporting and records the current slot size (zero for a clean isolated run).
+- `QueryCostProbe` is used only by `feasibility-mutation` after warmup. It runs the bounded active/cold query cases and representative per-frame bundle from [api.md](api.md), then enters `Running` only if limits, candidate counters, and M4 timing budgets pass.
+- `Running` executes the selected feasibility-mutation, flythrough, or mutation-workloads script and captures its contracted metrics.
+- `Saving` is entered by mutation-workloads and invokes the public save request; flythrough transitions directly to reporting and records the current slot size (zero for a clean isolated run).
 - `RoundTrip` tells the headed app to return after saving; the process orchestrator runs a presentation-disabled headless app, loads through the public protocol, and appends exact-restore evidence.
-- `Reporting` validates mandatory metrics/machine fields, atomically writes JSON, and computes pass/failure reasons. For carve storm it runs only after `RoundTrip`; for flythrough it follows `Running`.
+- `Reporting` validates mandatory metrics/machine fields, atomically writes JSON, and computes pass/failure reasons. For mutation-workloads it runs only after `RoundTrip`; for flythrough it follows `Running`.
 - `Complete` returns process exit code 0. `Failed` attempts a report with error context, then exits 1. Argument failures exit 2 before app construction.
 
 Scenario state advances only on explicit waypoint/edit/readiness/save completion events, never after arbitrary sleeps. The benchmark has a configurable watchdog solely to fail a stuck run; timeout never fabricates missing values.
 
-For `feasibility-carve`, `Running` performs the clean-world signature and stress roles and then goes directly to `Reporting`; it does not save or round-trip. Reporting validates every named production trace stage and exact render-extraction barrier count against `CarveFeasibilityReport`. The final flythrough/carve-storm paths skip the two feasibility-only states and retain their lifecycle above.
+For `feasibility-mutation`, `Running` performs the interactive, colony, and catastrophic workloads and then goes directly to `Reporting`; it does not save or round-trip. Reporting validates every named production trace stage, fairness/progress metric, and exact reconciliation count against `MutationFeasibilityReport`. The final flythrough/mutation-workloads paths skip the two feasibility-only states and retain their lifecycle above.
 
 ## State-specific rendering summary
 

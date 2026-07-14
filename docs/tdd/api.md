@@ -184,6 +184,7 @@ Boundary/property tests call every query at zero/minimum, exact maximum, and one
 pub struct WorldEditCommand {
     pub request_id: u64,
     pub operation: EditOperation,
+    pub execution: EditExecution,
 }
 
 #[derive(SystemParam)]
@@ -205,15 +206,39 @@ pub enum EditOperation {
         strength: u8,
         material: MaterialId,
     },
+    DigBox {
+        min: VoxelCoord,
+        max_exclusive: VoxelCoord,
+        strength: u8,
+    },
+    PlaceBox {
+        min: VoxelCoord,
+        max_exclusive: VoxelCoord,
+        strength: u8,
+        material: MaterialId,
+    },
 }
 
-pub struct EditCommitted {
+pub enum EditExecution {
+    Atomic,
+    Progressive,
+}
+
+pub struct EditAccepted {
+    pub request_id: u64,
+    pub submitted_frame: u64,
+    pub estimated_bricks: u32,
+}
+
+pub struct EditBatchCommitted {
     pub request_id: u64,
     pub revision: u64,
+    pub batch_index: u32,
     pub changed_voxels: u32,
     pub changed_bricks: Vec<BrickCoord>,
     pub submitted_frame: u64,
     pub committed_frame: u64,
+    pub remaining_bricks: u32,
 }
 
 pub struct EditRejected {
@@ -221,30 +246,40 @@ pub struct EditRejected {
     pub reason: EditRejectReason,
 }
 
-pub struct EditSurfaceReady {
+pub struct EditPrimaryPresentationReady {
     pub request_id: u64,
     pub revision: u64,
-    pub submitted_frame: u64,
-    pub committed_frame: u64,
     pub ready_frame: u64,
-    pub latency: Duration,
+    pub presented_bricks: u32,
+    pub remaining_bricks: u32,
+}
+
+pub struct EditReconciliationComplete {
+    pub request_id: u64,
+    pub final_revision: u64,
+    pub committed_batches: u32,
+    pub changed_voxels: u64,
+    pub reconciled_frame: u64,
 }
 ```
 
-The consumer submits `WorldEditCommand` through the public `WorldEditWrite` system parameter; the raw internal envelope/message type is private. `submit` stamps the current rendered-frame index at the call site before enqueueing, so the deadline starts in the frame where the consumer action publishes the operation rather than when a later fixed tick drains it. The public `WorldFrameSet::PublishCommands` set runs after action mapping; consumers may submit later in the same frame, but this does not move the stamped deadline. Requests are sorted by `request_id` within a drained batch; duplicate IDs in the process lifetime are rejected. `SubmitError::NotReady | QueueFull | LoadInProgress` means no request was accepted and no edit lifecycle messages follow. Product One accepts radii from 0.25 m through 3 m. This bounds the proof API to the demonstrated maximum and makes the two-frame job budget testable; a larger operation returns `RadiusOutOfRange`. A center may touch the region edge, but only in-bounds voxels are considered. Placement rejects air, water, unknown materials, and a zero strength. Dig erodes any solid material, including registered-object cells, according to hardness; non-ruin authored/voxel-derived swaps and the ruin's always-voxel-derived chunk revisions are part of the completion barrier below.
+The consumer submits `WorldEditCommand` through the public `WorldEditWrite` system parameter; the raw internal envelope/message type is private. `submit` stamps the current rendered-frame index at the call site. Requests are sorted by `request_id` within a drained batch and duplicate IDs in the process lifetime are rejected. `SubmitError::NotReady | QueueFull | LoadInProgress | InvalidBounds | AtomicWorkLimitExceeded` means no request was accepted and no lifecycle messages follow. Spheres accept radii from 0.25 m through 16 m; boxes must be nonempty, in bounds after clipping, and no larger than the configured progressive-operation voxel and brick limits. `Atomic` is accepted only when the conservative affected-brick count is at most `max_atomic_bricks`; larger valid operations require `Progressive`. Placement rejects air, water, unknown materials, and zero strength.
+
+The API deliberately does not contain `Designation`, `Worker`, `Spell`, or `Mana`. A fortress game stores designations and has workers submit bounded edits as labor completes. An RPG submits a progressive sphere or box for destructive magic. Both use the same mutation protocol, revision ordering, backpressure, and observations.
 
 For one accepted request, the library:
 
-1. Computes the closed spherical voxel set with fixed-point squared-distance comparisons.
-2. Stages all new voxel values without exposing a partial revision.
-3. Commits a nonempty batch atomically in `FixedUpdate`, updates deltas, and increments the revision once. A valid no-effect batch keeps the current revision.
-4. Emits exactly one `EditCommitted`, including a sorted, duplicate-free brick list. Zero-effect valid edits still emit `EditCommitted` with `changed_voxels = 0` and immediately emit `EditSurfaceReady` for the same frame.
-5. Makes all queries and collision see the new revision immediately after commit.
-6. Rebuilds dirty terrain/water seams and dressing and refreshes every intersected registered-object visual. For an affected active Horizon cell, refresh means repartitioning its base-card aggregate and per-ID current-truth payloads at the edit revision; aggregate card removal, an empty removal tombstone, and derived-buffer replacement are barrier items just like a per-placement root. The library emits exactly one `EditSurfaceReady` only after all affected terrain, water, object, Horizon aggregate, and dressing presentation for that revision has been installed or removed in the main world, extracted, GPU-buffer-prepared or freed, and queued/acknowledged by the render sub-app for the named frame.
+1. Validates the shape and execution mode without enumerating the entire operation into an unbounded allocation, reserves bounded queue/accounting capacity, and emits exactly one `EditAccepted`.
+2. Enumerates affected bricks in canonical coordinate order. The scheduler interleaves ready requests with weighted round-robin fairness and caps staging, commit, snapshot, extraction, and installation work per frame.
+3. Stages one bounded brick batch against a coherent starting revision, commits that batch atomically in `FixedUpdate`, updates deltas, increments the revision once for a nonempty batch, and emits `EditBatchCommitted`. Queries and collision see each committed batch immediately; they never see a partially committed batch.
+4. Prioritizes dirty work intersecting active `Traversal`, `Camera`, `Inspection`, or `Mutation` focuses. Once the current committed revision for those primary representations is installed, it emits monotonic `EditPrimaryPresentationReady`; background and distant representations may continue reconciling.
+5. Rebuilds all affected terrain/water seams, dressing, registered-object visuals, and active Horizon partitions. Every create/update/removal is tracked through extraction, GPU prepare/free, and render-queue acknowledgement. Exactly one `EditReconciliationComplete` is emitted after every accepted batch and every resulting presentation key reaches the final request revision.
+
+A valid no-effect request emits `EditAccepted`, one zero-change `EditBatchCommitted`, and `EditReconciliationComplete` without fabricating presentation work. Stale async results are discarded and rescheduled against current truth. Cancellation is not part of Product One; backpressure occurs before acceptance, and accepted work must make progress until terminal completion.
 
 There is no API for setting a voxel, submitting a mesh, replacing a brick, or modifying deltas. The selected material and target ray belong to the consumer debug tool, not to the world library.
 
-The representative operation is `DigSphere { radius_q8: 768, strength: 255 }` (3 m). Every accepted representative edit must satisfy `ready_frame <= submitted_frame + 2` and `ready_frame <= committed_frame + 2` on acceptance hardware. This remains true when its submission frame has zero fixed ticks or when it is submitted after that frame's edit-drain cutoff; the implementation must reserve capacity or return a synchronous `SubmitError` instead of accepting work it cannot budget. The frame counter increments once per render extraction, not per fixed tick. If an accepted task misses the deadline, telemetry records a contract failure; the world remains correct and installs the result rather than showing fabricated geometry.
+The 3 m debug carve remains the Product One demonstration, not the substrate ceiling. Gate F2 also submits concurrent worker-sized box edits distributed through a 32 m x 32 m x 16 m volume and one progressive 16 m-radius dig. Acceptance is synchronous and bounded; the performance contract is that every accepted request makes observable truth and presentation progress without starvation, no mutation workload produces a rendered-frame interval above 33.3 ms, and the headed gate meets the throughput/fairness thresholds in [implementation-plan.md](implementation-plan.md). Full reconciliation is measured separately from first progress.
 
 ## Activation and inspection
 
@@ -263,7 +298,7 @@ pub struct RemoveFocusSource { pub id: u32 }
 
 Consumers publish focus messages; they cannot activate or evict individual bricks. The demo maintains stable sources for player and camera and adds a short-lived inspection/mutation focus at the debug ray hit. The streamer combines all sources with configured band radii and priorities. Removing focus may evict derived detail, but committed deltas remain. `active_band` is observational and exists for the visualizer/benchmarks.
 
-An accepted edit pins its affected bricks and face neighbors and any affected active Horizon object cell until collision truth, meshes, seams, registered-object presentations, and dressing reach the edit revision. An absent Horizon cell is not activated solely for the edit; when later requested it builds from current deltas. Activation pressure cannot evict pinned work or discharge a readiness barrier by hiding it. Queue saturation returns `SubmitError::QueueFull` before acceptance; it never accepts an edit it cannot schedule for the two-frame target.
+An accepted edit pins only its current bounded commit/presentation window: committed dirty bricks, face neighbors, and affected active object/Horizon owners remain pinned until their revision is installed. The entire uncommitted volume is never pinned or materialized at once. An absent Horizon cell is not activated solely for the edit; when later requested it builds from current deltas. Activation pressure cannot evict pinned work or discharge reconciliation by hiding it. Queue saturation returns `SubmitError::QueueFull` before acceptance; accepted requests retain reserved accounting capacity and a fair scheduler share until completion.
 
 ## Save/load protocol
 
@@ -341,7 +376,7 @@ The tool defaults to a 3 m radius for the signature demonstration and cycles onl
 ## Benchmark CLI and output
 
 ```text
-moria-bench --scenario <feasibility-carve|flythrough|carve-storm>
+moria-bench --scenario <feasibility-mutation|flythrough|mutation-workloads>
             --output <path.json>
             [--resolution <WIDTHxHEIGHT>]
             [--seed <u64>]
@@ -350,11 +385,11 @@ moria-bench --scenario <feasibility-carve|flythrough|carve-storm>
 
 Unknown/missing arguments, non-curated seed, invalid resolution, or unwritable output exits with code 2 and prints a concise error. A runtime/contract failure exits 1 after writing a report with `passed: false` and failure reasons when possible. A complete passing run exits 0. The default resolution is 2560x1440 for the discrete target; the Mac acceptance harness explicitly supplies 1920x1080 and 2560x1440 runs. Benchmark runs must be release builds; a debug build records `passed: false` and identifies the profile.
 
-`feasibility-carve` requires the F1 artifact, exact M4/Metal/release/2560x1440 environment, and matching git/world/manifest digests; it writes the separate `CarveFeasibilityReport` and exercises the full production stages in [implementation-plan.md](implementation-plan.md). The flythrough follows manifest waypoints through every required scene and changes active bands naturally. The carve storm submits public `WorldEditCommand` values through `WorldEditWrite` at scripted valid hillside targets, waits for each commit/surface-ready pair, then saves through `SaveWorldRequest`. The runner writes its selected self-contained JSON report atomically. Metric semantics and durations are in [benchmarks.md](benchmarks.md).
+`feasibility-mutation` requires the F1 artifact, exact M4/Metal/release/2560x1440 environment, and matching git/world/manifest digests; it writes the separate `MutationFeasibilityReport` and exercises the full production stages in [implementation-plan.md](implementation-plan.md). The flythrough follows manifest waypoints through every required scene and changes active bands naturally. `mutation-workloads` submits the interactive, colony-volume, and catastrophic public commands through `WorldEditWrite`, observes every lifecycle stage, then saves through `SaveWorldRequest`. The runner writes its selected self-contained JSON report atomically. Metric semantics and durations are in [benchmarks.md](benchmarks.md).
 
 ## Errors and observability
 
-All commands/requests carry caller-selected `u64 request_id`. Every successfully enqueued edit later produces exactly one `EditCommitted` or `EditRejected`, with surface readiness as an additional lifecycle result for a commit; synchronous `SubmitError` means it was never enqueued. Every save/load request produces exactly one completed/failed terminal result, with `LoadWorldStarted` as a nonterminal acknowledgement. Errors are enums, not log-string contracts. Logs may add context but cannot be the only signal used by the demo or benchmark.
+All commands/requests carry caller-selected `u64 request_id`. Every accepted edit produces exactly one `EditAccepted`, one or more monotonic `EditBatchCommitted` messages (exactly one zero-change batch for a no-op), zero or more monotonic `EditPrimaryPresentationReady` messages, and exactly one `EditReconciliationComplete`. A synchronous `SubmitError` means it was never accepted and no lifecycle follows. Every save/load request produces exactly one completed/failed terminal result, with `LoadWorldStarted` as a nonterminal acknowledgement. Errors are enums, not log-string contracts. Logs may add context but cannot be the only signal used by the demo or benchmark.
 
 Telemetry is read-only:
 
