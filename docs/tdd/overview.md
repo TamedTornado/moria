@@ -4,6 +4,8 @@
 
 Product One is a reusable sparse voxel-world library plus two consumers: the walkable validation demo and the benchmark runner. The library is authoritative for generation, queries, mutation, edit persistence, activation, derived terrain meshes, water, and registered world objects. Both consumers use the library's public API; neither can access or mutate voxel storage directly. This is the enforceable counterpart of the design requirement that the demo have no privileged world behavior.
 
+**Approved product clarification (2026-07-14):** where `docs/design-document.md` and the Product One seed describe a 3 m debug carve completing within two rendered frames, that is an older demo-workload target and does not define the reusable substrate's operation ceiling or whole-request completion protocol. The staged atomic/progressive mutation contract in this TDD is authoritative for implementation. The 3 m carve remains a required demo case; Gate F2 additionally proves colony-volume and catastrophic-mutation workloads as specified below.
+
 Experiential requirements have the following testable meanings:
 
 - **Walkable in under five seconds:** elapsed monotonic time from process entry to `DemoState::Playing`, with player input enabled and the collision neighborhood ready, is less than 5,000 ms on each named acceptance machine.
