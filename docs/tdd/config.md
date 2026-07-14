@@ -146,7 +146,7 @@ The 720 m horizon covers the farthest corner from any point in a 1 km square. LO
 
 Defaults: `hysteresis_m = 12`, `collision_radius_m = 12`, `vertical_surface_window_m = 12`, `prefetch_seconds_q8 = 512` (2 s), `max_generation_jobs = 96`, `max_mesh_jobs = 64`, `max_install_bytes_per_frame = 16_777_216` (16 MiB), and `edit_reserved_workers = 2`. At runtime worker counts are capped by available Bevy task-pool threads; at least one worker lane is reserved for edit mesh work. If fewer than three worker threads exist, edit jobs preempt ordinary work rather than reserving idle lanes.
 
-Budgets are starting acceptance values, not excuses to miss the two-frame contract. The benchmark may justify tuning checked-in presentation values without changing authoritative generation/digest. Memory categories have hard pre-upload guards: one allocation and one GPU-visible count/index must fit `u32`; total host sums use checked `u64`.
+Budgets are starting acceptance values, not permission to monopolize a frame or starve an accepted edit. The benchmark may justify tuning checked-in presentation values without changing authoritative generation/digest. Memory categories have hard pre-upload guards: one allocation and one GPU-visible count/index must fit `u32`; total host sums use checked `u64`.
 
 ## Mutation configuration
 
@@ -155,13 +155,17 @@ Budgets are starting acceptance values, not excuses to miss the two-frame contra
 | `fixed_hz` | `u16` | `60` | Deterministic simulation/edit cadence. |
 | `debug_radius_q8` | `u16` | `768` | 3 m signature dig/place sphere. |
 | `min_radius_q8` | `u16` | `64` | One voxel minimum. |
-| `max_radius_q8` | `u16` | `768` | Product One debug/API capacity with two-frame scheduling. |
+| `max_radius_q8` | `u16` | `4096` | 16 m maximum progressive sphere accepted by the Product One substrate proof. |
 | `dig_strength` | `u8` | `255` | Full-strength proof carve, hardness-scaled with falloff. |
 | `place_strength` | `u8` | `255` | Full-strength proof placement. |
 | `inner_full_strength_percent` | `u8` | `70` | Solid core plus smooth boundary. |
-| `max_queued_edits` | `u8` | `2` | Prevents unbounded carve backlog; overflow is explicit `Busy`. |
+| `max_atomic_bricks` | `u16` | `32` | Conservative affected-brick ceiling for `Atomic`; larger valid operations require `Progressive`. |
+| `max_progressive_bricks` | `u32` | `8192` | Hard admission bound for one progressive operation; overflow is a typed rejection. |
+| `max_queued_edits` | `u8` | `32` | Bounded accepted-request capacity for concurrent consumers; overflow is explicit `QueueFull`. |
+| `max_commit_bricks_per_batch` | `u16` | `8` | Atomic truth-commit batch ceiling inside a progressive request. |
+| `max_mutation_stage_ms_per_frame_q8` | `u16` | `1024` | 4 ms CPU staging/commit budget per rendered frame before work yields. |
 
-The 3 m maximum is the Product One supported operation envelope tied to its stated representative carve and acceptance latency. It is not presented as a future substrate limit; supporting larger atomic edits would require a new latency/memory contract. Radius is still carried in every API request so smaller proof operations are supported.
+The 3 m radius is the debug demonstration default. It is not the API ceiling. Small operations may be atomic when their conservative brick count fits `max_atomic_bricks`; large spheres and boxes are progressive and must remain within the configured operation bound. These Product One bounds prove that the public contract scales beyond direct player digging without claiming unlimited single-request size.
 
 ## Player and camera configuration
 
@@ -238,12 +242,20 @@ Terrain uses CPU dual contouring with material-aware feature constraints, shared
 |---|---:|---|
 | `warmup_frames` | 300 | Excluded from FPS/frame distribution. |
 | `flythrough_duration_s` | 120 | Continuous route coverage. |
-| `carve_count` | 128 | Repeated public 3 m edits and a meaningful heavy-delta save workload. |
-| `post_edit_settle_frames` | 2 | Deadline, not an arbitrary wait; scenario fails if not ready. |
+| `colony_worker_streams` | 8 | Concurrent bounded edit producers in the colony workload. |
+| `colony_volume_m` | `[32, 32, 16]` | Designated-volume envelope exercised through public worker-sized edits. |
+| `catastrophic_radius_q8` | `4096` | 16 m progressive destructive-operation workload. |
 | `watchdog_s` | 300 | Fails a stuck run. |
 | `fps_target` | 60.0 | Acceptance average and one-percent-low target. |
-| `max_edit_ready_frames` | 2 | Mutation contract. |
-| `max_carve_frame_ms` | 33.3 | No-visible-hitch threshold. |
+| `max_mutation_frame_ms` | 33.3 | No-visible-hitch threshold for every mutation workload. |
+| `max_admission_ms` | 2.0 | Synchronous submission bound. |
+| `max_first_commit_interactive_ms` | 100 | Interactive/catastrophic first truth progress. |
+| `max_first_commit_colony_ms` | 250 | Per-worker first truth progress under contention. |
+| `max_primary_ready_p95/max_ms` | `250 / 500` | Committed primary-focus presentation progress. |
+| `min_changed_bricks_per_second` | 32 | Aggregate sustained throughput while runnable work exists. |
+| `max_runnable_wait_ms` | 500 | Fairness/no-starvation bound between nonterminal batches. |
+| `max_reconciliation_interactive_ms` | 1000 | Full 3 m debug-carve reconciliation. |
+| `max_reconciliation_volume_ms` | 30000 | Full colony or catastrophic workload reconciliation. |
 | `cold_start_max_ms` | 5000 | Process to control ready. |
 | `graphics_memory_max_bytes` | `2_097_152_000` | Product resident-graphics-memory target; the portable application ledger is a proxy only pending product approval or resident measurement. |
 | `save_max_bytes` | `50_000_000` | Heavily defaced compressed slot. |
@@ -255,7 +267,7 @@ Terrain uses CPU dual contouring with material-aware feature constraints, shared
 | `query_frame_critical_max_ms` | `4.0` | No measured frame-critical public query may exceed this. |
 | `query_cells_page_p99/max_ms` | `4.0 / 8.0` | M4 inspection-only maximum diagnostic page bounds. |
 
-The first three timing fields are feasibility gates, not user-tunable quality settings: a failing report requires implementation/TDD review and cannot rewrite them. The carve storm alternates dig and place in a deterministic sequence but finishes with heavy visible defacement; reverting an edit exactly to base is omitted from the measured save-size set because it would correctly remove that delta. Exact paths and metric aggregation are in [benchmarks.md](benchmarks.md) and gate sequencing is in [implementation-plan.md](implementation-plan.md).
+The mutation timing, progress, throughput, and fairness fields are feasibility gates, not user-tunable quality settings: a failing report requires implementation/TDD review and cannot rewrite them. The final workload mixes dig/place and finishes with heavy visible defacement; reverting an edit exactly to base is omitted from the measured save-size set because it would correctly remove that delta. Exact paths and metric aggregation are in [benchmarks.md](benchmarks.md) and gate sequencing is in [implementation-plan.md](implementation-plan.md).
 
 ## Cargo profiles
 

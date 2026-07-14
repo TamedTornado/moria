@@ -416,8 +416,8 @@ pub struct WorstEditTargetEvidence {
     pub tie_break_rank: u32,
 }
 
-pub struct CarveFeasibilityReport {
-    pub schema: String, // "moria-product-one-carve-feasibility"
+pub struct MutationFeasibilityReport {
+    pub schema: String, // "moria-product-one-mutation-feasibility"
     pub timestamp_utc: String,
     pub passed: bool,
     pub failure_reasons: Vec<String>,
@@ -429,20 +429,27 @@ pub struct CarveFeasibilityReport {
     pub resolution: [u32; 2],
     pub backend: String,
     pub cold_start_ms: f64,
-    pub trials: Vec<CarveTrialEvidence>, // one signature + one stress role
+    pub workloads: Vec<MutationWorkloadEvidence>,
     pub query_costs: QueryCostEvidence,
 }
 
-pub struct CarveTrialEvidence {
-    pub role: CarveTrialRole,
-    pub center: WorldPointQ8,
+pub struct MutationWorkloadEvidence {
+    pub role: MutationWorkloadRole,
+    pub request_count: u32,
     pub submitted_frame: u64,
-    pub committed_frame: u64,
-    pub ready_frame: u64,
+    pub first_committed_frame: u64,
+    pub final_reconciled_frame: u64,
+    pub admission_ms: Distribution,
+    pub first_commit_ms: Distribution,
+    pub primary_ready_ms: Distribution,
+    pub reconciliation_ms: Distribution,
+    pub changed_bricks_per_second: f64,
+    pub maximum_runnable_wait_ms: f64,
     pub maximum_frame_ms: f64,
     pub traversable: bool,
-    pub changed_voxels: u32,
-    pub changed_bricks: u16,
+    pub changed_voxels: u64,
+    pub changed_bricks: u32,
+    pub committed_batches: u32,
     pub stage_timings_ms: BTreeMap<String, f64>,
     pub stage_counts: BTreeMap<String, u64>,
     pub barrier_expected_items: u32,
@@ -452,7 +459,7 @@ pub struct CarveTrialEvidence {
     pub horizon_derived_records: u16,
 }
 
-pub enum CarveTrialRole { Signature, MaximumCandidateStress }
+pub enum MutationWorkloadRole { InteractiveCarve, ColonyVolume, CatastrophicCarve }
 
 pub struct QueryCostEvidence {
     pub sample_counts: BTreeMap<String, u32>,
@@ -466,7 +473,7 @@ pub struct QueryCostEvidence {
 }
 ```
 
-Required carve stage keys are `edit-stage`, `dirty-discovery`, `dependency-eligibility`, `snapshot`, `terrain-mesh`, `object-mesh`, `seams`, `dressing-remove`, `dressing-install`, `bevy-install`, `render-extract`, `gpu-upload`, and `render-queue`. A legitimate no-work branch records count `0` and elapsed time rather than omitting its key. `dirty-discovery + dependency-eligibility <= 1.0 ms` is evaluated per stress trial, not from rounded distributions. Report validators reject non-finite times, wrong M4/Metal/resolution/profile identity, manifest-digest mismatch, missing keys, count/cap violations, and expected/renderer-ready barrier inequality. Failed artifacts are immutable inputs to review and are never rewritten as passing reports.
+Required mutation stage keys are `admission`, `schedule`, `edit-stage`, `commit`, `dirty-discovery`, `dependency-eligibility`, `snapshot`, `terrain-mesh`, `object-mesh`, `seams`, `dressing-remove`, `dressing-install`, `bevy-install`, `primary-ready`, `render-extract`, `gpu-upload`, `render-queue`, and `reconciliation`. A legitimate no-work branch records count `0` and elapsed time rather than omitting its key. `dirty-discovery + dependency-eligibility <= 1.0 ms` is evaluated at the catastrophic stress target, not from rounded distributions. Report validators reject non-finite times, wrong M4/Metal/resolution/profile identity, manifest-digest mismatch, missing keys, count/cap violations, starvation, and expected/renderer-ready reconciliation inequality. Failed artifacts are immutable inputs to review and are never rewritten as passing reports.
 
 ## Benchmark data
 
@@ -495,9 +502,12 @@ pub struct BenchmarkReport {
 
 pub struct MutationLatencyMetrics {
     pub sample_count: u32,
-    pub submitted_to_ready_frames: DistributionU64,
-    pub committed_to_ready_frames: DistributionU64,
-    pub committed_to_ready_ms: Distribution,
+    pub admission_ms: Distribution,
+    pub accepted_to_first_commit_ms: Distribution,
+    pub commit_to_primary_ready_ms: Distribution,
+    pub accepted_to_reconciliation_ms: Distribution,
+    pub changed_bricks_per_second: f64,
+    pub maximum_runnable_wait_ms: f64,
     pub representative_max_frame_ms: f64,
 }
 

@@ -10,11 +10,11 @@ The Linux 3060-class result begins with `baseline_status: "provisional"`. After 
 
 ## Pre-implementation feasibility evidence
 
-Before broad feature implementation, the release-mode M4 runs defined in [implementation-plan.md](implementation-plan.md) must produce passing, digest-matched `ForestFeasibilityReport` and `CarveFeasibilityReport` artifacts. These are proof gates, not reduced versions of final acceptance.
+Before broad feature implementation, the release-mode M4 runs defined in [implementation-plan.md](implementation-plan.md) must produce passing, digest-matched `ForestFeasibilityReport` and `MutationFeasibilityReport` artifacts. These are proof gates, not reduced versions of final acceptance.
 
-The forest proof uses the complete checked-in placement population and requires area, density/counts, species mix, 5 m spacing, 2–4 m canopy range coverage, 3 m route clearance, voxel-shape/ruin disjointness, both object-index tables, the 64 m Horizon-cell member cap, edit-candidate maxima, <=1,000 ms production object validation, <=250 ms index construction, <=16 MiB retained bytes, and zero dependency-coordinate allocation to pass simultaneously. The carve proof consumes that artifact and runs the same full manifest plus public production edit path at 2560x1440/Metal through render extraction; its normal headed startup must remain <5,000 ms. Both its signature and maximum-candidate stress roles must meet the two-frame and 33.3 ms rules; dirty discovery plus dependency eligibility must be <=1.0 ms. The stress role also forces the affected tree cell through the active Horizon aggregate path and proves that its base card is excluded in favor of a revision-matched derived payload/tombstone before readiness. Its query subrun also validates the public synchronous limits/cost budgets in [api.md](api.md).
+The forest proof uses the complete checked-in placement population and requires area, density/counts, species mix, 5 m spacing, 2–4 m canopy range coverage, 3 m route clearance, voxel-shape/ruin disjointness, both object-index tables, the 64 m Horizon-cell member cap, edit-candidate maxima, <=1,000 ms production object validation, <=250 ms index construction, <=16 MiB retained bytes, and zero dependency-coordinate allocation to pass simultaneously. The mutation proof consumes that artifact and runs the same full manifest plus public production mutation path at 2560x1440/Metal through render extraction. It proves an interactive 3 m carve, eight colony-style edit streams over a 32 m x 32 m x 16 m volume, and a progressive 16 m-radius catastrophic carve while preserving the 33.3 ms frame ceiling, progress/fairness/throughput bounds, and complete reconciliation accounting. The catastrophic role forces an affected tree cell through the active Horizon aggregate path and proves that its base card is excluded in favor of a revision-matched derived payload/tombstone. Its query subrun also validates the public synchronous limits/cost budgets in [api.md](api.md).
 
-The report validators reject a stale manifest/git digest, wrong profile/machine/backend/resolution, missing pipeline stage, incomplete extraction/GPU-prepare/render-queue barrier, theoretical-only object work evidence, or asset fallback. A failed gate remains failed and blocks downstream issue IDs; acceptance targets cannot be tuned by the report producer. Final flythrough/carve-storm runs do not retroactively excuse a skipped gate.
+The report validators reject a stale manifest/git digest, wrong profile/machine/backend/resolution, missing pipeline stage, incomplete extraction/GPU-prepare/render-queue reconciliation, theoretical-only object work evidence, or asset fallback. A failed gate remains failed and blocks downstream issue IDs; acceptance targets cannot be tuned by the report producer. Final flythrough/mutation-workloads runs do not retroactively excuse a skipped gate.
 
 ## Run lifecycle
 
@@ -59,24 +59,24 @@ Flythrough captures:
 
 At completion, coverage validation requires at least one second of measured frames inside each tagged scene and at least one observed transition into every active visual distance band. Missing coverage fails the run even if performance numbers pass.
 
-## Carve storm and heavy save
+## Mutation workloads and heavy save
 
-The scenario uses 128 deterministic, nonoverlapping or intentionally intersecting target definitions generated from manifest-valid surface/cave points. It includes hillside topsoil/subsoil, exposed rock/strata, cave wall near aquifer/ore, at least one registered-object material edit, and reversible place/dig stress. Every operation is a radius-3 m public `WorldEditCommand` submitted through `WorldEditWrite` with monotonically increasing request ID. Placement cycles the placeable palette; air/water are never passed.
+The scenario contains three deterministic phases generated from manifest-valid surface/cave points. The interactive phase performs the public 3 m signature carve. The colony phase models eight workers submitting bounded sphere/box edits across a 32 m x 32 m x 16 m designation volume, with disjoint and intentionally overlapping work and at most eight accepted requests active. The catastrophic phase submits one progressive 16 m-radius dig intersecting surface, subsurface, and registered-object dependencies. These are substrate commands only; the benchmark does not implement designation ownership, worker AI, spells, or resource policy.
 
-For each operation:
+For each request:
 
 1. Publish mutation focus and wait until the target is inspection-ready.
-2. Submit one command; `WorldEditWrite` stamps `submitted_frame` internally, and the runner records the same public frame index and call-site time.
-3. Require one matching `EditCommitted` or fail on rejection.
-4. Require matching `EditSurfaceReady` no later than `submitted_frame + 2` and `committed_frame + 2`; do not issue the next edit while the prior readiness barrier is open.
-5. Record all rendered-frame intervals from input through readiness.
-6. Query representative inside/outside samples to assert the committed density/material effect.
+2. Submit the command and record call duration, submitted frame, shape, execution mode, and estimated work from `EditAccepted`.
+3. Record every matching `EditBatchCommitted`; assert monotonically increasing batch index/revision, bounded batch size, deterministic brick order, and immediate truth/collision visibility for committed coordinates.
+4. Record every `EditPrimaryPresentationReady` and the final `EditReconciliationComplete`; primary progress must never be reported as terminal reconciliation.
+5. Record all rendered-frame intervals, scheduler selections, request wait intervals, changed-brick throughput, queue depth, and per-stage budgets from acceptance through reconciliation.
+6. Query representative committed and not-yet-committed inside samples plus outside samples to assert progressive truth without partial batches or out-of-shape mutation.
 
-The first operation is the exact signature hillside dig. After readiness, the scripted camera travels through the carved opening and a public capsule sweep must report a clear path. This validates traversability against changed solid collision rather than only mesh timing.
+After the signature request reconciles, the scripted camera travels through the carved opening and a public capsule sweep must report a clear path. During colony and catastrophic phases, the camera remains active near current work so primary-focus prioritization is exercised without making background completion disappear.
 
-The operation list finishes with at least 100 spheres whose final values differ from base and are spatially distributed across at least 32 bricks/region cells; reversions used to test delta removal do not count toward heavy defacement. Then the runner sends `SaveWorldRequest` and records the final compressed file byte count. After the headed Bevy app returns to the benchmark's `main`, the orchestrator creates a second `App` with `MinimalPlugins`, required asset/time plugins, and `MoriaWorldPlugin` with presentation disabled. It loads through `LoadWorldRequest` and compares every saved delta coordinate plus deterministic random unedited samples before final report writing. The headed phase remains the source of render metrics; the second phase is exact restoration evidence and does not enter FPS samples.
+The workload must finish with final values differing from base in at least 256 bricks across the colony and catastrophic volumes; reversions used to test delta removal do not count toward heavy defacement. The runner then sends `SaveWorldRequest` and records the final compressed file byte count. After the headed Bevy app returns to the benchmark's `main`, the orchestrator creates a second `App` with `MinimalPlugins`, required asset/time plugins, and `MoriaWorldPlugin` with presentation disabled. It loads through `LoadWorldRequest` and compares every saved delta coordinate plus deterministic random unedited samples before final report writing. The headed phase remains the source of render metrics; the second phase is exact restoration evidence and does not enter FPS samples.
 
-Carve storm captures all flythrough identity/startup/memory/frame fields plus per-edit commit frame, ready frame, elapsed milliseconds, changed voxel/brick counts, maximum frame time during the operation window, save size, delta counts, and round-trip result.
+The mutation scenario captures all flythrough identity/startup/memory/frame fields plus admission latency, first-commit latency, primary-presentation latency, reconciliation latency, per-request batch/progress/fairness history, changed voxel/brick counts, aggregate throughput, maximum frame time, save size, delta counts, and round-trip result.
 
 ## Metric definitions
 
@@ -92,15 +92,11 @@ The Product One 60 fps contract passes when, at the requested resolution on the 
 
 One-percent-low and p99 are reported for comparisons but do not independently fail the general flythrough in Product One. The carve hitch has its own stricter local maximum rule below. Display refresh/presentation mode is recorded; a 60 Hz vsync-capped environment that cannot measure 60.0 without rounding is rerun uncapped rather than changing the threshold.
 
-### Mutation-to-surface latency
+### Mutation progress and reconciliation
 
-For edit `E`:
+For request `E`, report admission call duration, accepted-to-first-commit duration, each commit-to-primary-ready duration, accepted-to-terminal-reconciliation duration, changed-brick throughput, and the maximum interval between nonterminal commits while the request is runnable. Frame indices remain recorded for diagnosis but are not misused as a whole-operation completion deadline.
 
-- submitted-visible frame latency = `EditSurfaceReady.ready_frame - EditCommitted.submitted_frame`;
-- commit-visible frame latency = `EditSurfaceReady.ready_frame - EditCommitted.committed_frame`;
-- elapsed latency = readiness monotonic time minus commit monotonic time.
-
-Pass requires every accepted radius-3 m edit to have submitted-visible and commit-visible frame latency `<= 2`. Ready means every barrier item has reached render extraction, GPU prepare/free, and render queue acknowledgement for that frame. The submitted value is the consumer publication frame and is a pass/fail metric, not supplemental telemetry. A dedicated harness case submits in a rendered frame configured for zero fixed ticks, and another submits after that frame's fixed-drain cutoff; both must be ready by their submission frame plus two or be synchronously rejected before acceptance. The representative first carve additionally requires no rendered-frame interval from request through readiness above 33.3 ms. The report includes max and p50/p95 across all edits. A no-op edit is excluded from performance distributions but must still obey the two frame protocol.
+Pass requires submit <=2.0 ms, first nonempty commit <=100 ms for the interactive/catastrophic requests and <=250 ms for each colony request, commit-to-primary-ready <=250 ms p95 and <=500 ms maximum, aggregate throughput >=32 changed bricks/second while runnable work exists, and no accepted request starved for >500 ms between commit batches. Interactive reconciliation must complete within 1 second; colony and catastrophic phases must each complete within 30 seconds. No rendered-frame interval in a mutation window may exceed 33.3 ms. A no-op request is excluded from throughput distributions but must still emit the exact accepted/zero-batch/reconciled lifecycle.
 
 ### Cold start
 
@@ -133,7 +129,7 @@ mutation_latency, save, coverage, streaming
 
 `schema` is the literal `moria-product-one-benchmark`; `timestamp_utc` is RFC 3339 UTC; `failure_reasons` is a sorted array (empty only when `passed` is true); and enums serialize as documented lowercase-kebab-case strings. `frame_rate` is `{sample_count:u64, measured_seconds:f64, arithmetic_fps:f64, one_percent_low_fps:f64}`. `frame_time_ms` and each latency distribution are `{min,p50,p95,p99,max}` with finite `f64` values; frame distributions use the same keys with integer `u64` values. `graphics_memory.application_ledger` is `{peak_bytes:u64,end_bytes:u64,categories:object,untracked_driver_overhead:true}` and its optional resident object is defined above. `save` always exists with `{attempted,completed,size_bytes,changed_voxels,changed_bricks,round_trip}`; round trip is `{passed,delta_voxels_compared,base_samples_compared,identity_match,derived_bytes_found}`. `streaming.object_index` is `{validation_ms:f64,build_ms:f64,retained_bytes:u64,retained_byte_categories:object,placement_records:u32,dependency_grid_entries:u32,sample_grid_entries:u32,max_dependency_cell_entries:u16,max_sample_cell_entries:u8,max_horizon_tree_members_per_cell:u16,max_edit_candidates:u16,max_edit_affected_objects:u8,max_dependency_bricks:u16,dependency_coordinate_allocation_bytes:u64}` and is mandatory for every completed scenario.
 
-For a completed flythrough, build/world/assets/machine/resolution/cold-start/frame/graphics/coverage/streaming are non-null, `mutation_latency` is null, and `save` has `attempted:false`, `completed:false`, `size_bytes:0`, count fields `0`, and `round_trip:null`. For a completed carve storm, those common fields plus mutation latency and every save field are non-null and `attempted:true`; round trip is mandatory. For an early runtime failure, every top-level key is still written, unavailable `Option` values are null, `save` truthfully records how far it got, `passed:false`, and `failure_reasons` names every missing mandatory field. A report with missing keys, fabricated zero metrics, non-finite numbers, `passed:true` with null scenario-required data, or a workload-minimum failure is rejected by `validate_report` and exits 1. Argument errors before scenario selection write no report and exit 2. This schema label identifies benchmark data shape but is not save migration/versioning.
+For a completed flythrough, build/world/assets/machine/resolution/cold-start/frame/graphics/coverage/streaming are non-null, `mutation_latency` is null, and `save` has `attempted:false`, `completed:false`, `size_bytes:0`, count fields `0`, and `round_trip:null`. For completed mutation-workloads, those common fields plus mutation progress metrics and every save field are non-null and `attempted:true`; round trip is mandatory. For an early runtime failure, every top-level key is still written, unavailable `Option` values are null, `save` truthfully records how far it got, `passed:false`, and `failure_reasons` names every missing mandatory field. A report with missing keys, fabricated zero metrics, non-finite numbers, `passed:true` with null scenario-required data, or a workload-minimum failure is rejected by `validate_report` and exits 1. Argument errors before scenario selection write no report and exit 2. This schema label identifies benchmark data shape but is not save migration/versioning.
 
 A concise human summary is printed to stdout after the JSON is safely written. Comparison tools consume JSON, key by profile ID/resolution/scenario/world digest, and show changed metrics without declaring cross-machine regressions.
 
@@ -142,16 +138,16 @@ A concise human summary is printed to stdout after the JSON is safely written. C
 | Requirement | Scenario/evidence | Pass condition |
 |---|---|---|
 | Forest/index feasibility before breadth | F1 on checked-in manifest, M4 | All area/count/species/spacing/canopy/route/disjointness/index/startup contracts pass together |
-| Complete carve feasibility before breadth | F2 signature + maximum-candidate stress trials, M4 Metal 1440p | Full production barrier including active Horizon repartition <=2 frames, max frame <=33.3 ms, discovery/eligibility <=1.0 ms, query-cost contract passes |
-| 60 fps, 3060-class 1440p | Flythrough + carve storm on designated Linux machine | FPS/p95 rules at 2560x1440; first baseline provisional then reviewed/verified |
-| 60 fps, M4 Mac Mini 32 GB | Flythrough + carve storm at 1920x1080 and 2560x1440 | FPS/p95 rules at each recorded resolution |
-| Surface update <= two frames | Every carve-storm edit plus zero-tick/cutoff harness cases | Max submitted-visible and commit-visible frame latency <= 2 |
-| Representative carve no hitch | First 3 m hillside dig | Max operation-window frame <= 33.3 ms and clear traversal path |
+| Complete mutation feasibility before breadth | F2 interactive + colony + catastrophic workloads, M4 Metal 1440p | Progress/fairness/throughput bounds, complete active-Horizon reconciliation, max frame <=33.3 ms, discovery/eligibility <=1.0 ms, query-cost contract passes |
+| 60 fps, 3060-class 1440p | Flythrough + mutation workloads on designated Linux machine | FPS/p95 rules at 2560x1440; first baseline provisional then reviewed/verified |
+| 60 fps, M4 Mac Mini 32 GB | Flythrough + mutation workloads at 1920x1080 and 2560x1440 | FPS/p95 rules at each recorded resolution |
+| Responsive progressive mutation | Every F2/final mutation workload | Admission/first-commit/primary-ready/fairness/throughput/reconciliation thresholds pass |
+| Representative carve no hitch | First 3 m hillside dig | Max operation-window frame <= 33.3 ms, terminal reconciliation <=1 s, and clear traversal path |
 | Walkable under five seconds | Both scenario startups and demo smoke run | Process-to-control-ready < 5,000 ms |
 | Graphics memory below ~2 GB | Peak of each headed scenario | Not proven by current plan; requires resident measurement < 2,000 MiB or Product-approved estimate substitution |
 | Idle wilderness sparse | F1 + streaming/startup telemetry + unit/property tests | No voxel arrays/meshes for untouched inactive uniform/procedural bricks; both object-index tables together <=16 MiB, within startup/candidate caps, and no retained dependency-coordinate arrays |
-| Delta save below 50 MB | Heavy carve-storm final save | Workload minimum met and file < 50,000,000 bytes |
-| Exact reload | Carve-storm second-world comparison | Every delta voxel byte exact; unchanged samples equal base |
+| Delta save below 50 MB | Heavy mutation-workload final save | Workload minimum met and file < 50,000,000 bytes |
+| Exact reload | Mutation-workload second-world comparison | Every delta voxel byte exact; unchanged samples equal base |
 | Curated content/continuous route | Curator checks, flythrough coverage, manual playthrough | All feature tags covered; no teleport/level transition; solid-collision route passes |
 | Material truth/debug operations | Protocol tests + manual/benchmark carve/place | Queries, collision, mesh, dressing share revision; all access public API |
 | Portability/32-bit constraint | Shader smoke on Metal/Vulkan, code review/check tests | No platform-only path or 64-bit GPU atomic; checked u32 GPU fields |
