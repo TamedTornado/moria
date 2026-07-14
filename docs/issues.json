@@ -796,60 +796,60 @@
     "id": "M-053",
     "title": "[system] Add edit submission limits and idempotency",
     "labels": [
-      "system",
-      "auto"
+      "auto",
+      "system"
     ],
     "depends_on": [
       "M-046",
       "M-050",
       "V-10"
     ],
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-046, M-050\n**Produces:** `crates/moria-world/src/mutation/api.rs`, `crates/moria-world/src/mutation/admission.rs`\n\n## Description\n\nImplement `WorldEditWrite` publication-frame stamping, request-ID lifetime idempotency, typed synchronous rejection, and the two-item queue. Reference: docs/tdd/api.md.\n\n## Inputs\n\n- `M-046` — completed prerequisite contract and artifacts\n- `M-050` — completed prerequisite contract and artifacts\n- `docs/tdd/api.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Only 0.25 m through 3 m valid dig/place commands can be accepted and place rejects air/water/unknown/zero strength\n- [ ] Duplicate, not-ready, load-in-progress, capacity, bounds, and invalid commands have exact typed outcomes\n- [ ] Accepted and synchronously rejected requests have unambiguous exactly-once lifecycle expectations\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-046, M-050\n**Produces:** `crates/moria-world/src/mutation/api.rs`, `crates/moria-world/src/mutation/admission.rs`\n\n## Description\n\nImplement `WorldEditWrite` admission for bounded atomic and progressive sphere/box operations, request-ID lifetime idempotency, typed synchronous rejection, and reserved bounded queue capacity. Reference: docs/tdd/api.md; docs/tdd/config.md.\n\n## Inputs\n\n- `M-046` — completed prerequisite contract and artifacts\n- `M-050` — completed prerequisite contract and artifacts\n- `docs/tdd/api.md; docs/tdd/config.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Valid 0.25–16 m spheres and bounded boxes accept `Atomic` only within `max_atomic_bricks`; larger valid operations require `Progressive`\n- [ ] Admission uses bounded memory, reserves lifecycle/accounting capacity, and rejects duplicate, invalid, not-ready, load-in-progress, atomic-limit, progressive-limit, and queue-full requests synchronously\n- [ ] Accepted requests emit exactly one `EditAccepted`; synchronous rejection emits no lifecycle messages\n- [ ] The API contains no designation, worker, spell, mana, or other game-layer semantics\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 68
   },
   {
     "id": "M-054",
-    "title": "[system] Implement deterministic spherical edit staging",
+    "title": "[system] Implement deterministic progressive edit staging",
     "labels": [
-      "system",
-      "auto"
+      "auto",
+      "system"
     ],
     "depends_on": [
       "M-045",
       "M-053",
       "V-11"
     ],
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-045, M-053\n**Produces:** `crates/moria-world/src/mutation/kernel.rs`, `crates/moria-world/src/mutation/stage.rs`\n\n## Description\n\nImplement the fixed-point closed-sphere dig/place kernel and sorted immutable staging without exposing partial truth. Reference: docs/tdd/data-model.md; docs/tdd/systems.md.\n\n## Inputs\n\n- `M-045` — completed prerequisite contract and artifacts\n- `M-053` — completed prerequisite contract and artifacts\n- `docs/tdd/data-model.md; docs/tdd/systems.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Only voxel centers inside the exact sphere are staged and region-edge clipping never aliases\n- [ ] Dig/place density/material behavior, hardness/falloff/core, and base reversion match byte oracles\n- [ ] Output is independent of thread/hash order and starting truth is not mutated\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-045, M-053\n**Produces:** `crates/moria-world/src/mutation/kernel.rs`, `crates/moria-world/src/mutation/stage.rs`\n\n## Description\n\nImplement deterministic sphere/box kernels, canonical progressive brick cursors, and bounded immutable batch staging without exposing partial batches or allocating the complete operation volume. Reference: docs/tdd/data-model.md; docs/tdd/systems.md.\n\n## Inputs\n\n- `M-045` — completed prerequisite contract and artifacts\n- `M-053` — completed prerequisite contract and artifacts\n- `docs/tdd/data-model.md; docs/tdd/systems.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Sphere and half-open box membership, clipping, dig/place behavior, hardness/falloff/core, and base reversion match byte oracles\n- [ ] Progressive enumeration uses canonical brick order and stages at most `max_commit_bricks_per_batch` without operation-volume allocation\n- [ ] Batch boundaries and output are independent of thread/hash order and starting truth is not mutated before commit\n- [ ] Tests cover atomic/progressive equivalence, region edges, overlapping requests, resume cursors, and maximum admitted shapes\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 72
   },
   {
     "id": "M-055",
-    "title": "[system] Commit edits atomically into base-relative deltas",
+    "title": "[system] Commit edit batches atomically into base-relative deltas",
     "labels": [
-      "system",
-      "auto"
+      "auto",
+      "system"
     ],
     "depends_on": [
       "M-045",
       "M-054",
       "V-12"
     ],
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-045, M-054\n**Produces:** `crates/moria-world/src/mutation/commit.rs`, `crates/moria-world/tests/edit_atomicity.rs`\n\n## Description\n\nCommit one staged edit at a fixed boundary, update exact base-relative deltas, dirty truth, and emit immutable results. Reference: docs/tdd/api.md.\n\n## Inputs\n\n- `M-045` — completed prerequisite contract and artifacts\n- `M-054` — completed prerequisite contract and artifacts\n- `docs/tdd/api.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Reads observe wholly pre- or post-commit truth; one nonempty request increments revision exactly once\n- [ ] Changed bricks are sorted/deduplicated, collision is immediately current, and base-equal cells/bricks disappear from deltas\n- [ ] A valid no-op preserves revision and emits committed plus immediate readiness exactly once\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-045, M-054\n**Produces:** `crates/moria-world/src/mutation/commit.rs`, `crates/moria-world/tests/edit_atomicity.rs`\n\n## Description\n\nCommit each staged batch atomically into exact base-relative deltas, advance monotonic request progress, dirty truth, and emit immutable batch results. Reference: docs/tdd/api.md; docs/tdd/systems.md.\n\n## Inputs\n\n- `M-045` — completed prerequisite contract and artifacts\n- `M-054` — completed prerequisite contract and artifacts\n- `docs/tdd/api.md; docs/tdd/systems.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Reads observe wholly pre- or post-batch truth; progressive requests intentionally expose completed batches while later batches remain pending\n- [ ] Each nonempty batch increments revision once; changed bricks are sorted/deduplicated, collision is immediately current, and base-equal cells/bricks disappear from deltas\n- [ ] `EditBatchCommitted` carries monotonic batch/progress fields and bounded changed-brick lists\n- [ ] A valid no-op preserves revision and emits one zero-change batch followed by terminal reconciliation through the normal accounting path\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 75
   },
   {
     "id": "M-056",
     "title": "[system] Discover edit dependencies and reject stale object work",
     "labels": [
-      "system",
-      "auto"
+      "auto",
+      "system"
     ],
     "depends_on": [
       "M-041",
       "M-055",
       "V-13"
     ],
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-041, M-055\n**Produces:** `crates/moria-world/src/mutation/dependencies.rs`, `crates/moria-world/tests/dependency_oracles.rs`\n\n## Description\n\nImplement changed-mask broad/exact dependency discovery and revision/token checks for object/terrain/ruin boundary edits. Reference: docs/tdd/systems.md.\n\n## Inputs\n\n- `M-041` — completed prerequisite contract and artifacts\n- `M-055` — completed prerequisite contract and artifacts\n- `docs/tdd/systems.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Discovery returns <=256 candidates and <=64 sorted affected IDs without dependency-sized allocations\n- [ ] Object-only, adjacent terrain/ruin, full-revert, and outside-dependency cases match explicit oracles\n- [ ] Every stale object payload is rejected and exact object-cell reversion cannot restore authored visuals while boundary deltas remain\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-041, M-055\n**Produces:** `crates/moria-world/src/mutation/dependencies.rs`, `crates/moria-world/tests/dependency_oracles.rs`\n\n## Description\n\nImplement per-committed-batch changed-mask broad/exact dependency discovery and revision/token checks for object/terrain/ruin boundary edits. Reference: docs/tdd/systems.md.\n\n## Inputs\n\n- `M-041` — completed prerequisite contract and artifacts\n- `M-055` — completed prerequisite contract and artifacts\n- `docs/tdd/systems.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Each bounded batch respects the configured candidate/affected-ID caps without dependency-sized or whole-operation allocations\n- [ ] Object-only, adjacent terrain/ruin, multi-batch overlap, full-revert, and outside-dependency cases match explicit oracles\n- [ ] Every stale object payload is rejected and later batches cannot resurrect an earlier object/Horizon revision\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 77
   },
   {
@@ -1004,10 +1004,10 @@
   },
   {
     "id": "M-066",
-    "title": "[component] Define edit readiness barriers and required keys",
+    "title": "[component] Define staged edit reconciliation accounting",
     "labels": [
-      "component",
-      "auto"
+      "auto",
+      "component"
     ],
     "depends_on": [
       "M-055",
@@ -1018,7 +1018,7 @@
       "M-062",
       "V-16"
     ],
-    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** M-055, M-056, M-058, M-060, M-061, M-062\n**Produces:** `crates/moria-world/src/mutation/barrier.rs`, `crates/moria-world/tests/barrier_accounting.rs`\n\n## Description\n\nDefine revisioned barrier item keys and pure exactly-once accounting for every terrain, seam, water, object root, Horizon aggregate/derived/tombstone, and dressing result. Reference: docs/tdd/api.md; docs/tdd/systems.md.\n\n## Inputs\n\n- `M-055` — completed prerequisite contract and artifacts\n- `M-056` — completed prerequisite contract and artifacts\n- `M-058` — completed prerequisite contract and artifacts\n- `M-060` — completed prerequisite contract and artifacts\n- `M-061` — completed prerequisite contract and artifacts\n- `M-062` — completed prerequisite contract and artifacts\n- `docs/tdd/api.md; docs/tdd/systems.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Duplicate, missing, empty-removal, stale-revision, and zero-work keys have deterministic outcomes\n- [ ] Expected items are derived from the committed dirty/dependency set and cannot be discharged by eviction\n- [ ] Pure accounting emits terminal completion exactly once only when expected equals renderer-ready\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** M-055, M-056, M-058, M-060, M-061, M-062\n**Produces:** `crates/moria-world/src/mutation/barrier.rs`, `crates/moria-world/tests/barrier_accounting.rs`\n\n## Description\n\nDefine revisioned accounting for committed batches, primary-focus presentation progress, and final request reconciliation across terrain, seams, water, object roots, Horizon aggregate/derived/tombstones, and dressing. Reference: docs/tdd/api.md; docs/tdd/systems.md.\n\n## Inputs\n\n- `M-055` — completed prerequisite contract and artifacts\n- `M-056` — completed prerequisite contract and artifacts\n- `M-058` — completed prerequisite contract and artifacts\n- `M-060` — completed prerequisite contract and artifacts\n- `M-061` — completed prerequisite contract and artifacts\n- `M-062` — completed prerequisite contract and artifacts\n- `docs/tdd/api.md; docs/tdd/systems.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Duplicate, missing, empty-removal, stale-revision, superseded, and zero-work keys have deterministic outcomes per batch and request\n- [ ] `EditPrimaryPresentationReady` advances only for fully acknowledged primary-focus keys through its reported revision and cannot claim terminal completion\n- [ ] `EditReconciliationComplete` emits exactly once only after every accepted batch and every expected final-revision item equals renderer-ready/removed\n- [ ] Eviction, hidden work, or a later batch cannot discharge accounting for an earlier unresolved key\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 89
   },
   {
@@ -1038,10 +1038,10 @@
   },
   {
     "id": "M-068",
-    "title": "[state] Enforce edit deadlines, capacity pins, and terminal readiness",
+    "title": "[state] Enforce edit fairness, capacity pins, and staged readiness",
     "labels": [
-      "state",
-      "auto"
+      "auto",
+      "state"
     ],
     "depends_on": [
       "M-052",
@@ -1049,22 +1049,22 @@
       "M-067",
       "V-18"
     ],
-    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** M-052, M-053, M-067\n**Produces:** `crates/moria-world/src/mutation/readiness.rs`, `crates/moria-world/tests/edit_deadlines.rs`\n\n## Description\n\nImplement accepted-edit pinning, capacity reservation/preemption, and exactly-once `EditSurfaceReady` deadline semantics. Reference: docs/tdd/api.md; docs/tdd/implementation-plan.md.\n\n## Inputs\n\n- `M-052` — completed prerequisite contract and artifacts\n- `M-053` — completed prerequisite contract and artifacts\n- `M-067` — completed prerequisite contract and artifacts\n- `docs/tdd/api.md; docs/tdd/implementation-plan.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Accepted work remains pinned through complete render acknowledgement; saturation rejects synchronously before acceptance\n- [ ] Zero-fixed-tick and after-drain-cutoff submissions meet both submit+2 and commit+2 or are synchronously rejected\n- [ ] Superseded/stale tasks reschedule current work, missed deadlines remain observable failures, and correctness is never fabricated\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** M-052, M-053, M-067\n**Produces:** `crates/moria-world/src/mutation/readiness.rs`, `crates/moria-world/tests/edit_scheduling.rs`\n\n## Description\n\nImplement bounded per-frame mutation scheduling, weighted round-robin fairness with aging, bounded committed-window pins, staged primary readiness, and exactly-once terminal reconciliation. Reference: docs/tdd/api.md; docs/tdd/config.md; docs/tdd/implementation-plan.md.\n\n## Inputs\n\n- `M-052` — completed prerequisite contract and artifacts\n- `M-053` — completed prerequisite contract and artifacts\n- `M-067` — completed prerequisite contract and artifacts\n- `docs/tdd/api.md; docs/tdd/config.md; docs/tdd/implementation-plan.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Only the current bounded commit/presentation window is pinned; an uncommitted progressive volume is never materialized or pinned wholesale\n- [ ] Interactive priority cannot starve colony or catastrophic requests; deterministic tests enforce the 500 ms runnable-wait contract and bounded per-frame staging budget\n- [ ] Primary-ready and reconciliation signals follow exact accounting; stale/superseded work reschedules without fabricated progress\n- [ ] Saturation rejects before acceptance, while every accepted request retains capacity and progresses to terminal completion\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 96
   },
   {
     "id": "M-069",
-    "title": "[system] Record and validate the fixed feasibility trace",
+    "title": "[system] Record and validate the production mutation trace",
     "labels": [
-      "system",
-      "auto"
+      "auto",
+      "system"
     ],
     "depends_on": [
       "M-066",
       "M-067",
       "V-18"
     ],
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-066, M-067\n**Produces:** `crates/moria-world/src/telemetry/edit_trace.rs`, `crates/moria-world/tests/edit_trace.rs`\n\n## Description\n\nImplement the fixed 256-entry allocation-free production edit trace and exact thirteen-stage validator without owning deadline state. Reference: docs/tdd/implementation-plan.md.\n\n## Inputs\n\n- `M-066` — completed prerequisite contract and artifacts\n- `M-067` — completed prerequisite contract and artifacts\n- `docs/tdd/implementation-plan.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Every named stage records request/revision/frame/time/count/bytes, including explicit zero-work entries\n- [ ] Ring wrap/drop and non-finite/missing/duplicate/mismatched stage evidence fail deterministically\n- [ ] Tracing performs no file I/O or per-item allocation in the timed path\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-066, M-067\n**Produces:** `crates/moria-world/src/telemetry/edit_trace.rs`, `crates/moria-world/tests/edit_trace.rs`\n\n## Description\n\nImplement the fixed allocation-free production mutation trace and exact staged-lifecycle validator without owning scheduler state. Reference: docs/tdd/implementation-plan.md.\n\n## Inputs\n\n- `M-066` — completed prerequisite contract and artifacts\n- `M-067` — completed prerequisite contract and artifacts\n- `docs/tdd/implementation-plan.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Admission, scheduling, staging, commit, discovery, eligibility, snapshot, extraction, install, primary-ready, GPU/render acknowledgement, and reconciliation stages record request/batch/revision/frame/time/count/bytes with explicit zero-work entries\n- [ ] Trace capacity covers every F2 workload without timed-path allocation; ring wrap/drop and non-finite/missing/duplicate/mismatched evidence fail deterministically\n- [ ] The validator computes first-progress, throughput, runnable-wait/fairness, primary-ready, frame-pacing, and terminal-reconciliation evidence without file I/O in the timed path\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 97
   },
   {
@@ -1133,10 +1133,10 @@
   },
   {
     "id": "M-073",
-    "title": "[integration] Wire feasibility mutation through renderer readiness",
+    "title": "[integration] Wire feasibility mutation through staged reconciliation",
     "labels": [
-      "integration",
-      "auto"
+      "auto",
+      "integration"
     ],
     "depends_on": [
       "M-053",
@@ -1151,7 +1151,7 @@
       "M-072",
       "V-19"
     ],
-    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-053, M-054, M-055, M-056, M-066, M-067, M-068, M-069, M-071, M-072\n**Produces:** `crates/moria-world/src/feasibility/mutation.rs`, `crates/moria-world/tests/feasibility_public_edit.rs`\n\n## Description\n\nCompose public edit submission, fixed-step staging and commit, dependency discovery, revision snapshots, readiness barriers, extraction acknowledgements, deadlines, capacity pins, and fixed trace validation for F2. Reference: docs/tdd/api.md; docs/tdd/systems.md; docs/tdd/implementation-plan.md.\n\n## Inputs\n\n- `M-053` — completed prerequisite contract and artifacts\n- `M-054` — completed prerequisite contract and artifacts\n- `M-055` — completed prerequisite contract and artifacts\n- `M-056` — completed prerequisite contract and artifacts\n- `M-066` — completed prerequisite contract and artifacts\n- `M-067` — completed prerequisite contract and artifacts\n- `M-068` — completed prerequisite contract and artifacts\n- `M-069` — completed prerequisite contract and artifacts\n- `M-071` — completed prerequisite contract and artifacts\n- `M-072` — completed prerequisite contract and artifacts\n- `docs/tdd/api.md; docs/tdd/systems.md; docs/tdd/implementation-plan.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Signature, object, Horizon, dressing, no-op, stale, cutoff, zero-fixed-tick, and saturation paths emit the exact public committed/rejected/ready terminals\n- [ ] Readiness waits for every revision-matched extraction, GPU prepare/free, and render-queue acknowledgement without exceeding pins or capacities\n- [ ] External-consumer and import-boundary tests prove no privileged reset, direct store mutation, direct mesh injection, or private barrier completion path\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-053, M-054, M-055, M-056, M-066, M-067, M-068, M-069, M-071, M-072\n**Produces:** `crates/moria-world/src/feasibility/mutation.rs`, `crates/moria-world/tests/feasibility_public_edit.rs`\n\n## Description\n\nCompose public atomic/progressive admission, deterministic batch staging/commit, fair scheduling, dependency discovery, snapshots, primary readiness, renderer acknowledgement, and final reconciliation for Gate F2. Reference: docs/tdd/api.md; docs/tdd/systems.md; docs/tdd/implementation-plan.md.\n\n## Inputs\n\n- `M-053` through `M-069`, `M-071`, and `M-072` — completed prerequisite contracts and artifacts\n- `docs/tdd/api.md; docs/tdd/systems.md; docs/tdd/implementation-plan.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Interactive, eight-stream colony, catastrophic, object, Horizon, dressing, no-op, stale, overlap, zero-fixed-tick, and saturation paths emit the exact accepted/batch/primary/reconciled lifecycle\n- [ ] Tests prove bounded per-frame work, deterministic interleaving, no starvation, progressive truth visibility, primary-vs-terminal distinction, and complete final renderer acknowledgement\n- [ ] External-consumer/import checks prove no privileged reset, direct store mutation, direct mesh injection, or private completion path\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 99
   },
   {
@@ -1206,10 +1206,10 @@
   },
   {
     "id": "M-077",
-    "title": "[integration] Run the clean signature-carve feasibility scenario",
+    "title": "[integration] Run interactive and colony mutation feasibility scenarios",
     "labels": [
-      "integration",
-      "auto"
+      "auto",
+      "integration"
     ],
     "depends_on": [
       "M-044",
@@ -1223,15 +1223,15 @@
       "M-074",
       "V-21"
     ],
-    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-044, M-047, M-048, M-054, M-065, M-068, M-069, M-070, M-074\n**Produces:** `crates/moria-bench/src/scenarios/feasibility_signature.rs`, `crates/moria-bench/tests/feasibility_signature.rs`\n\n## Description\n\nOpen a clean normal world and drive the public radius-3 m signature carve through the complete production barrier. Reference: docs/tdd/implementation-plan.md.\n\n## Inputs\n\n- `M-044` — completed prerequisite contract and artifacts\n- `M-047` — completed prerequisite contract and artifacts\n- `M-048` — completed prerequisite contract and artifacts\n- `M-054` — completed prerequisite contract and artifacts\n- `M-065` — completed prerequisite contract and artifacts\n- `M-068` — completed prerequisite contract and artifacts\n- `M-069` — completed prerequisite contract and artifacts\n- `M-070` — completed prerequisite contract and artifacts\n- `M-074` — completed prerequisite contract and artifacts\n- `docs/tdd/implementation-plan.md; docs/tdd/systems.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] The public command meets submit+2/commit+2, <=33.3 ms frame, current presentation, and capsule-clear traversal\n- [ ] Every mandatory production trace/barrier stage is present with matching expected/renderer-ready counts\n- [ ] Normal full-manifest startup is <5000 ms and the scenario has no private reset/store/mesh path\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-044, M-047, M-048, M-054, M-065, M-068, M-069, M-070, M-074\n**Produces:** `crates/moria-bench/src/scenarios/feasibility_interactive_colony.rs`, `crates/moria-bench/tests/feasibility_interactive_colony.rs`\n\n## Description\n\nRun the public 3 m interactive carve and eight concurrent colony-style edit streams over a 32 m x 32 m x 16 m designation volume through the production mutation lifecycle. Reference: docs/tdd/implementation-plan.md; docs/tdd/benchmarks.md.\n\n## Inputs\n\n- Existing M-077 prerequisite set — completed contracts and artifacts\n- `docs/tdd/implementation-plan.md; docs/tdd/benchmarks.md` — authoritative workloads and thresholds\n\n## Acceptance Criteria\n\n- [ ] Interactive admission/first-commit/primary-ready/reconciliation and capsule traversal meet the documented thresholds with no frame above 33.3 ms\n- [ ] Eight worker streams exercise disjoint and overlapping edits, deterministic interleaving, >=32 changed bricks/s aggregate throughput, and <=500 ms runnable wait without game-layer designation/AI code\n- [ ] Every mandatory lifecycle/production trace stage is present and final expected renderer items equal acknowledged items\n- [ ] Normal full-manifest startup is <5000 ms and no private reset/store/mesh path exists\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 103
   },
   {
     "id": "M-078",
-    "title": "[integration] Run the maximum-candidate active-Horizon stress scenario",
+    "title": "[integration] Run catastrophic active-Horizon feasibility scenario",
     "labels": [
-      "integration",
-      "auto"
+      "auto",
+      "integration"
     ],
     "depends_on": [
       "M-060",
@@ -1239,15 +1239,15 @@
       "M-077",
       "V-22"
     ],
-    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-060, M-074, M-077\n**Produces:** `crates/moria-bench/src/scenarios/feasibility_stress.rs`, `crates/moria-bench/tests/feasibility_stress.rs`\n\n## Description\n\nOpen a separate clean world at F1's exact stress target with the affected cell simultaneously desired in Horizon. Reference: docs/tdd/implementation-plan.md.\n\n## Inputs\n\n- `M-060` — completed prerequisite contract and artifacts\n- `M-074` — completed prerequisite contract and artifacts\n- `M-077` — completed prerequisite contract and artifacts\n- `docs/tdd/implementation-plan.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] The edit meets frame/hitch limits and dirty-discovery plus eligibility is <=1.0 ms\n- [ ] Barrier proves object rebuild, old dressing removal/reinstall, base-card exclusion, derived/tombstone ownership, GPU free/create, and queue acknowledgements\n- [ ] Wrong F1 digest/target, stale result, fallback, overflow, missing branch, or private reset fails\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-060, M-074, M-077\n**Produces:** `crates/moria-bench/src/scenarios/feasibility_catastrophic.rs`, `crates/moria-bench/tests/feasibility_catastrophic.rs`\n\n## Description\n\nRun one public progressive 16 m-radius catastrophic dig through F1's maximum-candidate forest/Horizon target while proving progressive truth, bounded frame work, primary presentation, and complete reconciliation. Reference: docs/tdd/implementation-plan.md.\n\n## Inputs\n\n- `M-060`, `M-074`, and `M-077` — completed prerequisite contracts and artifacts\n- `docs/tdd/implementation-plan.md` — authoritative workload and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Admission <=2 ms, first nonempty commit <=100 ms, primary-ready <=250 ms p95/500 ms max, throughput >=32 changed bricks/s, no runnable wait >500 ms, reconciliation <=30 s, and no frame >33.3 ms\n- [ ] Final accounting proves object rebuild, old dressing removal/reinstall, base-card exclusion, derived/tombstone ownership, GPU free/create, and render-queue acknowledgements\n- [ ] The operation never allocates or pins the complete volume, never fabricates full completion from primary progress, and exposes only atomic committed batches to queries/collision\n- [ ] Wrong F1 digest/target, stale result, fallback, overflow, starvation, missing branch, or private reset fails\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 105
   },
   {
     "id": "M-079",
-    "title": "[system] Assemble and validate carve-feasibility reports",
+    "title": "[system] Assemble and validate mutation-feasibility reports",
     "labels": [
-      "system",
-      "auto"
+      "auto",
+      "system"
     ],
     "depends_on": [
       "M-007",
@@ -1259,15 +1259,15 @@
       "M-078",
       "V-23"
     ],
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-007, M-069, M-070, M-075, M-076, M-077, M-078\n**Produces:** `crates/moria-bench/src/scenarios/feasibility_report.rs`, `crates/moria-bench/tests/feasibility_report.rs`\n\n## Description\n\nAssemble both clean-world trials, query-cost evidence, complete trace and barrier evidence, identities, machine/backend/resolution facts, and the consumed F1 proof into the sole CarveFeasibilityReport before the runnable application and assisted gate. Validate the complete report before shared atomic output and map incomplete or invalid branches to truthful failure evidence and exits. Reference: docs/tdd/data-model.md; docs/tdd/implementation-plan.md; docs/tdd/benchmarks.md.\n\n## Inputs\n\n- `M-007` — completed prerequisite contract and artifacts\n- `M-069` — completed prerequisite contract and artifacts\n- `M-070` — completed prerequisite contract and artifacts\n- `M-075` — completed prerequisite contract and artifacts\n- `M-076` — completed prerequisite contract and artifacts\n- `M-077` — completed prerequisite contract and artifacts\n- `M-078` — completed prerequisite contract and artifacts\n- `docs/tdd/data-model.md; docs/tdd/implementation-plan.md; docs/tdd/benchmarks.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] A complete report contains both role records, public query evidence, all required stage/barrier evidence, exact build/world/manifest/asset/machine identities, and the SHA-256 of the F1 artifact consumed by F2\n- [ ] Missing stages, identity/F1 mismatch, non-finite/timing/count violations, and invalid optional zero-work branches produce a validated failed report and documented nonzero exit rather than partial or passing output\n- [ ] Tests cover every invalid branch plus a complete passing report, and application-facing tests prove validation occurs before the shared atomic writer\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-007, M-069, M-070, M-075, M-076, M-077, M-078\n**Produces:** `crates/moria-bench/src/scenarios/feasibility_report.rs`, `crates/moria-bench/tests/feasibility_report.rs`\n\n## Description\n\nAssemble the interactive, colony, and catastrophic workloads, query evidence, staged lifecycle/reconciliation evidence, identities, and consumed F1 proof into the sole `MutationFeasibilityReport`. Reference: docs/tdd/data-model.md; docs/tdd/implementation-plan.md; docs/tdd/benchmarks.md.\n\n## Inputs\n\n- Existing M-079 prerequisite set — completed contracts and artifacts\n- `docs/tdd/data-model.md; docs/tdd/implementation-plan.md; docs/tdd/benchmarks.md` — authoritative report contract\n\n## Acceptance Criteria\n\n- [ ] The report contains all three workload records, public query evidence, stage/reconciliation evidence, exact identities, and the consumed F1 SHA-256\n- [ ] Missing stages, identity/F1 mismatch, non-finite values, admission/progress/fairness/throughput/frame/reconciliation violations, or invalid zero-work branches produce a validated failed report and nonzero exit\n- [ ] Tests cover every invalid branch and prove validation precedes atomic output\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 107
   },
   {
     "id": "M-080",
-    "title": "[integration] Compose the feasibility-carve benchmark application",
+    "title": "[integration] Compose the feasibility-mutation benchmark application",
     "labels": [
-      "integration",
-      "auto"
+      "auto",
+      "integration"
     ],
     "depends_on": [
       "M-074",
@@ -1278,7 +1278,7 @@
       "M-079",
       "V-24"
     ],
-    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-074, M-075, M-076, M-077, M-078, M-079\n**Produces:** `crates/moria-bench/src/main.rs`, `crates/moria-bench/src/plugin.rs`, `crates/moria-bench/tests/feasibility_application_flow.rs`\n\n## Description\n\nWire the thin moria-bench binary plus feasibility-only BenchmarkScenarioPlugin and MetricCapturePlugin path so strict CLI selection launches the complete feasibility-carve lifecycle through MoriaWorldPlugin and the completed report assembler. Reference: docs/tdd/overview.md; docs/tdd/api.md; docs/tdd/states.md; docs/tdd/benchmarks.md.\n\n## Inputs\n\n- `M-074` — completed prerequisite contract and artifacts\n- `M-075` — completed prerequisite contract and artifacts\n- `M-076` — completed prerequisite contract and artifacts\n- `M-077` — completed prerequisite contract and artifacts\n- `M-078` — completed prerequisite contract and artifacts\n- `M-079` — completed prerequisite contract and artifacts\n- `docs/tdd/overview.md; docs/tdd/api.md; docs/tdd/states.md; docs/tdd/benchmarks.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] The documented release cargo command records process start before app construction, adds DefaultPlugins, MoriaWorldPlugin, BenchmarkScenarioPlugin, and MetricCapturePlugin, and runs exactly feasibility-carve\n- [ ] End-to-end tests cover signature/stress worlds, query probe, F1/digest and argument failures, watchdog/runtime failures, completed report assembly and validation, atomic output, and exit codes\n- [ ] Import and behavior checks prove the executable has no private moria-world import, WorldStore access, privileged reset, direct mesh path, fabricated metric path, or gate-time source generation\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-074, M-075, M-076, M-077, M-078, M-079\n**Produces:** `crates/moria-bench/src/main.rs`, `crates/moria-bench/src/plugin.rs`, `crates/moria-bench/tests/feasibility_application_flow.rs`\n\n## Description\n\nCompose the thin `moria-bench` binary and plugins so strict CLI selection runs the complete `feasibility-mutation` lifecycle through `MoriaWorldPlugin` and the mutation report assembler. Reference: docs/tdd/overview.md; docs/tdd/api.md; docs/tdd/states.md; docs/tdd/benchmarks.md.\n\n## Inputs\n\n- Existing M-080 prerequisite set — completed contracts and artifacts\n- `docs/tdd/overview.md; docs/tdd/api.md; docs/tdd/states.md; docs/tdd/benchmarks.md` — authoritative application flow\n\n## Acceptance Criteria\n\n- [ ] The documented release command records process start before app construction and runs exactly `feasibility-mutation`\n- [ ] End-to-end tests cover interactive/colony/catastrophic workloads, query probe, F1/digest/argument failures, watchdog/runtime failures, report validation, atomic output, and exit codes\n- [ ] Import and behavior checks prove no private `moria-world` import, `WorldStore` access, privileged reset, direct mesh path, fabricated metrics, or gate-time source generation\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 109
   },
   {
@@ -1293,7 +1293,7 @@
       "M-080",
       "V-25"
     ],
-    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-044, M-080\n**Produces:** `target/feasibility/preflight/forest.json`, `target/feasibility/forest.json`, `target/feasibility/carve.json`\n\n## Description\n\nFrom one clean release gate-baseline commit on the named 32 GB M4, preserve the earlier F1 preflight, then rerun the exact prove-forest and feasibility-carve commands without changing source, configuration, manifest, or assets between them. Approve only the new immutable reports as one identity-matched passing pair. This evidence-only issue changes no Rust source. Reference: docs/tdd/implementation-plan.md.\n\n## Inputs\n\n- `M-044` — completed F1 preflight command and preserved evidence\n- `M-080` — code-complete public feasibility executable, including report assembly and output\n- `docs/tdd/implementation-plan.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] The preflight is preserved separately, both exact release commands run from one unchanged clean commit, and F1/F2 BuildProfile.git_commit, world/config/manifest/asset identities, machine profile, and consumed forest-proof SHA-256 agree exactly\n- [ ] Both complete reports pass all F1 and F2 contracts on the named M4/Metal/resolution profile; immutable failed attempts and the approved pair are retained without rewriting failures green\n- [ ] Any dirty/stale build, identity mismatch, report failure, or source change leaves approval false and blocks every G1, V1, T1, S1, and B1 issue pending reviewed TDD redesign and a fresh paired rerun\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-044, M-080\n**Produces:** `target/feasibility/preflight/forest.json`, `target/feasibility/forest.json`, `target/feasibility/mutation.json`\n\n## Description\n\nFrom one clean release gate-baseline commit on the named 32 GB M4, preserve the F1 preflight, then rerun exact `prove-forest` and `feasibility-mutation` commands without changing source/config/manifest/assets between them. Approve only the new immutable identity-matched passing pair. Reference: docs/tdd/implementation-plan.md.\n\n## Inputs\n\n- `M-044` — completed F1 preflight and preserved evidence\n- `M-080` — code-complete public feasibility executable\n- `docs/tdd/implementation-plan.md` — authoritative gate contract\n\n## Acceptance Criteria\n\n- [ ] Both exact release commands run from one unchanged clean commit and F1/F2 identities plus consumed forest-proof SHA-256 agree exactly\n- [ ] The mutation report proves all interactive/colony/catastrophic progress, fairness, throughput, frame, query, and reconciliation contracts\n- [ ] Any dirty/stale build, mismatch, failed workload, or source change leaves approval false and blocks downstream work pending reviewed redesign and a fresh pair\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 111
   },
   {
@@ -1416,8 +1416,8 @@
     "id": "M-089",
     "title": "[integration] Extend mutation across the complete route",
     "labels": [
-      "integration",
-      "auto"
+      "auto",
+      "integration"
     ],
     "depends_on": [
       "M-073",
@@ -1425,7 +1425,7 @@
       "M-088",
       "V-31"
     ],
-    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-073, M-087, M-088\n**Produces:** `crates/moria-world/src/mutation/mod.rs`, `crates/moria-world/tests/public_edit_flow.rs`\n\n## Description\n\nExtend the already composed F2 public mutation/readiness boundary over every complete-route terrain, water, ruin, object, Horizon, and dressing owner. Reference: docs/tdd/api.md.\n\n## Inputs\n\n- `M-073` — completed prerequisite contract and artifacts\n- `M-087` — completed prerequisite contract and artifacts\n- `M-088` — completed prerequisite contract and artifacts\n- `docs/tdd/api.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Public dig/place changes complete-route queries and collision immediately and every affected presentation owner through the existing readiness barrier\n- [ ] Water, ruin, object-boundary, Horizon, exact-revert, stale, and saturation flows preserve the F2 terminal and acknowledgement contracts\n- [ ] Consumers cannot directly edit voxels/deltas, complete barriers, or inject render payloads\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-073, M-087, M-088\n**Produces:** `crates/moria-world/src/mutation/mod.rs`, `crates/moria-world/tests/public_edit_flow.rs`\n\n## Description\n\nExtend the F2 public atomic/progressive mutation lifecycle across every complete-route terrain, water, ruin, object, Horizon, and dressing owner. Reference: docs/tdd/api.md.\n\n## Inputs\n\n- `M-073`, `M-087`, and `M-088` — completed prerequisite contracts and artifacts\n- `docs/tdd/api.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Public sphere/box dig/place exposes atomic committed batches to queries/collision and reconciles every affected presentation owner\n- [ ] Water, ruin, object-boundary, Horizon, exact-revert, stale, overlap, progressive, and saturation flows preserve accepted/batch/primary/reconciled contracts\n- [ ] Consumers cannot directly edit voxels/deltas, complete accounting, or inject render payloads\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 133
   },
   {
@@ -1757,8 +1757,8 @@
     "id": "M-110",
     "title": "[integration] Prove the continuous playable route with placeholders",
     "labels": [
-      "integration",
-      "auto"
+      "auto",
+      "integration"
     ],
     "depends_on": [
       "M-090",
@@ -1774,7 +1774,7 @@
       "M-109",
       "V-38"
     ],
-    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-090, M-099, M-100, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109\n**Produces:** `crates/moria-demo/tests/continuous_route.rs`, `crates/moria-demo/src/main.rs`\n\n## Description\n\nWire the thin demo app and run the full placeholder-backed public-query journey from cliff top through ruin/cave to about -40 m plus the signature edit. Reference: docs/design-document.md; docs/tdd/overview.md.\n\n## Inputs\n\n- `M-090` — completed prerequisite contract and artifacts\n- `M-099` — completed prerequisite contract and artifacts\n- `M-100` — completed prerequisite contract and artifacts\n- `M-102` — completed prerequisite contract and artifacts\n- `M-103` — completed prerequisite contract and artifacts\n- `M-104` — completed prerequisite contract and artifacts\n- `M-105` — completed prerequisite contract and artifacts\n- `M-106` — completed prerequisite contract and artifacts\n- `M-107` — completed prerequisite contract and artifacts\n- `M-108` — completed prerequisite contract and artifacts\n- `M-109` — completed prerequisite contract and artifacts\n- `docs/design-document.md; docs/tdd/overview.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Scripted semantic intent continuously traverses every route tag, shelves/stairs/water/cave with no teleport or private access\n- [ ] Signature carve/place updates truth, collision, all presentation owners/dressing, and permits immediate walk-through\n- [ ] Demo reaches Playing in <5000 ms evidence context and excluded gameplay systems remain absent\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-090, M-099, M-100, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109\n**Produces:** `crates/moria-demo/tests/continuous_route.rs`, `crates/moria-demo/src/main.rs`\n\n## Description\n\nWire the thin demo and run the placeholder-backed public-query journey from cliff top through ruin/cave to about -40 m plus the 3 m debug signature edit. Reference: docs/tdd/overview.md; docs/tdd/api.md.\n\n## Inputs\n\n- Existing M-110 prerequisite set — completed contracts and artifacts\n- `docs/tdd/overview.md; docs/tdd/api.md` — authoritative substrate/demo boundary\n\n## Acceptance Criteria\n\n- [ ] Scripted semantic intent traverses every route tag with no teleport or private access\n- [ ] The debug carve/place uses the public staged lifecycle; committed truth/collision permits traversal and terminal reconciliation removes every stale presentation owner/dressing result\n- [ ] The demo treats 3 m as a validation-tool default, not a substrate maximum or game-layer digging design\n- [ ] Demo reaches `Playing` in <5000 ms and excluded gameplay systems remain absent\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 155
   },
   {
@@ -1828,10 +1828,10 @@
   },
   {
     "id": "M-114",
-    "title": "[system] Drive and validate the 128 carve-storm edits",
+    "title": "[system] Drive and validate production mutation workloads",
     "labels": [
-      "system",
-      "auto"
+      "auto",
+      "system"
     ],
     "depends_on": [
       "M-068",
@@ -1839,45 +1839,45 @@
       "M-112",
       "V-39"
     ],
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-068, M-110, M-112\n**Produces:** `crates/moria-bench/src/scenarios/carve_storm.rs`, `crates/moria-bench/tests/carve_storm.rs`\n\n## Description\n\nDrive exactly 128 deterministic public radius-3 m edits one open request at a time and validate truth/readiness/traversal/workload. Reference: docs/tdd/benchmarks.md.\n\n## Inputs\n\n- `M-068` — completed prerequisite contract and artifacts\n- `M-110` — completed prerequisite contract and artifacts\n- `M-112` — completed prerequisite contract and artifacts\n- `docs/tdd/benchmarks.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Targets cover all documented materials/locations/object dependency/reversible stress and final minima >=100 spheres across >=32 cells\n- [ ] Every command has matching commit/readiness, inside/outside samples, latency/frame evidence, and the first signature traversal\n- [ ] No next edit starts before terminal readiness and no private store/reset/presentation operation exists\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-068, M-110, M-112\n**Produces:** `crates/moria-bench/src/scenarios/mutation_workloads.rs`, `crates/moria-bench/tests/mutation_workloads.rs`\n\n## Description\n\nDrive and validate the final public interactive, eight-stream colony-volume, and 16 m catastrophic mutation workloads, then leave meaningful heavy defacement for persistence. Reference: docs/tdd/benchmarks.md.\n\n## Inputs\n\n- `M-068`, `M-110`, and `M-112` — completed prerequisite contracts and artifacts\n- `docs/tdd/benchmarks.md` — authoritative workload and metric contract\n\n## Acceptance Criteria\n\n- [ ] Workloads cover documented materials/locations/object dependencies, overlapping/reversible work, and final differences in at least 256 bricks\n- [ ] Every request has exact accepted/batch/primary/reconciled evidence, progressive inside/not-yet/outside truth samples, scheduler/fairness/throughput metrics, frame evidence, and signature traversal\n- [ ] Eight colony streams overlap in flight; catastrophic work is progressive; no private store/reset/presentation operation or game-layer designation/spell implementation exists\n- [ ] All documented admission/progress/fairness/throughput/reconciliation/frame thresholds pass\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 158
   },
   {
     "id": "M-115",
-    "title": "[integration] Save the heavy carve-storm world",
+    "title": "[integration] Save the heavy mutation-workload world",
     "labels": [
-      "integration",
-      "auto"
+      "auto",
+      "integration"
     ],
     "depends_on": [
       "M-098",
       "M-114",
       "V-40"
     ],
-    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-098, M-114\n**Produces:** `crates/moria-bench/src/scenarios/heavy_save.rs`, `crates/moria-bench/tests/heavy_save.rs`\n\n## Description\n\nRequest the public save only after the carve workload minimum and validate terminal evidence without opening a second app. Reference: docs/tdd/benchmarks.md.\n\n## Inputs\n\n- `M-098` — completed prerequisite contract and artifacts\n- `M-114` — completed prerequisite contract and artifacts\n- `docs/tdd/benchmarks.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Exactly one public save reaches a matching terminal result after workload validation\n- [ ] Reported bytes/counts match filesystem metadata/snapshot and compressed size is <50000000 bytes\n- [ ] Failure/busy/partial/temp state cannot be reported as a completed heavy save\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-098, M-114\n**Produces:** `crates/moria-bench/src/scenarios/heavy_save.rs`, `crates/moria-bench/tests/heavy_save.rs`\n\n## Description\n\nRequest the public save only after all mutation workloads have terminally reconciled and their heavy-defacement minimum passes. Reference: docs/tdd/benchmarks.md.\n\n## Acceptance Criteria\n\n- [ ] Exactly one public save reaches a matching terminal result after every mutation request reconciles and workload validation passes\n- [ ] Reported bytes/counts match filesystem metadata/snapshot and compressed size is <50000000 bytes\n- [ ] Primary-ready, in-progress, failed, busy, partial, or temporary state cannot be reported as a completed heavy save\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 160
   },
   {
     "id": "M-116",
     "title": "[integration] Prove exact round trip in a second public consumer",
     "labels": [
-      "integration",
-      "auto"
+      "auto",
+      "integration"
     ],
     "depends_on": [
       "M-098",
       "M-115",
       "V-41"
     ],
-    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-098, M-115\n**Produces:** `crates/moria-bench/src/scenarios/round_trip.rs`, `crates/moria-bench/tests/round_trip.rs`\n\n## Description\n\nOpen a presentation-disabled second app and load the heavy save through public messages before report writing. Reference: docs/tdd/benchmarks.md.\n\n## Inputs\n\n- `M-098` — completed prerequisite contract and artifacts\n- `M-115` — completed prerequisite contract and artifacts\n- `docs/tdd/benchmarks.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Every delta voxel byte matches the pre-save snapshot and deterministic unedited samples equal base\n- [ ] World identity matches and decoded data contains no derived bytes\n- [ ] Round-trip evidence is mandatory for carve completion and failure leaves the report false\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-098, M-115\n**Produces:** `crates/moria-bench/src/scenarios/round_trip.rs`, `crates/moria-bench/tests/round_trip.rs`\n\n## Description\n\nOpen a presentation-disabled second app and load the heavy mutation-workload save through public messages before report writing. Reference: docs/tdd/benchmarks.md.\n\n## Acceptance Criteria\n\n- [ ] Every delta voxel byte matches the post-reconciliation pre-save snapshot and deterministic unedited samples equal base\n- [ ] World identity matches and decoded data contains no derived bytes\n- [ ] Round-trip evidence is mandatory for mutation-workload completion and failure leaves the report false\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 162
   },
   {
     "id": "M-117",
     "title": "[integration] Extend the public benchmark application with production scenarios",
     "labels": [
-      "integration",
-      "auto"
+      "auto",
+      "integration"
     ],
     "depends_on": [
       "M-080",
@@ -1889,15 +1889,15 @@
       "M-116",
       "V-42"
     ],
-    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-080, M-090, M-112, M-113, M-114, M-115, M-116\n**Produces:** `crates/moria-bench/src/main.rs`, `crates/moria-bench/src/plugin.rs`, `crates/moria-bench/tests/application_flow.rs`\n\n## Description\n\nExtend the already runnable feasibility benchmark binary and plugins with persistence plus the complete flythrough and carve-storm scenario paths. Reference: docs/tdd/overview.md; docs/tdd/api.md; docs/tdd/states.md; docs/tdd/benchmarks.md.\n\n## Inputs\n\n- `M-080` — completed prerequisite contract and artifacts\n- `M-090` — completed prerequisite contract and artifacts\n- `M-112` — completed prerequisite contract and artifacts\n- `M-113` — completed prerequisite contract and artifacts\n- `M-114` — completed prerequisite contract and artifacts\n- `M-115` — completed prerequisite contract and artifacts\n- `M-116` — completed prerequisite contract and artifacts\n- `docs/tdd/overview.md; docs/tdd/api.md; docs/tdd/states.md; docs/tdd/benchmarks.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] CLI selection preserves feasibility-carve and launches exactly one complete flythrough or carve-storm lifecycle through the public world and persistence boundaries\n- [ ] End-to-end tests cover both production scenarios plus watchdog, runtime, report-validation, save, and round-trip failure branches with documented output and exits\n- [ ] Dependency/import inspection proves the extension adds no private world, reset, store, mesh, or persistence-codec access\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-080, M-090, M-112, M-113, M-114, M-115, M-116\n**Produces:** `crates/moria-bench/src/main.rs`, `crates/moria-bench/src/plugin.rs`, `crates/moria-bench/tests/application_flow.rs`\n\n## Description\n\nExtend the feasibility benchmark binary with persistence plus complete `flythrough` and `mutation-workloads` scenario paths. Reference: docs/tdd/overview.md; docs/tdd/api.md; docs/tdd/states.md; docs/tdd/benchmarks.md.\n\n## Acceptance Criteria\n\n- [ ] CLI preserves `feasibility-mutation` and launches exactly one complete flythrough or mutation-workloads lifecycle through public world/persistence boundaries\n- [ ] End-to-end tests cover both scenarios plus watchdog, runtime, lifecycle, report-validation, save, and round-trip failure branches\n- [ ] Dependency/import inspection proves no private world, reset, store, mesh, accounting, or persistence-codec access\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 164
   },
   {
     "id": "M-118",
     "title": "[integration] Add placeholder milestone capture and acceptance automation",
     "labels": [
-      "integration",
-      "auto"
+      "auto",
+      "integration"
     ],
     "depends_on": [
       "M-111",
@@ -1906,7 +1906,7 @@
       "M-117",
       "V-43"
     ],
-    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-111, M-113, M-116, M-117\n**Produces:** `crates/moria-bench/src/capture/milestones.rs`, `target/captures/`, `target/bench/`\n\n## Description\n\nAutomate placeholder-backed first-terrain, tunnel, geology, dressed-world, playable-run, and benchmark outputs using tagged cameras and public operations. Reference: docs/tdd/assets.md; docs/tdd/benchmarks.md.\n\n## Inputs\n\n- `M-111` — completed prerequisite contract and artifacts\n- `M-113` — completed prerequisite contract and artifacts\n- `M-116` — completed prerequisite contract and artifacts\n- `M-117` — completed prerequisite contract and artifacts\n- `docs/tdd/assets.md; docs/tdd/benchmarks.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Each capture records seed/config/asset digest plus camera/operation metadata and lives outside runtime assets\n- [ ] Automation reruns flythrough/carve reports at named resolutions without presenting placeholder evidence as final art acceptance\n- [ ] Visual checklist templates and machine-profile grouping are emitted for headed review\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-111, M-113, M-116, M-117\n**Produces:** `crates/moria-bench/src/capture/milestones.rs`, `target/captures/`, `target/bench/`\n\n## Description\n\nAutomate placeholder-backed first-terrain, tunnel, geology, dressed-world, playable-run, and benchmark outputs using tagged cameras and public operations. Reference: docs/tdd/assets.md; docs/tdd/benchmarks.md.\n\n## Acceptance Criteria\n\n- [ ] Each capture records seed/config/asset digest plus camera/operation metadata and lives outside runtime assets\n- [ ] Automation reruns flythrough and mutation-workload reports at named resolutions without presenting placeholder evidence as final art acceptance\n- [ ] Captures distinguish interactive completion, progressive catastrophic presentation, and terminal reconciliation\n- [ ] Visual checklist templates and machine-profile grouping are emitted for headed review\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 166
   },
   {
@@ -3012,7 +3012,7 @@
       "M-178",
       "M-179"
     ],
-    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-044, M-081, M-111, M-113, M-116, M-150, M-151, M-152, M-153, M-154, M-155, M-156, M-157, M-158, M-159, M-160, M-161, M-162, M-163, M-164, M-165, M-166, M-167, M-168, M-169, M-170, M-171, M-172, M-173, M-174, M-175, M-176, M-177, M-178, M-179\n**Produces:** `target/asset-audits/final-production.json`, `target/feasibility/final/`, `target/bench/final/`, `target/captures/final/`\n\n## Description\n\nRun release asset validation, headed shader loading, digest-matched F1/F2 gates, flythrough, carve storm, milestone captures, and the visual checklist with all production assets. Reference: docs/tdd/assets.md; docs/tdd/benchmarks.md.\n\n## Inputs\n\n- `M-044` — completed prerequisite contract and artifacts\n- `M-081` — completed prerequisite contract and artifacts\n- `M-111` — completed prerequisite contract and artifacts\n- `M-113` — completed prerequisite contract and artifacts\n- `M-116` — completed prerequisite contract and artifacts\n- `M-150` — completed prerequisite contract and artifacts\n- `M-151` — completed prerequisite contract and artifacts\n- `M-152` — completed prerequisite contract and artifacts\n- `M-153` — completed prerequisite contract and artifacts\n- `M-154` — completed prerequisite contract and artifacts\n- `M-155` — completed prerequisite contract and artifacts\n- `M-156` — completed prerequisite contract and artifacts\n- `M-157` — completed prerequisite contract and artifacts\n- `M-158` — completed prerequisite contract and artifacts\n- `M-159` — completed prerequisite contract and artifacts\n- `M-160` — completed prerequisite contract and artifacts\n- `M-161` — completed prerequisite contract and artifacts\n- `M-162` — completed prerequisite contract and artifacts\n- `M-163` — completed prerequisite contract and artifacts\n- `M-164` — completed prerequisite contract and artifacts\n- `M-165` — completed prerequisite contract and artifacts\n- `M-166` — completed prerequisite contract and artifacts\n- `M-167` — completed prerequisite contract and artifacts\n- `M-168` — completed prerequisite contract and artifacts\n- `M-169` — completed prerequisite contract and artifacts\n- `M-170` — completed prerequisite contract and artifacts\n- `M-171` — completed prerequisite contract and artifacts\n- `M-172` — completed prerequisite contract and artifacts\n- `M-173` — completed prerequisite contract and artifacts\n- `M-174` — completed prerequisite contract and artifacts\n- `M-175` — completed prerequisite contract and artifacts\n- `M-176` — completed prerequisite contract and artifacts\n- `M-177` — completed prerequisite contract and artifacts\n- `M-178` — completed prerequisite contract and artifacts\n- `M-179` — completed prerequisite contract and artifacts\n- `docs/tdd/assets.md; docs/tdd/benchmarks.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Every production path is readable, licensed, within budget, checksum-identified, stable-ID preserving, and uses zero fallback\n- [ ] Final captures plus rerun F1/F2/flythrough/carve artifacts record matching production asset, world, config, manifest, build, and machine digests; no pre-acquisition artifact is final\n- [ ] Metal/Vulkan shader evidence, route/carve/save evidence, visual checklist, and named-resolution reports all pass\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-044, M-081, M-111, M-113, M-116, M-150, M-151, M-152, M-153, M-154, M-155, M-156, M-157, M-158, M-159, M-160, M-161, M-162, M-163, M-164, M-165, M-166, M-167, M-168, M-169, M-170, M-171, M-172, M-173, M-174, M-175, M-176, M-177, M-178, M-179\n**Produces:** `target/asset-audits/final-production.json`, `target/feasibility/final/`, `target/bench/final/`, `target/captures/final/`\n\n## Description\n\nRun release asset validation, headed shader loading, digest-matched F1/F2 gates, flythrough, mutation workloads, milestone captures, and the visual checklist with all production assets. Reference: docs/tdd/assets.md; docs/tdd/benchmarks.md.\n\n## Acceptance Criteria\n\n- [ ] Every production path is readable, licensed, within budget, checksum-identified, stable-ID preserving, and uses zero fallback\n- [ ] Final captures plus rerun F1/F2/flythrough/mutation artifacts record matching production asset, world, config, manifest, build, and machine digests\n- [ ] Metal/Vulkan shader evidence, route/mutation/save evidence, staged lifecycle/reconciliation checks, visual checklist, and named-resolution reports all pass\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 229
   },
   {
@@ -3026,7 +3026,7 @@
       "M-076",
       "M-180"
     ],
-    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-076, M-180\n**Produces:** `target/acceptance/resident-memory/`, `target/bench/final/`\n\n## Description\n\nClose final acceptance with reviewed process-resident graphics-memory measurements—not application-ledger substitution—for every named production-asset scenario/configuration. Reference: docs/tdd/implementation-plan.md; docs/tdd/benchmarks.md.\n\n## Inputs\n\n- `M-076` — completed prerequisite contract and artifacts\n- `M-180` — completed prerequisite contract and artifacts\n- `docs/tdd/implementation-plan.md; docs/tdd/benchmarks.md` — authoritative contract and acceptance details\n\n## Acceptance Criteria\n\n- [ ] Reviewed provider artifacts cover flythrough and carve storm on M4 Metal at 1920x1080 and 2560x1440 and designated Linux 3060-class Vulkan at 2560x1440\n- [ ] Each artifact records provider, process/relevant-allocation scope, sampling interval, peak bytes, path, SHA-256, machine/profile/resolution/asset digest, and peak <2097152000\n- [ ] Reports set product_target_proven only from qualifying measurement; estimate substitution remains false/empty absent a separate explicit Product approval\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-076, M-180\n**Produces:** `target/acceptance/resident-memory/`, `target/bench/final/`\n\n## Description\n\nClose final acceptance with reviewed process-resident graphics-memory measurements for flythrough and production mutation workloads on every named production configuration. Reference: docs/tdd/implementation-plan.md; docs/tdd/benchmarks.md.\n\n## Acceptance Criteria\n\n- [ ] Reviewed provider artifacts cover flythrough and mutation-workloads on M4 Metal at 1920x1080 and 2560x1440 and designated Linux 3060-class Vulkan at 2560x1440\n- [ ] Mutation measurement covers the interactive, colony, and catastrophic phases through terminal reconciliation\n- [ ] Each artifact records provider/scope/sampling/peak/path/SHA-256/machine/profile/resolution/asset digest and peak <2097152000\n- [ ] Reports set `product_target_proven` only from qualifying measurement; estimate substitution remains false/empty absent separate Product approval\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass",
     "number": 230
   },
   {
@@ -3426,13 +3426,13 @@
     "id": "V-25",
     "title": "[verification] Wave 25 — build, test, verify",
     "labels": [
-      "verification",
-      "auto"
+      "auto",
+      "verification"
     ],
     "depends_on": [
       "M-080"
     ],
-    "body": "**Category:** verification\n**Automation:** auto\n\n## Description\n\nPost-wave verification. Confirm the project builds, all tests pass, and the features from wave 25 are functional.\n\n## Features to verify\n\n- [integration] Compose the feasibility-carve benchmark application\n\n## Acceptance Criteria\n\n- [ ] Project builds without errors\n- [ ] Full test suite passes\n- [ ] Features from this wave are functional\n- [ ] No regressions from prior waves",
+    "body": "**Category:** verification\n**Automation:** auto\n\n## Description\n\nPost-wave verification. Confirm the project builds, all tests pass, and the complete `feasibility-mutation` benchmark application is functional.\n\n## Features to verify\n\n- [integration] Compose the feasibility-mutation benchmark application\n\n## Acceptance Criteria\n\n- [ ] Project builds without errors\n- [ ] Full test suite passes\n- [ ] Interactive, colony, and catastrophic feasibility paths plus failure branches are functional\n- [ ] No regressions from prior waves",
     "number": 110
   },
   {
@@ -3639,27 +3639,27 @@
     "id": "V-40",
     "title": "[verification] Wave 40 — build, test, verify",
     "labels": [
-      "verification",
-      "auto"
+      "auto",
+      "verification"
     ],
     "depends_on": [
       "M-113",
       "M-114"
     ],
-    "body": "**Category:** verification\n**Automation:** auto\n\n## Description\n\nPost-wave verification. Confirm the project builds, all tests pass, and the features from wave 40 are functional.\n\n## Features to verify\n\n- [system] Drive the complete scripted flythrough\n- [system] Drive and validate the 128 carve-storm edits\n\n## Acceptance Criteria\n\n- [ ] Project builds without errors\n- [ ] Full test suite passes\n- [ ] Features from this wave are functional\n- [ ] No regressions from prior waves",
+    "body": "**Category:** verification\n**Automation:** auto\n\n## Description\n\nPost-wave verification. Confirm the project builds, all tests pass, and the flythrough plus production mutation workloads are functional.\n\n## Features to verify\n\n- [system] Drive the complete scripted flythrough\n- [system] Drive and validate production mutation workloads\n\n## Acceptance Criteria\n\n- [ ] Project builds without errors\n- [ ] Full test suite passes\n- [ ] Interactive, colony, and catastrophic workload contracts are exercised end to end\n- [ ] No regressions from prior waves",
     "number": 159
   },
   {
     "id": "V-41",
     "title": "[verification] Wave 41 — build, test, verify",
     "labels": [
-      "verification",
-      "auto"
+      "auto",
+      "verification"
     ],
     "depends_on": [
       "M-115"
     ],
-    "body": "**Category:** verification\n**Automation:** auto\n\n## Description\n\nPost-wave verification. Confirm the project builds, all tests pass, and the features from wave 41 are functional.\n\n## Features to verify\n\n- [integration] Save the heavy carve-storm world\n\n## Acceptance Criteria\n\n- [ ] Project builds without errors\n- [ ] Full test suite passes\n- [ ] Features from this wave are functional\n- [ ] No regressions from prior waves",
+    "body": "**Category:** verification\n**Automation:** auto\n\n## Description\n\nPost-wave verification. Confirm the project builds, all tests pass, and the reconciled heavy mutation-workload world is saved correctly.\n\n## Features to verify\n\n- [integration] Save the heavy mutation-workload world\n\n## Acceptance Criteria\n\n- [ ] Project builds without errors\n- [ ] Full test suite passes\n- [ ] Save cannot begin from primary-ready or otherwise nonterminal mutation state\n- [ ] No regressions from prior waves",
     "number": 161
   },
   {

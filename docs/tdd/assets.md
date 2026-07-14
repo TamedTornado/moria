@@ -161,11 +161,122 @@ Placeholders are acceptable for logic, streaming, mutation, and performance scaf
 
 Terrain, cave, water-body geometry, dressing anchors, and ruin placement never have hand-authored placeholder world meshes: their placeholder is the same procedural pipeline with simpler shared visual textures if necessary.
 
+## Production asset registries
+
+The two files under `assets/manifests/` are canonical RON documents with
+`#![enable(implicit_some)]` disabled and `serde(deny_unknown_fields)` on every
+record. They cover the 28 declared content assets exactly once: every stable ID
+in the shared 30-entry declaration table except the two registry files
+themselves. Entries are sorted by `stable_id`; paths must equal the immutable
+declaration-table path; SHA-256 values are lowercase 64-character hexadecimal
+digests of the exact installed bytes. Duplicate, missing, unknown, out-of-order,
+path-mismatched, or digest-mismatched entries are fatal in every build profile.
+
+```rust
+pub struct AssetLicenseRegistry {
+    pub schema_version: u16, // exactly 1
+    pub entries: Vec<AssetLicenseEntry>,
+}
+
+pub struct AssetLicenseEntry {
+    pub stable_id: String,
+    pub path: String,
+    pub content_sha256: String,
+    pub provenance: AssetProvenance,
+}
+
+pub enum AssetProvenance {
+    InHouseGenerated {
+        generator_or_tool: String,
+        author: String,
+        source_path: Option<String>,
+        modifications: Vec<String>,
+    },
+    External {
+        source_url: String,
+        author: String,
+        license_spdx: String,
+        license_text_path: String,
+        modifications: Vec<String>,
+    },
+}
+```
+
+All provenance strings are non-empty after trimming. `source_url` is an
+absolute `https` URL. `license_spdx` is one SPDX expression, and
+`license_text_path` is a repository-relative existing file. External entries
+may have an empty modifications list only when bytes are redistributed
+unchanged. In-house entries may omit `source_path` only for deterministic
+procedural output whose generator/tool is named. No `Unknown`, `TBD`, empty
+license, or development-placeholder provenance is valid for release acceptance.
+
+```rust
+pub struct AssetBudgetRegistry {
+    pub schema_version: u16, // exactly 1
+    pub entries: Vec<AssetBudgetEntry>,
+}
+
+pub struct AssetBudgetEntry {
+    pub stable_id: String,
+    pub path: String,
+    pub content_sha256: String,
+    pub max_file_bytes: u64,
+    pub contract: AssetBudgetContract,
+}
+
+pub enum AssetBudgetContract {
+    Ron { schema_key: String },
+    Glb {
+        max_triangles_per_primitive: u32,
+        required_named_primitives: Vec<String>,
+        required_animation_clips: Vec<String>,
+        bounds_min_q8: [i32; 3],
+        bounds_max_q8: [i32; 3],
+        support_origin_q8: [i32; 3],
+    },
+    Ktx2 {
+        width: u32,
+        height: u32,
+        layers: u16,
+        mip_count: u8,
+        color_space: TextureColorSpace,
+        basis_payload: bool,
+    },
+    Wgsl {
+        entry_points: Vec<String>,
+        forbids_i64_atomics: bool,
+    },
+}
+
+pub enum TextureColorSpace { Srgb, Linear }
+```
+
+`max_file_bytes` is positive and enforced before decoding. Contract variants
+must match the declared file extension. Bounds are finite Q8 metres with
+`min < max` on every axis; the support origin lies on or inside the bounds.
+Required-name vectors are sorted and duplicate-free. GLB triangle limits are
+the per-asset limits in this document; the explorer records all six required
+clips. KTX2 entries record the actual complete mip chain, layer count, colour
+space, and require a Basis Universal payload. WGSL entries name every required
+entry point and set `forbids_i64_atomics = true`. RON `schema_key` values name
+the concrete loader schema rather than a generic `ron` bucket.
+
+The license and budget entries for a stable ID must contain the same path and
+content digest. The loader computes SHA-256 for both registry files themselves
+and exposes `{ license_registry_sha256, budget_registry_sha256 }` in the
+immutable `AssetValidationReport`; this avoids a self-referential registry
+digest. Every content wire-in test records those two report digests and the
+content digest it validated. Changing either registry or installed content
+therefore invalidates stale wire-in evidence without creating a checksum cycle.
+
 ## Import and validation pipeline
 
 At startup/asset test time, `AssetValidationPlugin` checks:
 
 - all declared paths resolve and licenses are present;
+- both production registries satisfy the exact schemas, cardinality, canonical
+  ordering, cross-registry path/digest equality, and registry-report digest
+  rules above;
 - material registry order, texture array layer count/dimensions/formats/mips agree;
 - mesh bounds, finite attributes, index range, LOD sequence, origins, and triangle budgets;
 - vegetation materials use shared declared keys;
