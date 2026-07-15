@@ -1,0 +1,16 @@
+[package]
+name = "moria-curate"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "moria-curate"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+moria-world = { path = "../moria-world", features = ["curation"] }
+
+[lints]
+workspace = true
