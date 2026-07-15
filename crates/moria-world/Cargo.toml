@@ -16,6 +16,11 @@ zstd.workspace = true
 
 [dev-dependencies]
 proptest = "1"
+serde_json.workspace = true
+
+[[test]]
+name = "vegetation_pine_far_glb_placeholder"
+path = "tests/assets/vegetation_pine_far_glb_placeholder.rs"
 
 [lints]
 workspace = true
