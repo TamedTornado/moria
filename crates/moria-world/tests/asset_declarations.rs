@@ -4,6 +4,9 @@ use moria_world::presentation::{
     ASSET_COUNT, ASSET_DECLARATIONS, AssetDeclarationError, AssetId, AssetLoader,
 };
 
+#[path = "assets/shaders_terrain_wgsl_placeholder.rs"]
+mod shaders_terrain_wgsl_placeholder;
+
 #[test]
 fn declaration_table_is_the_complete_unique_runtime_inventory() {
     let expected_paths = BTreeSet::from([
