@@ -6,7 +6,6 @@ edition.workspace = true
 [[bin]]
 name = "moria-curate"
 path = "src/main.rs"
-test = false
 bench = false
 
 [dependencies]
