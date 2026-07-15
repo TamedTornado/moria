@@ -38,5 +38,9 @@ path = "tests/assets/shaders_vegetation_wgsl_placeholder.rs"
 name = "shaders_raw_voxel_wgsl_placeholder"
 path = "tests/assets/shaders_raw_voxel_wgsl_placeholder.rs"
 
+[[test]]
+name = "vegetation_pine_mid_glb_placeholder"
+path = "tests/assets/vegetation_pine_mid_glb_placeholder.rs"
+
 [lints]
 workspace = true
