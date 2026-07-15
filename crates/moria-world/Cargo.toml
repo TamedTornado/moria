@@ -3,6 +3,10 @@ name = "moria-world"
 version.workspace = true
 edition.workspace = true
 
+[[test]]
+name = "vegetation_bush_far_glb_placeholder"
+path = "tests/assets/vegetation_bush_far_glb_placeholder.rs"
+
 [features]
 curation = []
 
