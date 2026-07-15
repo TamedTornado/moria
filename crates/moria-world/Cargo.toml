@@ -26,5 +26,9 @@ path = "tests/assets/props_stump_glb_placeholder.rs"
 name = "manifests_asset_budgets_ron_placeholder"
 path = "tests/assets/manifests_asset_budgets_ron_placeholder.rs"
 
+[[test]]
+name = "shaders_vegetation_wgsl_placeholder"
+path = "tests/assets/shaders_vegetation_wgsl_placeholder.rs"
+
 [lints]
 workspace = true
