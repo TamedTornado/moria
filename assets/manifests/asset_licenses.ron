@@ -1,0 +1,6 @@
+// Production entries are installed only after their content assets are acquired.
+// This schema-faithful scaffold intentionally contains no provisional provenance.
+(
+    schema_version: 1,
+    entries: [],
+)

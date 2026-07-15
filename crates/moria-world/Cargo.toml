@@ -7,6 +7,10 @@ edition.workspace = true
 name = "vegetation_bush_far_glb_placeholder"
 path = "tests/assets/vegetation_bush_far_glb_placeholder.rs"
 
+[[test]]
+name = "shaders_water_wgsl_placeholder"
+path = "tests/assets/shaders_water_wgsl_placeholder.rs"
+
 [features]
 curation = []
 
@@ -23,6 +27,10 @@ proptest = "1"
 serde_json.workspace = true
 
 [[test]]
+name = "props_boulder_glb_placeholder"
+path = "tests/assets/props_boulder_glb_placeholder.rs"
+
+[[test]]
 name = "props_stump_glb_placeholder"
 path = "tests/assets/props_stump_glb_placeholder.rs"
 
@@ -37,6 +45,14 @@ path = "tests/assets/shaders_vegetation_wgsl_placeholder.rs"
 [[test]]
 name = "shaders_raw_voxel_wgsl_placeholder"
 path = "tests/assets/shaders_raw_voxel_wgsl_placeholder.rs"
+
+[[test]]
+name = "manifests_asset_licenses_ron_placeholder"
+path = "tests/assets/manifests_asset_licenses_ron_placeholder.rs"
+
+[[test]]
+name = "props_rock_glb_placeholder"
+path = "tests/assets/props_rock_glb_placeholder.rs"
 
 [lints]
 workspace = true
