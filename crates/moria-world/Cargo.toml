@@ -17,5 +17,9 @@ zstd.workspace = true
 [dev-dependencies]
 proptest = "1"
 
+[[test]]
+name = "manifests_asset_licenses_ron_placeholder"
+path = "tests/assets/manifests_asset_licenses_ron_placeholder.rs"
+
 [lints]
 workspace = true
