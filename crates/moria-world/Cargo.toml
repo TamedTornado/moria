@@ -19,6 +19,10 @@ proptest = "1"
 serde_json.workspace = true
 
 [[test]]
+name = "props_boulder_glb_placeholder"
+path = "tests/assets/props_boulder_glb_placeholder.rs"
+
+[[test]]
 name = "props_stump_glb_placeholder"
 path = "tests/assets/props_stump_glb_placeholder.rs"
 
