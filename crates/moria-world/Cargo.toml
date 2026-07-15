@@ -30,5 +30,9 @@ path = "tests/assets/manifests_asset_budgets_ron_placeholder.rs"
 name = "shaders_vegetation_wgsl_placeholder"
 path = "tests/assets/shaders_vegetation_wgsl_placeholder.rs"
 
+[[test]]
+name = "shaders_raw_voxel_wgsl_placeholder"
+path = "tests/assets/shaders_raw_voxel_wgsl_placeholder.rs"
+
 [lints]
 workspace = true
