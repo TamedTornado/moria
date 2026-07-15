@@ -12,7 +12,10 @@ edition = "2024"
 version = "0.1.0"
 
 [workspace.dependencies]
-bevy = "0.19"
+# Individual packages opt into rendering and platform backends as they need
+# them. The shared world facade and its headless integration fixtures only
+# require Bevy's app/ECS/time support.
+bevy = { version = "0.19", default-features = false, features = ["bevy_state"] }
 directories = "6"
 ron = "0.12"
 serde = { version = "1", features = ["derive"] }
