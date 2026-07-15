@@ -8,9 +8,6 @@ struct FixtureEntity;
 #[derive(Resource, Default)]
 struct FixedTickCount(u32);
 
-#[derive(Message)]
-struct FixedTickObserved;
-
 #[derive(States, Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 enum FixtureState {
     #[default]
@@ -22,7 +19,6 @@ fn fixture_app() -> App {
     app.add_plugins((MinimalPlugins, StatesPlugin))
         .init_state::<FixtureState>()
         .init_resource::<FixedTickCount>()
-        .add_message::<FixedTickObserved>()
         .add_systems(FixedUpdate, observe_fixed_tick);
     app.world_mut().spawn(FixtureEntity);
     app
