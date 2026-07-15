@@ -4,6 +4,7 @@
 
 use bevy::prelude::*;
 
+pub mod presentation;
 pub mod testing;
 
 /// Installs the reusable world feature set.
