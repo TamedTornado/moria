@@ -42,5 +42,9 @@ path = "tests/assets/shaders_raw_voxel_wgsl_placeholder.rs"
 name = "manifests_asset_licenses_ron_placeholder"
 path = "tests/assets/manifests_asset_licenses_ron_placeholder.rs"
 
+[[test]]
+name = "materials_terrain_normal_ktx2_placeholder"
+path = "tests/assets/materials_terrain_normal_ktx2_placeholder.rs"
+
 [lints]
 workspace = true
