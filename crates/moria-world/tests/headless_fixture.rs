@@ -1,0 +1,56 @@
+use bevy::prelude::*;
+use bevy::state::app::StatesPlugin;
+use moria_world::testing::run_fixed_ticks;
+
+#[derive(Component)]
+struct FixtureEntity;
+
+#[derive(Resource, Default)]
+struct FixedTickCount(u32);
+
+#[derive(Message)]
+struct FixedTickObserved;
+
+#[derive(States, Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+enum FixtureState {
+    #[default]
+    Ready,
+}
+
+fn fixture_app() -> App {
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, StatesPlugin))
+        .init_state::<FixtureState>()
+        .init_resource::<FixedTickCount>()
+        .add_message::<FixedTickObserved>()
+        .add_systems(FixedUpdate, observe_fixed_tick);
+    app.world_mut().spawn(FixtureEntity);
+    app
+}
+
+fn observe_fixed_tick(mut fixed_tick_count: ResMut<FixedTickCount>) {
+    fixed_tick_count.0 += 1;
+}
+
+#[test]
+fn headless_fixture_runs_the_requested_number_of_fixed_ticks() {
+    let mut app = fixture_app();
+
+    run_fixed_ticks(&mut app, 0);
+    assert_eq!(app.world().resource::<FixedTickCount>().0, 0);
+
+    run_fixed_ticks(&mut app, 3);
+    assert_eq!(app.world().resource::<FixedTickCount>().0, 3);
+    let fixture_entity_count = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<Entity, With<FixtureEntity>>()
+            .iter(world)
+            .count()
+    };
+    assert_eq!(fixture_entity_count, 1);
+    assert_eq!(
+        *app.world().resource::<State<FixtureState>>().get(),
+        FixtureState::Ready
+    );
+}
