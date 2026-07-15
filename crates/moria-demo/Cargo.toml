@@ -1,0 +1,17 @@
+[package]
+name = "moria-demo"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "moria-demo"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+bevy.workspace = true
+moria-world = { path = "../moria-world" }
+
+[lints]
+workspace = true
