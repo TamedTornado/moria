@@ -1,0 +1,5 @@
+[build]
+# Workspace tests unify the demo's headed Bevy features with moria-world's
+# headless integration fixtures. Linking those targets concurrently exceeds
+# the constrained verification runner's memory limit.
+jobs = 1
