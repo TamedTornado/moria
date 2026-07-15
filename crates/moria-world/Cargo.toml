@@ -3,6 +3,10 @@ name = "moria-world"
 version.workspace = true
 edition.workspace = true
 
+[[test]]
+name = "shaders_water_wgsl_placeholder"
+path = "tests/assets/shaders_water_wgsl_placeholder.rs"
+
 [features]
 curation = []
 
