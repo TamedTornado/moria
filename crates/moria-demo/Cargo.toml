@@ -10,7 +10,8 @@ test = false
 bench = false
 
 [dependencies]
-bevy.workspace = true
+# The demo launches Bevy's headed default plugin set.
+bevy = { workspace = true, features = ["3d"] }
 moria-world = { path = "../moria-world" }
 
 [lints]

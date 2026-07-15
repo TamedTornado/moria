@@ -10,7 +10,8 @@ test = false
 bench = false
 
 [dependencies]
-bevy.workspace = true
+# Bench scenarios use the headed renderer and window platform.
+bevy = { workspace = true, features = ["3d"] }
 moria-world = { path = "../moria-world" }
 serde_json.workspace = true
 sysinfo.workspace = true
