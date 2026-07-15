@@ -42,5 +42,9 @@ path = "tests/assets/shaders_raw_voxel_wgsl_placeholder.rs"
 name = "manifests_asset_licenses_ron_placeholder"
 path = "tests/assets/manifests_asset_licenses_ron_placeholder.rs"
 
+[[test]]
+name = "props_rock_glb_placeholder"
+path = "tests/assets/props_rock_glb_placeholder.rs"
+
 [lints]
 workspace = true
