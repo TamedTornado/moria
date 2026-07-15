@@ -17,5 +17,9 @@ zstd.workspace = true
 [dev-dependencies]
 proptest = "1"
 
+[[test]]
+name = "shaders_raw_voxel_wgsl_placeholder"
+path = "tests/assets/shaders_raw_voxel_wgsl_placeholder.rs"
+
 [lints]
 workspace = true
