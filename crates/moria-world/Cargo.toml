@@ -54,5 +54,9 @@ path = "tests/assets/manifests_asset_licenses_ron_placeholder.rs"
 name = "props_rock_glb_placeholder"
 path = "tests/assets/props_rock_glb_placeholder.rs"
 
+[[test]]
+name = "materials_terrain_albedo_ktx2_placeholder"
+path = "tests/assets/materials_terrain_albedo_ktx2_placeholder.rs"
+
 [lints]
 workspace = true
