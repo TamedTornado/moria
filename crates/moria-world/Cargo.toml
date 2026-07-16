@@ -11,6 +11,10 @@ path = "tests/assets/shaders_water_wgsl_placeholder.rs"
 name = "materials_terrain_orm_ktx2_placeholder"
 path = "tests/assets/materials_terrain_orm_ktx2_placeholder.rs"
 
+[[test]]
+name = "shaders_terrain_wgsl_placeholder"
+path = "tests/assets/shaders_terrain_wgsl_placeholder.rs"
+
 [features]
 curation = []
 
@@ -39,6 +43,10 @@ name = "vegetation_grass_cluster_glb_placeholder"
 path = "tests/assets/vegetation_grass_cluster_glb_placeholder.rs"
 
 [[test]]
+name = "vegetation_pine_far_glb_placeholder"
+path = "tests/assets/vegetation_pine_far_glb_placeholder.rs"
+
+[[test]]
 name = "manifests_asset_budgets_ron_placeholder"
 path = "tests/assets/manifests_asset_budgets_ron_placeholder.rs"
 
@@ -57,6 +65,10 @@ path = "tests/assets/manifests_asset_licenses_ron_placeholder.rs"
 [[test]]
 name = "props_rock_glb_placeholder"
 path = "tests/assets/props_rock_glb_placeholder.rs"
+
+[[test]]
+name = "player_explorer_glb_placeholder"
+path = "tests/assets/player_explorer_glb_placeholder.rs"
 
 [lints]
 workspace = true
