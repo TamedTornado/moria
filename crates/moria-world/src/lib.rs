@@ -4,6 +4,8 @@
 
 use bevy::prelude::*;
 
+pub mod config;
+pub mod config_validation;
 pub mod presentation;
 pub mod testing;
 
