@@ -7,6 +7,10 @@ edition.workspace = true
 name = "shaders_water_wgsl_placeholder"
 path = "tests/assets/shaders_water_wgsl_placeholder.rs"
 
+[[test]]
+name = "materials_terrain_orm_ktx2_placeholder"
+path = "tests/assets/materials_terrain_orm_ktx2_placeholder.rs"
+
 [features]
 curation = []
 
