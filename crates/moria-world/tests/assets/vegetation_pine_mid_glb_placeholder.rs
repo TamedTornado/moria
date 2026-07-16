@@ -76,8 +76,12 @@ fn pine_mid_placeholder_is_a_support_centered_shared_material_binary_gltf() {
         .as_u64()
         .expect("position accessor") as usize;
     let position = &accessors[position_accessor];
-    assert_eq!(position["min"], serde_json::json!([-4.0, 0.0, -4.0]));
-    assert_eq!(position["max"], serde_json::json!([4.0, 18.0, 4.0]));
+    assert_eq!(position["min"][0].as_f64(), Some(-4.0));
+    assert_eq!(position["min"][1].as_f64(), Some(0.0));
+    assert_eq!(position["min"][2].as_f64(), Some(-4.0));
+    assert_eq!(position["max"][0].as_f64(), Some(4.0));
+    assert_eq!(position["max"][1].as_f64(), Some(18.0));
+    assert_eq!(position["max"][2].as_f64(), Some(4.0));
 }
 
 fn asset_path() -> PathBuf {
