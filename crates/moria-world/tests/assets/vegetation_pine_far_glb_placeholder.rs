@@ -3,41 +3,38 @@ use std::fs;
 use moria_world::presentation::{AssetId, AssetLoader, AssetMissingAction, RuntimeAssetProfile};
 use serde_json::Value;
 
-const BUSH_NEAR_PATH: &str = "vegetation/bush_near.glb";
+const PINE_FAR_PATH: &str = "vegetation/pine_far.glb";
 const GLB_MAGIC: u32 = 0x4654_6C67;
 const GLB_VERSION: u32 = 2;
 const JSON_CHUNK: u32 = 0x4E4F_534A;
 const BIN_CHUNK: u32 = 0x004E_4942;
-const MAX_BUSH_RADIUS_METERS: f64 = 1.2;
-const MAX_BUSH_HEIGHT_METERS: f64 = 2.4;
 
 #[test]
-fn bush_near_placeholder_is_a_shared_material_support_centered_glb() {
+fn pine_far_placeholder_is_a_shared_material_support_centered_glb() {
     let loader = AssetLoader::new();
-    let declaration = loader.declaration(AssetId::BushNear);
-    assert_eq!(declaration.id.stable_id(), "moria.vegetation.bush_near");
-    assert_eq!(declaration.path, BUSH_NEAR_PATH);
-    assert_eq!(loader.resolve_runtime_path(BUSH_NEAR_PATH), Ok(declaration));
+    let declaration = loader.declaration(AssetId::PineFar);
+    assert_eq!(declaration.id.stable_id(), "moria.vegetation.pine_far");
+    assert_eq!(declaration.path, PINE_FAR_PATH);
     assert_eq!(
-        loader.validation_fixture(AssetId::BushNear).key,
-        AssetId::BushNear.stable_id()
+        loader.resolve_runtime_path(PINE_FAR_PATH),
+        Ok(declaration),
+        "the fixture must exercise the immutable shared loader path"
+    );
+    assert_eq!(
+        loader.validation_fixture(AssetId::PineFar).key,
+        AssetId::PineFar.stable_id()
     );
     assert!(matches!(
-        loader.missing_asset_action(AssetId::BushNear, RuntimeAssetProfile::Development),
+        loader.missing_asset_action(AssetId::PineFar, RuntimeAssetProfile::Development),
         AssetMissingAction::DevelopmentFallback { warning }
-            if warning == AssetId::BushNear.stable_id()
+            if warning == AssetId::PineFar.stable_id()
     ));
     assert_eq!(
-        loader.missing_asset_action(AssetId::BushNear, RuntimeAssetProfile::Release),
+        loader.missing_asset_action(AssetId::PineFar, RuntimeAssetProfile::Release),
         AssetMissingAction::Fatal
     );
 
-    let asset_path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../assets/vegetation/bush_near.glb"
-    );
-    let bytes =
-        fs::read(asset_path).expect("bush-near placeholder exists at its declared runtime path");
+    let bytes = fs::read(asset_path()).expect("pine-far placeholder exists at its declared path");
     let document = glb_json(&bytes);
 
     assert_eq!(document["asset"]["version"], "2.0");
@@ -47,16 +44,21 @@ fn bush_near_placeholder_is_a_shared_material_support_centered_glb() {
     assert_eq!(document["asset"]["extras"]["origin"], "support_center");
 
     let materials = document["materials"].as_array().expect("materials array");
-    assert_eq!(materials.len(), 1, "the bush uses one shared material");
+    assert_eq!(materials.len(), 1, "the far pine uses one shared material");
 
     let meshes = document["meshes"].as_array().expect("meshes array");
-    assert_eq!(meshes.len(), 1, "the bush is one shared mesh");
+    assert_eq!(meshes.len(), 1, "the placeholder is one shared mesh");
+    assert_eq!(meshes[0]["name"], "PineFar");
     let primitive = &meshes[0]["primitives"].as_array().expect("mesh primitives")[0];
     assert_eq!(primitive["material"], 0);
-    for attribute in ["POSITION", "NORMAL", "TEXCOORD_0"] {
+    assert!(
+        primitive.get("indices").is_some(),
+        "pine uses indexed triangles"
+    );
+    for attribute in ["POSITION", "NORMAL", "TEXCOORD_0", "TANGENT"] {
         assert!(
             primitive["attributes"].get(attribute).is_some(),
-            "bush supplies {attribute}"
+            "pine supplies {attribute}"
         );
     }
 
@@ -66,20 +68,37 @@ fn bush_near_placeholder_is_a_shared_material_support_centered_glb() {
         .as_u64()
         .expect("index count");
     assert_eq!(index_count % 3, 0, "indexed triangles");
-    assert!(index_count / 3 <= 2_000, "bush near triangle budget");
+    assert!(index_count / 3 <= 500, "far pine remains within its budget");
 
     let position_accessor = primitive["attributes"]["POSITION"]
         .as_u64()
         .expect("position accessor") as usize;
     let position = &accessors[position_accessor];
-    let min = position["min"].as_array().expect("position min");
-    let max = position["max"].as_array().expect("position max");
-    assert_eq!(min[0].as_f64(), Some(-MAX_BUSH_RADIUS_METERS));
-    assert_eq!(max[0].as_f64(), Some(MAX_BUSH_RADIUS_METERS));
-    assert_eq!(min[1].as_f64(), Some(0.0));
-    assert_eq!(max[1].as_f64(), Some(MAX_BUSH_HEIGHT_METERS));
-    assert_eq!(min[2].as_f64(), Some(-MAX_BUSH_RADIUS_METERS));
-    assert_eq!(max[2].as_f64(), Some(MAX_BUSH_RADIUS_METERS));
+    assert_eq!(
+        position["min"]
+            .as_array()
+            .expect("position minimum")
+            .iter()
+            .map(Value::as_f64)
+            .collect::<Option<Vec<_>>>(),
+        Some(vec![-4.0, 0.0, -4.0])
+    );
+    assert_eq!(
+        position["max"]
+            .as_array()
+            .expect("position maximum")
+            .iter()
+            .map(Value::as_f64)
+            .collect::<Option<Vec<_>>>(),
+        Some(vec![4.0, 18.0, 4.0])
+    );
+}
+
+fn asset_path() -> String {
+    format!(
+        "{}/../../assets/{PINE_FAR_PATH}",
+        env!("CARGO_MANIFEST_DIR")
+    )
 }
 
 fn glb_json(bytes: &[u8]) -> Value {
