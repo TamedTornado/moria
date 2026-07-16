@@ -319,7 +319,7 @@ pub struct BenchmarkConfig {
 }
 
 /// The complete independent config assets. Only `region` is authoritative world identity.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigSet {
     pub region: RegionConfig,
@@ -731,16 +731,6 @@ impl Default for InputConfig {
             stick_dead_zone: 0.15,
             mouse_sensitivity_degrees: 0.12,
             gamepad_orbit_degrees_per_second: 150.0,
-        }
-    }
-}
-impl Default for ConfigSet {
-    fn default() -> Self {
-        Self {
-            region: RegionConfig::default(),
-            materials: MaterialRegistryConfig::default(),
-            presentation: PresentationConfig::default(),
-            input: InputConfig::default(),
         }
     }
 }
