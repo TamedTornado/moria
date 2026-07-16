@@ -35,6 +35,10 @@ name = "vegetation_grass_cluster_glb_placeholder"
 path = "tests/assets/vegetation_grass_cluster_glb_placeholder.rs"
 
 [[test]]
+name = "vegetation_bush_near_glb_placeholder"
+path = "tests/assets/vegetation_bush_near_glb_placeholder.rs"
+
+[[test]]
 name = "manifests_asset_budgets_ron_placeholder"
 path = "tests/assets/manifests_asset_budgets_ron_placeholder.rs"
 
