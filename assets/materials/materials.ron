@@ -1,0 +1,18 @@
+(
+    materials: [
+        (id: 0, key: "air", hardness: 0, granular: false, collision_class: Empty, surface_class: Empty, albedo_layer: 0, normal_layer: 0, roughness: 128, state_default: 0),
+        (id: 1, key: "water", hardness: 0, granular: false, collision_class: Fluid, surface_class: Water, albedo_layer: 1, normal_layer: 1, roughness: 32, state_default: 0),
+        (id: 2, key: "topsoil", hardness: 28, granular: false, collision_class: Solid, surface_class: Organic, albedo_layer: 2, normal_layer: 2, roughness: 192, state_default: 0),
+        (id: 3, key: "subsoil", hardness: 42, granular: false, collision_class: Solid, surface_class: Organic, albedo_layer: 3, normal_layer: 3, roughness: 192, state_default: 0),
+        (id: 4, key: "sand", hardness: 18, granular: true, collision_class: Solid, surface_class: Granular, albedo_layer: 4, normal_layer: 4, roughness: 208, state_default: 0),
+        (id: 5, key: "gravel", hardness: 35, granular: true, collision_class: Solid, surface_class: Granular, albedo_layer: 5, normal_layer: 5, roughness: 192, state_default: 0),
+        (id: 6, key: "limestone", hardness: 82, granular: false, collision_class: Solid, surface_class: Rock, albedo_layer: 6, normal_layer: 6, roughness: 176, state_default: 0),
+        (id: 7, key: "sandstone", hardness: 68, granular: false, collision_class: Solid, surface_class: Rock, albedo_layer: 7, normal_layer: 7, roughness: 184, state_default: 0),
+        (id: 8, key: "shale", hardness: 60, granular: false, collision_class: Solid, surface_class: Rock, albedo_layer: 8, normal_layer: 8, roughness: 160, state_default: 0),
+        (id: 9, key: "granite", hardness: 120, granular: false, collision_class: Solid, surface_class: Rock, albedo_layer: 9, normal_layer: 9, roughness: 144, state_default: 0),
+        (id: 10, key: "iron_ore", hardness: 135, granular: false, collision_class: Solid, surface_class: Ore, albedo_layer: 10, normal_layer: 10, roughness: 112, state_default: 0),
+        (id: 11, key: "wood", hardness: 55, granular: false, collision_class: Solid, surface_class: OrganicObject, albedo_layer: 11, normal_layer: 11, roughness: 176, state_default: 0),
+        (id: 12, key: "leaf", hardness: 8, granular: false, collision_class: Solid, surface_class: OrganicObject, albedo_layer: 12, normal_layer: 12, roughness: 208, state_default: 0),
+        (id: 13, key: "cut_stone", hardness: 100, granular: false, collision_class: Solid, surface_class: Masonry, albedo_layer: 13, normal_layer: 13, roughness: 152, state_default: 0),
+    ],
+)
