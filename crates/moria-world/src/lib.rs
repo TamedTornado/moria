@@ -29,8 +29,8 @@ pub use curation::{
     SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
 };
 pub use generation::{
-    AabbQ8, BiomeId, ColumnRun, ColumnSample, ProceduralClass, RunKind, WorldBounds,
-    WorldIdentity, WorldSeed, biome_at, classify_brick, evaluate_base_voxel, evaluate_column,
+    AabbQ8, BiomeId, ColumnRun, ColumnSample, ProceduralClass, RunKind, WorldBounds, WorldIdentity,
+    WorldSeed, biome_at, classify_brick, evaluate_base_voxel, evaluate_column,
 };
 pub use storage::{
     AIR, BRICK_EDGE_VOXELS, BrickCoord, CUT_STONE, ColumnCoord, CoordinateError, GRANITE, GRAVEL,

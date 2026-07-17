@@ -1,6 +1,6 @@
 //! Deterministic broad biome selection.
 
-use crate::{ColumnCoord, WorldIdentity, Q8_UNITS_PER_METER, VOXEL_EDGE_Q8};
+use crate::{ColumnCoord, Q8_UNITS_PER_METER, VOXEL_EDGE_Q8, WorldIdentity};
 
 /// The broad biome assigned to a generated column.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

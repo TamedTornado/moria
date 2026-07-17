@@ -4,9 +4,9 @@ mod biome;
 mod identity;
 mod terrain;
 
-pub use biome::{biome_at, BiomeId};
+pub use biome::{BiomeId, biome_at};
 pub use identity::{AabbQ8, BoundsError, WorldBounds, WorldIdentity, WorldSeed};
 pub use terrain::{
-    classify_brick, evaluate_base_voxel, evaluate_column, ColumnRun, ColumnSample, ProceduralClass,
-    RunKind,
+    ColumnRun, ColumnSample, ProceduralClass, RunKind, classify_brick, evaluate_base_voxel,
+    evaluate_column,
 };

@@ -1,10 +1,10 @@
 //! Fixed-point broad terrain, soil bands, and compact brick classification.
 
 use super::biome::keyed_hash;
-use super::{biome_at, BiomeId};
+use super::{BiomeId, biome_at};
 use crate::{
-    BrickCoord, ColumnCoord, MaterialId, Voxel, VoxelCoord, WorldIdentity, AIR, BRICK_EDGE_VOXELS,
-    GRANITE, Q8_UNITS_PER_METER, SUBSOIL, TOPSOIL, VOXEL_EDGE_Q8,
+    AIR, BRICK_EDGE_VOXELS, BrickCoord, ColumnCoord, GRANITE, MaterialId, Q8_UNITS_PER_METER,
+    SUBSOIL, TOPSOIL, VOXEL_EDGE_Q8, Voxel, VoxelCoord, WorldIdentity,
 };
 
 /// A contiguous vertical material interval in a generated column.

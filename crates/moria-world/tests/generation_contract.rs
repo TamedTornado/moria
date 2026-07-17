@@ -1,6 +1,6 @@
 use moria_world::{
-    classify_brick, evaluate_base_voxel, evaluate_column, BrickCoord, ColumnCoord, ProceduralClass,
-    Voxel, VoxelCoord, WorldBounds, WorldIdentity, WorldPointQ8, AIR, GRANITE, SUBSOIL, TOPSOIL,
+    AIR, BrickCoord, ColumnCoord, GRANITE, ProceduralClass, SUBSOIL, TOPSOIL, Voxel, VoxelCoord,
+    WorldBounds, WorldIdentity, WorldPointQ8, classify_brick, evaluate_base_voxel, evaluate_column,
 };
 
 fn identity() -> WorldIdentity {
