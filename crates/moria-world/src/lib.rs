@@ -11,6 +11,7 @@ pub mod generation;
 pub mod presentation;
 mod storage;
 pub mod testing;
+pub mod telemetry;
 
 pub use config::{
     ActionBinding, BandConfig, BenchmarkConfig, BiomeConfig, BoundsConfig, CameraConfig,
