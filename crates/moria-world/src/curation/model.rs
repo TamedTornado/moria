@@ -180,13 +180,21 @@ pub struct CuratedManifest {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ManifestError {
-    FeatureCountExceedsMaximum { actual: usize, maximum: usize },
-    RouteWaypointCountExceedsMaximum { actual: usize, maximum: usize },
+    FeatureCountExceedsMaximum {
+        actual: usize,
+        maximum: usize,
+    },
+    RouteWaypointCountExceedsMaximum {
+        actual: usize,
+        maximum: usize,
+    },
     FeatureIdsNotStrictlyAscending,
     WaterBodyIdsNotStrictlyAscending,
     ObjectIdsNotStrictlyAscending,
     RouteOrdersNotStrictlyAscending,
-    RouteTagsNotStrictlyAscending { order: u8 },
+    RouteTagsNotStrictlyAscending {
+        order: u8,
+    },
     RuinObjectIdMustBeZero,
     RuinPlacementMustUseRuinKind,
     RuinPlacementMustUseSparseStamp,
@@ -200,7 +208,58 @@ pub enum ManifestError {
     StampRunPaletteIndexOutOfBounds,
     StampRunExceedsVolume,
     StampRunsNotStrictlyAscending,
-    StampTagOutOfBounds { tag: String },
+    StampTagOutOfBounds {
+        tag: String,
+    },
+    ObjectRawBoundsUnavailable {
+        object_id: ObjectId,
+    },
+    ObjectDependencyBoundsOverflow {
+        object_id: ObjectId,
+    },
+    ObjectIndexCellsExceeded {
+        object_id: ObjectId,
+        actual: u16,
+        maximum: u8,
+    },
+    ObjectDependencyBricksExceeded {
+        object_id: ObjectId,
+        actual: u16,
+        maximum: u16,
+    },
+    ObjectIndexCellCapacityExceeded {
+        actual: u16,
+        maximum: u16,
+    },
+    ObjectSampleCellCapacityExceeded {
+        actual: u16,
+        maximum: u8,
+    },
+    ObjectEditCandidatesExceeded {
+        actual: u16,
+        maximum: u16,
+    },
+    ObjectEditAffectedExceeded {
+        actual: u16,
+        maximum: u8,
+    },
+    HorizonTreeCellCapacityExceeded {
+        actual: u16,
+        maximum: u16,
+    },
+    ObjectIndexRetainedBytesExceeded {
+        actual: u64,
+        maximum: u32,
+    },
+    ObjectShapeOverlap {
+        lower_id: ObjectId,
+        higher_id: ObjectId,
+        first_voxel: VoxelCoord,
+    },
+    ObjectRuinOverlap {
+        object_id: ObjectId,
+        first_voxel: VoxelCoord,
+    },
 }
 
 impl fmt::Display for ManifestError {
