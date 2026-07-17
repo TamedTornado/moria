@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use moria_world::presentation::{AssetId, AssetLoader, AssetMissingAction, RuntimeAssetProfile};
 use serde::Deserialize;
@@ -56,7 +52,10 @@ fn ruin_stamp_placeholder_uses_the_immutable_runtime_declaration_and_schema() {
 
     assert_eq!(declaration.id.stable_id(), "moria.stamps.ruin_p1");
     assert_eq!(declaration.path, RUIN_STAMP_PATH);
-    assert_eq!(loader.resolve_runtime_path(RUIN_STAMP_PATH), Ok(declaration));
+    assert_eq!(
+        loader.resolve_runtime_path(RUIN_STAMP_PATH),
+        Ok(declaration)
+    );
     assert_eq!(
         loader.validation_fixture(AssetId::RuinStamp).key,
         declaration.id.stable_id()
@@ -68,10 +67,9 @@ fn ruin_stamp_placeholder_uses_the_immutable_runtime_declaration_and_schema() {
 
     let bytes = fs::read(asset_path()).expect("ruin stamp placeholder exists at its declared path");
     assert_eq!(hex_digest(&bytes), EXPECTED_PLACEHOLDER_SHA256);
-    let stamp: SparseVoxelStamp = ron::from_str(
-        std::str::from_utf8(&bytes).expect("ruin stamp placeholder is valid UTF-8"),
-    )
-    .expect("placeholder uses stamp schema");
+    let stamp: SparseVoxelStamp =
+        ron::from_str(std::str::from_utf8(&bytes).expect("ruin stamp placeholder is valid UTF-8"))
+            .expect("placeholder uses stamp schema");
 
     assert_eq!(stamp.key, declaration.id.stable_id());
     assert!(stamp.size_voxels.iter().all(|&edge| edge > 0));
@@ -81,11 +79,18 @@ fn ruin_stamp_placeholder_uses_the_immutable_runtime_declaration_and_schema() {
     }
     assert_eq!(stamp.palette, vec![AIR_MATERIAL_ID, CUT_STONE_MATERIAL_ID]);
 
-    let volume = stamp.size_voxels.iter().map(|&edge| u32::from(edge)).product();
+    let volume = stamp
+        .size_voxels
+        .iter()
+        .map(|&edge| u32::from(edge))
+        .product();
     let mut previous_end = 0;
     for run in &stamp.runs {
         assert!(run.len > 0);
-        assert!(run.start_linear >= previous_end, "runs are sorted and non-overlapping");
+        assert!(
+            run.start_linear >= previous_end,
+            "runs are sorted and non-overlapping"
+        );
         let end = run.start_linear + u32::from(run.len);
         assert!(end <= volume, "run is inside stamp bounds");
         let material = stamp.palette[usize::from(run.palette_index)];
