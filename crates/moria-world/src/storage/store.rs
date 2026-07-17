@@ -127,7 +127,11 @@ impl WorldStore {
                 self.deltas.insert(brick, delta);
             }
 
-            if self.deltas.get(&brick).is_some_and(|delta| delta.voxels.is_empty()) {
+            if self
+                .deltas
+                .get(&brick)
+                .is_some_and(|delta| delta.voxels.is_empty())
+            {
                 self.deltas.remove(&brick);
             }
             if let Some(record) = self.active.get_mut(&brick) {
@@ -139,12 +143,10 @@ impl WorldStore {
     }
 
     fn base_voxel(&self, brick: BrickCoord, coordinate: VoxelCoord, local_index: u16) -> Voxel {
-        self.active
-            .get(&brick)
-            .map_or_else(
-                || evaluate_base_voxel(&self.identity, coordinate),
-                |record| record.base_voxel(&self.identity, coordinate, local_index),
-            )
+        self.active.get(&brick).map_or_else(
+            || evaluate_base_voxel(&self.identity, coordinate),
+            |record| record.base_voxel(&self.identity, coordinate, local_index),
+        )
     }
 
     #[cfg(test)]

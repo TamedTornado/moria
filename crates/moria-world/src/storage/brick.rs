@@ -51,11 +51,8 @@ impl BrickBase {
                     let local_index = (local_x
                         + BRICK_EDGE_VOXELS * (local_z + BRICK_EDGE_VOXELS * local_y))
                         as usize;
-                    let coordinate = VoxelCoord::new(
-                        origin_x + local_x,
-                        origin_y + local_y,
-                        origin_z + local_z,
-                    );
+                    let coordinate =
+                        VoxelCoord::new(origin_x + local_x, origin_y + local_y, origin_z + local_z);
                     voxels[local_index] = evaluate_base_voxel(identity, coordinate);
                 }
             }

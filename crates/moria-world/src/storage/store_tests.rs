@@ -18,12 +18,18 @@ fn inactive_samples_regenerate_base_without_materializing_detail() {
     let mut store = WorldStore::new(identity);
     let coordinate = VoxelCoord::new(0, 0, 0);
 
-    assert_eq!(store.current_voxel(coordinate), evaluate_base_voxel(&identity, coordinate));
+    assert_eq!(
+        store.current_voxel(coordinate),
+        evaluate_base_voxel(&identity, coordinate)
+    );
     assert_eq!(store.active_brick_count(), 0);
 
     store.materialize_detail(coordinate.to_brick_coord().unwrap());
 
-    assert_eq!(store.current_voxel(coordinate), evaluate_base_voxel(&identity, coordinate));
+    assert_eq!(
+        store.current_voxel(coordinate),
+        evaluate_base_voxel(&identity, coordinate)
+    );
     assert_eq!(store.active_brick_count(), 1);
 }
 
@@ -47,7 +53,10 @@ fn sorted_deltas_override_base_and_exact_reversions_disappear() {
     let reverted = store.commit_current([(first, evaluate_base_voxel(&identity, first))]);
 
     assert_eq!(reverted, 2);
-    assert_eq!(store.current_voxel(first), evaluate_base_voxel(&identity, first));
+    assert_eq!(
+        store.current_voxel(first),
+        evaluate_base_voxel(&identity, first)
+    );
     assert_eq!(store.current_voxel(second), changed);
     assert_eq!(store.delta_count(), 1);
     assert!(store.delta_entries_are_sorted());
