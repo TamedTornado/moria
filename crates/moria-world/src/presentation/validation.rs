@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{MaterialRegistry, SparseVoxelStamp};
 
-use super::{AssetDeclaration, AssetId, AssetLoadPolicy, RuntimeAssetProfile, ASSET_DECLARATIONS};
+use super::{ASSET_DECLARATIONS, AssetDeclaration, AssetId, AssetLoadPolicy, RuntimeAssetProfile};
 
 const CONTENT_ASSET_COUNT: usize = 28;
 

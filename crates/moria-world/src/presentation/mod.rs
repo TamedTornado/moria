@@ -5,16 +5,16 @@ mod assets;
 mod validation;
 
 pub use asset_ids::{
-    AssetDeclaration, AssetId, AssetLoadPolicy, AssetValidationFixture, ASSET_COUNT,
-    ASSET_DECLARATIONS,
+    ASSET_COUNT, ASSET_DECLARATIONS, AssetDeclaration, AssetId, AssetLoadPolicy,
+    AssetValidationFixture,
 };
 pub use assets::{
-    validate_asset_declarations, AssetDeclarationError, AssetLoader, AssetMissingAction,
-    RuntimeAssetProfile,
+    AssetDeclarationError, AssetLoader, AssetMissingAction, RuntimeAssetProfile,
+    validate_asset_declarations,
 };
 pub use validation::{
-    validate_asset_directory, AssetBudgetContract, AssetBudgetEntry, AssetBudgetRegistry,
-    AssetLicenseEntry, AssetLicenseRegistry, AssetProvenance, AssetValidationError,
-    AssetValidationPlugin, AssetValidationReport, AssetValidationStatus, ObjectRenderHandles,
-    RenderAssetHandleId, TextureColorSpace, WorldRenderAssets,
+    AssetBudgetContract, AssetBudgetEntry, AssetBudgetRegistry, AssetLicenseEntry,
+    AssetLicenseRegistry, AssetProvenance, AssetValidationError, AssetValidationPlugin,
+    AssetValidationReport, AssetValidationStatus, ObjectRenderHandles, RenderAssetHandleId,
+    TextureColorSpace, WorldRenderAssets, validate_asset_directory,
 };
