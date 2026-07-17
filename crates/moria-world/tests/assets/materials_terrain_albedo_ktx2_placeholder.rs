@@ -15,7 +15,8 @@ const KHR_DF_TRANSFER_SRGB: u8 = 2;
 
 #[test]
 fn terrain_albedo_placeholder_is_an_srgb_mipmapped_basis_ktx2_array() {
-    let bytes = fs::read(asset_path()).expect("terrain albedo placeholder exists at its final path");
+    let bytes =
+        fs::read(asset_path()).expect("terrain albedo placeholder exists at its final path");
 
     assert!(bytes.starts_with(&KTX2_IDENTIFIER));
     assert_eq!(read_u32_le(&bytes, 12), 0, "Basis textures use vkFormat 0");
@@ -80,10 +81,7 @@ fn terrain_albedo_placeholder_uses_the_immutable_shared_loader_path_and_fallback
         .expect("the predeclared terrain albedo path resolves");
 
     assert_eq!(declaration.id, AssetId::TerrainAlbedo);
-    assert_eq!(
-        declaration.id.stable_id(),
-        "moria.materials.terrain_albedo"
-    );
+    assert_eq!(declaration.id.stable_id(), "moria.materials.terrain_albedo");
     assert_eq!(
         loader.validation_fixture(AssetId::TerrainAlbedo).key,
         declaration.id.stable_id()
