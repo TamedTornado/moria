@@ -59,6 +59,10 @@ name = "vegetation_birch_mid_glb_placeholder"
 path = "tests/assets/vegetation_birch_mid_glb_placeholder.rs"
 
 [[test]]
+name = "vegetation_birch_near_glb_placeholder"
+path = "tests/assets/vegetation_birch_near_glb_placeholder.rs"
+
+[[test]]
 name = "vegetation_pine_mid_glb_placeholder"
 path = "tests/assets/vegetation_pine_mid_glb_placeholder.rs"
 
@@ -105,6 +109,10 @@ path = "tests/assets/materials_water_normal_ktx2_placeholder.rs"
 [[test]]
 name = "vegetation_bush_near_glb_placeholder"
 path = "tests/assets/vegetation_bush_near_glb_placeholder.rs"
+
+[[test]]
+name = "stamps_ruin_p1_ron_placeholder"
+path = "tests/assets/stamps_ruin_p1_ron_placeholder.rs"
 
 [[test]]
 name = "materials_materials_ron_placeholder"

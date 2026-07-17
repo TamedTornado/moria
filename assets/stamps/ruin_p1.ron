@@ -1,0 +1,17 @@
+(
+    key: "moria.stamps.ruin_p1",
+    size_voxels: (5, 5, 5),
+    pivot_voxel: (2, 0, 2),
+    palette: [0, 13],
+    runs: [
+        (start_linear: 0, len: 25, palette_index: 1, density: 255),
+        (start_linear: 30, len: 5, palette_index: 0, density: 0),
+        (start_linear: 40, len: 5, palette_index: 1, density: 255),
+        (start_linear: 70, len: 5, palette_index: 1, density: 255),
+    ],
+    tags: {
+        "entrance": (x: 2, y: 1, z: 0),
+        "stair_bottom": (x: 2, y: 1, z: 2),
+        "stair_top": (x: 2, y: 3, z: 4),
+    },
+)
