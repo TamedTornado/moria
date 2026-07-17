@@ -4,8 +4,22 @@
 
 use bevy::prelude::*;
 
+pub mod config;
+pub mod config_validation;
 pub mod presentation;
 pub mod testing;
+
+pub use config::{
+    ActionBinding, BandConfig, BenchmarkConfig, BiomeConfig, BoundsConfig, CameraConfig,
+    CapsuleConfig, CaveConfig, CaveLightConfig, CollisionClass, GeologyConfig, InputAction,
+    InputConfig, MaterialDef, MaterialId, MaterialRegistry, MutationConfig, ObjectGenConfig,
+    PresentationConfig, RangeQ8, RegionConfig, RenderingConfig, StreamingConfig, SurfaceClass,
+    TerrainGenConfig, WaterGenConfig, WindowConfig, parameters_digest_from_bytes,
+};
+pub use config_validation::{
+    ConfigValidationError, validate_input_config, validate_material_registry,
+    validate_presentation_config, validate_region_config,
+};
 
 /// Installs the reusable world feature set.
 ///
