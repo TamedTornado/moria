@@ -1,8 +1,8 @@
 use std::mem::size_of;
 
 use moria_world::{
-    material_present, solid_collision, water_volume, BrickCoord, CollisionClass, MaterialId,
-    MaterialRegistry, Voxel, VoxelCoord, WorldPointQ8, AIR, WATER,
+    AIR, BrickCoord, CollisionClass, MaterialId, MaterialRegistry, Voxel, VoxelCoord, WATER,
+    WorldPointQ8, material_present, solid_collision, water_volume,
 };
 
 #[test]

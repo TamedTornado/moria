@@ -22,10 +22,10 @@ pub use config_validation::{
     validate_presentation_config, validate_region_config,
 };
 pub use storage::{
-    material_present, solid_collision, water_volume, BrickCoord, ColumnCoord, CoordinateError,
-    Voxel, VoxelCoord, WorldPointQ8, AIR, BRICK_EDGE_VOXELS, CUT_STONE, GRANITE, GRAVEL, IRON_ORE,
-    LEAF, LIMESTONE, Q8_UNITS_PER_METER, SAND, SANDSTONE, SHALE, SUBSOIL, TOPSOIL, VOXEL_EDGE_Q8,
-    WATER, WOOD,
+    AIR, BRICK_EDGE_VOXELS, BrickCoord, CUT_STONE, ColumnCoord, CoordinateError, GRANITE, GRAVEL,
+    IRON_ORE, LEAF, LIMESTONE, Q8_UNITS_PER_METER, SAND, SANDSTONE, SHALE, SUBSOIL, TOPSOIL,
+    VOXEL_EDGE_Q8, Voxel, VoxelCoord, WATER, WOOD, WorldPointQ8, material_present, solid_collision,
+    water_volume,
 };
 
 /// Installs the reusable world feature set.
