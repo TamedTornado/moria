@@ -55,6 +55,10 @@ name = "vegetation_pine_far_glb_placeholder"
 path = "tests/assets/vegetation_pine_far_glb_placeholder.rs"
 
 [[test]]
+name = "vegetation_pine_mid_glb_placeholder"
+path = "tests/assets/vegetation_pine_mid_glb_placeholder.rs"
+
+[[test]]
 name = "vegetation_bush_far_glb_placeholder"
 path = "tests/assets/vegetation_bush_far_glb_placeholder.rs"
 
