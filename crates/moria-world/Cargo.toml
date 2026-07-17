@@ -37,8 +37,11 @@ curation = []
 [dependencies]
 bevy.workspace = true
 directories.workspace = true
+ktx2 = "0.5"
+naga = { version = "29", features = ["wgsl-in"] }
 ron.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 zstd.workspace = true
 

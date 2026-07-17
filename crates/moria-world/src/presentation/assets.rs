@@ -3,8 +3,8 @@
 use std::{collections::BTreeSet, error::Error, fmt};
 
 use super::{
-    ASSET_COUNT, ASSET_DECLARATIONS, AssetDeclaration, AssetId, AssetLoadPolicy,
-    AssetValidationFixture,
+    AssetDeclaration, AssetId, AssetLoadPolicy, AssetValidationFixture, ASSET_COUNT,
+    ASSET_DECLARATIONS,
 };
 
 /// Runtime profile that determines how a missing declared asset is handled.
