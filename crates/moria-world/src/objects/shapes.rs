@@ -277,7 +277,7 @@ fn scaled_radii(radii: [u16; 3], scale_q8: u16) -> [i64; 3] {
 }
 
 fn horizontal_extents(radii: [i64; 3], quarter_turns: u8) -> (i64, i64) {
-    if quarter_turns % 2 == 0 {
+    if quarter_turns.is_multiple_of(2) {
         (radii[0], radii[2])
     } else {
         (radii[2], radii[0])
@@ -318,7 +318,7 @@ fn perturbed_ellipsoid_contains(point: [i64; 3], radii: [i64; 3], key: u64) -> b
         return false;
     }
     let hash = keyed_hash(key, point[0], point[1], point[2]);
-    hash % 11 != 0
+    !hash.is_multiple_of(11)
         || ellipsoid_contains(point, [0, 0, 0], [radii[0] / 2, radii[1] / 2, radii[2] / 2])
 }
 
