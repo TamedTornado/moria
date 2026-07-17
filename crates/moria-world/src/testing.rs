@@ -1,5 +1,7 @@
 //! Headless test support for consumers of the public world facade.
 
+pub mod conformance;
+
 use bevy::{
     app::FixedUpdate,
     prelude::{App, Fixed, ResMut, Resource, Time},
