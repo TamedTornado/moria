@@ -12,6 +12,10 @@ name = "shaders_terrain_wgsl_placeholder"
 path = "tests/assets/shaders_terrain_wgsl_placeholder.rs"
 
 [[test]]
+name = "config_product_one_region_ron_placeholder"
+path = "tests/assets/config_product_one_region_ron_placeholder.rs"
+
+[[test]]
 name = "materials_terrain_albedo_ktx2_placeholder"
 path = "tests/assets/materials_terrain_albedo_ktx2_placeholder.rs"
 
