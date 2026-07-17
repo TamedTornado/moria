@@ -43,6 +43,19 @@ impl std::error::Error for OutputError {
 }
 
 fn write_json_atomically(path: &Path, json: &str) -> Result<(), OutputError> {
+    write_json_atomically_with(path, json, write_and_flush, |from, to| fs::rename(from, to))
+}
+
+fn write_json_atomically_with<W, R>(
+    path: &Path,
+    json: &str,
+    write: W,
+    rename: R,
+) -> Result<(), OutputError>
+where
+    W: FnOnce(File, &str) -> std::io::Result<()>,
+    R: FnOnce(&Path, &Path) -> std::io::Result<()>,
+{
     let temporary = sibling_temp_path(path).map_err(|error| {
         OutputError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
     })?;
@@ -51,24 +64,43 @@ fn write_json_atomically(path: &Path, json: &str) -> Result<(), OutputError> {
         .create_new(true)
         .open(&temporary)
         .map_err(OutputError::Io)?;
-    let result = write_and_flush(file, json).and_then(|()| fs::rename(&temporary, path));
+    let result = write(file, json).and_then(|()| rename(&temporary, path));
     if result.is_err() {
         let _ = fs::remove_file(&temporary);
     }
     result.map_err(OutputError::Io)
 }
 
-fn write_and_flush(mut file: File, json: &str) -> std::io::Result<()> {
-    file.write_all(json.as_bytes())?;
-    file.flush()?;
-    file.sync_all()
+fn write_and_flush(file: File, json: &str) -> std::io::Result<()> {
+    write_and_flush_with(
+        file,
+        json,
+        |file, json| file.write_all(json.as_bytes()),
+        |file| {
+            file.flush()?;
+            file.sync_all()
+        },
+    )
+}
+
+fn write_and_flush_with<W, F>(mut file: File, json: &str, write: W, flush: F) -> std::io::Result<()>
+where
+    W: FnOnce(&mut File, &str) -> std::io::Result<()>,
+    F: FnOnce(&mut File) -> std::io::Result<()>,
+{
+    write(&mut file, json)?;
+    flush(&mut file)
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io::{self, Write};
 
-    use super::{write_json_atomically, write_report_atomic};
+    use super::{
+        write_and_flush_with, write_json_atomically, write_json_atomically_with,
+        write_report_atomic,
+    };
     use crate::capture::schema::BenchmarkReport;
 
     #[test]
@@ -102,15 +134,83 @@ mod tests {
     }
 
     #[test]
-    fn invalid_report_never_replaces_an_existing_report() {
+    fn early_runtime_failure_replaces_an_existing_report_with_complete_null_json() {
         let directory = tempfile_path("invalid");
         fs::create_dir_all(&directory).unwrap();
         let output = directory.join("report.json");
         fs::write(&output, "previous report").unwrap();
-        let invalid = BenchmarkReport::failed_before_start("2026-07-17T00:00:00Z", "runtime");
+        let report = BenchmarkReport::failed_before_start("2026-07-17T00:00:00Z", "runtime");
 
-        assert!(write_report_atomic(&output, &invalid).is_err());
+        write_report_atomic(&output, &report).unwrap();
+        assert!(
+            !BenchmarkReport::from_json(&fs::read_to_string(&output).unwrap())
+                .unwrap()
+                .passed
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn write_failure_preserves_the_existing_report_and_removes_the_temp_file() {
+        assert_atomic_failure_preserves_target("write", |file, json| {
+            write_and_flush_with(
+                file,
+                json,
+                |_, _| Err(io::Error::other("write failed")),
+                |file| file.flush(),
+            )
+        });
+    }
+
+    #[test]
+    fn flush_failure_preserves_the_existing_report_and_removes_the_temp_file() {
+        assert_atomic_failure_preserves_target("flush", |file, json| {
+            write_and_flush_with(
+                file,
+                json,
+                |file, json| file.write_all(json.as_bytes()),
+                |_| Err(io::Error::other("flush failed")),
+            )
+        });
+    }
+
+    #[test]
+    fn rename_failure_preserves_the_existing_report_and_removes_the_temp_file() {
+        let directory = tempfile_path("rename");
+        fs::create_dir_all(&directory).unwrap();
+        let output = directory.join("report.json");
+        fs::write(&output, "previous report").unwrap();
+
+        assert!(
+            write_json_atomically_with(&output, "new report", super::write_and_flush, |_, _| Err(
+                io::Error::other("rename failed")
+            ),)
+            .is_err()
+        );
+
         assert_eq!(fs::read_to_string(&output).unwrap(), "previous report");
+        assert!(!directory.join("report.json.tmp").exists());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn assert_atomic_failure_preserves_target(
+        name: &str,
+        write_and_flush: impl FnOnce(std::fs::File, &str) -> io::Result<()>,
+    ) {
+        let directory = tempfile_path(name);
+        fs::create_dir_all(&directory).unwrap();
+        let output = directory.join("report.json");
+        fs::write(&output, "previous report").unwrap();
+
+        assert!(
+            write_json_atomically_with(&output, "new report", write_and_flush, |from, to| {
+                fs::rename(from, to)
+            },)
+            .is_err()
+        );
+
+        assert_eq!(fs::read_to_string(&output).unwrap(), "previous report");
+        assert!(!directory.join("report.json.tmp").exists());
         fs::remove_dir_all(directory).unwrap();
     }
 

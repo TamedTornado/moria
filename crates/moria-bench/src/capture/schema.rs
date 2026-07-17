@@ -174,7 +174,7 @@ pub struct BenchmarkReport {
     pub passed: bool,
     pub failure_reasons: Vec<String>,
     pub baseline_status: BaselineStatus,
-    pub build: BuildProfile,
+    pub build: Option<BuildProfile>,
     pub world: Option<WorldIdentity>,
     pub assets: Option<AssetEvidence>,
     pub machine: Option<MachineProfile>,
@@ -197,13 +197,9 @@ impl BenchmarkReport {
             timestamp_utc: timestamp_utc.into(),
             scenario: ScenarioName::Flythrough,
             passed: false,
-            failure_reasons: vec![failure_reason.into()],
+            failure_reasons: missing_evidence_reasons(failure_reason),
             baseline_status: BaselineStatus::Provisional,
-            build: BuildProfile {
-                cargo_profile: String::new(),
-                git_commit: String::new(),
-                rustc_version: String::new(),
-            },
+            build: None,
             world: None,
             assets: None,
             machine: None,
@@ -239,9 +235,8 @@ impl BenchmarkReport {
         if !sorted_unique_nonempty(&self.failure_reasons) {
             return Err(ReportValidationError::FailureReasons);
         }
-        validate_build(&self.build)?;
-
         let required = [
+            ("build", self.build.is_some()),
             ("world", self.world.is_some()),
             ("assets", self.assets.is_some()),
             ("machine", self.machine.is_some()),
@@ -262,6 +257,10 @@ impl BenchmarkReport {
             return Err(ReportValidationError::Missing {
                 field: "completed common evidence",
             });
+        }
+
+        if let Some(value) = &self.build {
+            validate_build(value)?;
         }
 
         if let Some(resolution) = self.resolution
@@ -333,12 +332,24 @@ fn validate_flythrough(report: &BenchmarkReport) -> Result<(), ReportValidationE
         });
     }
     let save = &report.save;
-    if save.attempted
-        || save.completed
-        || save.size_bytes != Some(0)
-        || save.changed_voxels != Some(0)
-        || save.changed_bricks != Some(0)
-        || save.round_trip.is_some()
+    if save.attempted || save.completed || save.round_trip.is_some() {
+        return Err(ReportValidationError::Inconsistent {
+            field: "flythrough save",
+        });
+    }
+    for (field, value) in [
+        ("save.size_bytes", save.size_bytes.is_some()),
+        ("save.changed_voxels", save.changed_voxels.is_some()),
+        ("save.changed_bricks", save.changed_bricks.is_some()),
+    ] {
+        if !value && !has_failure_reason(report, field) {
+            return Err(ReportValidationError::Missing { field });
+        }
+    }
+    if report.passed
+        && (save.size_bytes != Some(0)
+            || save.changed_voxels != Some(0)
+            || save.changed_bricks != Some(0))
     {
         return Err(ReportValidationError::Inconsistent {
             field: "flythrough save",
@@ -348,7 +359,7 @@ fn validate_flythrough(report: &BenchmarkReport) -> Result<(), ReportValidationE
 }
 
 fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidationError> {
-    if report.passed && report.mutation_latency.is_none() {
+    if report.mutation_latency.is_none() && !has_failure_reason(report, "mutation_latency") {
         return Err(ReportValidationError::Missing {
             field: "mutation_latency",
         });
@@ -378,6 +389,36 @@ fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidation
         });
     }
     Ok(())
+}
+
+fn missing_evidence_reasons(failure_reason: &str) -> Vec<String> {
+    let mut reasons = [
+        "assets",
+        "build",
+        "cold_start_ms",
+        "coverage",
+        "frame_rate",
+        "frame_time_ms",
+        "graphics_memory",
+        "machine",
+        "resolution",
+        "save.changed_bricks",
+        "save.changed_voxels",
+        "save.size_bytes",
+        "streaming",
+        "world",
+        failure_reason,
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<Vec<_>>();
+    reasons.sort();
+    reasons.dedup();
+    reasons
+}
+
+fn has_failure_reason(report: &BenchmarkReport, field: &str) -> bool {
+    report.failure_reasons.iter().any(|reason| reason == field)
 }
 
 fn validate_build(build: &BuildProfile) -> Result<(), ReportValidationError> {
@@ -583,17 +624,54 @@ fn rfc3339_utc(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{BenchmarkReport, ReportValidationError};
+    use super::BenchmarkReport;
 
     #[test]
-    fn final_report_rejects_missing_resident_evidence_without_approval() {
-        let report = BenchmarkReport::failed_before_start(
-            "2026-07-17T00:00:00Z",
-            "resident_graphics_memory_unproven",
+    fn report_before_start_is_complete_null_json_with_missing_evidence_reasons() {
+        let report = BenchmarkReport::failed_before_start("2026-07-17T00:00:00Z", "runtime");
+
+        let json = report.to_canonical_json().unwrap();
+        let restored = BenchmarkReport::from_json(&json).unwrap();
+
+        assert!(!restored.passed);
+        assert!(
+            restored
+                .failure_reasons
+                .binary_search(&"build".into())
+                .is_ok()
         );
-        assert!(matches!(
-            report.validate(),
-            Err(ReportValidationError::Identity { .. })
-        ));
+        assert!(
+            restored
+                .failure_reasons
+                .binary_search(&"world".into())
+                .is_ok()
+        );
+        assert!(
+            restored
+                .failure_reasons
+                .binary_search(&"runtime".into())
+                .is_ok()
+        );
+        assert!(json.contains("\"build\":null"));
+        assert!(
+            json.contains("\"save\":{\"attempted\":false,\"completed\":false,\"size_bytes\":null")
+        );
+    }
+
+    #[test]
+    fn partial_runtime_failure_requires_reasons_only_for_unavailable_evidence() {
+        let mut report = BenchmarkReport::failed_before_start("2026-07-17T00:00:00Z", "runtime");
+        report.resolution = Some([2560, 1440]);
+        report
+            .failure_reasons
+            .retain(|reason| reason != "resolution");
+
+        report.validate().unwrap();
+        assert!(
+            report
+                .to_canonical_json()
+                .unwrap()
+                .contains("\"resolution\":[2560,1440]")
+        );
     }
 }
