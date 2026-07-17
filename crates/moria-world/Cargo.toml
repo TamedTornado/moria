@@ -103,6 +103,10 @@ name = "vegetation_bush_near_glb_placeholder"
 path = "tests/assets/vegetation_bush_near_glb_placeholder.rs"
 
 [[test]]
+name = "stamps_ruin_p1_ron_placeholder"
+path = "tests/assets/stamps_ruin_p1_ron_placeholder.rs"
+
+[[test]]
 name = "materials_materials_ron_placeholder"
 path = "tests/assets/materials_materials_ron_placeholder.rs"
 
