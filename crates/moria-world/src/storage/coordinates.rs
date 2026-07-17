@@ -2,6 +2,8 @@
 
 use core::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// Q8 units in one metre.
 pub const Q8_UNITS_PER_METER: i32 = 256;
 /// Q8 units along one authoritative voxel edge.
@@ -35,7 +37,8 @@ impl fmt::Display for CoordinateError {
 impl std::error::Error for CoordinateError {}
 
 /// An absolute voxel coordinate.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VoxelCoord {
     pub x: i32,
     pub y: i32,
@@ -130,7 +133,8 @@ pub struct ColumnCoord {
 }
 
 /// An absolute point in metres multiplied by 256.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorldPointQ8 {
     pub x: i32,
     pub y: i32,

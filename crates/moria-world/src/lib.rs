@@ -6,6 +6,8 @@ use bevy::prelude::*;
 
 pub mod config;
 pub mod config_validation;
+pub mod curation;
+pub mod generation;
 pub mod presentation;
 mod storage;
 pub mod testing;
@@ -21,6 +23,12 @@ pub use config_validation::{
     ConfigValidationError, validate_input_config, validate_material_registry,
     validate_presentation_config, validate_region_config,
 };
+pub use curation::{
+    CuratedManifest, FeatureInstance, FeatureKind, ManifestError, ObjectId, ObjectKind,
+    ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi, SparseVoxelStamp,
+    SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
+};
+pub use generation::{AabbQ8, WorldBounds, WorldIdentity, WorldSeed};
 pub use storage::{
     AIR, BRICK_EDGE_VOXELS, BrickCoord, CUT_STONE, ColumnCoord, CoordinateError, GRANITE, GRAVEL,
     IRON_ORE, LEAF, LIMESTONE, Q8_UNITS_PER_METER, SAND, SANDSTONE, SHALE, SUBSOIL, TOPSOIL,
