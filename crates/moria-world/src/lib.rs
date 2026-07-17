@@ -7,6 +7,7 @@ use bevy::prelude::*;
 pub mod config;
 pub mod config_validation;
 pub mod presentation;
+mod storage;
 pub mod testing;
 
 pub use config::{
@@ -19,6 +20,12 @@ pub use config::{
 pub use config_validation::{
     ConfigValidationError, validate_input_config, validate_material_registry,
     validate_presentation_config, validate_region_config,
+};
+pub use storage::{
+    material_present, solid_collision, water_volume, BrickCoord, ColumnCoord, CoordinateError,
+    Voxel, VoxelCoord, WorldPointQ8, AIR, BRICK_EDGE_VOXELS, CUT_STONE, GRANITE, GRAVEL, IRON_ORE,
+    LEAF, LIMESTONE, Q8_UNITS_PER_METER, SAND, SANDSTONE, SHALE, SUBSOIL, TOPSOIL, VOXEL_EDGE_Q8,
+    WATER, WOOD,
 };
 
 /// Installs the reusable world feature set.
