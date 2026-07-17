@@ -36,8 +36,11 @@ pub use generation::{
     WorldSeed, biome_at, classify_brick, evaluate_base_voxel, evaluate_column,
 };
 pub use objects::{
-    OBJECT_EXTRACTION_STENCIL, VoxelOffset, dependency_contains, raw_shape_bounds,
-    raw_shape_contains, sample_object_shape, sample_sparse_stamp,
+    DependencyGridCell, DependencyGridCellKey, HorizonCellKey, OBJECT_EXTRACTION_STENCIL,
+    ObjectIndexConfig, ObjectIndexRecord, ObjectSpatialIndex, SampleGridCell, SampleGridCellKey,
+    VoxelOffset, build_object_index, dependency_contains, horizon_tree_ids, placement_ids_in,
+    raw_shape_bounds, raw_shape_contains, sample_object_shape, sample_sparse_stamp,
+    validate_object_shape_disjointness,
 };
 pub use storage::{
     AIR, BRICK_EDGE_VOXELS, BrickCoord, CUT_STONE, ColumnCoord, CoordinateError, GRANITE, GRAVEL,
