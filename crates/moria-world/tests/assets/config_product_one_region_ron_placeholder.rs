@@ -1,129 +1,12 @@
 use std::{fs, path::PathBuf};
 
-use moria_world::presentation::{AssetId, AssetLoader, AssetMissingAction, RuntimeAssetProfile};
-use serde::Deserialize;
+use moria_world::{
+    MaterialId, RegionConfig,
+    presentation::{AssetId, AssetLoader, AssetMissingAction, RuntimeAssetProfile},
+    validate_region_config,
+};
 
 const REGION_CONFIG_PATH: &str = "config/product_one_region.ron";
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RegionConfig {
-    seed: u64,
-    bounds: BoundsConfig,
-    terrain: TerrainGenConfig,
-    geology: GeologyConfig,
-    cave: CaveConfig,
-    water: WaterGenConfig,
-    biome: BiomeConfig,
-    objects: ObjectGenConfig,
-    ruin_stamp: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct BoundsConfig {
-    x_min_m: i16,
-    x_max_m: i16,
-    y_min_m: i16,
-    y_max_m: i16,
-    z_min_m: i16,
-    z_max_m: i16,
-    voxel_edge_q8: u16,
-    brick_edge_voxels: u8,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TerrainGenConfig {
-    typical_surface_m: i16,
-    broad_scale_m: u16,
-    meander_scale_m: u16,
-    relief_m: u8,
-    topsoil_depth_q8: u16,
-    subsoil_depth_q8: u16,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct GeologyConfig {
-    stratum_thickness_m: [u8; 4],
-    tilt_degrees: i8,
-    aquifer_thickness_m: u8,
-    aquifer_material: String,
-    iron_vein_radius_q8: u16,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CaveConfig {
-    entrance_elevation_m: i16,
-    entrance_tolerance_m: u8,
-    floor_elevation_m: i16,
-    floor_tolerance_m: u8,
-    min_clear_width_q8: u16,
-    min_clear_height_q8: u16,
-    max_route_slope_degrees: u8,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct WaterGenConfig {
-    river_width_m: u8,
-    river_depth_q8: u16,
-    lake_min_diameter_m: u8,
-    lake_depth_m: u8,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct BiomeConfig {
-    meadow_min_area_m2: u32,
-    forest_min_area_m2: u32,
-    forest_tree_spacing_m: u8,
-    tree_species_mix_percent: [u8; 2],
-    bushes_per_hectare: u16,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ObjectGenConfig {
-    boulders_per_hectare: u16,
-    stumps_per_hectare: u16,
-    rocks_per_hectare: u16,
-    max_anchor_slope_degrees: u8,
-    route_clearance_m: u8,
-    index_cell_size_m: u8,
-    max_index_cells_per_object: u8,
-    max_index_entries_per_cell: u16,
-    sample_index_cell_size_m: u8,
-    max_sample_cells_per_object: u8,
-    max_sample_entries_per_cell: u8,
-    max_edit_dependency_candidates: u16,
-    max_affected_objects_per_edit: u8,
-    max_dependency_bricks_per_object: u16,
-    max_retained_index_bytes: u32,
-    birch: TreeShapeRange,
-    pine: TreeShapeRange,
-    bush_radius_q8: [u16; 2],
-    boulder_radius_q8: [u16; 2],
-    stump: StumpShapeRange,
-    rock_radius_q8: [u16; 2],
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TreeShapeRange {
-    trunk_radius_q8: [u16; 2],
-    trunk_height_q8: [u16; 2],
-    canopy_radius_q8: [u16; 2],
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct StumpShapeRange {
-    radius_q8: [u16; 2],
-    height_q8: [u16; 2],
-}
 
 #[test]
 fn product_one_region_placeholder_uses_the_predeclared_loader_route_and_required_policy() {
@@ -183,7 +66,7 @@ fn product_one_region_placeholder_has_normative_generation_and_object_constraint
     assert_eq!(config.geology.stratum_thickness_m, [8, 12, 10, 18]);
     assert_eq!(config.geology.tilt_degrees, 18);
     assert_eq!(config.geology.aquifer_thickness_m, 6);
-    assert_eq!(config.geology.aquifer_material, "gravel");
+    assert_eq!(config.geology.aquifer_material, MaterialId(5));
     assert_eq!(config.geology.iron_vein_radius_q8, 320);
     assert_eq!(config.cave.entrance_elevation_m, 0);
     assert_eq!(config.cave.entrance_tolerance_m, 2);
@@ -217,18 +100,28 @@ fn product_one_region_placeholder_has_normative_generation_and_object_constraint
     assert_eq!(config.objects.max_affected_objects_per_edit, 64);
     assert_eq!(config.objects.max_dependency_bricks_per_object, 128);
     assert_eq!(config.objects.max_retained_index_bytes, 16_777_216);
-    assert_eq!(config.objects.birch.trunk_radius_q8, [51, 90]);
-    assert_eq!(config.objects.birch.trunk_height_q8, [2_048, 3_584]);
-    assert_eq!(config.objects.pine.trunk_radius_q8, [64, 115]);
-    assert_eq!(config.objects.pine.trunk_height_q8, [2_560, 4_608]);
-    assert_eq!(config.objects.birch.canopy_radius_q8, [512, 1_024]);
-    assert_eq!(config.objects.pine.canopy_radius_q8, [512, 1_024]);
-    assert_eq!(config.objects.bush_radius_q8, [128, 307]);
-    assert_eq!(config.objects.boulder_radius_q8, [128, 461]);
-    assert_eq!(config.objects.stump.radius_q8, [64, 141]);
-    assert_eq!(config.objects.stump.height_q8, [64, 192]);
-    assert_eq!(config.objects.rock_radius_q8, [38, 154]);
+    assert_eq!(config.objects.birch_trunk_radius_q8.min_q8, 51);
+    assert_eq!(config.objects.birch_trunk_radius_q8.max_q8, 90);
+    assert_eq!(config.objects.birch_trunk_height_q8.min_q8, 2_048);
+    assert_eq!(config.objects.birch_trunk_height_q8.max_q8, 3_584);
+    assert_eq!(config.objects.pine_trunk_radius_q8.min_q8, 64);
+    assert_eq!(config.objects.pine_trunk_radius_q8.max_q8, 115);
+    assert_eq!(config.objects.pine_trunk_height_q8.min_q8, 2_560);
+    assert_eq!(config.objects.pine_trunk_height_q8.max_q8, 4_608);
+    assert_eq!(config.objects.canopy_radius_q8.min_q8, 512);
+    assert_eq!(config.objects.canopy_radius_q8.max_q8, 1_024);
+    assert_eq!(config.objects.bush_radius_q8.min_q8, 128);
+    assert_eq!(config.objects.bush_radius_q8.max_q8, 307);
+    assert_eq!(config.objects.boulder_radius_q8.min_q8, 128);
+    assert_eq!(config.objects.boulder_radius_q8.max_q8, 461);
+    assert_eq!(config.objects.stump_radius_q8.min_q8, 64);
+    assert_eq!(config.objects.stump_radius_q8.max_q8, 141);
+    assert_eq!(config.objects.stump_height_q8.min_q8, 64);
+    assert_eq!(config.objects.stump_height_q8.max_q8, 192);
+    assert_eq!(config.objects.rock_radius_q8.min_q8, 38);
+    assert_eq!(config.objects.rock_radius_q8.max_q8, 154);
     assert_eq!(config.ruin_stamp, "stamps/ruin_p1.ron");
+    assert!(validate_region_config(&config).is_ok());
 }
 
 #[test]
@@ -252,8 +145,11 @@ fn parse_config() -> RegionConfig {
 }
 
 fn asset_path() -> PathBuf {
+    let declaration = AssetLoader::new()
+        .resolve_runtime_path(REGION_CONFIG_PATH)
+        .expect("the region config uses its immutable shared loader route");
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("assets")
-        .join(REGION_CONFIG_PATH)
+        .join(declaration.path)
 }
