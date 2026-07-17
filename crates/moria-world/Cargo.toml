@@ -11,6 +11,10 @@ path = "tests/assets/shaders_water_wgsl_placeholder.rs"
 name = "shaders_terrain_wgsl_placeholder"
 path = "tests/assets/shaders_terrain_wgsl_placeholder.rs"
 
+[[test]]
+name = "config_product_one_region_ron_placeholder"
+path = "tests/assets/config_product_one_region_ron_placeholder.rs"
+
 [features]
 curation = []
 
