@@ -388,7 +388,7 @@ pub struct ForestFeasibilityReport {
     pub timestamp_utc: String,
     pub passed: bool,
     pub failure_reasons: Vec<String>,
-    pub build: BuildProfile,
+    pub build: Option<BuildProfile>,
     pub world: WorldIdentity,
     pub manifest_sha256: String,
     pub machine: MachineProfile,
