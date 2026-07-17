@@ -55,6 +55,10 @@ name = "vegetation_birch_mid_glb_placeholder"
 path = "tests/assets/vegetation_birch_mid_glb_placeholder.rs"
 
 [[test]]
+name = "vegetation_bush_far_glb_placeholder"
+path = "tests/assets/vegetation_bush_far_glb_placeholder.rs"
+
+[[test]]
 name = "vegetation_pine_near_glb_placeholder"
 path = "tests/assets/vegetation_pine_near_glb_placeholder.rs"
 
@@ -87,8 +91,16 @@ name = "player_explorer_glb_placeholder"
 path = "tests/assets/player_explorer_glb_placeholder.rs"
 
 [[test]]
+name = "materials_water_normal_ktx2_placeholder"
+path = "tests/assets/materials_water_normal_ktx2_placeholder.rs"
+
+[[test]]
 name = "vegetation_bush_near_glb_placeholder"
 path = "tests/assets/vegetation_bush_near_glb_placeholder.rs"
+
+[[test]]
+name = "config_presentation_ron_placeholder"
+path = "tests/assets/config_presentation_ron_placeholder.rs"
 
 [[test]]
 name = "config_input_ron_placeholder"
