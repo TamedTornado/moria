@@ -8,9 +8,11 @@ pub mod config;
 pub mod config_validation;
 pub mod curation;
 pub mod generation;
+pub mod objects;
 pub mod presentation;
 mod storage;
 pub mod telemetry;
+pub mod terrain;
 pub mod testing;
 
 pub use config::{
@@ -33,12 +35,17 @@ pub use generation::{
     AabbQ8, BiomeId, ColumnRun, ColumnSample, ProceduralClass, RunKind, WorldBounds, WorldIdentity,
     WorldSeed, biome_at, classify_brick, evaluate_base_voxel, evaluate_column,
 };
+pub use objects::{
+    OBJECT_EXTRACTION_STENCIL, VoxelOffset, dependency_contains, raw_shape_bounds,
+    raw_shape_contains, sample_object_shape, sample_sparse_stamp,
+};
 pub use storage::{
     AIR, BRICK_EDGE_VOXELS, BrickCoord, CUT_STONE, ColumnCoord, CoordinateError, GRANITE, GRAVEL,
     IRON_ORE, LEAF, LIMESTONE, Q8_UNITS_PER_METER, SAND, SANDSTONE, SHALE, SUBSOIL, TOPSOIL,
     VOXEL_EDGE_Q8, Voxel, VoxelCoord, WATER, WOOD, WorldPointQ8, material_present, solid_collision,
     water_volume,
 };
+pub use terrain::{SolidPresentationOwner, VoxelSource, solid_presentation_owner};
 
 /// Installs the reusable world feature set.
 ///
