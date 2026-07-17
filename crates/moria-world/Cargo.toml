@@ -11,6 +11,10 @@ path = "tests/assets/shaders_water_wgsl_placeholder.rs"
 name = "shaders_terrain_wgsl_placeholder"
 path = "tests/assets/shaders_terrain_wgsl_placeholder.rs"
 
+[[test]]
+name = "materials_terrain_normal_ktx2_placeholder"
+path = "tests/assets/materials_terrain_normal_ktx2_placeholder.rs"
+
 [features]
 curation = []
 
@@ -43,6 +47,14 @@ name = "vegetation_pine_far_glb_placeholder"
 path = "tests/assets/vegetation_pine_far_glb_placeholder.rs"
 
 [[test]]
+name = "vegetation_pine_near_glb_placeholder"
+path = "tests/assets/vegetation_pine_near_glb_placeholder.rs"
+
+[[test]]
+name = "vegetation_birch_far_glb_placeholder"
+path = "tests/assets/vegetation_birch_far_glb_placeholder.rs"
+
+[[test]]
 name = "manifests_asset_budgets_ron_placeholder"
 path = "tests/assets/manifests_asset_budgets_ron_placeholder.rs"
 
@@ -69,6 +81,14 @@ path = "tests/assets/player_explorer_glb_placeholder.rs"
 [[test]]
 name = "materials_water_normal_ktx2_placeholder"
 path = "tests/assets/materials_water_normal_ktx2_placeholder.rs"
+
+[[test]]
+name = "vegetation_bush_near_glb_placeholder"
+path = "tests/assets/vegetation_bush_near_glb_placeholder.rs"
+
+[[test]]
+name = "config_input_ron_placeholder"
+path = "tests/assets/config_input_ron_placeholder.rs"
 
 [lints]
 workspace = true
