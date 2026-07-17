@@ -66,5 +66,9 @@ path = "tests/assets/props_rock_glb_placeholder.rs"
 name = "player_explorer_glb_placeholder"
 path = "tests/assets/player_explorer_glb_placeholder.rs"
 
+[[test]]
+name = "materials_water_normal_ktx2_placeholder"
+path = "tests/assets/materials_water_normal_ktx2_placeholder.rs"
+
 [lints]
 workspace = true
