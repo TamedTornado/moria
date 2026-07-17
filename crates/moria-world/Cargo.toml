@@ -47,7 +47,6 @@ zstd.workspace = true
 
 [dev-dependencies]
 proptest = "1"
-serde_json.workspace = true
 
 [[test]]
 name = "props_boulder_glb_placeholder"

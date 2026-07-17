@@ -10,6 +10,7 @@ pub mod curation;
 pub mod generation;
 pub mod presentation;
 mod storage;
+pub mod telemetry;
 pub mod testing;
 
 pub use config::{
