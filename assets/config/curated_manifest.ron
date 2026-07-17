@@ -9,6 +9,21 @@
     features: [],
     water_bodies: [],
     objects: [],
-    ruin: (placement: (id: 0)),
+    ruin: (
+        placement: (
+            id: 0,
+            kind: Ruin,
+            transform_q: (
+                translation: (x: 0, y: 0, z: 0),
+                yaw_quarter_turns: 0,
+                uniform_scale_q8: 256,
+            ),
+            species: None,
+            shape: SparseStamp(asset_key: "moria.stamps.ruin_p1"),
+            anchor: (x: 0, y: 0, z: 0),
+        ),
+        stair_bottom: (x: 0, y: 0, z: 0),
+        stair_top: (x: 0, y: 256, z: 0),
+    ),
     route: [],
 )

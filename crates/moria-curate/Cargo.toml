@@ -10,6 +10,7 @@ bench = false
 
 [dependencies]
 moria-world = { path = "../moria-world", features = ["curation"] }
+ron.workspace = true
 
 [lints]
 workspace = true
