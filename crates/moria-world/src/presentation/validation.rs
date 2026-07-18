@@ -211,9 +211,9 @@ impl AssetValidationPlugin {
 impl Plugin for AssetValidationPlugin {
     fn build(&self, app: &mut App) {
         let outcome = validate_asset_directory(&self.root, self.profile);
-        app.insert_resource(WorldRenderAssets::from_declarations());
         match outcome {
             Ok(report) => {
+                app.insert_resource(WorldRenderAssets::from_declarations());
                 app.insert_resource(report);
                 app.insert_resource(AssetValidationStatus::Ready);
             }
