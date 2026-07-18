@@ -2,7 +2,7 @@
 
 use crate::{VoxelCoord, WorldBounds, WorldPointQ8};
 
-use super::{QueryError, QueryLimitKind, WorldRead, WorldSample};
+use super::{QueryError, QueryLimitKind, QueryMask, WorldHit, WorldRead, WorldSample};
 
 /// Minimum supported capsule radius (0.125 m).
 pub const MIN_CAPSULE_RADIUS_Q8: u16 = 32;
@@ -63,59 +63,12 @@ pub enum MatchedQueryMask {
     Water,
 }
 
-/// Authoritative collision classes to include in a query.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct QueryMask(u8);
-
-impl QueryMask {
-    pub const SOLID: Self = Self(1);
-    pub const WATER: Self = Self(2);
-    pub const SOLID_AND_WATER: Self = Self(Self::SOLID.0 | Self::WATER.0);
-
-    #[must_use]
-    pub const fn empty() -> Self {
-        Self(0)
-    }
-
-    #[must_use]
-    pub const fn is_valid(self) -> bool {
-        self.0 != 0 && self.0 & !Self::SOLID_AND_WATER.0 == 0
-    }
-
-    const fn includes(self, class: MatchedQueryMask) -> bool {
-        match class {
-            MatchedQueryMask::Solid => self.0 & Self::SOLID.0 != 0,
-            MatchedQueryMask::Water => self.0 & Self::WATER.0 != 0,
-        }
-    }
-}
-
-impl core::ops::BitOr for QueryMask {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Self(self.0 | rhs.0)
-    }
-}
-
 /// A quantized collision normal, sorted by axis then sign.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WorldNormal {
     pub x: i8,
     pub y: i8,
     pub z: i8,
-}
-
-/// One authoritative capsule contact.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct WorldHit {
-    pub voxel: VoxelCoord,
-    pub point: WorldPointQ8,
-    pub normal: WorldNormal,
-    pub material: crate::MaterialId,
-    pub matched: MatchedQueryMask,
-    pub distance_q8: u32,
-    pub revision: u64,
 }
 
 /// The safe endpoint and sorted contacts of a capsule sweep.
@@ -332,9 +285,9 @@ fn moved_capsule(
 }
 
 fn matched_class(sample: WorldSample, mask: QueryMask) -> Option<MatchedQueryMask> {
-    if sample.solid_collision && mask.includes(MatchedQueryMask::Solid) {
+    if sample.solid_collision && mask.matches(QueryMask::SOLID) {
         Some(MatchedQueryMask::Solid)
-    } else if sample.water_volume && mask.includes(MatchedQueryMask::Water) {
+    } else if sample.water_volume && mask.matches(QueryMask::WATER) {
         Some(MatchedQueryMask::Water)
     } else {
         None
@@ -446,8 +399,17 @@ fn hit_for(
         voxel,
         point,
         normal,
+        normal_q16: [
+            i32::from(normal.x) * 65_536,
+            i32::from(normal.y) * 65_536,
+            i32::from(normal.z) * 65_536,
+        ],
         material: sample.material,
         matched,
+        matched_mask: match matched {
+            MatchedQueryMask::Solid => QueryMask::SOLID,
+            MatchedQueryMask::Water => QueryMask::WATER,
+        },
         distance_q8: (dx * dx + dy * dy + dz * dz).isqrt() as u32,
         revision: sample.revision,
     }
@@ -694,8 +656,10 @@ mod tests {
                 voxel: VoxelCoord::new(1, 0, 0),
                 point: WorldPointQ8::new(0, 0, 0),
                 normal: WorldNormal { x: 1, y: 0, z: 0 },
+                normal_q16: [65_536, 0, 0],
                 material: AIR,
                 matched: MatchedQueryMask::Solid,
+                matched_mask: QueryMask::SOLID,
                 distance_q8: 0,
                 revision: 0,
             },
@@ -703,8 +667,10 @@ mod tests {
                 voxel: VoxelCoord::new(0, 0, 0),
                 point: WorldPointQ8::new(0, 0, 0),
                 normal: WorldNormal { x: 0, y: 1, z: 0 },
+                normal_q16: [0, 65_536, 0],
                 material: AIR,
                 matched: MatchedQueryMask::Solid,
+                matched_mask: QueryMask::SOLID,
                 distance_q8: 0,
                 revision: 0,
             },

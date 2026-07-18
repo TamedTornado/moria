@@ -8,6 +8,7 @@ pub mod config;
 pub mod config_validation;
 pub mod curation;
 pub mod generation;
+mod lifecycle;
 pub mod objects;
 pub mod presentation;
 mod query;
@@ -37,6 +38,10 @@ pub use generation::{
     AabbQ8, BiomeId, ColumnRun, ColumnSample, ProceduralClass, RunKind, WorldBounds, WorldIdentity,
     WorldSeed, biome_at, classify_brick, evaluate_base_voxel, evaluate_column,
 };
+pub use lifecycle::{
+    SubmitError, WorldEditCommand, WorldEditWrite, WorldLifecycle, WorldLifecycleInvariantError,
+    WorldLifecyclePhase, WorldLifecycleTransition, WorldOpenError,
+};
 pub use objects::{
     DependencyGridCell, DependencyGridCellKey, HorizonCellKey, OBJECT_EXTRACTION_STENCIL,
     ObjectIndexConfig, ObjectIndexRecord, ObjectSpatialIndex, SampleGridCell, SampleGridCellKey,
@@ -47,8 +52,9 @@ pub use objects::{
 pub use query::{
     ActiveBand, CapsuleQ8, MAX_CAPSULE_HALF_SEGMENT_Q8, MAX_CAPSULE_RADIUS_Q8,
     MAX_OVERLAP_CANDIDATE_TESTS, MAX_QUERY_HITS, MAX_SWEEP_CANDIDATE_TESTS,
-    MAX_SWEEP_DISPLACEMENT_Q8, MIN_CAPSULE_RADIUS_Q8, MatchedQueryMask, QueryError, QueryLimitKind,
-    QueryMask, SweepResult, TraversalRoute, Vec3Q8, WaterSample, WorldHit, WorldNormal, WorldRead,
+    MAX_RAY_DISTANCE_Q8, MAX_RAY_VOXEL_VISITS, MAX_SWEEP_DISPLACEMENT_Q8,
+    MIN_CAPSULE_RADIUS_Q8, MatchedQueryMask, QueryError, QueryLimitKind, QueryMask, SweepResult,
+    TraversalRoute, Vec3Q8, WaterSample, WorldHit, WorldNormal, WorldRayQ8, WorldRead,
     WorldSample,
 };
 pub use storage::{
@@ -65,7 +71,9 @@ pub use terrain::{SolidPresentationOwner, VoxelSource, solid_presentation_owner}
 pub struct MoriaWorldPlugin;
 
 impl Plugin for MoriaWorldPlugin {
-    fn build(&self, _app: &mut App) {}
+    fn build(&self, app: &mut App) {
+        app.init_resource::<WorldLifecycle>();
+    }
 }
 
 #[cfg(test)]

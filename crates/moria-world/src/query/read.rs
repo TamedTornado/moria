@@ -7,10 +7,14 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use crate::storage::WorldStore;
 use crate::{
     AIR, BrickCoord, ColumnCoord, ColumnSample, MaterialRegistry, RunKind, VOXEL_EDGE_Q8,
-    VoxelCoord, WATER, WaterBodyDef, WorldBounds, WorldIdentity, WorldPointQ8, evaluate_column,
+    VoxelCoord, WATER, WaterBodyDef, WorldBounds, WorldIdentity, WorldLifecycle, WorldPointQ8,
+    evaluate_column,
 };
 
-use super::{ActiveBand, QueryError, QueryLimitKind, TraversalRoute, WaterSample, WorldSample};
+use super::{
+    ActiveBand, QueryError, QueryLimitKind, QueryMask, TraversalRoute, WaterSample, WorldHit,
+    WorldRayQ8, WorldSample, ray,
+};
 
 /// Private authoritative state observed by [`WorldRead`].
 #[derive(Resource)]
@@ -55,15 +59,24 @@ impl WorldReadState {
 #[derive(SystemParam)]
 pub struct WorldRead<'w, 's> {
     state: Option<Res<'w, WorldReadState>>,
+    lifecycle: Option<Res<'w, WorldLifecycle>>,
     _system_state: Local<'s, ()>,
 }
 
 impl WorldRead<'_, '_> {
     pub(super) fn ready_bounds(&self) -> Result<WorldBounds, QueryError> {
-        self.state
+        Ok(self.ready_state()?.store.identity().bounds)
+    }
+
+    fn ready_state(&self) -> Result<&WorldReadState, QueryError> {
+        if self
+            .lifecycle
             .as_deref()
-            .map(|state| state.store.identity().bounds)
-            .ok_or(QueryError::NotReady)
+            .is_some_and(|lifecycle| !lifecycle.is_ready())
+        {
+            return Err(QueryError::NotReady);
+        }
+        self.state.as_deref().ok_or(QueryError::NotReady)
     }
 
     #[must_use]
@@ -80,7 +93,7 @@ impl WorldRead<'_, '_> {
     }
 
     pub fn sample_voxel(&self, coordinate: VoxelCoord) -> Result<WorldSample, QueryError> {
-        let state = self.state.as_deref().ok_or(QueryError::NotReady)?;
+        let state = self.ready_state()?;
         if !coordinate.is_in_region() {
             return Err(QueryError::OutOfBounds);
         }
@@ -102,7 +115,7 @@ impl WorldRead<'_, '_> {
     }
 
     pub fn sample_column(&self, coordinate: ColumnCoord) -> Result<ColumnSample, QueryError> {
-        let state = self.state.as_deref().ok_or(QueryError::NotReady)?;
+        let state = self.ready_state()?;
         if !VoxelCoord::new(coordinate.x, 0, coordinate.z).is_in_region() {
             return Err(QueryError::OutOfBounds);
         }
@@ -150,12 +163,30 @@ impl WorldRead<'_, '_> {
         Ok(column)
     }
 
+    /// Returns the first solid or water voxel reached by a bounded normalized ray.
+    pub fn ray_cast(
+        &self,
+        ray: WorldRayQ8,
+        max_distance_q8: u32,
+        mask: QueryMask,
+    ) -> Result<Option<WorldHit>, QueryError> {
+        let state = self.ready_state()?;
+        ray::cast(ray, max_distance_q8, mask, |coordinate| {
+            WorldSample::from_voxel(
+                coordinate,
+                state.store.current_voxel(coordinate),
+                &state.materials,
+                state.store.revision(),
+            )
+        })
+    }
+
     pub fn water_surface_at(
         &self,
         x_q8: i32,
         z_q8: i32,
     ) -> Result<Option<WaterSample>, QueryError> {
-        let state = self.state.as_deref().ok_or(QueryError::NotReady)?;
+        let state = self.ready_state()?;
         let bounds = state.store.identity().bounds;
         if x_q8 < bounds.min().x
             || x_q8 >= bounds.max_exclusive().x
@@ -228,9 +259,9 @@ mod tests {
     use crate::{
         AIR, ActiveBand, BrickCoord, ColumnCoord, FeatureInstance, FeatureKind, GRANITE,
         MaterialRegistry, MoriaWorldPlugin, ObjectId, ObjectKind, ObjectPlacement,
-        QuantizedTransform, RouteTag, RouteWaypoint, SpeciesId, Voxel, VoxelCoord,
+        QuantizedTransform, QueryMask, RouteTag, RouteWaypoint, SpeciesId, Voxel, VoxelCoord,
         VoxelObjectShape, WaterBodyDef, WaterKind, WorldBounds, WorldIdentity, WorldPointQ8,
-        evaluate_base_voxel,
+        WorldRayQ8, evaluate_base_voxel,
     };
 
     use super::{TraversalRoute, WorldRead, WorldReadState};
@@ -375,6 +406,33 @@ mod tests {
                     .unwrap()
                     .water_volume
             );
+        });
+
+        app.update();
+    }
+
+    #[test]
+    fn ray_reads_committed_truth_without_exposing_storage() {
+        let mut app = App::new();
+        let mut state = ready_state();
+        let y = 500;
+        state.store.commit_current([
+            (VoxelCoord::new(0, y, 0), Voxel::new(AIR, 0, 0, 0)),
+            (VoxelCoord::new(1, y, 0), Voxel::new(AIR, 0, 0, 0)),
+            (VoxelCoord::new(2, y, 0), Voxel::new(GRANITE, u8::MAX, 0, 0)),
+        ]);
+        app.insert_resource(state);
+        app.add_systems(Update, move |read: WorldRead| {
+            let ray = WorldRayQ8::new(WorldPointQ8::new(0, y * 64, 0), [65_536, 0, 0])
+                .expect("axis direction is normalized");
+            let hit = read
+                .ray_cast(ray, 256, QueryMask::SOLID)
+                .expect("bounded ray succeeds")
+                .expect("committed solid is hit");
+            assert_eq!(hit.voxel, VoxelCoord::new(2, y, 0));
+            assert_eq!(hit.normal_q16, [-65_536, 0, 0]);
+            assert_eq!(hit.distance_q8, 128);
+            assert_eq!(hit.revision, 1);
         });
 
         app.update();
