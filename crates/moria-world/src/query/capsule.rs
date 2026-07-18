@@ -117,7 +117,7 @@ impl WorldRead<'_, '_> {
     ) -> Result<SweepResult, QueryError> {
         let bounds = self.ready_bounds()?;
         validate_capsule(capsule, bounds, mask)?;
-        if squared_length(displacement) > i64::from(MAX_SWEEP_DISPLACEMENT_Q8).pow(2) {
+        if squared_length(displacement) > i128::from(MAX_SWEEP_DISPLACEMENT_Q8).pow(2) {
             return Err(QueryError::LimitExceeded(QueryLimitKind::SweepDisplacement));
         }
         let end = moved_capsule(capsule, displacement, Q16_MAX)?;
@@ -130,7 +130,8 @@ impl WorldRead<'_, '_> {
         }
 
         let mut impact = None;
-        let mut impact_voxels = Vec::with_capacity(usize::from(MAX_QUERY_HITS));
+        let mut hits = Vec::with_capacity(usize::from(MAX_QUERY_HITS));
+        let mut result_count_exceeded = false;
         for voxel in candidates.iter() {
             let sample = self.sample_voxel(voxel)?;
             let Some(class) = matched_class(sample, mask) else {
@@ -142,28 +143,42 @@ impl WorldRead<'_, '_> {
             match impact {
                 None => {
                     impact = Some(fraction);
-                    push_impact(&mut impact_voxels, voxel, sample, class)?;
+                    let contact = moved_capsule(capsule, displacement, fraction)?;
+                    record_impact_hit(
+                        &mut hits,
+                        &mut result_count_exceeded,
+                        hit_for(contact, voxel, sample, class),
+                    );
                 }
                 Some(current) if fraction < current => {
                     impact = Some(fraction);
-                    impact_voxels.clear();
-                    push_impact(&mut impact_voxels, voxel, sample, class)?;
+                    hits.clear();
+                    result_count_exceeded = false;
+                    let contact = moved_capsule(capsule, displacement, fraction)?;
+                    record_impact_hit(
+                        &mut hits,
+                        &mut result_count_exceeded,
+                        hit_for(contact, voxel, sample, class),
+                    );
                 }
                 Some(current) if fraction == current => {
-                    push_impact(&mut impact_voxels, voxel, sample, class)?;
+                    let contact = moved_capsule(capsule, displacement, fraction)?;
+                    record_impact_hit(
+                        &mut hits,
+                        &mut result_count_exceeded,
+                        hit_for(contact, voxel, sample, class),
+                    );
                 }
                 Some(_) => {}
             }
         }
 
-        let impact_fraction = impact.unwrap_or(Q16_MAX);
+        if result_count_exceeded {
+            return Err(QueryError::LimitExceeded(QueryLimitKind::ResultCount));
+        }
+
         let safe_fraction = impact.map_or(Q16_MAX, |value| value.saturating_sub(1));
         let end_capsule = moved_capsule(capsule, displacement, safe_fraction)?;
-        let mut hits = Vec::with_capacity(usize::from(MAX_QUERY_HITS));
-        let contact_capsule = moved_capsule(capsule, displacement, impact_fraction)?;
-        for (voxel, sample, class) in impact_voxels {
-            push_hit(&mut hits, hit_for(contact_capsule, voxel, sample, class))?;
-        }
         sort_hits(&mut hits);
         Ok(SweepResult {
             safe_fraction_q16: safe_fraction as u16,
@@ -257,10 +272,10 @@ fn q8_to_voxel(value: i64) -> Result<i32, QueryError> {
     i32::try_from(value.div_euclid(VOXEL_EDGE_Q8_I64)).map_err(|_| QueryError::InvalidInput)
 }
 
-fn squared_length(displacement: Vec3Q8) -> i64 {
-    let x = i64::from(displacement.x);
-    let y = i64::from(displacement.y);
-    let z = i64::from(displacement.z);
+fn squared_length(displacement: Vec3Q8) -> i128 {
+    let x = i128::from(displacement.x);
+    let y = i128::from(displacement.y);
+    let z = i128::from(displacement.z);
     x * x + y * y + z * z
 }
 
@@ -506,17 +521,12 @@ fn push_hit(hits: &mut Vec<WorldHit>, hit: WorldHit) -> Result<(), QueryError> {
     Ok(())
 }
 
-fn push_impact(
-    impacts: &mut Vec<(VoxelCoord, WorldSample, MatchedQueryMask)>,
-    voxel: VoxelCoord,
-    sample: WorldSample,
-    matched: MatchedQueryMask,
-) -> Result<(), QueryError> {
-    if impacts.len() == usize::from(MAX_QUERY_HITS) {
-        return Err(QueryError::LimitExceeded(QueryLimitKind::ResultCount));
+fn record_impact_hit(hits: &mut Vec<WorldHit>, exceeded: &mut bool, hit: WorldHit) {
+    if hits.len() == usize::from(MAX_QUERY_HITS) {
+        *exceeded = true;
+    } else {
+        hits.push(hit);
     }
-    impacts.push((voxel, sample, matched));
-    Ok(())
 }
 
 fn sort_hits(hits: &mut [WorldHit]) {
@@ -654,7 +664,7 @@ mod tests {
             Err(QueryError::LimitExceeded(QueryLimitKind::CapsuleHeight))
         ));
         assert!(
-            squared_length(Vec3Q8::new(3_073, 0, 0)) > i64::from(MAX_SWEEP_DISPLACEMENT_Q8).pow(2)
+            squared_length(Vec3Q8::new(3_073, 0, 0)) > i128::from(MAX_SWEEP_DISPLACEMENT_Q8).pow(2)
         );
 
         let max = CapsuleQ8::new(center, MAX_CAPSULE_RADIUS_Q8, MAX_CAPSULE_HALF_SEGMENT_Q8);
@@ -662,6 +672,160 @@ mod tests {
         assert!(
             candidate_range(max, end, bounds).unwrap().count()
                 > u32::from(MAX_SWEEP_CANDIDATE_TESTS)
+        );
+    }
+
+    #[test]
+    fn extreme_displacement_is_rejected_without_integer_overflow() {
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 400 * 64, 0), 32, 0);
+        let mut app = App::new();
+        app.insert_resource(state([]))
+            .insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)))
+            .add_systems(
+                Update,
+                move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
+                    result.0 = read.sweep_capsule(
+                        capsule,
+                        Vec3Q8::new(i32::MAX, i32::MAX, i32::MAX),
+                        QueryMask::SOLID,
+                    );
+                },
+            );
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<SweepQueryResult>().0,
+            Err(QueryError::LimitExceeded(QueryLimitKind::SweepDisplacement))
+        );
+    }
+
+    #[test]
+    fn exact_sweep_candidate_limit_is_accepted_and_one_more_is_rejected() {
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 400 * 64, 0), 32, 0);
+        let exact_displacement = Vec3Q8::new(415, 1_951, 1_951);
+        let excessive_displacement = Vec3Q8::new(416, 1_951, 1_951);
+        let bounds = identity().bounds;
+        let exact_end = moved_capsule(capsule, exact_displacement, Q16_MAX).unwrap();
+        let excessive_end = moved_capsule(capsule, excessive_displacement, Q16_MAX).unwrap();
+        assert_eq!(
+            candidate_range(capsule, exact_end, bounds).unwrap().count(),
+            u32::from(MAX_SWEEP_CANDIDATE_TESTS)
+        );
+        assert!(
+            candidate_range(capsule, excessive_end, bounds)
+                .unwrap()
+                .count()
+                > u32::from(MAX_SWEEP_CANDIDATE_TESTS)
+        );
+
+        let mut app = App::new();
+        app.insert_resource(state([]))
+            .insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)));
+        app.world_mut()
+            .run_system_once(
+                move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
+                    result.0 = read.sweep_capsule(capsule, exact_displacement, QueryMask::SOLID);
+                },
+            )
+            .unwrap();
+        assert!(
+            app.world()
+                .resource::<SweepQueryResult>()
+                .0
+                .as_ref()
+                .is_ok()
+        );
+
+        app.world_mut()
+            .run_system_once(
+                move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
+                    result.0 =
+                        read.sweep_capsule(capsule, excessive_displacement, QueryMask::SOLID);
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            app.world().resource::<SweepQueryResult>().0,
+            Err(QueryError::LimitExceeded(
+                QueryLimitKind::SweepCandidateWork
+            ))
+        );
+    }
+
+    #[test]
+    fn sweep_fractions_match_exhaustive_q16_oracles() {
+        let cases = [
+            (
+                CapsuleQ8::new(WorldPointQ8::new(0, 0, 0), 32, 0),
+                Vec3Q8::new(256, 0, 0),
+                VoxelCoord::new(2, 0, 0),
+            ),
+            (
+                CapsuleQ8::new(WorldPointQ8::new(256, 0, 0), 48, 96),
+                Vec3Q8::new(-320, 96, 64),
+                VoxelCoord::new(1, 2, 0),
+            ),
+            (
+                CapsuleQ8::new(WorldPointQ8::new(-96, 96, -96), 64, 32),
+                Vec3Q8::new(320, -192, 320),
+                VoxelCoord::new(1, -1, 1),
+            ),
+            (
+                CapsuleQ8::new(WorldPointQ8::new(0, 0, 0), 32, 0),
+                Vec3Q8::new(-257, -129, 193),
+                VoxelCoord::new(-3, -2, 2),
+            ),
+        ];
+
+        for (capsule, displacement, voxel) in cases {
+            let oracle = (0..=Q16_MAX).find(|&fraction| {
+                capsule_overlaps_voxel(
+                    moved_capsule(capsule, displacement, fraction).unwrap(),
+                    voxel,
+                )
+            });
+            assert_eq!(
+                first_overlap_fraction(capsule, displacement, voxel),
+                oracle,
+                "capsule={capsule:?}, displacement={displacement:?}, voxel={voxel:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sweep_contacts_are_sorted_and_use_axis_ordered_normals() {
+        let y = 400;
+        let obstacles = [VoxelCoord::new(2, y, 3), VoxelCoord::new(2, y, 2)];
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(32, y * 64 + 32, 3 * 64), 32, 0);
+        let changes = obstacles.map(|voxel| (voxel, Voxel::new(crate::GRANITE, 255, 0, 0)));
+        let mut app = App::new();
+        app.insert_resource(state(changes))
+            .insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)))
+            .add_systems(
+                Update,
+                move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
+                    result.0 =
+                        read.sweep_capsule(capsule, Vec3Q8::new(256, 0, 0), QueryMask::SOLID);
+                },
+            );
+        app.update();
+
+        let result = app
+            .world()
+            .resource::<SweepQueryResult>()
+            .0
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            result.hits.iter().map(|hit| hit.voxel).collect::<Vec<_>>(),
+            [VoxelCoord::new(2, y, 2), VoxelCoord::new(2, y, 3)]
+        );
+        assert!(
+            result
+                .hits
+                .iter()
+                .all(|hit| hit.normal == WorldNormal { x: -1, y: 0, z: 0 })
         );
     }
 
