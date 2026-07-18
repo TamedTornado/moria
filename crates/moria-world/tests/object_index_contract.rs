@@ -1,8 +1,8 @@
 use moria_world::{
     CUT_STONE, ManifestError, ObjectId, ObjectIndexConfig, ObjectKind, ObjectPlacement,
     QuantizedTransform, RuinPoi, SparseVoxelStamp, StampRun, VoxelCoord, VoxelObjectShape,
-    WorldPointQ8, build_object_index, horizon_tree_ids, placement_ids_in,
-    validate_object_shape_disjointness,
+    WorldPointQ8, build_object_index, dependency_ids_at, horizon_tree_ids, placement_ids_in,
+    raw_shape_contains, sample_object_ids_at, validate_object_shape_disjointness,
 };
 
 fn boulder(id: u64, x_voxels: i32, z_voxels: i32) -> ObjectPlacement {
@@ -57,15 +57,173 @@ fn object_index_queries_are_sorted_deduplicated_and_horizon_filtered() {
 }
 
 #[test]
+fn sample_and_dependency_queries_match_brute_force_oracles() {
+    let placements = vec![boulder(9, 0, 0), boulder(3, 20, 0), boulder(7, 130, 0)];
+    let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
+
+    for coordinate in [
+        VoxelCoord::new(0, 0, 0),
+        VoxelCoord::new(2, 0, 0),
+        VoxelCoord::new(20, 0, 0),
+        VoxelCoord::new(127, 0, 0),
+    ] {
+        let mut sampled = placements
+            .iter()
+            .filter(|placement| raw_shape_contains(placement, coordinate))
+            .map(|placement| placement.id)
+            .collect::<Vec<_>>();
+        sampled.sort_unstable();
+        let mut dependencies = placements
+            .iter()
+            .filter(|placement| moria_world::dependency_contains(placement, coordinate))
+            .map(|placement| placement.id)
+            .collect::<Vec<_>>();
+        dependencies.sort_unstable();
+
+        assert_eq!(sample_object_ids_at(&index, coordinate), sampled);
+        assert_eq!(dependency_ids_at(&index, coordinate), dependencies);
+    }
+
+    let out_of_region = VoxelCoord::new(-2_001, 0, 0);
+    assert!(sample_object_ids_at(&index, out_of_region).is_empty());
+    assert!(dependency_ids_at(&index, out_of_region).is_empty());
+}
+
+#[test]
+fn dependency_bounds_clip_and_horizon_cells_align_to_region_minimum() {
+    let placements = vec![tree(4, -1_999, -1_999)];
+    let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
+
+    assert_eq!(index.records()[0].dependency_bounds.min.x, -500 * 256);
+    assert_eq!(index.records()[0].dependency_bounds.min.z, -500 * 256);
+    assert_eq!(
+        horizon_tree_ids(&index, moria_world::HorizonCellKey::new(0, 0)),
+        vec![ObjectId(4)]
+    );
+}
+
+#[test]
+fn every_index_capacity_is_rejected_instead_of_truncated() {
+    let placement = boulder(1, 0, 0);
+
+    let config = ObjectIndexConfig {
+        max_dependency_bricks_per_object: 0,
+        ..Default::default()
+    };
+    assert!(matches!(
+        build_object_index(std::slice::from_ref(&placement), &config),
+        Err(ManifestError::ObjectDependencyBricksExceeded {
+            object_id: ObjectId(1),
+            maximum: 0,
+            ..
+        })
+    ));
+
+    for config in [
+        ObjectIndexConfig {
+            max_dependency_cells_per_object: 1,
+            ..Default::default()
+        },
+        ObjectIndexConfig {
+            max_sample_cells_per_object: 1,
+            ..Default::default()
+        },
+    ] {
+        assert!(matches!(
+            build_object_index(std::slice::from_ref(&placement), &config),
+            Err(ManifestError::ObjectIndexCellsExceeded {
+                object_id: ObjectId(1),
+                maximum: 1,
+                ..
+            })
+        ));
+    }
+
+    let collocated = [boulder(1, 0, 0), boulder(2, 0, 0)];
+    let config = ObjectIndexConfig {
+        max_dependency_members_per_cell: 1,
+        ..Default::default()
+    };
+    assert!(matches!(
+        build_object_index(&collocated, &config),
+        Err(ManifestError::ObjectIndexCellCapacityExceeded { maximum: 1, .. })
+    ));
+
+    let config = ObjectIndexConfig {
+        max_sample_members_per_cell: 1,
+        ..Default::default()
+    };
+    assert!(matches!(
+        build_object_index(&collocated, &config),
+        Err(ManifestError::ObjectSampleCellCapacityExceeded { maximum: 1, .. })
+    ));
+
+    let config = ObjectIndexConfig {
+        max_edit_dependency_candidates: 1,
+        ..Default::default()
+    };
+    assert!(matches!(
+        build_object_index(&collocated, &config),
+        Err(ManifestError::ObjectEditCandidatesExceeded { maximum: 1, .. })
+    ));
+
+    let config = ObjectIndexConfig {
+        max_affected_objects_per_edit: 1,
+        ..Default::default()
+    };
+    assert!(matches!(
+        build_object_index(&collocated, &config),
+        Err(ManifestError::ObjectEditAffectedExceeded { maximum: 1, .. })
+    ));
+
+    let trees = [tree(1, 0, 0), tree(2, 20, 0)];
+    let config = ObjectIndexConfig {
+        max_horizon_tree_members_per_cell: 1,
+        ..Default::default()
+    };
+    assert!(matches!(
+        build_object_index(&trees, &config),
+        Err(ManifestError::HorizonTreeCellCapacityExceeded { maximum: 1, .. })
+    ));
+
+    let empty = build_object_index(&[], &ObjectIndexConfig::default()).unwrap();
+    assert_eq!(empty.retained_bytes(), 32);
+    let config = ObjectIndexConfig {
+        max_retained_bytes: 31,
+        ..Default::default()
+    };
+    assert_eq!(
+        build_object_index(&[], &config).unwrap_err(),
+        ManifestError::ObjectIndexRetainedBytesExceeded {
+            actual: 32,
+            maximum: 31,
+        }
+    );
+}
+
+#[test]
 fn horizon_members_and_overlap_witnesses_are_stable() {
     let placements = vec![tree(9, 1, 1), tree(3, 2, 2), boulder(15, 40, 40)];
     let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
     assert_eq!(
-        horizon_tree_ids(&index, moria_world::HorizonCellKey::new(0, 0)),
+        horizon_tree_ids(&index, moria_world::HorizonCellKey::new(7, 7)),
         vec![ObjectId(3), ObjectId(9)]
     );
 
-    let overlapping = vec![boulder(9, 0, 0), boulder(3, 0, 0)];
+    let overlapping = vec![
+        boulder(9, 0, 0),
+        boulder(2, 50, 0),
+        boulder(3, 50, 0),
+        boulder(1, 0, 0),
+    ];
+    let expected_voxel = (-8..=8)
+        .flat_map(|x| (-8..=8).map(move |y| (x, y)))
+        .flat_map(|(x, y)| (-8..=8).map(move |z| VoxelCoord::new(x, y, z)))
+        .find(|coordinate| {
+            raw_shape_contains(&overlapping[0], *coordinate)
+                && raw_shape_contains(&overlapping[3], *coordinate)
+        })
+        .unwrap();
     let index = build_object_index(&overlapping, &ObjectIndexConfig::default()).unwrap();
     let ruin = RuinPoi {
         placement: ObjectPlacement {
@@ -101,9 +259,9 @@ fn horizon_members_and_overlap_witnesses_are_stable() {
     assert_eq!(
         validate_object_shape_disjointness(&index, &ruin, &stamp),
         Err(ManifestError::ObjectShapeOverlap {
-            lower_id: ObjectId(3),
+            lower_id: ObjectId(1),
             higher_id: ObjectId(9),
-            first_voxel: VoxelCoord::new(-2, -1, -1),
+            first_voxel: expected_voxel,
         })
     );
 }

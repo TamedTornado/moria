@@ -7,12 +7,17 @@ use crate::{
     Q8_UNITS_PER_METER, VOXEL_EDGE_Q8, VoxelCoord, WorldPointQ8,
 };
 
-use super::{OBJECT_EXTRACTION_STENCIL, raw_shape_bounds};
+use super::{OBJECT_EXTRACTION_STENCIL, dependency_contains, raw_shape_bounds, raw_shape_contains};
 
 const ALLOCATOR_BYTES: u64 = 16;
 const DEPENDENCY_CELL_METERS: i32 = 32;
 const SAMPLE_CELL_METERS: i32 = 4;
 const HORIZON_CELL_METERS: i32 = 64;
+const REGION_XZ_MIN_VOXEL: i32 = -2_000;
+const REGION_XZ_MIN_Q8: i32 = -500 * Q8_UNITS_PER_METER;
+const REGION_XZ_MAX_Q8_EXCLUSIVE: i32 = 500 * Q8_UNITS_PER_METER;
+const REGION_Y_MIN_Q8: i32 = -128 * Q8_UNITS_PER_METER;
+const REGION_Y_MAX_Q8_EXCLUSIVE: i32 = 128 * Q8_UNITS_PER_METER;
 
 /// One horizontal 32 m dependency-table key.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -251,7 +256,11 @@ pub fn build_object_index<'a>(
         sample_cells.capacity(),
         &dependency_cells,
         &sample_cells,
-    );
+    )
+    .ok_or(ManifestError::ObjectIndexRetainedBytesExceeded {
+        actual: u64::MAX,
+        maximum: config.max_retained_bytes,
+    })?;
     validate_edit_caps(&dependency_cells, config)?;
     if retained_bytes > u64::from(config.max_retained_bytes) {
         return Err(ManifestError::ObjectIndexRetainedBytesExceeded {
@@ -330,7 +339,69 @@ pub fn placement_ids_in(index: &ObjectSpatialIndex<'_>, bounds: AabbQ8) -> Vec<O
             members.extend_from_slice(&index.dependency_cells[cell_index].members);
         }
     }
-    ids_from_members(index, members, |record| overlaps(record.raw_bounds, bounds))
+    ids_from_members(index, members, |_, record| {
+        overlaps(record.raw_bounds, bounds)
+    })
+}
+
+/// Returns the sorted analytic object IDs solid at one voxel coordinate.
+#[must_use]
+pub fn sample_object_ids_at(
+    index: &ObjectSpatialIndex<'_>,
+    coordinate: VoxelCoord,
+) -> Vec<ObjectId> {
+    if !coordinate.is_in_region() {
+        return Vec::new();
+    }
+    let Some(key) = sample_key_for(coordinate) else {
+        return Vec::new();
+    };
+    let Ok(cell_index) = index
+        .sample_cells
+        .binary_search_by_key(&key, |cell| cell.key)
+    else {
+        return Vec::new();
+    };
+    ids_from_members(
+        index,
+        index.sample_cells[cell_index].members.clone(),
+        |position, record| {
+            voxel_in_bounds(coordinate, record.raw_bounds)
+                && raw_shape_contains(&index.placements[position], coordinate)
+        },
+    )
+}
+
+/// Returns the sorted object IDs whose lazy extraction dependency contains a voxel.
+#[must_use]
+pub fn dependency_ids_at(index: &ObjectSpatialIndex<'_>, coordinate: VoxelCoord) -> Vec<ObjectId> {
+    if !coordinate.is_in_region() {
+        return Vec::new();
+    }
+    let Some(key) = dependency_key_for(coordinate) else {
+        return Vec::new();
+    };
+    let Ok(cell_index) = index
+        .dependency_cells
+        .binary_search_by_key(&key, |cell| cell.key)
+    else {
+        return Vec::new();
+    };
+    let mut ids = index.dependency_cells[cell_index]
+        .members
+        .iter()
+        .filter_map(|&member| {
+            let position = usize::try_from(member).ok()?;
+            let record = index.records.get(position)?;
+            let placement = index.placements.get(position)?;
+            (voxel_in_bounds(coordinate, record.dependency_bounds)
+                && dependency_contains(placement, coordinate))
+            .then_some(placement.id)
+        })
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
 }
 
 /// Returns the exact sorted tree-anchor membership of an aligned Horizon cell.
@@ -364,7 +435,7 @@ pub fn horizon_tree_ids(index: &ObjectSpatialIndex<'_>, key: HorizonCellKey) -> 
 fn ids_from_members(
     index: &ObjectSpatialIndex<'_>,
     mut members: Vec<u32>,
-    predicate: impl Fn(ObjectIndexRecord) -> bool,
+    predicate: impl Fn(usize, ObjectIndexRecord) -> bool,
 ) -> Vec<ObjectId> {
     members.sort_unstable();
     members.dedup();
@@ -372,32 +443,101 @@ fn ids_from_members(
         .into_iter()
         .filter_map(|member| {
             let position = usize::try_from(member).ok()?;
-            predicate(index.records[position]).then_some(index.placements[position].id)
+            predicate(position, index.records[position]).then_some(index.placements[position].id)
         })
         .collect::<Vec<_>>();
     ids.sort_unstable();
+    ids.dedup();
     ids
 }
 
 fn expand_dependency_bounds(bounds: AabbQ8) -> Option<AabbQ8> {
-    let halo = OBJECT_EXTRACTION_STENCIL
-        .iter()
-        .map(|offset| i32::from(offset.x).unsigned_abs())
-        .max()?;
-    let halo_q8 = i32::try_from(halo).ok()?.checked_mul(VOXEL_EDGE_Q8)?;
-    AabbQ8::new(
+    let min_offset =
+        |axis: fn(&super::VoxelOffset) -> i8| OBJECT_EXTRACTION_STENCIL.iter().map(axis).min();
+    let max_offset =
+        |axis: fn(&super::VoxelOffset) -> i8| OBJECT_EXTRACTION_STENCIL.iter().map(axis).max();
+    let offset_q8 = |offset: i8| i32::from(offset).checked_mul(VOXEL_EDGE_Q8);
+    let expanded = AabbQ8::new(
         WorldPointQ8::new(
-            bounds.min.x.checked_sub(halo_q8)?,
-            bounds.min.y.checked_sub(halo_q8)?,
-            bounds.min.z.checked_sub(halo_q8)?,
+            bounds
+                .min
+                .x
+                .checked_add(offset_q8(min_offset(|offset| offset.x)?)?)?,
+            bounds
+                .min
+                .y
+                .checked_add(offset_q8(min_offset(|offset| offset.y)?)?)?,
+            bounds
+                .min
+                .z
+                .checked_add(offset_q8(min_offset(|offset| offset.z)?)?)?,
         ),
         WorldPointQ8::new(
-            bounds.max_exclusive.x.checked_add(halo_q8)?,
-            bounds.max_exclusive.y.checked_add(halo_q8)?,
-            bounds.max_exclusive.z.checked_add(halo_q8)?,
+            bounds
+                .max_exclusive
+                .x
+                .checked_add(offset_q8(max_offset(|offset| offset.x)?)?)?,
+            bounds
+                .max_exclusive
+                .y
+                .checked_add(offset_q8(max_offset(|offset| offset.y)?)?)?,
+            bounds
+                .max_exclusive
+                .z
+                .checked_add(offset_q8(max_offset(|offset| offset.z)?)?)?,
+        ),
+    )
+    .ok()?;
+    AabbQ8::new(
+        WorldPointQ8::new(
+            expanded.min.x.max(REGION_XZ_MIN_Q8),
+            expanded.min.y.max(REGION_Y_MIN_Q8),
+            expanded.min.z.max(REGION_XZ_MIN_Q8),
+        ),
+        WorldPointQ8::new(
+            expanded.max_exclusive.x.min(REGION_XZ_MAX_Q8_EXCLUSIVE),
+            expanded.max_exclusive.y.min(REGION_Y_MAX_Q8_EXCLUSIVE),
+            expanded.max_exclusive.z.min(REGION_XZ_MAX_Q8_EXCLUSIVE),
         ),
     )
     .ok()
+}
+
+fn dependency_key_for(coordinate: VoxelCoord) -> Option<DependencyGridCellKey> {
+    let edge_q8 = DEPENDENCY_CELL_METERS.checked_mul(Q8_UNITS_PER_METER)?;
+    Some(DependencyGridCellKey {
+        x: i16::try_from(coordinate.x.checked_mul(VOXEL_EDGE_Q8)?.div_euclid(edge_q8)).ok()?,
+        z: i16::try_from(coordinate.z.checked_mul(VOXEL_EDGE_Q8)?.div_euclid(edge_q8)).ok()?,
+    })
+}
+
+fn sample_key_for(coordinate: VoxelCoord) -> Option<SampleGridCellKey> {
+    let edge_q8 = SAMPLE_CELL_METERS.checked_mul(Q8_UNITS_PER_METER)?;
+    Some(SampleGridCellKey {
+        x: i16::try_from(coordinate.x.checked_mul(VOXEL_EDGE_Q8)?.div_euclid(edge_q8)).ok()?,
+        z: i16::try_from(coordinate.z.checked_mul(VOXEL_EDGE_Q8)?.div_euclid(edge_q8)).ok()?,
+    })
+}
+
+fn voxel_in_bounds(coordinate: VoxelCoord, bounds: AabbQ8) -> bool {
+    let Some(x) = coordinate.x.checked_mul(VOXEL_EDGE_Q8) else {
+        return false;
+    };
+    let Some(y) = coordinate.y.checked_mul(VOXEL_EDGE_Q8) else {
+        return false;
+    };
+    let Some(z) = coordinate.z.checked_mul(VOXEL_EDGE_Q8) else {
+        return false;
+    };
+    x < bounds.max_exclusive.x
+        && x.checked_add(VOXEL_EDGE_Q8)
+            .is_some_and(|max| max > bounds.min.x)
+        && y < bounds.max_exclusive.y
+        && y.checked_add(VOXEL_EDGE_Q8)
+            .is_some_and(|max| max > bounds.min.y)
+        && z < bounds.max_exclusive.z
+        && z.checked_add(VOXEL_EDGE_Q8)
+            .is_some_and(|max| max > bounds.min.z)
 }
 
 fn dependency_keys_for(bounds: AabbQ8) -> Vec<DependencyGridCellKey> {
@@ -461,24 +601,26 @@ fn retained_bytes(
     sample_cell_capacity: usize,
     dependencies: &[DependencyGridCell],
     samples: &[SampleGridCell],
-) -> u64 {
-    let members = dependencies
+) -> Option<u64> {
+    let dependency_members = dependencies
         .iter()
         .map(|cell| cell.members.capacity())
-        .sum::<usize>()
-        + samples
-            .iter()
-            .map(|cell| cell.members.capacity())
-            .sum::<usize>();
-    u64::try_from(
-        record_capacity * size_of::<ObjectIndexRecord>()
-            + dependency_cell_capacity * size_of::<DependencyGridCell>()
-            + sample_cell_capacity * size_of::<SampleGridCell>()
-            + members * size_of::<u32>(),
-    )
-    .expect("index byte count fits u64")
-        + ALLOCATOR_BYTES
-            * (2 + u64::try_from(dependencies.len() + samples.len()).expect("cell count fits u64"))
+        .try_fold(0_usize, usize::checked_add)?;
+    let sample_members = samples
+        .iter()
+        .map(|cell| cell.members.capacity())
+        .try_fold(0_usize, usize::checked_add)?;
+    let member_capacity = dependency_members.checked_add(sample_members)?;
+    let stored_bytes = record_capacity
+        .checked_mul(size_of::<ObjectIndexRecord>())?
+        .checked_add(dependency_cell_capacity.checked_mul(size_of::<DependencyGridCell>())?)?
+        .checked_add(sample_cell_capacity.checked_mul(size_of::<SampleGridCell>())?)?
+        .checked_add(member_capacity.checked_mul(size_of::<u32>())?)?;
+    let occupied_cells = dependencies.len().checked_add(samples.len())?;
+    let allocation_count = u64::try_from(occupied_cells).ok()?.checked_add(2)?;
+    u64::try_from(stored_bytes)
+        .ok()?
+        .checked_add(ALLOCATOR_BYTES.checked_mul(allocation_count)?)
 }
 
 fn overlaps(left: AabbQ8, right: AabbQ8) -> bool {
@@ -491,13 +633,26 @@ fn overlaps(left: AabbQ8, right: AabbQ8) -> bool {
 }
 
 fn horizon_key(anchor: VoxelCoord) -> HorizonCellKey {
+    let edge_voxels = HORIZON_CELL_METERS * Q8_UNITS_PER_METER / VOXEL_EDGE_Q8;
     HorizonCellKey {
-        x: i16::try_from(anchor.x.div_euclid(256)).unwrap_or(if anchor.x < 0 {
+        x: i16::try_from(
+            anchor
+                .x
+                .saturating_sub(REGION_XZ_MIN_VOXEL)
+                .div_euclid(edge_voxels),
+        )
+        .unwrap_or(if anchor.x < REGION_XZ_MIN_VOXEL {
             i16::MIN
         } else {
             i16::MAX
         }),
-        z: i16::try_from(anchor.z.div_euclid(256)).unwrap_or(if anchor.z < 0 {
+        z: i16::try_from(
+            anchor
+                .z
+                .saturating_sub(REGION_XZ_MIN_VOXEL)
+                .div_euclid(edge_voxels),
+        )
+        .unwrap_or(if anchor.z < REGION_XZ_MIN_VOXEL {
             i16::MIN
         } else {
             i16::MAX
@@ -507,8 +662,8 @@ fn horizon_key(anchor: VoxelCoord) -> HorizonCellKey {
 
 fn cell_bounds(key: HorizonCellKey, meters: i32) -> AabbQ8 {
     let edge = meters * Q8_UNITS_PER_METER;
-    let min_x = i32::from(key.x) * edge;
-    let min_z = i32::from(key.z) * edge;
+    let min_x = REGION_XZ_MIN_Q8 + i32::from(key.x) * edge;
+    let min_z = REGION_XZ_MIN_Q8 + i32::from(key.z) * edge;
     AabbQ8::new(
         WorldPointQ8::new(min_x, i32::MIN / 2, min_z),
         WorldPointQ8::new(min_x + edge, i32::MAX / 2, min_z + edge),
