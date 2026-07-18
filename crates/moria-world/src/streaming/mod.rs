@@ -1,6 +1,8 @@
 //! Public streaming inputs and the private state they update.
 
 mod focus;
+mod lifecycle;
+mod planner;
 
 pub use focus::{FocusPurpose, FocusSource, RemoveFocusSource, SetFocusSource};
 
