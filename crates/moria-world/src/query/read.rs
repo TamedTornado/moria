@@ -41,6 +41,14 @@ impl WorldReadState {
             active_bands: BTreeMap::new(),
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn commit_test_voxels(
+        &mut self,
+        changes: impl IntoIterator<Item = (VoxelCoord, crate::Voxel)>,
+    ) {
+        self.store.commit_current(changes);
+    }
 }
 
 /// Read-only synchronous access to current authoritative world truth.
@@ -51,6 +59,13 @@ pub struct WorldRead<'w, 's> {
 }
 
 impl WorldRead<'_, '_> {
+    pub(super) fn ready_bounds(&self) -> Result<WorldBounds, QueryError> {
+        self.state
+            .as_deref()
+            .map(|state| state.store.identity().bounds)
+            .ok_or(QueryError::NotReady)
+    }
+
     #[must_use]
     pub fn identity(&self) -> &WorldIdentity {
         self.state
