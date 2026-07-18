@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, Bound};
 use bevy::{ecs::system::SystemParam, prelude::*};
 
 use crate::storage::WorldStore;
+use crate::telemetry::WorldTelemetryState;
 use crate::{
     AIR, BrickCoord, ColumnCoord, ColumnSample, MaterialRegistry, RunKind, VOXEL_EDGE_Q8,
     VoxelCoord, WATER, WaterBodyDef, WorldBounds, WorldIdentity, WorldLifecycle, WorldPointQ8,
@@ -13,8 +14,9 @@ use crate::{
 
 use super::{
     ActiveBand, DiagnosticBrick, DiagnosticCell, DiagnosticDirtyFlags, DiagnosticFocus,
-    DiagnosticPage, DiagnosticPageRequest, DiagnosticSnapshotToken, FocusPurposeFlags, QueryError,
-    QueryLimitKind, QueryMask, TraversalRoute, WaterSample, WorldHit, WorldRayQ8, WorldSample, ray,
+    DiagnosticPage, DiagnosticPageRequest, DiagnosticRenderChunk, DiagnosticRenderChunkKey,
+    DiagnosticSnapshotToken, DiagnosticTaskKind, FocusPurposeFlags, QueryError, QueryLimitKind,
+    QueryMask, TraversalRoute, WaterSample, WorldHit, WorldRayQ8, WorldSample, ray,
 };
 use crate::streaming::FocusState;
 
@@ -26,7 +28,16 @@ pub(crate) struct WorldReadState {
     water_bodies: Vec<WaterBodyDef>,
     route: TraversalRoute,
     active_bands: BTreeMap<BrickCoord, ActiveBand>,
+    diagnostic_statuses: BTreeMap<BrickCoord, DiagnosticBrickStatus>,
+    render_chunks: BTreeMap<DiagnosticRenderChunkKey, DiagnosticRenderChunk>,
     diagnostic_generation: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct DiagnosticBrickStatus {
+    dirty: DiagnosticDirtyFlags,
+    pin_count: u16,
+    task: Option<DiagnosticTaskKind>,
 }
 
 impl WorldReadState {
@@ -46,6 +57,8 @@ impl WorldReadState {
             water_bodies,
             route,
             active_bands: BTreeMap::new(),
+            diagnostic_statuses: BTreeMap::new(),
+            render_chunks: BTreeMap::new(),
             diagnostic_generation: 0,
         }
     }
@@ -63,11 +76,62 @@ impl WorldReadState {
         reason = "streaming installs and removes active bands once its lifecycle is available"
     )]
     pub(crate) fn set_active_band(&mut self, brick: BrickCoord, band: Option<ActiveBand>) {
+        let mut auxiliary_changed = false;
         let previous = match band {
             Some(band) => self.active_bands.insert(brick, band),
-            None => self.active_bands.remove(&brick),
+            None => {
+                auxiliary_changed |= self.diagnostic_statuses.remove(&brick).is_some();
+                let previous_chunk_count = self.render_chunks.len();
+                self.render_chunks.retain(|key, _| key.brick != brick);
+                auxiliary_changed |= self.render_chunks.len() != previous_chunk_count;
+                self.active_bands.remove(&brick)
+            }
         };
-        if previous != band {
+        if previous != band || auxiliary_changed {
+            self.invalidate_diagnostics();
+        }
+    }
+
+    #[allow(
+        dead_code,
+        reason = "streaming and mutation publish brick state once their lifecycle is available"
+    )]
+    pub(crate) fn set_diagnostic_status(
+        &mut self,
+        brick: BrickCoord,
+        dirty: DiagnosticDirtyFlags,
+        pin_count: u16,
+        task: Option<DiagnosticTaskKind>,
+    ) {
+        let status = DiagnosticBrickStatus {
+            dirty,
+            pin_count,
+            task,
+        };
+        if self.diagnostic_statuses.get(&brick) != Some(&status) {
+            self.diagnostic_statuses.insert(brick, status);
+            self.invalidate_diagnostics();
+        }
+    }
+
+    #[allow(
+        dead_code,
+        reason = "render installation publishes chunks once its lifecycle is available"
+    )]
+    pub(crate) fn set_render_chunk(&mut self, chunk: DiagnosticRenderChunk) {
+        debug_assert_eq!(chunk.key.lod, chunk.lod);
+        if self.render_chunks.get(&chunk.key) != Some(&chunk) {
+            self.render_chunks.insert(chunk.key, chunk);
+            self.invalidate_diagnostics();
+        }
+    }
+
+    #[allow(
+        dead_code,
+        reason = "render eviction removes chunks once its lifecycle is available"
+    )]
+    pub(crate) fn remove_render_chunk(&mut self, key: DiagnosticRenderChunkKey) {
+        if self.render_chunks.remove(&key).is_some() {
             self.invalidate_diagnostics();
         }
     }
@@ -89,6 +153,7 @@ impl WorldReadState {
 pub struct WorldRead<'w, 's> {
     state: Option<Res<'w, WorldReadState>>,
     focuses: Option<Res<'w, FocusState>>,
+    telemetry: Option<Res<'w, WorldTelemetryState>>,
     lifecycle: Option<Res<'w, WorldLifecycle>>,
     _system_state: Local<'s, ()>,
 }
@@ -254,19 +319,22 @@ impl WorldRead<'_, '_> {
         request: DiagnosticPageRequest,
     ) -> Result<DiagnosticPage, QueryError> {
         validate_diagnostic_request(request)?;
-        let state = self.state.as_deref().ok_or(QueryError::NotReady)?;
+        let state = self.ready_state()?;
         let focus_state = self.focuses.as_deref();
-        if focus_state.is_some_and(|focuses| focuses.sources().len() > 16) {
-            return Err(QueryError::LimitExceeded(QueryLimitKind::DiagnosticFocuses));
-        }
-        let snapshot = diagnostic_snapshot_token(state, focus_state);
-        if let Some(requested) = request.snapshot
-            && requested != snapshot
-        {
-            return Err(QueryError::SnapshotExpired);
-        }
+        let current_frame = self
+            .telemetry
+            .as_deref()
+            .map_or(0, WorldTelemetryState::frame_index);
+        let snapshot = match request.snapshot {
+            Some(requested) if diagnostic_snapshot_is_current(requested, state, focus_state) => {
+                requested
+            }
+            Some(_) => return Err(QueryError::SnapshotExpired),
+            None => diagnostic_snapshot_token(state, focus_state, current_frame),
+        };
+        let frame = snapshot.3;
 
-        let mut bricks = Vec::with_capacity(usize::from(request.max_bricks));
+        let mut page_bricks = Vec::with_capacity(usize::from(request.max_bricks));
         let mut candidates = state.active_bands.range((
             request
                 .after_brick
@@ -274,30 +342,27 @@ impl WorldRead<'_, '_> {
             Bound::Unbounded,
         ));
         for (&coord, &band) in candidates.by_ref().take(usize::from(request.max_bricks)) {
-            bricks.push(diagnostic_brick(
-                state,
-                focus_state,
-                coord,
-                band,
-                request.include_cells,
-            ));
+            page_bricks.push((coord, band));
         }
         let next_after_brick = candidates
             .next()
             .map(|(&coord, _)| coord)
-            .and_then(|_| bricks.last().map(|brick| brick.coord));
+            .and_then(|_| page_bricks.last().map(|(coord, _)| *coord));
 
-        let focuses = if bricks.is_empty() {
-            diagnostic_focuses(focus_state)
-        } else {
-            Vec::new()
-        };
+        let render_chunks = diagnostic_render_chunks(state, &page_bricks)?;
+        let focuses = diagnostic_focuses(state, focus_state, &page_bricks)?;
+        let bricks = page_bricks
+            .into_iter()
+            .map(|(coord, band)| {
+                diagnostic_brick(state, &focuses, coord, band, request.include_cells)
+            })
+            .collect();
         Ok(DiagnosticPage {
             snapshot,
-            frame: 0,
+            frame,
             revision: state.store.revision(),
             bricks,
-            render_chunks: Vec::new(),
+            render_chunks,
             focuses,
             next_after_brick,
         })
@@ -320,17 +385,29 @@ fn validate_diagnostic_request(request: DiagnosticPageRequest) -> Result<(), Que
 fn diagnostic_snapshot_token(
     state: &WorldReadState,
     focuses: Option<&FocusState>,
+    frame: u64,
 ) -> DiagnosticSnapshotToken {
     DiagnosticSnapshotToken(
         state.diagnostic_generation,
         state.store.revision(),
         focuses.map_or(0, FocusState::generation),
+        frame,
     )
+}
+
+fn diagnostic_snapshot_is_current(
+    snapshot: DiagnosticSnapshotToken,
+    state: &WorldReadState,
+    focuses: Option<&FocusState>,
+) -> bool {
+    snapshot.0 == state.diagnostic_generation
+        && snapshot.1 == state.store.revision()
+        && snapshot.2 == focuses.map_or(0, FocusState::generation)
 }
 
 fn diagnostic_brick(
     state: &WorldReadState,
-    focuses: Option<&FocusState>,
+    focuses: &[DiagnosticFocus],
     coord: BrickCoord,
     band: ActiveBand,
     include_cells: bool,
@@ -342,29 +419,32 @@ fn diagnostic_brick(
         origin.z + 16 * VOXEL_EDGE_Q8,
     );
     let mut purposes = FocusPurposeFlags::default();
-    if let Some(focuses) = focuses {
-        for focus in focuses.sources().values() {
-            if focus
-                .position
-                .to_voxel_coord()
-                .ok()
-                .and_then(|point| point.to_brick_coord().ok())
-                .as_ref()
-                == Some(&coord)
-            {
-                purposes.insert(focus.purpose);
-            }
+    for focus in focuses {
+        if focus
+            .position
+            .to_voxel_coord()
+            .ok()
+            .and_then(|point| point.to_brick_coord().ok())
+            .as_ref()
+            == Some(&coord)
+        {
+            purposes.insert(focus.purpose);
         }
     }
     let cells = include_cells.then(|| diagnostic_cells(state, coord));
+    let status = state
+        .diagnostic_statuses
+        .get(&coord)
+        .copied()
+        .unwrap_or_default();
     DiagnosticBrick {
         coord,
         bounds: crate::AabbQ8::new(origin, max).expect("brick bounds are valid"),
         band,
         purposes,
-        dirty: DiagnosticDirtyFlags::default(),
-        pin_count: 0,
-        task: None,
+        dirty: status.dirty,
+        pin_count: status.pin_count,
+        task: status.task,
         cells,
     }
 }
@@ -406,19 +486,71 @@ fn brick_origin(coord: BrickCoord) -> WorldPointQ8 {
     )
 }
 
-fn diagnostic_focuses(focuses: Option<&FocusState>) -> Vec<DiagnosticFocus> {
+fn diagnostic_render_chunks(
+    state: &WorldReadState,
+    bricks: &[(BrickCoord, ActiveBand)],
+) -> Result<Vec<DiagnosticRenderChunk>, QueryError> {
+    let mut chunks = Vec::new();
+    for (brick, _) in bricks {
+        let first = DiagnosticRenderChunkKey {
+            brick: *brick,
+            lod: 0,
+        };
+        let last = DiagnosticRenderChunkKey {
+            brick: *brick,
+            lod: u8::MAX,
+        };
+        for chunk in state
+            .render_chunks
+            .range(first..=last)
+            .map(|(_, chunk)| chunk)
+        {
+            if chunks.len() == 512 {
+                return Err(QueryError::LimitExceeded(QueryLimitKind::DiagnosticChunks));
+            }
+            chunks.push(chunk.clone());
+        }
+    }
+    Ok(chunks)
+}
+
+fn diagnostic_focuses(
+    state: &WorldReadState,
+    focuses: Option<&FocusState>,
+    bricks: &[(BrickCoord, ActiveBand)],
+) -> Result<Vec<DiagnosticFocus>, QueryError> {
     let Some(focuses) = focuses else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    focuses
-        .sources()
-        .values()
-        .map(|focus| DiagnosticFocus {
+    let mut page_focuses = Vec::new();
+    for focus in focuses.sources().values() {
+        let focus_brick = focus
+            .position
+            .to_voxel_coord()
+            .ok()
+            .and_then(|point| point.to_brick_coord().ok());
+        let contributes = if bricks.is_empty() {
+            focus_brick.is_none_or(|brick| !state.active_bands.contains_key(&brick))
+        } else {
+            focus_brick.is_some_and(|brick| {
+                bricks
+                    .binary_search_by_key(&brick, |(coord, _)| *coord)
+                    .is_ok()
+            })
+        };
+        if !contributes {
+            continue;
+        }
+        if page_focuses.len() == 16 {
+            return Err(QueryError::LimitExceeded(QueryLimitKind::DiagnosticFocuses));
+        }
+        page_focuses.push(DiagnosticFocus {
             id: focus.id,
             position: focus.position,
             purpose: focus.purpose,
-        })
-        .collect()
+        });
+    }
+    Ok(page_focuses)
 }
 
 const fn sample_run_kind(material: u8) -> RunKind {
@@ -459,11 +591,12 @@ mod tests {
     use bevy::prelude::*;
 
     use crate::{
-        AIR, ActiveBand, BrickCoord, ColumnCoord, FeatureInstance, FeatureKind, GRANITE,
-        MaterialRegistry, MoriaWorldPlugin, ObjectId, ObjectKind, ObjectPlacement,
-        QuantizedTransform, QueryMask, RouteTag, RouteWaypoint, SpeciesId, Voxel, VoxelCoord,
-        VoxelObjectShape, WaterBodyDef, WaterKind, WorldBounds, WorldIdentity, WorldPointQ8,
-        WorldRayQ8, evaluate_base_voxel,
+        AIR, ActiveBand, BrickCoord, ColumnCoord, DiagnosticRenderChunk, DiagnosticRenderChunkKey,
+        DiagnosticRenderChunkPhase, FeatureInstance, FeatureKind, FocusPurpose, FocusSource,
+        GRANITE, MaterialRegistry, MoriaWorldPlugin, ObjectId, ObjectKind, ObjectPlacement,
+        QuantizedTransform, QueryMask, RemoveFocusSource, RouteTag, RouteWaypoint, SetFocusSource,
+        SpeciesId, Voxel, VoxelCoord, VoxelObjectShape, WaterBodyDef, WaterKind, WorldBounds,
+        WorldIdentity, WorldPointQ8, WorldRayQ8, evaluate_base_voxel,
     };
 
     use super::{TraversalRoute, WorldRead, WorldReadState};
@@ -695,6 +828,112 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_focus_limit_applies_to_the_requested_page() {
+        let mut state = ready_state();
+        let mut app = App::new();
+        app.init_resource::<crate::streaming::FocusState>()
+            .add_message::<SetFocusSource>()
+            .add_message::<RemoveFocusSource>()
+            .add_systems(Update, crate::streaming::apply_focus_messages);
+
+        for x in 0..17 {
+            let brick = BrickCoord::new(x, 0, 0).unwrap();
+            state.active_bands.insert(brick, ActiveBand::Near);
+            app.world_mut().write_message(SetFocusSource(FocusSource {
+                id: x as u32,
+                position: super::brick_origin(brick),
+                purpose: FocusPurpose::Inspection,
+            }));
+        }
+
+        app.insert_resource(state)
+            .add_systems(PostUpdate, |read: WorldRead| {
+                let page = read
+                    .diagnostic_snapshot(crate::DiagnosticPageRequest {
+                        snapshot: None,
+                        after_brick: None,
+                        max_bricks: 16,
+                        include_cells: false,
+                    })
+                    .unwrap();
+                assert_eq!(page.focuses.len(), 16);
+                assert!(page.focuses.windows(2).all(|pair| pair[0].id < pair[1].id));
+            });
+
+        app.update();
+    }
+
+    #[test]
+    fn diagnostic_chunk_limit_rejects_the_513th_chunk_without_truncation() {
+        let mut state = ready_state();
+        let bricks = [
+            BrickCoord::new(0, 0, 0).unwrap(),
+            BrickCoord::new(1, 0, 0).unwrap(),
+            BrickCoord::new(2, 0, 0).unwrap(),
+        ];
+        for brick in bricks {
+            state.set_active_band(brick, Some(ActiveBand::Near));
+        }
+        for brick in &bricks[..2] {
+            for lod in 0..=u8::MAX {
+                state.set_render_chunk(diagnostic_chunk(*brick, lod));
+            }
+        }
+        state.set_render_chunk(diagnostic_chunk(bricks[2], 0));
+
+        let mut app = App::new();
+        app.insert_resource(state)
+            .add_systems(Update, |read: WorldRead| {
+                let maximum = read
+                    .diagnostic_snapshot(crate::DiagnosticPageRequest {
+                        snapshot: None,
+                        after_brick: None,
+                        max_bricks: 2,
+                        include_cells: false,
+                    })
+                    .unwrap();
+                assert_eq!(maximum.render_chunks.len(), 512);
+                assert!(
+                    maximum
+                        .render_chunks
+                        .windows(2)
+                        .all(|pair| pair[0].key < pair[1].key)
+                );
+
+                assert_eq!(
+                    read.diagnostic_snapshot(crate::DiagnosticPageRequest {
+                        snapshot: None,
+                        after_brick: None,
+                        max_bricks: 3,
+                        include_cells: false,
+                    }),
+                    Err(crate::QueryError::LimitExceeded(
+                        crate::QueryLimitKind::DiagnosticChunks
+                    ))
+                );
+            });
+
+        app.update();
+    }
+
+    fn diagnostic_chunk(brick: BrickCoord, lod: u8) -> DiagnosticRenderChunk {
+        let min = super::brick_origin(brick);
+        let max = WorldPointQ8::new(
+            min.x + 16 * crate::VOXEL_EDGE_Q8,
+            min.y + 16 * crate::VOXEL_EDGE_Q8,
+            min.z + 16 * crate::VOXEL_EDGE_Q8,
+        );
+        DiagnosticRenderChunk {
+            key: DiagnosticRenderChunkKey { brick, lod },
+            bounds: crate::AabbQ8::new(min, max).unwrap(),
+            lod,
+            band: ActiveBand::Near,
+            revision: 0,
+            phase: DiagnosticRenderChunkPhase::Resident,
+        }
+    }
+
+    #[test]
     fn ray_reads_committed_truth_without_exposing_storage() {
         let mut app = App::new();
         let mut state = ready_state();
@@ -763,6 +1002,54 @@ mod tests {
             .resource_mut::<WorldReadState>()
             .store
             .commit_current([(VoxelCoord::new(0, 0, 0), Voxel::new(AIR, 0, 0, 0))]);
+        app.update();
+        assert_eq!(app.world().resource::<SnapshotUnderTest>().phase, 2);
+    }
+
+    #[test]
+    fn diagnostic_snapshot_tokens_remain_valid_across_frame_advances() {
+        let mut app = App::new();
+        app.insert_resource(ready_state())
+            .init_resource::<crate::telemetry::WorldTelemetryState>()
+            .insert_resource(SnapshotUnderTest::default())
+            .add_systems(
+                Update,
+                (
+                    crate::telemetry::advance_frame_index,
+                    |read: WorldRead, mut snapshot: ResMut<SnapshotUnderTest>| match snapshot.phase
+                    {
+                        0 => {
+                            snapshot.token = Some(
+                                read.diagnostic_snapshot(crate::DiagnosticPageRequest {
+                                    snapshot: None,
+                                    after_brick: None,
+                                    max_bricks: 1,
+                                    include_cells: false,
+                                })
+                                .unwrap()
+                                .snapshot,
+                            );
+                            snapshot.phase = 1;
+                        }
+                        1 => {
+                            assert!(
+                                read.diagnostic_snapshot(crate::DiagnosticPageRequest {
+                                    snapshot: snapshot.token,
+                                    after_brick: None,
+                                    max_bricks: 1,
+                                    include_cells: false,
+                                })
+                                .is_ok()
+                            );
+                            snapshot.phase = 2;
+                        }
+                        _ => {}
+                    },
+                )
+                    .chain(),
+            );
+
+        app.update();
         app.update();
         assert_eq!(app.world().resource::<SnapshotUnderTest>().phase, 2);
     }

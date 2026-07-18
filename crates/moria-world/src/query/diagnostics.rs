@@ -5,7 +5,12 @@ use crate::{AabbQ8, ActiveBand, BrickCoord, MaterialId, WorldPointQ8};
 
 /// Opaque token binding all pages in one diagnostic snapshot generation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DiagnosticSnapshotToken(pub(crate) u64, pub(crate) u64, pub(crate) u64);
+pub struct DiagnosticSnapshotToken(
+    pub(crate) u64,
+    pub(crate) u64,
+    pub(crate) u64,
+    pub(crate) u64,
+);
 
 /// A bounded diagnostic page request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
