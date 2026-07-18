@@ -4,7 +4,7 @@ use moria_bench::capture::{
     schema::BenchmarkReport,
 };
 use moria_bench::cli::{
-    BenchmarkArgs, BenchmarkExitCode, exit_code_after_output, validate_output_path,
+    exit_code_after_output, validate_output_path, BenchmarkArgs, BenchmarkExitCode,
 };
 use moria_world::MoriaWorldPlugin;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -26,17 +26,17 @@ fn main() {
     // The current runner has not captured complete scenario evidence, so preserve that fact in
     // a valid failure report instead of fabricating metrics after the app exits.
     let report = BenchmarkReport::failed_before_start(&timestamp_utc_now(), "runtime");
-    let output_succeeded = match write_report_atomic(&arguments.output, &report) {
-        Ok(()) => {
-            println!("{}", human_summary(&arguments.output, &report));
-            true
+    let written = match write_report_atomic(&arguments.output, &report) {
+        Ok(written) => {
+            println!("{}", human_summary(&written));
+            Some(written)
         }
         Err(error) => {
             eprintln!("moria-bench: {error}");
-            false
+            None
         }
     };
-    std::process::exit(exit_code_after_output(report.passed, output_succeeded) as i32);
+    std::process::exit(exit_code_after_output(written.as_ref()) as i32);
 }
 
 fn exit_argument_error(error: impl std::fmt::Display) -> ! {

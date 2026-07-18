@@ -1,6 +1,6 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::schema::BenchmarkReport;
 use crate::cli::sibling_temp_path;
@@ -12,16 +12,40 @@ pub enum OutputError {
     Io(std::io::Error),
 }
 
-pub fn write_report_atomic(path: &Path, report: &BenchmarkReport) -> Result<(), OutputError> {
+/// Evidence that a validated benchmark report was written successfully.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenReport {
+    path: PathBuf,
+    passed: bool,
+}
+
+impl WrittenReport {
+    #[must_use]
+    pub const fn passed(&self) -> bool {
+        self.passed
+    }
+}
+
+pub fn write_report_atomic(
+    path: &Path,
+    report: &BenchmarkReport,
+) -> Result<WrittenReport, OutputError> {
     let json = report
         .to_canonical_json()
         .map_err(OutputError::Validation)?;
-    write_json_atomically(path, &json)
+    write_json_atomically(path, &json)?;
+    Ok(WrittenReport {
+        path: path.to_path_buf(),
+        passed: report.passed,
+    })
 }
 
-pub fn human_summary(path: &Path, report: &BenchmarkReport) -> String {
-    let outcome = if report.passed { "passed" } else { "failed" };
-    format!("benchmark {outcome}; report written to {}", path.display())
+pub fn human_summary(written: &WrittenReport) -> String {
+    let outcome = if written.passed { "passed" } else { "failed" };
+    format!(
+        "benchmark {outcome}; report written to {}",
+        written.path.display()
+    )
 }
 
 impl std::fmt::Display for OutputError {
@@ -102,6 +126,7 @@ mod tests {
         write_report_atomic,
     };
     use crate::capture::schema::BenchmarkReport;
+    use crate::cli::{exit_code_after_output, BenchmarkExitCode};
 
     #[test]
     fn atomic_write_replaces_the_target_without_leaving_a_temp_file() {
@@ -146,6 +171,26 @@ mod tests {
             !BenchmarkReport::from_json(&fs::read_to_string(&output).unwrap())
                 .unwrap()
                 .passed
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn only_a_validated_written_report_can_determine_the_exit_code() {
+        let directory = tempfile_path("exit-code");
+        fs::create_dir_all(&directory).unwrap();
+        let output = directory.join("report.json");
+        let report = BenchmarkReport::failed_before_start("2026-07-17T00:00:00Z", "runtime");
+
+        let written = write_report_atomic(&output, &report).unwrap();
+
+        assert_eq!(
+            exit_code_after_output(Some(&written)),
+            BenchmarkExitCode::RuntimeFailure
+        );
+        assert_eq!(
+            exit_code_after_output(None),
+            BenchmarkExitCode::RuntimeFailure
         );
         fs::remove_dir_all(directory).unwrap();
     }
