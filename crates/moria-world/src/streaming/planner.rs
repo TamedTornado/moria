@@ -30,12 +30,14 @@ mod tests {
         assert_eq!(first[0].brick, near);
         assert_eq!(first[0].priority, StreamPriority::CommittedEdit);
         assert_eq!(first[1].brick, far);
-        assert!(planner
-            .plan([
-                PlanRequest::new(near, Some(ActiveBand::Near), StreamPriority::Camera, 20),
-                PlanRequest::new(far, Some(ActiveBand::Far), StreamPriority::Prefetch, 200),
-            ])
-            .is_empty());
+        assert!(
+            planner
+                .plan([
+                    PlanRequest::new(near, Some(ActiveBand::Near), StreamPriority::Camera, 20),
+                    PlanRequest::new(far, Some(ActiveBand::Far), StreamPriority::Prefetch, 200),
+                ])
+                .is_empty()
+        );
     }
 
     #[test]
@@ -49,14 +51,16 @@ mod tests {
             StreamPriority::NearVisual,
             60,
         )]);
-        assert!(planner
-            .plan([PlanRequest::new(
-                brick,
-                Some(ActiveBand::Middle),
-                StreamPriority::NearVisual,
-                70,
-            )])
-            .is_empty());
+        assert!(
+            planner
+                .plan([PlanRequest::new(
+                    brick,
+                    Some(ActiveBand::Middle),
+                    StreamPriority::NearVisual,
+                    70,
+                )])
+                .is_empty()
+        );
         let changed = planner.plan([PlanRequest::new(
             brick,
             Some(ActiveBand::Middle),
@@ -90,20 +94,28 @@ mod tests {
 
         let plans = planner.plan(requests);
         assert_eq!(plans.len(), 6);
-        assert!(plans
-            .iter()
-            .any(|plan| plan.priority == StreamPriority::Collision));
-        assert!(plans
-            .iter()
-            .any(|plan| plan.priority == StreamPriority::Traversal));
+        assert!(
+            plans
+                .iter()
+                .any(|plan| plan.priority == StreamPriority::Collision)
+        );
+        assert!(
+            plans
+                .iter()
+                .any(|plan| plan.priority == StreamPriority::Traversal)
+        );
         assert!(plans.iter().any(|plan| plan.band == Some(ActiveBand::Near)));
-        assert!(plans
-            .iter()
-            .any(|plan| plan.band == Some(ActiveBand::Middle)));
+        assert!(
+            plans
+                .iter()
+                .any(|plan| plan.band == Some(ActiveBand::Middle))
+        );
         assert!(plans.iter().any(|plan| plan.band == Some(ActiveBand::Far)));
-        assert!(plans
-            .iter()
-            .any(|plan| plan.band == Some(ActiveBand::Horizon)));
+        assert!(
+            plans
+                .iter()
+                .any(|plan| plan.band == Some(ActiveBand::Horizon))
+        );
     }
 }
 // Deterministic desired-band planning independent from task execution.
