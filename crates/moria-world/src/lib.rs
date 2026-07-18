@@ -9,6 +9,7 @@ pub mod config_validation;
 mod curation;
 pub mod generation;
 mod lifecycle;
+mod mutation;
 pub mod objects;
 pub mod presentation;
 mod query;
@@ -41,8 +42,12 @@ pub use generation::{
     WorldSeed, biome_at, classify_brick, evaluate_base_voxel, evaluate_column,
 };
 pub use lifecycle::{
-    SubmitError, WorldEditCommand, WorldEditWrite, WorldLifecycle, WorldLifecycleInvariantError,
-    WorldLifecyclePhase, WorldLifecycleTransition, WorldOpenError,
+    WorldLifecycle, WorldLifecycleInvariantError, WorldLifecyclePhase, WorldLifecycleTransition,
+    WorldOpenError,
+};
+pub use mutation::{
+    EditAccepted, EditExecution, EditOperation, EditRejectReason, EditRejected, SubmitError,
+    WorldEditCommand, WorldEditWrite,
 };
 pub use objects::{
     DependencyGridCell, DependencyGridCellKey, HorizonCellKey, OBJECT_EXTRACTION_STENCIL,
@@ -81,10 +86,13 @@ pub struct MoriaWorldPlugin;
 impl Plugin for MoriaWorldPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WorldLifecycle>()
+            .init_resource::<mutation::AdmissionState>()
             .init_resource::<streaming::FocusState>()
             .init_resource::<telemetry::WorldTelemetryState>()
             .add_message::<SetFocusSource>()
             .add_message::<RemoveFocusSource>()
+            .add_message::<EditAccepted>()
+            .add_message::<EditRejected>()
             .add_systems(Update, streaming::apply_focus_messages)
             .add_systems(PostUpdate, telemetry::advance_frame_index);
     }

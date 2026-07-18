@@ -63,6 +63,10 @@ impl Default for WorldTelemetryState {
 }
 
 impl WorldTelemetryState {
+    pub(crate) const fn frame_index(&self) -> u64 {
+        self.frame_index
+    }
+
     #[allow(
         dead_code,
         reason = "edit lifecycle integration records these observations after mutation is installed"

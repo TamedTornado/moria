@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use moria_world::{
-    MoriaWorldPlugin, QueryError, SubmitError, VoxelCoord, WorldEditCommand, WorldEditWrite,
-    WorldLifecycle, WorldOpenError, WorldRead,
+    EditExecution, EditOperation, MoriaWorldPlugin, QueryError, SubmitError, VoxelCoord,
+    WorldEditCommand, WorldEditWrite, WorldLifecycle, WorldOpenError, WorldPointQ8, WorldRead,
 };
 
 #[test]
@@ -72,5 +72,16 @@ fn assert_access_is_guarded(mut edits: WorldEditWrite, reads: WorldRead) {
         reads.sample_voxel(VoxelCoord::new(0, 0, 0)),
         Err(QueryError::NotReady)
     );
-    assert_eq!(edits.submit(WorldEditCommand), Err(SubmitError::NotReady));
+    assert_eq!(
+        edits.submit(WorldEditCommand {
+            request_id: 1,
+            operation: EditOperation::DigSphere {
+                center: WorldPointQ8::new(0, 0, 0),
+                radius_q8: 64,
+                strength: 255,
+            },
+            execution: EditExecution::Atomic,
+        }),
+        Err(SubmitError::NotReady)
+    );
 }

@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt};
 
-use bevy::{ecs::system::SystemParam, prelude::*};
+use bevy::prelude::*;
 
 /// The opening state of the library-owned world.
 ///
@@ -140,34 +140,3 @@ impl fmt::Display for WorldLifecycleInvariantError {
 }
 
 impl Error for WorldLifecycleInvariantError {}
-
-/// A public edit request placeholder guarded by [`WorldEditWrite`].
-///
-/// The mutation pipeline supplies command fields and admission semantics; this
-/// lifecycle slice owns only the readiness guard.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct WorldEditCommand;
-
-/// A synchronous rejection from the public edit entry point.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SubmitError {
-    NotReady,
-}
-
-/// The public mutation entry point.
-#[derive(SystemParam)]
-pub struct WorldEditWrite<'w, 's> {
-    lifecycle: Res<'w, WorldLifecycle>,
-    _system_state: Local<'s, ()>,
-}
-
-impl WorldEditWrite<'_, '_> {
-    /// Rejects edits until the opening lifecycle has reached [`WorldLifecycle::Ready`].
-    pub fn submit(&mut self, _command: WorldEditCommand) -> Result<(), SubmitError> {
-        if self.lifecycle.is_ready() {
-            Ok(())
-        } else {
-            Err(SubmitError::NotReady)
-        }
-    }
-}
