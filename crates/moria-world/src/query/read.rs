@@ -7,7 +7,8 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use crate::storage::WorldStore;
 use crate::{
     AIR, BrickCoord, ColumnCoord, ColumnSample, MaterialRegistry, RunKind, VOXEL_EDGE_Q8,
-    VoxelCoord, WATER, WaterBodyDef, WorldBounds, WorldIdentity, WorldPointQ8, evaluate_column,
+    VoxelCoord, WATER, WaterBodyDef, WorldBounds, WorldIdentity, WorldLifecycle, WorldPointQ8,
+    evaluate_column,
 };
 
 use super::{ActiveBand, QueryError, QueryLimitKind, TraversalRoute, WaterSample, WorldSample};
@@ -47,10 +48,22 @@ impl WorldReadState {
 #[derive(SystemParam)]
 pub struct WorldRead<'w, 's> {
     state: Option<Res<'w, WorldReadState>>,
+    lifecycle: Option<Res<'w, WorldLifecycle>>,
     _system_state: Local<'s, ()>,
 }
 
 impl WorldRead<'_, '_> {
+    fn ready_state(&self) -> Result<&WorldReadState, QueryError> {
+        if self
+            .lifecycle
+            .as_deref()
+            .is_some_and(|lifecycle| !lifecycle.is_ready())
+        {
+            return Err(QueryError::NotReady);
+        }
+        self.state.as_deref().ok_or(QueryError::NotReady)
+    }
+
     #[must_use]
     pub fn identity(&self) -> &WorldIdentity {
         self.state
@@ -65,7 +78,7 @@ impl WorldRead<'_, '_> {
     }
 
     pub fn sample_voxel(&self, coordinate: VoxelCoord) -> Result<WorldSample, QueryError> {
-        let state = self.state.as_deref().ok_or(QueryError::NotReady)?;
+        let state = self.ready_state()?;
         if !coordinate.is_in_region() {
             return Err(QueryError::OutOfBounds);
         }
@@ -87,7 +100,7 @@ impl WorldRead<'_, '_> {
     }
 
     pub fn sample_column(&self, coordinate: ColumnCoord) -> Result<ColumnSample, QueryError> {
-        let state = self.state.as_deref().ok_or(QueryError::NotReady)?;
+        let state = self.ready_state()?;
         if !VoxelCoord::new(coordinate.x, 0, coordinate.z).is_in_region() {
             return Err(QueryError::OutOfBounds);
         }
@@ -140,7 +153,7 @@ impl WorldRead<'_, '_> {
         x_q8: i32,
         z_q8: i32,
     ) -> Result<Option<WaterSample>, QueryError> {
-        let state = self.state.as_deref().ok_or(QueryError::NotReady)?;
+        let state = self.ready_state()?;
         let bounds = state.store.identity().bounds;
         if x_q8 < bounds.min().x
             || x_q8 >= bounds.max_exclusive().x
