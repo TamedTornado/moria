@@ -42,7 +42,8 @@ fn curated_manifest_placeholder_uses_its_immutable_runtime_declaration_and_diges
         .expect("curated manifest placeholder uses the generated RON schema");
 
     assert_eq!(manifest.seed, 0x4D4F_5249_415F_5031);
-    assert_eq!(manifest.generated_by, "moria-curate placeholder");
+    assert_eq!(manifest.generated_by, "moria-curate generate");
+    assert!(manifest.objects.len() >= 4_800);
     assert!(is_sorted_by_key(&manifest.features, |feature| feature.id));
     assert!(is_sorted_by_key(&manifest.water_bodies, |water| water.id));
     assert!(is_sorted_by_key(&manifest.objects, |object| object.id));

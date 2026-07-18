@@ -28,9 +28,10 @@ pub use config_validation::{
     validate_presentation_config, validate_region_config,
 };
 pub use curation::{
-    CuratedManifest, FeatureInstance, FeatureKind, ManifestError, ObjectId, ObjectKind,
-    ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi, SparseVoxelStamp,
-    SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
+    CuratedManifest, CurationGenerateError, FeatureInstance, FeatureKind, ManifestError, ObjectId,
+    ObjectKind, ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi,
+    SparseVoxelStamp, SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
+    canonical_manifest_ron, generate_manifest,
 };
 pub use generation::{
     AabbQ8, BiomeId, ColumnRun, ColumnSample, ProceduralClass, RunKind, WorldBounds, WorldIdentity,
