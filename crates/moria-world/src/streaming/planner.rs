@@ -5,7 +5,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{ActiveBand, BrickCoord};
+    use crate::{ActiveBand, BrickCoord, StreamingConfig};
 
     use super::{PlanRequest, StreamPlanner, StreamPriority};
 
@@ -13,7 +13,8 @@ mod tests {
     fn plans_are_priority_sorted_stable_and_do_not_reenqueue_unchanged_work() {
         let near = BrickCoord::new(125, 32, 125).unwrap();
         let far = BrickCoord::new(126, 32, 125).unwrap();
-        let mut planner = StreamPlanner::new(12);
+        let config = StreamingConfig::default();
+        let mut planner = StreamPlanner::new(&config);
 
         let first = planner.plan([
             PlanRequest::new(near, Some(ActiveBand::Near), StreamPriority::Camera, 20),
@@ -30,20 +31,19 @@ mod tests {
         assert_eq!(first[0].brick, near);
         assert_eq!(first[0].priority, StreamPriority::CommittedEdit);
         assert_eq!(first[1].brick, far);
-        assert!(
-            planner
-                .plan([
-                    PlanRequest::new(near, Some(ActiveBand::Near), StreamPriority::Camera, 20),
-                    PlanRequest::new(far, Some(ActiveBand::Far), StreamPriority::Prefetch, 200),
-                ])
-                .is_empty()
-        );
+        assert!(planner
+            .plan([
+                PlanRequest::new(near, Some(ActiveBand::Near), StreamPriority::Camera, 20),
+                PlanRequest::new(far, Some(ActiveBand::Far), StreamPriority::Prefetch, 200),
+            ])
+            .is_empty());
     }
 
     #[test]
     fn planner_holds_band_edges_until_hysteresis_is_crossed() {
         let brick = BrickCoord::new(125, 32, 125).unwrap();
-        let mut planner = StreamPlanner::new(12);
+        let config = StreamingConfig::default();
+        let mut planner = StreamPlanner::new(&config);
 
         planner.plan([PlanRequest::new(
             brick,
@@ -51,16 +51,14 @@ mod tests {
             StreamPriority::NearVisual,
             60,
         )]);
-        assert!(
-            planner
-                .plan([PlanRequest::new(
-                    brick,
-                    Some(ActiveBand::Middle),
-                    StreamPriority::NearVisual,
-                    70,
-                )])
-                .is_empty()
-        );
+        assert!(planner
+            .plan([PlanRequest::new(
+                brick,
+                Some(ActiveBand::Middle),
+                StreamPriority::NearVisual,
+                70,
+            )])
+            .is_empty());
         let changed = planner.plan([PlanRequest::new(
             brick,
             Some(ActiveBand::Middle),
@@ -71,8 +69,41 @@ mod tests {
     }
 
     #[test]
+    fn planner_uses_configured_band_edges_for_hysteresis() {
+        let brick = BrickCoord::new(125, 32, 125).unwrap();
+        let mut config = StreamingConfig::default();
+        config.bands[0].end_m = 96;
+        config.bands[1].start_m = 96;
+        let mut planner = StreamPlanner::new(&config);
+
+        planner.plan([PlanRequest::new(
+            brick,
+            Some(ActiveBand::Near),
+            StreamPriority::NearVisual,
+            90,
+        )]);
+        assert!(planner
+            .plan([PlanRequest::new(
+                brick,
+                Some(ActiveBand::Middle),
+                StreamPriority::NearVisual,
+                107,
+            )])
+            .is_empty());
+
+        let changed = planner.plan([PlanRequest::new(
+            brick,
+            Some(ActiveBand::Middle),
+            StreamPriority::NearVisual,
+            108,
+        )]);
+        assert_eq!(changed[0].band, Some(ActiveBand::Middle));
+    }
+
+    #[test]
     fn planner_covers_each_visual_band_and_traversal_collision_work() {
-        let mut planner = StreamPlanner::new(12);
+        let config = StreamingConfig::default();
+        let mut planner = StreamPlanner::new(&config);
         let requests = [
             (ActiveBand::Near, StreamPriority::Collision),
             (ActiveBand::Near, StreamPriority::Traversal),
@@ -94,35 +125,27 @@ mod tests {
 
         let plans = planner.plan(requests);
         assert_eq!(plans.len(), 6);
-        assert!(
-            plans
-                .iter()
-                .any(|plan| plan.priority == StreamPriority::Collision)
-        );
-        assert!(
-            plans
-                .iter()
-                .any(|plan| plan.priority == StreamPriority::Traversal)
-        );
+        assert!(plans
+            .iter()
+            .any(|plan| plan.priority == StreamPriority::Collision));
+        assert!(plans
+            .iter()
+            .any(|plan| plan.priority == StreamPriority::Traversal));
         assert!(plans.iter().any(|plan| plan.band == Some(ActiveBand::Near)));
-        assert!(
-            plans
-                .iter()
-                .any(|plan| plan.band == Some(ActiveBand::Middle))
-        );
+        assert!(plans
+            .iter()
+            .any(|plan| plan.band == Some(ActiveBand::Middle)));
         assert!(plans.iter().any(|plan| plan.band == Some(ActiveBand::Far)));
-        assert!(
-            plans
-                .iter()
-                .any(|plan| plan.band == Some(ActiveBand::Horizon))
-        );
+        assert!(plans
+            .iter()
+            .any(|plan| plan.band == Some(ActiveBand::Horizon)));
     }
 }
 // Deterministic desired-band planning independent from task execution.
 
 use std::collections::BTreeMap;
 
-use crate::{ActiveBand, BrickCoord};
+use crate::{ActiveBand, BrickCoord, StreamingConfig};
 
 /// The reason work is ordered ahead of other streaming work.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -175,13 +198,18 @@ pub(crate) struct PlannedBrick {
 #[derive(Debug)]
 pub(crate) struct StreamPlanner {
     hysteresis_m: u16,
+    bands: [BandRange; 4],
     desired: BTreeMap<BrickCoord, ActiveBand>,
 }
 
 impl StreamPlanner {
-    pub(crate) const fn new(hysteresis_m: u8) -> Self {
+    pub(crate) fn new(config: &StreamingConfig) -> Self {
         Self {
-            hysteresis_m: hysteresis_m as u16,
+            hysteresis_m: u16::from(config.hysteresis_m),
+            bands: std::array::from_fn(|index| BandRange {
+                start_m: config.bands[index].start_m,
+                end_m: config.bands[index].end_m,
+            }),
             desired: BTreeMap::new(),
         }
     }
@@ -260,38 +288,35 @@ impl StreamPlanner {
         };
         let Some(requested) = requested else {
             return (current == ActiveBand::Horizon
-                && distance_m <= band_end_m(ActiveBand::Horizon) + self.hysteresis_m)
+                && distance_m <= self.band(ActiveBand::Horizon).end_m + self.hysteresis_m)
                 .then_some(current);
         };
         if current == requested {
             return Some(current);
         }
         if requested > current {
-            (distance_m >= band_start_m(requested) + self.hysteresis_m)
+            (distance_m >= self.band(requested).start_m + self.hysteresis_m)
                 .then_some(requested)
                 .or(Some(current))
         } else {
-            (distance_m <= band_start_m(current).saturating_sub(self.hysteresis_m))
+            (distance_m <= self.band(current).start_m.saturating_sub(self.hysteresis_m))
                 .then_some(requested)
                 .or(Some(current))
         }
     }
-}
 
-const fn band_start_m(band: ActiveBand) -> u16 {
-    match band {
-        ActiveBand::Near => 0,
-        ActiveBand::Middle => 64,
-        ActiveBand::Far => 160,
-        ActiveBand::Horizon => 320,
+    const fn band(&self, band: ActiveBand) -> BandRange {
+        self.bands[match band {
+            ActiveBand::Near => 0,
+            ActiveBand::Middle => 1,
+            ActiveBand::Far => 2,
+            ActiveBand::Horizon => 3,
+        }]
     }
 }
 
-const fn band_end_m(band: ActiveBand) -> u16 {
-    match band {
-        ActiveBand::Near => 64,
-        ActiveBand::Middle => 160,
-        ActiveBand::Far => 320,
-        ActiveBand::Horizon => 720,
-    }
+#[derive(Clone, Copy, Debug)]
+struct BandRange {
+    start_m: u16,
+    end_m: u16,
 }

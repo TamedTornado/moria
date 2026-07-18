@@ -9,6 +9,30 @@ mod tests {
 
     use super::{ChunkLifecycle, HorizonLifecycle, StreamLod};
 
+    fn install_chunk(
+        lifecycle: &mut ChunkLifecycle,
+        brick: BrickCoord,
+        lod: StreamLod,
+        revision: u64,
+    ) -> u64 {
+        let token = lifecycle.request(brick, lod, revision);
+        assert!(lifecycle.start_materializing(brick, token));
+        assert!(lifecycle.start_meshing(brick, token, revision, lod));
+        assert!(lifecycle.install(brick, token, revision, lod));
+        token
+    }
+
+    fn install_horizon(
+        lifecycle: &mut HorizonLifecycle,
+        cell: HorizonCellKey,
+        source_revision: u64,
+    ) -> u64 {
+        let token = lifecycle.request(cell, source_revision);
+        assert!(lifecycle.start_building(cell, token));
+        assert!(lifecycle.install(cell, token, source_revision));
+        token
+    }
+
     #[test]
     fn stale_chunk_token_revision_and_lod_results_cannot_become_resident() {
         let brick = BrickCoord::new(125, 32, 125).unwrap();
@@ -17,8 +41,73 @@ mod tests {
         let current = lifecycle.request(brick, StreamLod::Middle, 5);
 
         assert!(!lifecycle.install(brick, old, 4, StreamLod::Near));
+        assert!(lifecycle.start_materializing(brick, current));
+        assert!(lifecycle.start_meshing(brick, current, 5, StreamLod::Middle));
         assert!(lifecycle.install(brick, current, 5, StreamLod::Middle));
         assert_eq!(lifecycle.resident_band(brick), Some(ActiveBand::Middle));
+    }
+
+    #[test]
+    fn pins_applied_before_request_prevent_chunk_and_horizon_eviction() {
+        let brick = BrickCoord::new(125, 32, 125).unwrap();
+        let cell = HorizonCellKey::new(0, 0);
+        let mut chunks = ChunkLifecycle::default();
+        let mut horizon = HorizonLifecycle::default();
+
+        chunks.pin(brick);
+        horizon.pin(cell);
+        install_chunk(&mut chunks, brick, StreamLod::Near, 1);
+        install_horizon(&mut horizon, cell, 1);
+
+        assert!(!chunks.begin_evict(brick));
+        assert!(!horizon.begin_evict(cell));
+    }
+
+    #[test]
+    fn replacements_keep_the_previous_presentation_until_the_new_revision_installs() {
+        let brick = BrickCoord::new(125, 32, 125).unwrap();
+        let cell = HorizonCellKey::new(0, 0);
+        let mut chunks = ChunkLifecycle::default();
+        let mut horizon = HorizonLifecycle::default();
+
+        install_chunk(&mut chunks, brick, StreamLod::Near, 4);
+        install_horizon(&mut horizon, cell, 8);
+
+        let replacement_chunk = chunks.request(brick, StreamLod::Middle, 5);
+        let replacement_horizon = horizon.request(cell, 9);
+        assert_eq!(chunks.resident_band(brick), Some(ActiveBand::Near));
+        assert_eq!(horizon.presented_revision(cell), Some(8));
+        assert!(!horizon.is_resident(cell));
+
+        assert!(chunks.start_materializing(brick, replacement_chunk));
+        assert!(chunks.start_meshing(brick, replacement_chunk, 5, StreamLod::Middle));
+        assert!(chunks.install(brick, replacement_chunk, 5, StreamLod::Middle));
+        assert!(horizon.start_building(cell, replacement_horizon));
+        assert!(horizon.install(cell, replacement_horizon, 9));
+        assert_eq!(chunks.resident_band(brick), Some(ActiveBand::Middle));
+        assert_eq!(horizon.presented_revision(cell), Some(9));
+    }
+
+    #[test]
+    fn completed_chunk_token_cannot_restart_work_or_install_twice() {
+        let brick = BrickCoord::new(125, 32, 125).unwrap();
+        let mut lifecycle = ChunkLifecycle::default();
+        let token = install_chunk(&mut lifecycle, brick, StreamLod::Near, 4);
+
+        assert!(!lifecycle.start_materializing(brick, token));
+        assert!(!lifecycle.start_meshing(brick, token, 4, StreamLod::Near));
+        assert!(!lifecycle.install(brick, token, 4, StreamLod::Near));
+    }
+
+    #[test]
+    fn horizon_cannot_install_before_building() {
+        let cell = HorizonCellKey::new(0, 0);
+        let mut lifecycle = HorizonLifecycle::default();
+        let token = lifecycle.request(cell, 8);
+
+        assert!(!lifecycle.install(cell, token, 8));
+        assert!(lifecycle.start_building(cell, token));
+        assert!(lifecycle.install(cell, token, 8));
     }
 
     #[test]
@@ -27,10 +116,8 @@ mod tests {
         let cell = HorizonCellKey::new(0, 0);
         let mut chunks = ChunkLifecycle::default();
         let mut horizon = HorizonLifecycle::default();
-        let chunk_token = chunks.request(brick, StreamLod::Near, 1);
-        let horizon_token = horizon.request(cell, 1);
-        assert!(chunks.install(brick, chunk_token, 1, StreamLod::Near));
-        assert!(horizon.install(cell, horizon_token, 1));
+        let chunk_token = install_chunk(&mut chunks, brick, StreamLod::Near, 1);
+        let horizon_token = install_horizon(&mut horizon, cell, 1);
 
         chunks.pin(brick);
         horizon.pin(cell);
@@ -49,7 +136,10 @@ mod tests {
         let next_horizon_token = horizon.request(cell, 2);
         assert_ne!(next_chunk_token, chunk_token);
         assert_ne!(next_horizon_token, horizon_token);
+        assert!(chunks.start_materializing(brick, next_chunk_token));
+        assert!(chunks.start_meshing(brick, next_chunk_token, 1, StreamLod::Near));
         assert!(chunks.install(brick, next_chunk_token, 1, StreamLod::Near));
+        assert!(horizon.start_building(cell, next_horizon_token));
         assert!(horizon.install(cell, next_horizon_token, 2));
     }
 
@@ -119,7 +209,13 @@ struct ChunkEntry {
     token: u64,
     revision: u64,
     lod: StreamLod,
-    pins: u16,
+    presented: Option<PresentedChunk>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PresentedChunk {
+    revision: u64,
+    lod: StreamLod,
 }
 
 /// Owns desired chunk work and rejects results that no longer match it.
@@ -127,6 +223,7 @@ struct ChunkEntry {
 pub(crate) struct ChunkLifecycle {
     next_token: u64,
     entries: BTreeMap<BrickCoord, ChunkEntry>,
+    pins: BTreeMap<BrickCoord, u16>,
 }
 
 impl ChunkLifecycle {
@@ -144,7 +241,7 @@ impl ChunkLifecycle {
             }
         }
         let token = self.next_token();
-        let pins = self.entries.get(&brick).map_or(0, |entry| entry.pins);
+        let presented = self.entries.get(&brick).and_then(|entry| entry.presented);
         self.entries.insert(
             brick,
             ChunkEntry {
@@ -152,7 +249,7 @@ impl ChunkLifecycle {
                 token,
                 revision,
                 lod,
-                pins,
+                presented,
             },
         );
         token
@@ -179,7 +276,14 @@ impl ChunkLifecycle {
         let Some(entry) = self.entries.get_mut(&brick) else {
             return false;
         };
-        if entry.token != token || entry.revision != revision || entry.lod != lod {
+        if entry.token != token
+            || entry.revision != revision
+            || entry.lod != lod
+            || !matches!(
+                entry.phase,
+                ChunkPhase::Materializing { token: phase_token } if phase_token == token
+            )
+        {
             return false;
         }
         entry.phase = ChunkPhase::Meshing {
@@ -205,36 +309,44 @@ impl ChunkLifecycle {
         }
         if !matches!(
             entry.phase,
-            ChunkPhase::Requested { .. }
-                | ChunkPhase::Materializing { .. }
-                | ChunkPhase::Meshing { .. }
+            ChunkPhase::Materializing { token: phase_token } if phase_token == token
+        ) && !matches!(
+            entry.phase,
+            ChunkPhase::Meshing {
+                token: phase_token,
+                revision: phase_revision,
+                lod: phase_lod,
+            } if phase_token == token && phase_revision == revision && phase_lod == lod
         ) {
             return false;
         }
+        entry.presented = Some(PresentedChunk { revision, lod });
         entry.phase = ChunkPhase::Resident { revision, lod };
         true
     }
 
     pub(crate) fn pin(&mut self, brick: BrickCoord) {
-        if let Some(entry) = self.entries.get_mut(&brick) {
-            entry.pins = entry
-                .pins
-                .checked_add(1)
-                .expect("chunk pin count cannot wrap");
-        }
+        let pins = self.pins.entry(brick).or_default();
+        *pins = pins.checked_add(1).expect("chunk pin count cannot wrap");
     }
 
     pub(crate) fn unpin(&mut self, brick: BrickCoord) {
-        if let Some(entry) = self.entries.get_mut(&brick) {
-            entry.pins = entry.pins.saturating_sub(1);
+        if let Some(pins) = self.pins.get_mut(&brick) {
+            *pins = pins.saturating_sub(1);
+            if *pins == 0 {
+                self.pins.remove(&brick);
+            }
         }
     }
 
     pub(crate) fn begin_evict(&mut self, brick: BrickCoord) -> bool {
+        if self.pins.contains_key(&brick) {
+            return false;
+        }
         let Some(entry) = self.entries.get_mut(&brick) else {
             return false;
         };
-        if entry.pins != 0 || matches!(entry.phase, ChunkPhase::Absent | ChunkPhase::EvictPending) {
+        if matches!(entry.phase, ChunkPhase::Absent | ChunkPhase::EvictPending) {
             return false;
         }
         entry.phase = ChunkPhase::EvictPending;
@@ -242,12 +354,16 @@ impl ChunkLifecycle {
     }
 
     pub(crate) fn finish_evict(&mut self, brick: BrickCoord) -> bool {
+        if self.pins.contains_key(&brick) {
+            return false;
+        }
         let Some(entry) = self.entries.get_mut(&brick) else {
             return false;
         };
         if !matches!(entry.phase, ChunkPhase::EvictPending) {
             return false;
         }
+        entry.presented = None;
         entry.phase = ChunkPhase::Absent;
         true
     }
@@ -255,10 +371,7 @@ impl ChunkLifecycle {
     pub(crate) fn resident_band(&self, brick: BrickCoord) -> Option<ActiveBand> {
         self.entries
             .get(&brick)
-            .and_then(|entry| match entry.phase {
-                ChunkPhase::Resident { lod, .. } => Some(lod.band()),
-                _ => None,
-            })
+            .and_then(|entry| entry.presented.map(|presented| presented.lod.band()))
     }
 
     fn next_token(&mut self) -> u64 {
@@ -284,7 +397,7 @@ struct HorizonEntry {
     phase: HorizonPhase,
     token: u64,
     source_revision: u64,
-    pins: u16,
+    presented_revision: Option<u64>,
 }
 
 /// Parallel lifecycle for atomically-installed Horizon object-cell partitions.
@@ -292,6 +405,7 @@ struct HorizonEntry {
 pub(crate) struct HorizonLifecycle {
     next_token: u64,
     entries: BTreeMap<HorizonCellKey, HorizonEntry>,
+    pins: BTreeMap<HorizonCellKey, u16>,
 }
 
 impl HorizonLifecycle {
@@ -311,7 +425,10 @@ impl HorizonLifecycle {
             }
         }
         let token = self.next_token();
-        let pins = self.entries.get(&cell).map_or(0, |entry| entry.pins);
+        let presented_revision = self
+            .entries
+            .get(&cell)
+            .and_then(|entry| entry.presented_revision);
         self.entries.insert(
             cell,
             HorizonEntry {
@@ -321,7 +438,7 @@ impl HorizonLifecycle {
                 },
                 token,
                 source_revision,
-                pins,
+                presented_revision,
             },
         );
         token
@@ -355,10 +472,14 @@ impl HorizonLifecycle {
         }
         if !matches!(
             entry.phase,
-            HorizonPhase::Requested { .. } | HorizonPhase::Building { .. }
+            HorizonPhase::Building {
+                token: phase_token,
+                source_revision: phase_revision,
+            } if phase_token == token && phase_revision == source_revision
         ) {
             return false;
         }
+        entry.presented_revision = Some(source_revision);
         entry.phase = HorizonPhase::Resident {
             token,
             source_revision,
@@ -367,30 +488,30 @@ impl HorizonLifecycle {
     }
 
     pub(crate) fn pin(&mut self, cell: HorizonCellKey) {
-        if let Some(entry) = self.entries.get_mut(&cell) {
-            entry.pins = entry
-                .pins
-                .checked_add(1)
-                .expect("Horizon pin count cannot wrap");
-        }
+        let pins = self.pins.entry(cell).or_default();
+        *pins = pins.checked_add(1).expect("Horizon pin count cannot wrap");
     }
 
     pub(crate) fn unpin(&mut self, cell: HorizonCellKey) {
-        if let Some(entry) = self.entries.get_mut(&cell) {
-            entry.pins = entry.pins.saturating_sub(1);
+        if let Some(pins) = self.pins.get_mut(&cell) {
+            *pins = pins.saturating_sub(1);
+            if *pins == 0 {
+                self.pins.remove(&cell);
+            }
         }
     }
 
     pub(crate) fn begin_evict(&mut self, cell: HorizonCellKey) -> bool {
+        if self.pins.contains_key(&cell) {
+            return false;
+        }
         let Some(entry) = self.entries.get_mut(&cell) else {
             return false;
         };
-        if entry.pins != 0
-            || matches!(
-                entry.phase,
-                HorizonPhase::Absent | HorizonPhase::EvictPending
-            )
-        {
+        if matches!(
+            entry.phase,
+            HorizonPhase::Absent | HorizonPhase::EvictPending
+        ) {
             return false;
         }
         entry.phase = HorizonPhase::EvictPending;
@@ -398,12 +519,16 @@ impl HorizonLifecycle {
     }
 
     pub(crate) fn finish_evict(&mut self, cell: HorizonCellKey) -> bool {
+        if self.pins.contains_key(&cell) {
+            return false;
+        }
         let Some(entry) = self.entries.get_mut(&cell) else {
             return false;
         };
         if !matches!(entry.phase, HorizonPhase::EvictPending) {
             return false;
         }
+        entry.presented_revision = None;
         entry.phase = HorizonPhase::Absent;
         true
     }
@@ -412,6 +537,12 @@ impl HorizonLifecycle {
         self.entries
             .get(&cell)
             .is_some_and(|entry| matches!(entry.phase, HorizonPhase::Resident { .. }))
+    }
+
+    pub(crate) fn presented_revision(&self, cell: HorizonCellKey) -> Option<u64> {
+        self.entries
+            .get(&cell)
+            .and_then(|entry| entry.presented_revision)
     }
 
     fn next_token(&mut self) -> u64 {
