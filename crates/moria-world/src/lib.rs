@@ -8,6 +8,7 @@ pub mod config;
 pub mod config_validation;
 pub mod curation;
 pub mod generation;
+mod lifecycle;
 pub mod objects;
 pub mod presentation;
 mod query;
@@ -38,6 +39,10 @@ pub use generation::{
     AabbQ8, BiomeId, ColumnRun, ColumnSample, ProceduralClass, RunKind, WorldBounds, WorldIdentity,
     WorldSeed, biome_at, classify_brick, evaluate_base_voxel, evaluate_column,
 };
+pub use lifecycle::{
+    SubmitError, WorldEditCommand, WorldEditWrite, WorldLifecycle, WorldLifecycleInvariantError,
+    WorldLifecyclePhase, WorldLifecycleTransition, WorldOpenError,
+};
 pub use objects::{
     DependencyGridCell, DependencyGridCellKey, HorizonCellKey, OBJECT_EXTRACTION_STENCIL,
     ObjectIndexConfig, ObjectIndexRecord, ObjectSpatialIndex, SampleGridCell, SampleGridCellKey,
@@ -49,7 +54,8 @@ pub use query::{
     ActiveBand, DiagnosticBrick, DiagnosticCell, DiagnosticDirtyFlags, DiagnosticFocus,
     DiagnosticPage, DiagnosticPageRequest, DiagnosticRenderChunk, DiagnosticRenderChunkKey,
     DiagnosticRenderChunkPhase, DiagnosticSnapshotToken, DiagnosticTaskKind, FocusPurposeFlags,
-    QueryError, QueryLimitKind, TraversalRoute, WaterSample, WorldRead, WorldSample,
+    MAX_RAY_DISTANCE_Q8, MAX_RAY_VOXEL_VISITS, QueryError, QueryLimitKind, QueryMask,
+    TraversalRoute, WaterSample, WorldHit, WorldRayQ8, WorldRead, WorldSample,
 };
 pub use storage::{
     AIR, BRICK_EDGE_VOXELS, BrickCoord, CUT_STONE, ColumnCoord, CoordinateError, GRANITE, GRAVEL,
@@ -70,7 +76,8 @@ pub struct MoriaWorldPlugin;
 
 impl Plugin for MoriaWorldPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<streaming::FocusState>()
+        app.init_resource::<WorldLifecycle>()
+            .init_resource::<streaming::FocusState>()
             .init_resource::<telemetry::WorldTelemetryState>()
             .add_message::<SetFocusSource>()
             .add_message::<RemoveFocusSource>()
