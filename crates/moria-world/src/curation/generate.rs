@@ -3,10 +3,10 @@
 use std::{error::Error, fmt};
 
 use crate::{
-    AabbQ8, CUT_STONE, CuratedManifest, FeatureInstance, FeatureKind, ObjectId, ObjectIndexConfig,
-    ObjectKind, ObjectPlacement, QuantizedTransform, RegionConfig, RouteTag, RouteWaypoint,
-    RuinPoi, SparseVoxelStamp, SpeciesId, VoxelCoord, VoxelObjectShape, WaterBodyDef, WaterKind,
-    WorldPointQ8, build_object_index, parameters_digest_from_bytes,
+    AabbQ8, CUT_STONE, CuratedManifest, FeatureInstance, FeatureKind, GRANITE, IRON_ORE, ObjectId,
+    ObjectIndexConfig, ObjectKind, ObjectPlacement, QuantizedTransform, RegionConfig, RouteTag,
+    RouteWaypoint, RuinPoi, SparseVoxelStamp, SpeciesId, VoxelCoord, VoxelObjectShape, WATER,
+    WaterBodyDef, WaterKind, WorldPointQ8, build_object_index, parameters_digest_from_bytes,
     validate_object_shape_disjointness, validate_region_config,
 };
 
@@ -65,7 +65,7 @@ pub fn generate_manifest(
             next_id,
             cursor.next()?,
             birch,
-            index == 0 || index == birch_count,
+            canopy_radius(index, birch_count),
         ));
         next_id += 1;
     }
@@ -117,39 +117,13 @@ pub fn generate_manifest(
         seed: config.seed,
         parameters_digest: parameters_digest_from_bytes(region_config_bytes, ruin_stamp_bytes),
         generated_by: "moria-curate generate".to_owned(),
-        features: vec![FeatureInstance {
-            id: 1,
-            kind: FeatureKind::Stratum,
-            bounds: AabbQ8::new(
-                WorldPointQ8::new(-128_000, -32_768, -128_000),
-                WorldPointQ8::new(128_000, 32_768, 128_000),
-            )
-            .expect("fixed Product One bounds are valid"),
-            host_material: CUT_STONE,
-            depth_q8: 0,
-            orientation_q16: [0, 0, 0, 65_536],
-            generator_key: config.seed,
-        }],
-        water_bodies: vec![WaterBodyDef {
-            id: 1,
-            kind: WaterKind::Lake,
-            surface_y_q8: SURFACE_Y_METERS * 256,
-            footprint: vec![
-                WorldPointQ8::new(-25_600, SURFACE_Y_METERS * 256, -25_600),
-                WorldPointQ8::new(-20_480, SURFACE_Y_METERS * 256, -25_600),
-                WorldPointQ8::new(-23_040, SURFACE_Y_METERS * 256, -20_480),
-            ],
-            bed_profile_key: config.seed,
-        }],
+        features: features(config.seed),
+        water_bodies: water_bodies(config.seed),
         objects,
         ruin,
-        route: vec![RouteWaypoint {
-            order: 0,
-            point: WorldPointQ8::new(-12_800, SURFACE_Y_METERS * 256, -12_800),
-            tags: vec![RouteTag::Forest, RouteTag::SignatureCarveHillside],
-        }],
+        route: route(),
     };
-    validate_manifest(&manifest, &stamp)?;
+    validate_manifest(&manifest, &stamp, &config)?;
     Ok(manifest)
 }
 
@@ -168,11 +142,13 @@ pub fn canonical_manifest_ron(manifest: &CuratedManifest) -> Result<String, Cura
 fn validate_manifest(
     manifest: &CuratedManifest,
     stamp: &SparseVoxelStamp,
+    config: &RegionConfig,
 ) -> Result<(), CurationGenerateError> {
     manifest.validate().map_err(manifest_error)?;
     let index = build_object_index(&manifest.objects, &ObjectIndexConfig::default())
         .map_err(manifest_error)?;
-    validate_object_shape_disjointness(&index, &manifest.ruin, stamp).map_err(manifest_error)
+    validate_object_shape_disjointness(&index, &manifest.ruin, stamp).map_err(manifest_error)?;
+    validate_forest_contract(manifest, config)
 }
 
 fn manifest_error(error: ManifestError) -> CurationGenerateError {
@@ -193,8 +169,7 @@ fn append_kind(
     Ok(())
 }
 
-fn tree(id: u64, point: WorldPointQ8, birch: bool, edge_canopy: bool) -> ObjectPlacement {
-    let canopy = if edge_canopy { 512 } else { 768 };
+fn tree(id: u64, point: WorldPointQ8, birch: bool, canopy: u16) -> ObjectPlacement {
     ObjectPlacement {
         kind: if birch {
             ObjectKind::TreeA
@@ -205,9 +180,259 @@ fn tree(id: u64, point: WorldPointQ8, birch: bool, edge_canopy: bool) -> ObjectP
         shape: VoxelObjectShape::Tree {
             trunk_radius_q8: if birch { 70 } else { 90 },
             trunk_height_q8: if birch { 2_560 } else { 3_584 },
-            canopy_radii_q8: [canopy, canopy, if edge_canopy { 1_024 } else { canopy }],
+            canopy_radii_q8: [canopy, canopy, canopy],
         },
         ..placement_at(id, point)
+    }
+}
+
+const fn canopy_radius(index: u32, birch_count: u32) -> u16 {
+    let species_index = if index < birch_count {
+        index
+    } else {
+        index - birch_count
+    };
+    if species_index < 16 {
+        512
+    } else if species_index < 32 {
+        896
+    } else {
+        768
+    }
+}
+
+fn features(seed: u64) -> Vec<FeatureInstance> {
+    let bounds =
+        |min, max| AabbQ8::new(min, max).expect("fixed Product One feature bounds are valid");
+    vec![
+        FeatureInstance {
+            id: 1,
+            kind: FeatureKind::Stratum,
+            bounds: bounds(
+                WorldPointQ8::new(-128_000, -32_768, -128_000),
+                WorldPointQ8::new(128_000, 32_768, 128_000),
+            ),
+            host_material: CUT_STONE,
+            depth_q8: 0,
+            orientation_q16: [0, 0, 0, 65_536],
+            generator_key: seed,
+        },
+        FeatureInstance {
+            id: 2,
+            kind: FeatureKind::KarstCave,
+            bounds: bounds(
+                WorldPointQ8::new(-8_192, -12_288, -2_048),
+                WorldPointQ8::new(8_192, 2_048, 2_048),
+            ),
+            host_material: CUT_STONE,
+            depth_q8: 0,
+            orientation_q16: [0, 0, 0, 65_536],
+            generator_key: seed,
+        },
+        FeatureInstance {
+            id: 3,
+            kind: FeatureKind::Aquifer,
+            bounds: bounds(
+                WorldPointQ8::new(-4_096, -10_240, -1_024),
+                WorldPointQ8::new(4_096, -8_704, 1_024),
+            ),
+            host_material: WATER,
+            depth_q8: 0,
+            orientation_q16: [0, 0, 0, 65_536],
+            generator_key: seed,
+        },
+        FeatureInstance {
+            id: 4,
+            kind: FeatureKind::IronVein,
+            bounds: bounds(
+                WorldPointQ8::new(-1_024, -9_728, -4_096),
+                WorldPointQ8::new(1_024, -8_192, 4_096),
+            ),
+            host_material: IRON_ORE,
+            depth_q8: 0,
+            orientation_q16: [0, 0, 0, 65_536],
+            generator_key: seed,
+        },
+        FeatureInstance {
+            id: 5,
+            kind: FeatureKind::Topsoil,
+            bounds: bounds(
+                WorldPointQ8::new(-128_000, 15_872, -128_000),
+                WorldPointQ8::new(128_000, 16_128, 128_000),
+            ),
+            host_material: CUT_STONE,
+            depth_q8: 0,
+            orientation_q16: [0, 0, 0, 65_536],
+            generator_key: seed,
+        },
+        FeatureInstance {
+            id: 6,
+            kind: FeatureKind::Subsoil,
+            bounds: bounds(
+                WorldPointQ8::new(-128_000, 15_104, -128_000),
+                WorldPointQ8::new(128_000, 15_872, 128_000),
+            ),
+            host_material: GRANITE,
+            depth_q8: 0,
+            orientation_q16: [0, 0, 0, 65_536],
+            generator_key: seed,
+        },
+    ]
+}
+
+fn water_bodies(seed: u64) -> Vec<WaterBodyDef> {
+    vec![
+        WaterBodyDef {
+            id: 1,
+            kind: WaterKind::River,
+            surface_y_q8: SURFACE_Y_METERS * 256,
+            footprint: vec![
+                WorldPointQ8::new(-128_000, SURFACE_Y_METERS * 256, -1_280),
+                WorldPointQ8::new(128_000, SURFACE_Y_METERS * 256, -1_280),
+                WorldPointQ8::new(128_000, SURFACE_Y_METERS * 256, 1_280),
+                WorldPointQ8::new(-128_000, SURFACE_Y_METERS * 256, 1_280),
+            ],
+            bed_profile_key: seed,
+        },
+        WaterBodyDef {
+            id: 2,
+            kind: WaterKind::Lake,
+            surface_y_q8: SURFACE_Y_METERS * 256,
+            footprint: vec![
+                WorldPointQ8::new(-25_600, SURFACE_Y_METERS * 256, -25_600),
+                WorldPointQ8::new(-20_480, SURFACE_Y_METERS * 256, -25_600),
+                WorldPointQ8::new(-20_480, SURFACE_Y_METERS * 256, -20_480),
+                WorldPointQ8::new(-25_600, SURFACE_Y_METERS * 256, -20_480),
+            ],
+            bed_profile_key: seed,
+        },
+    ]
+}
+
+fn route() -> Vec<RouteWaypoint> {
+    let tags = [
+        RouteTag::Meadow,
+        RouteTag::Forest,
+        RouteTag::River,
+        RouteTag::Lake,
+        RouteTag::CliffTop,
+        RouteTag::RockShelves,
+        RouteTag::RuinStairBottom,
+        RouteTag::RuinStairTop,
+        RouteTag::CaveMouth,
+        RouteTag::Aquifer,
+        RouteTag::OreVein,
+        RouteTag::CaveFloor,
+        RouteTag::SignatureCarveHillside,
+    ];
+    tags.into_iter()
+        .enumerate()
+        .map(|(order, tag)| RouteWaypoint {
+            order: order as u8,
+            point: WorldPointQ8::new(
+                -12_800 + order as i32 * 2_048,
+                SURFACE_Y_METERS * 256
+                    - if matches!(
+                        tag,
+                        RouteTag::Aquifer | RouteTag::OreVein | RouteTag::CaveFloor
+                    ) {
+                        10_240
+                    } else {
+                        0
+                    },
+                12_800,
+            ),
+            tags: vec![tag],
+        })
+        .collect()
+}
+
+fn validate_forest_contract(
+    manifest: &CuratedManifest,
+    config: &RegionConfig,
+) -> Result<(), CurationGenerateError> {
+    let required_features = [
+        FeatureKind::Stratum,
+        FeatureKind::KarstCave,
+        FeatureKind::Aquifer,
+        FeatureKind::IronVein,
+    ];
+    if required_features.iter().any(|kind| {
+        !manifest
+            .features
+            .iter()
+            .any(|feature| feature.kind == *kind)
+    }) || !manifest
+        .water_bodies
+        .iter()
+        .any(|body| body.kind == WaterKind::River)
+        || !manifest
+            .water_bodies
+            .iter()
+            .any(|body| body.kind == WaterKind::Lake)
+    {
+        return Err(CurationGenerateError::Contract(
+            "complete route geology and water features are required".to_owned(),
+        ));
+    }
+    let required_tags = [
+        RouteTag::Forest,
+        RouteTag::CaveMouth,
+        RouteTag::Aquifer,
+        RouteTag::OreVein,
+        RouteTag::CaveFloor,
+    ];
+    if required_tags.iter().any(|tag| {
+        !manifest
+            .route
+            .iter()
+            .any(|waypoint| waypoint.tags.contains(tag))
+    }) {
+        return Err(CurationGenerateError::Contract(
+            "complete route tags are required".to_owned(),
+        ));
+    }
+    for species in [SpeciesId(1), SpeciesId(2)] {
+        let trees = manifest
+            .objects
+            .iter()
+            .filter(|object| object.species == Some(species))
+            .collect::<Vec<_>>();
+        let lower = trees
+            .iter()
+            .filter(|tree| canopy_horizontal_radius(tree) <= 640)
+            .count();
+        let upper = trees
+            .iter()
+            .filter(|tree| canopy_horizontal_radius(tree) >= 896)
+            .count();
+        if lower < 16 || upper < 16 {
+            return Err(CurationGenerateError::Contract(
+                "each tree species needs sixteen lower and upper canopy placements".to_owned(),
+            ));
+        }
+    }
+    let minimum_trees = ceil_div(FOREST_AREA_M2, 25);
+    let tree_count = manifest
+        .objects
+        .iter()
+        .filter(|object| matches!(object.kind, ObjectKind::TreeA | ObjectKind::TreeB))
+        .count() as u32;
+    if tree_count < minimum_trees || config.biome.forest_tree_spacing_m > TREE_SPACING_METERS as u8
+    {
+        return Err(CurationGenerateError::Contract(
+            "forest area, density, or spacing contract failed".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn canopy_horizontal_radius(tree: &&ObjectPlacement) -> u16 {
+    match tree.shape {
+        VoxelObjectShape::Tree {
+            canopy_radii_q8, ..
+        } => canopy_radii_q8[0].max(canopy_radii_q8[2]),
+        _ => 0,
     }
 }
 
@@ -315,6 +540,8 @@ impl CandidateCursor {
 
 #[cfg(test)]
 mod tests {
+    use crate::{FeatureKind, RouteTag, SpeciesId, VoxelObjectShape, WaterKind};
+
     use super::{canonical_manifest_ron, generate_manifest};
 
     #[test]
@@ -330,5 +557,64 @@ mod tests {
             canonical_manifest_ron(&second).unwrap()
         );
         assert!(!first.objects.is_empty());
+    }
+
+    #[test]
+    fn generation_covers_the_complete_route_and_canopy_contract() {
+        let manifest = generate_manifest(
+            include_bytes!("../../../../assets/config/product_one_region.ron"),
+            include_bytes!("../../../../assets/stamps/ruin_p1.ron"),
+        )
+        .unwrap();
+
+        for kind in [
+            FeatureKind::Stratum,
+            FeatureKind::KarstCave,
+            FeatureKind::Aquifer,
+            FeatureKind::IronVein,
+        ] {
+            assert!(manifest.features.iter().any(|feature| feature.kind == kind));
+        }
+        assert!(
+            manifest
+                .water_bodies
+                .iter()
+                .any(|body| body.kind == WaterKind::River)
+        );
+        assert!(
+            manifest
+                .water_bodies
+                .iter()
+                .any(|body| body.kind == WaterKind::Lake)
+        );
+        for tag in [
+            RouteTag::Forest,
+            RouteTag::CaveMouth,
+            RouteTag::Aquifer,
+            RouteTag::OreVein,
+            RouteTag::CaveFloor,
+        ] {
+            assert!(
+                manifest
+                    .route
+                    .iter()
+                    .any(|waypoint| waypoint.tags.contains(&tag))
+            );
+        }
+        for species in [SpeciesId(1), SpeciesId(2)] {
+            let radii = manifest
+                .objects
+                .iter()
+                .filter(|object| object.species == Some(species))
+                .filter_map(|object| match object.shape {
+                    VoxelObjectShape::Tree {
+                        canopy_radii_q8, ..
+                    } => Some(canopy_radii_q8[0].max(canopy_radii_q8[2])),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert!(radii.iter().filter(|&&radius| radius <= 640).count() >= 16);
+            assert!(radii.iter().filter(|&&radius| radius >= 896).count() >= 16);
+        }
     }
 }
