@@ -540,7 +540,7 @@ mod tests {
     use bevy::ecs::system::RunSystemOnce;
     use bevy::prelude::*;
 
-    use crate::{AIR, MaterialRegistry, Voxel, WATER, WaterBodyDef, WorldIdentity};
+    use crate::{AIR, MaterialRegistry, Voxel, WATER, WaterBodyDef, WorldIdentity, WorldLifecycle};
 
     use super::*;
     use crate::query::TraversalRoute;
@@ -569,6 +569,13 @@ mod tests {
         state
     }
 
+    fn install_ready_state(app: &mut App, state: WorldReadState) {
+        let mut lifecycle = WorldLifecycle::default();
+        lifecycle.start_loading().unwrap();
+        lifecycle.mark_ready().unwrap();
+        app.insert_resource(state).insert_resource(lifecycle);
+    }
+
     #[derive(Resource)]
     struct OverlapResult(Result<Vec<WorldHit>, QueryError>);
 
@@ -581,8 +588,11 @@ mod tests {
         let center = WorldPointQ8::new(2 * 64 - 32, 400 * 64 + 32, 2 * 64 + 32);
         let capsule = CapsuleQ8::new(center, 32, 0);
         let mut app = App::new();
-        app.insert_resource(state([(coordinate, Voxel::new(WATER, 255, 0, 0))]))
-            .insert_resource(OverlapResult(Ok(Vec::new())))
+        install_ready_state(
+            &mut app,
+            state([(coordinate, Voxel::new(WATER, 255, 0, 0))]),
+        );
+        app.insert_resource(OverlapResult(Ok(Vec::new())))
             .add_systems(
                 Update,
                 move |read: WorldRead, mut result: ResMut<OverlapResult>| {
@@ -616,8 +626,11 @@ mod tests {
         let obstacle = VoxelCoord::new(2, 400, 2);
         let capsule = CapsuleQ8::new(WorldPointQ8::new(32, 400 * 64 + 32, 2 * 64 + 32), 32, 0);
         let mut app = App::new();
-        app.insert_resource(state([(obstacle, Voxel::new(crate::GRANITE, 255, 0, 0))]))
-            .insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)))
+        install_ready_state(
+            &mut app,
+            state([(obstacle, Voxel::new(crate::GRANITE, 255, 0, 0))]),
+        );
+        app.insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)))
             .add_systems(
                 Update,
                 move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
