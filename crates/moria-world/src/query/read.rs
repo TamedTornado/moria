@@ -11,7 +11,10 @@ use crate::{
     evaluate_column,
 };
 
-use super::{ActiveBand, QueryError, QueryLimitKind, TraversalRoute, WaterSample, WorldSample};
+use super::{
+    ActiveBand, QueryError, QueryLimitKind, QueryMask, TraversalRoute, WaterSample, WorldHit,
+    WorldRayQ8, WorldSample, ray,
+};
 
 /// Private authoritative state observed by [`WorldRead`].
 #[derive(Resource)]
@@ -148,6 +151,24 @@ impl WorldRead<'_, '_> {
         Ok(column)
     }
 
+    /// Returns the first solid or water voxel reached by a bounded normalized ray.
+    pub fn ray_cast(
+        &self,
+        ray: WorldRayQ8,
+        max_distance_q8: u32,
+        mask: QueryMask,
+    ) -> Result<Option<WorldHit>, QueryError> {
+        let state = self.state.as_deref().ok_or(QueryError::NotReady)?;
+        ray::cast(ray, max_distance_q8, mask, |coordinate| {
+            WorldSample::from_voxel(
+                coordinate,
+                state.store.current_voxel(coordinate),
+                &state.materials,
+                state.store.revision(),
+            )
+        })
+    }
+
     pub fn water_surface_at(
         &self,
         x_q8: i32,
@@ -226,9 +247,9 @@ mod tests {
     use crate::{
         AIR, ActiveBand, BrickCoord, ColumnCoord, FeatureInstance, FeatureKind, GRANITE,
         MaterialRegistry, MoriaWorldPlugin, ObjectId, ObjectKind, ObjectPlacement,
-        QuantizedTransform, RouteTag, RouteWaypoint, SpeciesId, Voxel, VoxelCoord,
+        QuantizedTransform, QueryMask, RouteTag, RouteWaypoint, SpeciesId, Voxel, VoxelCoord,
         VoxelObjectShape, WaterBodyDef, WaterKind, WorldBounds, WorldIdentity, WorldPointQ8,
-        evaluate_base_voxel,
+        WorldRayQ8, evaluate_base_voxel,
     };
 
     use super::{TraversalRoute, WorldRead, WorldReadState};
@@ -373,6 +394,33 @@ mod tests {
                     .unwrap()
                     .water_volume
             );
+        });
+
+        app.update();
+    }
+
+    #[test]
+    fn ray_reads_committed_truth_without_exposing_storage() {
+        let mut app = App::new();
+        let mut state = ready_state();
+        let y = 500;
+        state.store.commit_current([
+            (VoxelCoord::new(0, y, 0), Voxel::new(AIR, 0, 0, 0)),
+            (VoxelCoord::new(1, y, 0), Voxel::new(AIR, 0, 0, 0)),
+            (VoxelCoord::new(2, y, 0), Voxel::new(GRANITE, u8::MAX, 0, 0)),
+        ]);
+        app.insert_resource(state);
+        app.add_systems(Update, move |read: WorldRead| {
+            let ray = WorldRayQ8::new(WorldPointQ8::new(0, y * 64, 0), [65_536, 0, 0])
+                .expect("axis direction is normalized");
+            let hit = read
+                .ray_cast(ray, 256, QueryMask::SOLID)
+                .expect("bounded ray succeeds")
+                .expect("committed solid is hit");
+            assert_eq!(hit.voxel, VoxelCoord::new(2, y, 0));
+            assert_eq!(hit.normal_q16, [-65_536, 0, 0]);
+            assert_eq!(hit.distance_q8, 128);
+            assert_eq!(hit.revision, 1);
         });
 
         app.update();

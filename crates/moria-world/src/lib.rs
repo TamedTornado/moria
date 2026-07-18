@@ -50,7 +50,8 @@ pub use objects::{
     validate_object_shape_disjointness,
 };
 pub use query::{
-    ActiveBand, QueryError, QueryLimitKind, TraversalRoute, WaterSample, WorldRead, WorldSample,
+    ActiveBand, MAX_RAY_DISTANCE_Q8, MAX_RAY_VOXEL_VISITS, QueryError, QueryLimitKind, QueryMask,
+    TraversalRoute, WaterSample, WorldHit, WorldRayQ8, WorldRead, WorldSample,
 };
 pub use storage::{
     AIR, BRICK_EDGE_VOXELS, BrickCoord, CUT_STONE, ColumnCoord, CoordinateError, GRANITE, GRAVEL,
