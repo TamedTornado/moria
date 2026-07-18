@@ -291,26 +291,19 @@ fn cylinder_contains(point: [i64; 3], radius: i64, height: i64) -> bool {
 }
 
 fn ellipsoid_contains(point: [i64; 3], center: [i64; 3], radii: [i64; 3]) -> bool {
-    radii.iter().all(|radius| *radius > 0)
-        && (point[0] - center[0])
-            * (point[0] - center[0])
-            * radii[1]
-            * radii[1]
-            * radii[2]
-            * radii[2]
-            + (point[1] - center[1])
-                * (point[1] - center[1])
-                * radii[0]
-                * radii[0]
-                * radii[2]
-                * radii[2]
-            + (point[2] - center[2])
-                * (point[2] - center[2])
-                * radii[0]
-                * radii[0]
-                * radii[1]
-                * radii[1]
-            <= radii[0] * radii[0] * radii[1] * radii[1] * radii[2] * radii[2]
+    let [x_radius, y_radius, z_radius] = radii.map(i128::from);
+    let [x, y, z] = [
+        i128::from(point[0] - center[0]),
+        i128::from(point[1] - center[1]),
+        i128::from(point[2] - center[2]),
+    ];
+    x_radius > 0
+        && y_radius > 0
+        && z_radius > 0
+        && x * x * y_radius * y_radius * z_radius * z_radius
+            + y * y * x_radius * x_radius * z_radius * z_radius
+            + z * z * x_radius * x_radius * y_radius * y_radius
+            <= x_radius * x_radius * y_radius * y_radius * z_radius * z_radius
 }
 
 fn perturbed_ellipsoid_contains(point: [i64; 3], radii: [i64; 3], key: u64) -> bool {
