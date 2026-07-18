@@ -6,7 +6,7 @@ use bevy::prelude::*;
 
 pub mod config;
 pub mod config_validation;
-pub mod curation;
+mod curation;
 pub mod generation;
 mod lifecycle;
 pub mod objects;
@@ -29,11 +29,12 @@ pub use config_validation::{
     validate_presentation_config, validate_region_config,
 };
 pub use curation::{
-    CuratedManifest, CurationGenerateError, FeatureInstance, FeatureKind, ManifestError, ObjectId,
-    ObjectKind, ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi,
-    SparseVoxelStamp, SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
-    canonical_manifest_ron, generate_manifest,
+    CuratedManifest, FeatureInstance, FeatureKind, ManifestError, ObjectId, ObjectKind,
+    ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi, SparseVoxelStamp,
+    SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
 };
+#[cfg(feature = "curation")]
+pub use curation::{CurationError, CurationReport, derive_manifest, validate_manifest};
 pub use generation::{
     AabbQ8, BiomeId, ColumnRun, ColumnSample, ProceduralClass, RunKind, WorldBounds, WorldIdentity,
     WorldSeed, biome_at, classify_brick, evaluate_base_voxel, evaluate_column,

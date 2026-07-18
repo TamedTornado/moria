@@ -34,6 +34,11 @@ path = "tests/assets/materials_terrain_normal_ktx2_placeholder.rs"
 [features]
 curation = []
 
+[[test]]
+name = "curation_facade"
+path = "tests/curation_facade.rs"
+required-features = ["curation"]
+
 [dependencies]
 bevy.workspace = true
 directories.workspace = true

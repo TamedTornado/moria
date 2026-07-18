@@ -3346,6 +3346,8 @@ version = "0.1.0"
 dependencies = [
  "moria-world",
  "ron",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
