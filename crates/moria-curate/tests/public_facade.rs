@@ -11,7 +11,9 @@ fn curation_package_depends_on_the_feature_gated_world_facade_only() {
         "build_object_index",
         "ObjectIndexConfig",
         "generate_manifest",
+        "parameters_digest_from_bytes",
         "WorldStore",
+        "moria_world::curation",
     ] {
         assert!(
             !source.contains(forbidden),
@@ -26,16 +28,16 @@ fn curation_package_depends_on_the_feature_gated_world_facade_only() {
 fn shipped_consumers_do_not_enable_the_curation_feature() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     for package in ["moria-demo", "moria-bench"] {
-        let manifest = std::fs::read_to_string(
-            workspace_root
-                .join("crates")
-                .join(package)
-                .join("Cargo.toml"),
-        )
-        .unwrap();
+        let package_root = workspace_root.join("crates").join(package);
+        let manifest = std::fs::read_to_string(package_root.join("Cargo.toml")).unwrap();
+        let source = std::fs::read_to_string(package_root.join("src/main.rs")).unwrap();
         assert!(
             !manifest.contains("curation"),
             "{package} must not enable curation"
+        );
+        assert!(
+            !source.contains("derive_manifest") && !source.contains("validate_manifest"),
+            "{package} must not call the development-only curation facade"
         );
     }
 }
