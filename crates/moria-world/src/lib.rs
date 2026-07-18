@@ -52,11 +52,10 @@ pub use objects::{
 };
 pub use query::{
     ActiveBand, CapsuleQ8, MAX_CAPSULE_HALF_SEGMENT_Q8, MAX_CAPSULE_RADIUS_Q8,
-    MAX_OVERLAP_CANDIDATE_TESTS, MAX_QUERY_HITS, MAX_SWEEP_CANDIDATE_TESTS,
-    MAX_RAY_DISTANCE_Q8, MAX_RAY_VOXEL_VISITS, MAX_SWEEP_DISPLACEMENT_Q8,
-    MIN_CAPSULE_RADIUS_Q8, MatchedQueryMask, QueryError, QueryLimitKind, QueryMask, SweepResult,
-    TraversalRoute, Vec3Q8, WaterSample, WorldHit, WorldNormal, WorldRayQ8, WorldRead,
-    WorldSample,
+    MAX_OVERLAP_CANDIDATE_TESTS, MAX_QUERY_HITS, MAX_RAY_DISTANCE_Q8, MAX_RAY_VOXEL_VISITS,
+    MAX_SWEEP_CANDIDATE_TESTS, MAX_SWEEP_DISPLACEMENT_Q8, MIN_CAPSULE_RADIUS_Q8, MatchedQueryMask,
+    QueryError, QueryLimitKind, QueryMask, SweepResult, TraversalRoute, Vec3Q8, WaterSample,
+    WorldHit, WorldNormal, WorldRayQ8, WorldRead, WorldSample,
 };
 pub use storage::{
     AIR, BRICK_EDGE_VOXELS, BrickCoord, CUT_STONE, ColumnCoord, CoordinateError, GRANITE, GRAVEL,

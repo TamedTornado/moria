@@ -104,7 +104,7 @@ impl WorldRead<'_, '_> {
                 push_hit(&mut hits, hit_for(capsule, voxel, sample, class))?;
             }
         }
-        hits.sort_by_key(|hit| (hit.voxel, hit.normal));
+        sort_hits(&mut hits);
         Ok(hits)
     }
 
@@ -164,7 +164,7 @@ impl WorldRead<'_, '_> {
         for (voxel, sample, class) in impact_voxels {
             push_hit(&mut hits, hit_for(contact_capsule, voxel, sample, class))?;
         }
-        hits.sort_by_key(|hit| (hit.voxel, hit.normal));
+        sort_hits(&mut hits);
         Ok(SweepResult {
             safe_fraction_q16: safe_fraction as u16,
             end_capsule,
@@ -519,6 +519,22 @@ fn push_impact(
     Ok(())
 }
 
+fn sort_hits(hits: &mut [WorldHit]) {
+    hits.sort_by_key(|hit| (hit.voxel, normal_sort_key(hit.normal)));
+}
+
+fn normal_sort_key(normal: WorldNormal) -> (u8, i8, WorldNormal) {
+    if normal.x != 0 {
+        (0, normal.x, normal)
+    } else if normal.y != 0 {
+        (1, normal.y, normal)
+    } else if normal.z != 0 {
+        (2, normal.z, normal)
+    } else {
+        (3, 0, normal)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bevy::ecs::system::RunSystemOnce;
@@ -653,7 +669,7 @@ mod tests {
     fn hit_sorting_is_coordinate_then_normal() {
         let mut hits = [
             WorldHit {
-                voxel: VoxelCoord::new(1, 0, 0),
+                voxel: VoxelCoord::new(0, 0, 0),
                 point: WorldPointQ8::new(0, 0, 0),
                 normal: WorldNormal { x: 1, y: 0, z: 0 },
                 normal_q16: [65_536, 0, 0],
@@ -674,8 +690,26 @@ mod tests {
                 distance_q8: 0,
                 revision: 0,
             },
+            WorldHit {
+                voxel: VoxelCoord::new(0, 0, 0),
+                point: WorldPointQ8::new(0, 0, 0),
+                normal: WorldNormal { x: 0, y: 0, z: -1 },
+                normal_q16: [0, 0, -65_536],
+                material: AIR,
+                matched: MatchedQueryMask::Solid,
+                matched_mask: QueryMask::SOLID,
+                distance_q8: 0,
+                revision: 0,
+            },
         ];
-        hits.sort_by_key(|hit| (hit.voxel, hit.normal));
-        assert_eq!(hits[0].voxel, VoxelCoord::new(0, 0, 0));
+        sort_hits(&mut hits);
+        assert_eq!(
+            hits.map(|hit| hit.normal),
+            [
+                WorldNormal { x: 1, y: 0, z: 0 },
+                WorldNormal { x: 0, y: 1, z: 0 },
+                WorldNormal { x: 0, y: 0, z: -1 },
+            ]
+        );
     }
 }
