@@ -10,6 +10,7 @@ pub mod curation;
 pub mod generation;
 pub mod objects;
 pub mod presentation;
+mod query;
 mod storage;
 pub mod telemetry;
 pub mod terrain;
@@ -41,6 +42,9 @@ pub use objects::{
     VoxelOffset, build_object_index, dependency_contains, horizon_tree_ids, placement_ids_in,
     raw_shape_bounds, raw_shape_contains, sample_object_shape, sample_sparse_stamp,
     validate_object_shape_disjointness,
+};
+pub use query::{
+    ActiveBand, QueryError, QueryLimitKind, TraversalRoute, WaterSample, WorldRead, WorldSample,
 };
 pub use storage::{
     AIR, BRICK_EDGE_VOXELS, BrickCoord, CUT_STONE, ColumnCoord, CoordinateError, GRANITE, GRAVEL,
