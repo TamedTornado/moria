@@ -1,0 +1,299 @@
+[
+  {
+    "id": "tracker-352",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #69 and merged PR #323 against current master.\n\nPreserved review commit: 0ab585174b1aa0485434e80c0d8edc4e91efd347\nRecovery ref: refs/bro-recovery/moria/pr-323\nLost review intent: Enforce all F2 query probe budgets\nAffected paths: crates/moria-bench/src/scenarios/query_probe.rs, crates/moria-bench/tests/query_probe.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #323: Enforce all F2 query probe budgets",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 352,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-351",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #67 and merged PR #324 against current master.\n\nPreserved review commit: 64edccefb2d254fffac8674e15c5b390760127e6\nRecovery ref: refs/bro-recovery/moria/pr-324\nLost review intent: Enforce revision-safe streaming lifecycles\nAffected paths: crates/moria-world/src/streaming/lifecycle.rs, crates/moria-world/src/streaming/planner.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #324: Enforce revision-safe streaming lifecycles",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 351,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-350",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #68 and merged PR #322 against current master.\n\nPreserved review commit: d0768d66c206d5d37f72d2006ebdf143963ed7b4\nRecovery ref: refs/bro-recovery/moria/pr-322\nLost review intent: Enforce edit operation hard limit\nAffected paths: crates/moria-world/src/mutation/admission.rs, crates/moria-world/tests/edit_admission.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #322: Enforce edit operation hard limit",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 350,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-349",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #61 and merged PR #319 against current master.\n\nPreserved review commit: d783fe0e99af090fe29d90f0d331e5ac2f77c62e\nRecovery ref: refs/bro-recovery/moria/pr-319\nLost review intent: Harden bounded ray contracts\nAffected paths: crates/moria-world/src/query/ray.rs, crates/moria-world/tests/ray_contract.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #319: Harden bounded ray contracts",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 349,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-348",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #62 and merged PR #321 against current master.\n\nPreserved review commit: b075abadf55022e9690564ae35ecedd6b920d1ed\nRecovery ref: refs/bro-recovery/moria/pr-321\nLost review intent: Harden bounded capsule sweep queries\nAffected paths: crates/moria-world/src/query/capsule.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #321: Harden bounded capsule sweep queries",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 348,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-347",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #60 and merged PR #320 against current master.\n\nPreserved review commit: 8fdd50c6265b8da37c330b668d47a818e25a8a82\nRecovery ref: refs/bro-recovery/moria/pr-320\nLost review intent: Enforce curation facade boundaries\nAffected paths: crates/moria-curate, crates/moria-world/src/curation, crates/moria-world/tests/curation_facade.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #320: Enforce curation facade boundaries",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 347,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-346",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #64 and merged PR #317 against current master.\n\nPreserved review commit: 2a42f2a84cf7c8803211c526330f415c263b9341\nRecovery ref: refs/bro-recovery/moria/pr-317\nLost review intent: Require ready lifecycle for reads\nAffected paths: crates/moria-world/src/query/read.rs, crates/moria-world/tests/world_lifecycle.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #317: Require ready lifecycle for reads",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 346,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-345",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #63 and merged PR #318 against current master.\n\nPreserved review commit: 620113b87ad216e35d5e6f8ecf00f6959b8d6f4b\nRecovery ref: refs/bro-recovery/moria/pr-318\nLost review intent: Enforce diagnostic snapshot bounds\nAffected paths: crates/moria-world/src/query/diagnostics.rs, crates/moria-world/src/query/read.rs, crates/moria-world/src/telemetry/runtime.rs, crates/moria-world/tests/public_diagnostics.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #318: Enforce diagnostic snapshot bounds",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 345,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-344",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #57 and merged PR #314 against current master.\n\nPreserved review commit: d46a0c9484c0e1a707b692a7abed46c1a4514199\nRecovery ref: refs/bro-recovery/moria/pr-314\nLost review intent: Enforce canonical forest contracts\nAffected paths: assets/config/curated_manifest.ron, crates/moria-curate, crates/moria-world/src/curation/generate.rs, crates/moria-world/src/objects/index.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #314: Enforce canonical forest contracts",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 344,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-343",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #51 and merged PR #310 against current master.\n\nPreserved review commit: 91c51e2fd7cecf054b04d8d41762168a294f6937\nRecovery ref: refs/bro-recovery/moria/pr-310\nLost review intent: Complete object provenance evaluation\nAffected paths: crates/moria-world/src/objects, crates/moria-world/src/terrain, crates/moria-world/tests/object_shapes_and_ownership_contract.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #310: Complete object provenance evaluation",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 343,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-342",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #55 and merged PR #312 against current master.\n\nPreserved review commit: 6a33d4dd77f0680015fd193a647b7bcabf7f1d1d\nRecovery ref: refs/bro-recovery/moria/pr-312\nLost review intent: Preserve sparse brick revision coherence\nAffected paths: crates/moria-world/src/storage/brick.rs, crates/moria-world/src/storage/store.rs, crates/moria-world/src/storage/store_tests.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #312: Preserve sparse brick revision coherence",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 342,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-341",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #54 and merged PR #313 against current master.\n\nPreserved review commit: 70cc5e9fd26c91eb9806c8ae4ac6665526d9b115\nRecovery ref: refs/bro-recovery/moria/pr-313\nLost review intent: Harden bounded object index contracts\nAffected paths: crates/moria-world/src/objects, crates/moria-world/tests/object_index_contract.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #313: Harden bounded object index contracts",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 341,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-340",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #52 and merged PR #309 against current master.\n\nPreserved review commit: 9a321c2c26c9adfb1b6f6585f68a3931618dc63b\nRecovery ref: refs/bro-recovery/moria/pr-309\nLost review intent: Require validated benchmark output before success\nAffected paths: crates/moria-bench/src/capture/output.rs, crates/moria-bench/src/cli.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #309: Require validated benchmark output before success",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 340,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-339",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #47 and merged PR #308 against current master.\n\nPreserved review commit: 93047986d0d087b48536a523b437dcfc3258ed8d\nRecovery ref: refs/bro-recovery/moria/pr-308\nLost review intent: Enforce benchmark evidence contracts\nAffected paths: crates/moria-bench/src/capture/schema.rs, crates/moria-bench/tests/report_schema.rs, crates/moria-world/src/telemetry/reports.rs, crates/moria-world/tests/telemetry_reports.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #308: Enforce benchmark evidence contracts",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 339,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-338",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #49 and merged PR #307 against current master.\n\nPreserved review commit: 275a1ed01dfc1f0c6fb18fcf2022ada38259ce78\nRecovery ref: refs/bro-recovery/moria/pr-307\nLost review intent: Honor configured subsoil depth\nAffected paths: crates/moria-world/src/generation/terrain.rs, crates/moria-world/tests/generation_contract.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #307: Honor configured subsoil depth",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 338,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-337",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #48 and merged PR #306 against current master.\n\nPreserved review commit: 26c78a41ab9250c91fbe39ced4f8385847ac2ff4\nRecovery ref: refs/bro-recovery/moria/pr-306\nLost review intent: Enforce presentation asset contracts\nAffected paths: crates/moria-world/src/presentation, crates/moria-world/tests/asset_validation.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #306: Enforce presentation asset contracts",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 337,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-336",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #45 and merged PR #304 against current master.\n\nPreserved review commit: cf23bd215f26a61f17b9fbad8fff98cb7f7ffb2c\nRecovery ref: refs/bro-recovery/moria/pr-304\nLost review intent: Complete curated metadata contracts\nAffected paths: crates/moria-world/src/curation, crates/moria-world/src/lib.rs, crates/moria-world/tests/curation_model_contract.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #304: Complete curated metadata contracts",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 336,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-335",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #14 and merged PR #299 against current master.\n\nPreserved review commit: 666813ea4d7ff46d04d853d1a455e6289948626c\nRecovery ref: refs/bro-recovery/moria/pr-299\nLost review intent: Fix presentation config schema layout\nAffected paths: assets/config/presentation.ron, crates/moria-world/tests/assets/config_presentation_ron_placeholder.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #299: Fix presentation config schema layout",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 335,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-334",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #11 and merged PR #297 against current master.\n\nPreserved review commit: 1813cdf207b59673f7a24ce6a6b3627ea191e4f3\nRecovery ref: refs/bro-recovery/moria/pr-297\nLost review intent: Harden Product One config validation\nAffected paths: crates/moria-world/src/config_validation.rs, crates/moria-world/tests/config_contract.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #297: Harden Product One config validation",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 334,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-333",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #17 and merged PR #295 against current master.\n\nPreserved review commit: f66c1696a2f8a3ebd918819563b8849fe33156ca\nRecovery ref: refs/bro-recovery/moria/pr-295\nLost review intent: Fix terrain albedo Basis placeholder\nAffected paths: assets/materials/terrain_albedo.ktx2, crates/moria-world/tests/assets/materials_terrain_albedo_ktx2_placeholder.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #295: Fix terrain albedo Basis placeholder",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 333,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-332",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #18 and merged PR #291 against current master.\n\nPreserved review commit: d9a677890314153a9ed5b7032642b77592b29811\nRecovery ref: refs/bro-recovery/moria/pr-291\nLost review intent: Validate terrain normal Basis payload\nAffected paths: assets/materials/terrain_normal.ktx2, crates/moria-world/tests/assets/materials_terrain_normal_ktx2_placeholder.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #291: Validate terrain normal Basis payload",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 332,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-329",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #34 and merged PR #264 against current master.\n\nPreserved review commit: f61858b3b6b06343667d7f78d779b0af121cc40b\nRecovery ref: refs/bro-recovery/moria/pr-264\nLost review intent: Fix explorer skeleton scene hierarchy\nAffected paths: assets/player/explorer.glb, crates/moria-world/tests/assets/player_explorer_glb_placeholder.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #264: Fix explorer skeleton scene hierarchy",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 329,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-331",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #19 and merged PR #290 against current master.\n\nPreserved review commit: 03aa2beb9cb65f973d4943b81ea253389574f164\nRecovery ref: refs/bro-recovery/moria/pr-290\nLost review intent: Validate terrain ORM KTX2 transcoding\nAffected paths: Cargo.lock, assets/materials/terrain_orm.ktx2, crates/moria-world/Cargo.toml, crates/moria-world/tests/assets/materials_terrain_orm_ktx2_placeholder.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #290: Validate terrain ORM KTX2 transcoding",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 331,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-330",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #24 and merged PR #284 against current master.\n\nPreserved review commit: 82f8458bacd079a632ce32560204fc85e73cd5ee\nRecovery ref: refs/bro-recovery/moria/pr-284\nLost review intent: Fix pine near GLB binary layout\nAffected paths: assets/vegetation/pine_near.glb, crates/moria-world/tests/assets/vegetation_pine_near_glb_placeholder.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #284: Fix pine near GLB binary layout",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 330,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-328",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #36 and merged PR #244 against current master.\n\nPreserved review commit: ec4246612144b4a7f5686424dbf1ac9545d8353d\nRecovery ref: refs/bro-recovery/moria/pr-244\nLost review intent: Tighten water shader placeholder contract\nAffected paths: assets/shaders/water.wgsl, crates/moria-world/tests/assets/shaders_water_wgsl_placeholder.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #244: Tighten water shader placeholder contract",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 328,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-327",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #7 and merged PR #234 against current master.\n\nPreserved review commit: 01fe3cc4c54d7823e43eadcfbc4114259a82815a\nRecovery ref: refs/bro-recovery/moria/pr-234\nLost review intent: Handle long controlled fixed-tick runs\nAffected paths: crates/moria-world/src/testing.rs, crates/moria-world/tests/headless_fixture.rs\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #234: Handle long controlled fixed-tick runs",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 327,
+    "depends_on": []
+  },
+  {
+    "id": "tracker-326",
+    "body": "Part of #325. Reconcile the lost automated-review change for original issue #30 and merged PR #246 against current master.\n\nPreserved review commit: 8f4348bff73a9b58de54b6259460586253cae614\nRecovery ref: refs/bro-recovery/moria/pr-246\nLost review intent: Register tree horizon card validation fixture\nAffected paths: crates/moria-world/Cargo.toml\n\nAcceptance criteria:\n- Reproduce and verify the original review finding against current master.\n- Adapt the smallest correct fix to current code; do not blindly cherry-pick stale branch state.\n- Preserve or add regression coverage proving the repaired contract.\n- Run all relevant focused tests and the repository quality gates.\n- In the PR summary, record whether the preserved patch was applied, adapted, or superseded and why.",
+    "title": "Recovery PR #246: Register tree horizon card validation fixture",
+    "labels": [
+      "bug",
+      "moria-recovery"
+    ],
+    "number": 326,
+    "depends_on": []
+  }
+]
