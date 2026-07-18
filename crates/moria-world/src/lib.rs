@@ -8,6 +8,7 @@ pub mod config;
 pub mod config_validation;
 pub mod curation;
 pub mod generation;
+mod lifecycle;
 pub mod objects;
 pub mod presentation;
 mod query;
@@ -37,6 +38,10 @@ pub use generation::{
     AabbQ8, BiomeId, ColumnRun, ColumnSample, ProceduralClass, RunKind, WorldBounds, WorldIdentity,
     WorldSeed, biome_at, classify_brick, evaluate_base_voxel, evaluate_column,
 };
+pub use lifecycle::{
+    SubmitError, WorldEditCommand, WorldEditWrite, WorldLifecycle, WorldLifecycleInvariantError,
+    WorldLifecyclePhase, WorldLifecycleTransition, WorldOpenError,
+};
 pub use objects::{
     DependencyGridCell, DependencyGridCellKey, HorizonCellKey, OBJECT_EXTRACTION_STENCIL,
     ObjectIndexConfig, ObjectIndexRecord, ObjectSpatialIndex, SampleGridCell, SampleGridCellKey,
@@ -61,7 +66,9 @@ pub use terrain::{SolidPresentationOwner, VoxelSource, solid_presentation_owner}
 pub struct MoriaWorldPlugin;
 
 impl Plugin for MoriaWorldPlugin {
-    fn build(&self, _app: &mut App) {}
+    fn build(&self, app: &mut App) {
+        app.init_resource::<WorldLifecycle>();
+    }
 }
 
 #[cfg(test)]
