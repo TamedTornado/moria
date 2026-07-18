@@ -3,6 +3,7 @@ use std::{fs, path::Path};
 use moria_world::presentation::{
     AssetId, AssetLoadPolicy, AssetLoader, AssetMissingAction, RuntimeAssetProfile,
 };
+use moria_world::{PresentationConfig, validate_presentation_config};
 use ron::Value;
 
 const PRESENTATION_PATH: &str = "config/presentation.ron";
@@ -46,17 +47,29 @@ fn presentation_config_placeholder_contains_the_product_one_defaults() {
     assert_eq!(value, expected_presentation_config());
 }
 
+#[test]
+fn presentation_config_placeholder_deserializes_to_the_runtime_schema() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/config/presentation.ron");
+    let source = fs::read_to_string(path)
+        .expect("presentation placeholder exists at its declared runtime path");
+    let config: PresentationConfig =
+        ron::de::from_str(&source).expect("presentation placeholder matches the runtime schema");
+
+    assert_eq!(config, PresentationConfig::default());
+    assert!(validate_presentation_config(&config).is_ok());
+}
+
 fn expected_presentation_config() -> Value {
     ron::de::from_str(
         r#"(
             enabled: true,
             streaming: (
-                bands: [
-                    (band: Near, start_m: 0, end_m: 64, voxel_edge_q8: 64),
-                    (band: Middle, start_m: 64, end_m: 160, voxel_edge_q8: 128),
-                    (band: Far, start_m: 160, end_m: 320, voxel_edge_q8: 256),
-                    (band: Horizon, start_m: 320, end_m: 720, voxel_edge_q8: 1024),
-                ],
+                bands: (
+                    (start_m: 0, end_m: 64, voxel_edge_q8: 64),
+                    (start_m: 64, end_m: 160, voxel_edge_q8: 128),
+                    (start_m: 160, end_m: 320, voxel_edge_q8: 256),
+                    (start_m: 320, end_m: 720, voxel_edge_q8: 1024),
+                ),
                 hysteresis_m: 12,
                 collision_radius_m: 12,
                 vertical_surface_window_m: 12,
@@ -95,24 +108,22 @@ fn expected_presentation_config() -> Value {
             ),
             camera: (
                 distance_m: 5.5,
-                min_distance_m: 2.0,
-                max_distance_m: 9.0,
-                min_pitch_deg: -65.0,
-                max_pitch_deg: 75.0,
+                distance_limits_m: (2.0, 9.0),
+                pitch_limits_deg: (-65.0, 75.0),
                 probe_radius_m: 0.18,
                 collision_margin_m: 0.12,
-                light_depth_enable_m: 2.0,
-                light_range_m: 18.0,
-                light_intensity_lm: 1600.0,
+            ),
+            light: (
+                depth_enable_m: 2.0,
+                range_m: 18.0,
+                intensity_lm: 1600.0,
             ),
             rendering: (
-                window_width: 2560,
-                window_height: 1440,
+                window: (width: 2560, height: 1440),
                 msaa_samples: 4,
                 shadow_map_size: 2048,
                 time_of_day_hours: 14.0,
-                time_min_hours: 6.0,
-                time_max_hours: 20.0,
+                time_limits_hours: (6.0, 20.0),
                 time_keyboard_step_hours: 0.25,
                 grass_normal_min_y: 0.75,
                 grass_near_density_per_m2: 5.0,
@@ -127,7 +138,7 @@ fn expected_presentation_config() -> Value {
                 warmup_frames: 300,
                 flythrough_duration_s: 120,
                 colony_worker_streams: 8,
-                colony_volume_m: [32, 32, 16],
+                colony_volume_m: (32, 32, 16),
                 catastrophic_radius_q8: 4096,
                 watchdog_s: 300,
                 fps_target: 60.0,
@@ -136,7 +147,7 @@ fn expected_presentation_config() -> Value {
                 max_first_commit_interactive_ms: 100,
                 max_first_commit_colony_ms: 250,
                 max_primary_ready_p95_ms: 250,
-                max_primary_ready_max_ms: 500,
+                max_primary_ready_ms: 500,
                 min_changed_bricks_per_second: 32,
                 max_runnable_wait_ms: 500,
                 max_reconciliation_interactive_ms: 1000,
