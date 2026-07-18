@@ -69,7 +69,24 @@ pub fn derive_manifest(
         .map_err(|error| CurationError::InvalidRegionConfig(error.to_string()))?;
     let stamp_bytes = ron::ser::to_string(stamp)
         .map_err(|error| CurationError::InvalidRuinStamp(error.to_string()))?;
-    generate_manifest(config_bytes.as_bytes(), stamp_bytes.as_bytes())
+    derive_manifest_from_bytes(config_bytes.as_bytes(), stamp_bytes.as_bytes())
+}
+
+/// Derives a manifest from the authoritative configuration and stamp bytes.
+pub fn derive_manifest_from_bytes(
+    config_bytes: &[u8],
+    stamp_bytes: &[u8],
+) -> Result<CuratedManifest, CurationError> {
+    let config: RegionConfig = ron::de::from_bytes(config_bytes)
+        .map_err(|error| CurationError::InvalidRegionConfig(error.to_string()))?;
+    validate_region_config(&config)
+        .map_err(|error| CurationError::InvalidRegionConfig(error.to_string()))?;
+    let stamp: SparseVoxelStamp = ron::de::from_bytes(stamp_bytes)
+        .map_err(|error| CurationError::InvalidRuinStamp(error.to_string()))?;
+    stamp
+        .validate()
+        .map_err(|error| CurationError::InvalidRuinStamp(error.to_string()))?;
+    generate_manifest(config_bytes, stamp_bytes)
         .map_err(|error| CurationError::Manifest(error.to_string()))
 }
 
@@ -88,8 +105,11 @@ pub fn validate_manifest(
     }
     validate_manifest_without_stamp(manifest, config)
         .map_err(|error| CurationError::Manifest(error.to_string()))?;
-    let index = build_object_index(&manifest.objects, &ObjectIndexConfig::default())
-        .map_err(|error| CurationError::Manifest(error.to_string()))?;
+    let index = build_object_index(
+        &manifest.objects,
+        &ObjectIndexConfig::from_configs(&config.objects, 1_024),
+    )
+    .map_err(|error| CurationError::Manifest(error.to_string()))?;
     Ok(CurationReport {
         placement_count: u32::try_from(manifest.objects.len())
             .map_err(|_| CurationError::Manifest("placement count exceeds u32".to_owned()))?,

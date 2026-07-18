@@ -36,7 +36,9 @@ pub use curation::{
     SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
 };
 #[cfg(feature = "curation")]
-pub use curation::{CurationError, CurationReport, derive_manifest, validate_manifest};
+pub use curation::{
+    CurationError, CurationReport, derive_manifest, derive_manifest_from_bytes, validate_manifest,
+};
 pub use generation::{
     AabbQ8, BiomeId, ColumnRun, ColumnSample, ProceduralClass, RunKind, WorldBounds, WorldIdentity,
     WorldSeed, biome_at, classify_brick, evaluate_base_voxel, evaluate_column,

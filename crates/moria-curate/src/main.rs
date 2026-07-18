@@ -1,8 +1,8 @@
 use std::{error::Error, fmt, fs, path::Path};
 
 use moria_world::{
-    CuratedManifest, CurationError, CurationReport, RegionConfig, SparseVoxelStamp,
-    derive_manifest, validate_manifest,
+    CuratedManifest, CurationError, CurationReport, RegionConfig, derive_manifest_from_bytes,
+    validate_manifest,
 };
 
 const CURATED_MANIFEST_PATH: &str = "assets/config/curated_manifest.ron";
@@ -62,8 +62,9 @@ fn run(
         }
         _ => return Err(CommandError::Usage),
     };
-    let (config, stamp) = load_inputs(repository_root)?;
-    let manifest = derive_manifest(config.seed, &config, &stamp).map_err(CommandError::Curation)?;
+    let (config_bytes, stamp_bytes, config) = load_inputs(repository_root)?;
+    let manifest =
+        derive_manifest_from_bytes(&config_bytes, &stamp_bytes).map_err(CommandError::Curation)?;
     let canonical = canonical_manifest_ron(&manifest)?;
     let manifest_path = repository_root.join(CURATED_MANIFEST_PATH);
 
@@ -74,8 +75,9 @@ fn run(
 }
 
 fn prove_forest(repository_root: &Path, output: &str) -> Result<(), CommandError> {
-    let (config, stamp) = load_inputs(repository_root)?;
-    let manifest = derive_manifest(config.seed, &config, &stamp).map_err(CommandError::Curation)?;
+    let (config_bytes, stamp_bytes, config) = load_inputs(repository_root)?;
+    let manifest =
+        derive_manifest_from_bytes(&config_bytes, &stamp_bytes).map_err(CommandError::Curation)?;
     let canonical = canonical_manifest_ron(&manifest)?;
     let manifest_path = repository_root.join(CURATED_MANIFEST_PATH);
     check_manifest(&manifest_path, &canonical, &config)?;
@@ -95,20 +97,20 @@ struct ForestProof {
     report: CurationReport,
 }
 
-fn load_inputs(repository_root: &Path) -> Result<(RegionConfig, SparseVoxelStamp), CommandError> {
+fn load_inputs(repository_root: &Path) -> Result<(Vec<u8>, Vec<u8>, RegionConfig), CommandError> {
     let config_path = repository_root.join(REGION_CONFIG_PATH);
-    let config = parse(&config_path)?;
-    let stamp_path = repository_root.join(RUIN_STAMP_PATH);
-    let stamp = parse(&stamp_path)?;
-    Ok((config, stamp))
-}
-
-fn parse<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, CommandError> {
-    let source = fs::read_to_string(path).map_err(|error| CommandError::Read {
-        path: path.display().to_string(),
+    let config_bytes = read(&config_path)?;
+    let config = ron::de::from_bytes(&config_bytes).map_err(|error| CommandError::Parse {
+        path: config_path.display().to_string(),
         error: error.to_string(),
     })?;
-    ron::de::from_str(&source).map_err(|error| CommandError::Parse {
+    let stamp_path = repository_root.join(RUIN_STAMP_PATH);
+    let stamp_bytes = read(&stamp_path)?;
+    Ok((config_bytes, stamp_bytes, config))
+}
+
+fn read(path: &Path) -> Result<Vec<u8>, CommandError> {
+    fs::read(path).map_err(|error| CommandError::Read {
         path: path.display().to_string(),
         error: error.to_string(),
     })

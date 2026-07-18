@@ -308,12 +308,6 @@ fn validate_edit_caps(
                 maximum: config.max_edit_dependency_candidates,
             });
         }
-        if actual > u16::from(config.max_affected_objects_per_edit) {
-            return Err(ManifestError::ObjectEditAffectedExceeded {
-                actual,
-                maximum: config.max_affected_objects_per_edit,
-            });
-        }
     }
     Ok(())
 }
