@@ -14,7 +14,7 @@ References: `docs/tdd/states.md` §Chunk lifecycle; `docs/tdd/systems.md` §Focu
 
 - Any result with stale token, wrong brick/cell key, wrong relevant revision, wrong desired LOD/band/purpose, or superseded source revision must be discarded and cannot enter `Resident`.
 - Pinned terrain/Horizon state cannot enter `EvictPending`; phase skipping cannot install two resident render entities/logical Horizon owners.
-- Invalid transitions preserve truth/deltas/placements and record invariant/stale-result telemetry as specified.
+- Every rejected transition leaves the current lifecycle phase and installed logical presentation unchanged, except that the documented stale result is discarded/rescheduled; it never changes truth, deltas, or immutable placements.
 
 ## Lifecycle ordering, guards, and concurrency
 
@@ -26,6 +26,5 @@ References: `docs/tdd/states.md` §Chunk lifecycle; `docs/tdd/systems.md` §Focu
 ## Properties, edge cases, and errors
 
 - For all resident terrain layers there is at most one installed entity per `(brick, visual layer)`; for all resident Horizon cells every assigned tree is exactly once in base-card or derived/tombstone membership.
-- Token/revision `u64` overflow must fail rather than wrap and accidentally match stale work.
 - Empty mesh/removal and fully removed-tree tombstone are revision-bearing successful results and must satisfy barriers only after render extraction/GPU free/queue acknowledgement.
-
+- TDD gap: tokens and revisions are `u64`, but the TDD does not define exhaustion behavior or a public stale-result/invariant telemetry event. Tests must exercise stale and near-maximum unequal values without asserting an undocumented overflow transition or telemetry payload; wrap/exhaustion behavior requires a TDD amendment before it can be pinned.

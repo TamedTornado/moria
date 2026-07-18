@@ -23,4 +23,4 @@ References: `docs/tdd/data-model.md` §Feasibility evidence and §Benchmark data
 
 - Validation returns deterministic sorted failure reasons and never normalizes incomplete/invalid evidence into a passing artifact.
 - JSON round trip preserves explicit nulls, integer widths, exact schema/enum spellings, and all mandatory top-level keys.
-
+- TDD gap: `data-model.md` declares `BenchmarkReport.build: BuildProfile`, while `benchmarks.md` requires `build:null` when an early failure occurs before provenance collection. It also declares `ScenarioName::{Flythrough, CarveStorm}`, while the public CLI/report contract names the second final scenario `mutation-workloads`. Tests must pin the JSON contract required by `benchmarks.md` for missing build provenance and scenario spelling, but the Rust field/enum declarations require a TDD amendment before tests can demand one exact in-memory representation.
