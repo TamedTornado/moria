@@ -24,3 +24,5 @@ pub use voxel::{
     AIR, CUT_STONE, GRANITE, GRAVEL, IRON_ORE, LEAF, LIMESTONE, SAND, SANDSTONE, SHALE, SUBSOIL,
     TOPSOIL, Voxel, WATER, WOOD, material_present, solid_collision, water_volume,
 };
+
+pub(crate) use store::WorldStore;

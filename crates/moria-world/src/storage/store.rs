@@ -64,6 +64,11 @@ impl WorldStore {
     }
 
     #[must_use]
+    pub(crate) const fn identity(&self) -> &WorldIdentity {
+        &self.identity
+    }
+
+    #[must_use]
     pub(crate) const fn revision(&self) -> u64 {
         self.revision
     }
