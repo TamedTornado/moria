@@ -1,8 +1,8 @@
 //! Immutable value types returned by read-only world observations.
 
 use crate::{
-    material_present, solid_collision, water_volume, MaterialId, MaterialRegistry, RouteWaypoint,
-    Voxel, VoxelCoord, WaterBodyDef,
+    MaterialId, MaterialRegistry, RouteWaypoint, Voxel, VoxelCoord, WaterBodyDef, material_present,
+    solid_collision, water_volume,
 };
 
 /// One sampled current-truth voxel together with the revision that produced it.

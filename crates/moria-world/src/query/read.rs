@@ -6,8 +6,8 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 
 use crate::storage::WorldStore;
 use crate::{
-    evaluate_column, BrickCoord, ColumnCoord, ColumnSample, MaterialRegistry, VoxelCoord,
-    RunKind, WaterBodyDef, WorldBounds, WorldIdentity, WorldPointQ8, AIR, VOXEL_EDGE_Q8, WATER,
+    AIR, BrickCoord, ColumnCoord, ColumnSample, MaterialRegistry, RunKind, VOXEL_EDGE_Q8,
+    VoxelCoord, WATER, WaterBodyDef, WorldBounds, WorldIdentity, WorldPointQ8, evaluate_column,
 };
 
 use super::{ActiveBand, QueryError, QueryLimitKind, TraversalRoute, WaterSample, WorldSample};
@@ -94,7 +94,13 @@ impl WorldRead<'_, '_> {
 
         let mut column = evaluate_column(state.store.identity(), coordinate);
         column.runs.clear();
-        let min_y = state.store.identity().bounds.min().y.div_euclid(VOXEL_EDGE_Q8);
+        let min_y = state
+            .store
+            .identity()
+            .bounds
+            .min()
+            .y
+            .div_euclid(VOXEL_EDGE_Q8);
         let max_y = state
             .store
             .identity()
@@ -104,7 +110,9 @@ impl WorldRead<'_, '_> {
             .div_euclid(VOXEL_EDGE_Q8);
 
         for y in min_y..max_y {
-            let voxel = state.store.current_voxel(VoxelCoord::new(coordinate.x, y, coordinate.z));
+            let voxel = state
+                .store
+                .current_voxel(VoxelCoord::new(coordinate.x, y, coordinate.z));
             let kind = sample_run_kind(voxel.material.0);
             if let Some(last) = column.runs.last_mut()
                 && last.material == voxel.material
@@ -203,9 +211,9 @@ mod tests {
     use bevy::prelude::*;
 
     use crate::{
-        evaluate_base_voxel, ActiveBand, BrickCoord, ColumnCoord, MaterialRegistry,
-        MoriaWorldPlugin, RouteTag, RouteWaypoint, Voxel, VoxelCoord, WaterBodyDef, WaterKind,
-        WorldBounds, WorldIdentity, WorldPointQ8, AIR,
+        AIR, ActiveBand, BrickCoord, ColumnCoord, MaterialRegistry, MoriaWorldPlugin, RouteTag,
+        RouteWaypoint, Voxel, VoxelCoord, WaterBodyDef, WaterKind, WorldBounds, WorldIdentity,
+        WorldPointQ8, evaluate_base_voxel,
     };
 
     use super::{TraversalRoute, WorldRead, WorldReadState};
@@ -291,14 +299,15 @@ mod tests {
                     .coordinate,
                 VoxelCoord::new(-1, 0, -1)
             );
-            assert!(read
-                .sample_column(ColumnCoord { x: 0, z: 0 })
-                .unwrap()
-                .runs
-                .iter()
-                .any(|run| run.kind == crate::RunKind::Air
-                    && run.y_min_voxel <= 0
-                    && run.y_max_voxel_exclusive > 0));
+            assert!(
+                read.sample_column(ColumnCoord { x: 0, z: 0 })
+                    .unwrap()
+                    .runs
+                    .iter()
+                    .any(|run| run.kind == crate::RunKind::Air
+                        && run.y_min_voxel <= 0
+                        && run.y_max_voxel_exclusive > 0)
+            );
             assert_eq!(read.route().waypoints().len(), 1);
             assert_eq!(read.water_surface_at(0, 0).unwrap().unwrap().body_id, 4);
             assert_eq!(
