@@ -50,6 +50,14 @@ impl WorldReadState {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn commit_test_voxels(
+        &mut self,
+        changes: impl IntoIterator<Item = (VoxelCoord, crate::Voxel)>,
+    ) {
+        self.store.commit_current(changes);
+    }
+
     #[allow(
         dead_code,
         reason = "streaming installs and removes active bands once its lifecycle is available"
@@ -86,6 +94,10 @@ pub struct WorldRead<'w, 's> {
 }
 
 impl WorldRead<'_, '_> {
+    pub(super) fn ready_bounds(&self) -> Result<WorldBounds, QueryError> {
+        Ok(self.ready_state()?.store.identity().bounds)
+    }
+
     fn ready_state(&self) -> Result<&WorldReadState, QueryError> {
         if self
             .lifecycle
@@ -188,7 +200,7 @@ impl WorldRead<'_, '_> {
         max_distance_q8: u32,
         mask: QueryMask,
     ) -> Result<Option<WorldHit>, QueryError> {
-        let state = self.state.as_deref().ok_or(QueryError::NotReady)?;
+        let state = self.ready_state()?;
         ray::cast(ray, max_distance_q8, mask, |coordinate| {
             WorldSample::from_voxel(
                 coordinate,

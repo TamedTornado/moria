@@ -2,7 +2,7 @@
 
 use crate::{MaterialId, VOXEL_EDGE_Q8, VoxelCoord, WorldPointQ8};
 
-use super::{QueryError, QueryLimitKind, WorldSample};
+use super::{MatchedQueryMask, QueryError, QueryLimitKind, WorldNormal, WorldSample};
 
 /// The Q8 distance limit for one synchronous world ray (64 m).
 pub const MAX_RAY_DISTANCE_Q8: u32 = 16_384;
@@ -55,6 +55,7 @@ impl QueryMask {
     pub const SOLID: Self = Self(1);
     pub const WATER: Self = Self(2);
     pub const ALL: Self = Self(Self::SOLID.0 | Self::WATER.0);
+    pub const SOLID_AND_WATER: Self = Self::ALL;
 
     #[must_use]
     pub const fn empty() -> Self {
@@ -64,6 +65,11 @@ impl QueryMask {
     #[must_use]
     pub const fn is_empty(self) -> bool {
         self.0 == 0
+    }
+
+    #[must_use]
+    pub const fn is_valid(self) -> bool {
+        !self.is_empty() && self.0 & !Self::ALL.0 == 0
     }
 
     #[must_use]
@@ -87,8 +93,12 @@ pub struct WorldHit {
     pub point: WorldPointQ8,
     /// A deterministic Q16 face normal. Origin-cell hits use the zero vector.
     pub normal_q16: [i32; 3],
+    /// Quantized normal shared by capsule contacts.
+    pub normal: WorldNormal,
     pub material: MaterialId,
     pub matched_mask: QueryMask,
+    /// Collision class shared by capsule contacts.
+    pub matched: MatchedQueryMask,
     pub distance_q8: u32,
     pub revision: u64,
 }
@@ -160,8 +170,14 @@ pub(super) fn cast(
                 voxel,
                 point: point_at_distance(ray, distance),
                 normal_q16,
+                normal: WorldNormal {
+                    x: (normal_q16[0] / Q16_ONE as i32) as i8,
+                    y: (normal_q16[1] / Q16_ONE as i32) as i8,
+                    z: (normal_q16[2] / Q16_ONE as i32) as i8,
+                },
                 material: world_sample.material,
                 matched_mask,
+                matched: matched_mask.into(),
                 distance_q8: distance.q8_floor() as u32,
                 revision: world_sample.revision,
             }));
@@ -199,6 +215,16 @@ pub(super) fn cast(
         }
         if !voxel.is_in_region() {
             return Ok(None);
+        }
+    }
+}
+
+impl From<QueryMask> for MatchedQueryMask {
+    fn from(mask: QueryMask) -> Self {
+        if mask == QueryMask::WATER {
+            Self::Water
+        } else {
+            Self::Solid
         }
     }
 }
