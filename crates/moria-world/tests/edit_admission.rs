@@ -137,3 +137,36 @@ fn admission_rejects_unready_and_loading_worlds_before_reserving_or_publishing()
     );
     assert!(app.world().resource::<Messages<EditAccepted>>().is_empty());
 }
+
+#[test]
+fn admission_enforces_the_operation_limit_before_execution_mode_limits() {
+    let mut app = ready_app();
+    let operation = EditOperation::DigBox {
+        min: VoxelCoord::new(-2_000, -512, -2_000),
+        max_exclusive: VoxelCoord::new(-1_472, -256, -1_744),
+        strength: 255,
+    };
+    app.world_mut().resource_mut::<CommandsToSubmit>().0 = vec![
+        WorldEditCommand {
+            request_id: 1,
+            operation: operation.clone(),
+            execution: EditExecution::Atomic,
+        },
+        WorldEditCommand {
+            request_id: 2,
+            operation,
+            execution: EditExecution::Progressive,
+        },
+    ];
+
+    app.update();
+
+    assert_eq!(
+        app.world().resource::<SubmissionResults>().0,
+        vec![
+            Err(SubmitError::ProgressiveWorkLimitExceeded),
+            Err(SubmitError::ProgressiveWorkLimitExceeded),
+        ]
+    );
+    assert!(app.world().resource::<Messages<EditAccepted>>().is_empty());
+}
