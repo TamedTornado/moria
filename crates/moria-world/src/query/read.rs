@@ -211,9 +211,11 @@ mod tests {
     use bevy::prelude::*;
 
     use crate::{
-        AIR, ActiveBand, BrickCoord, ColumnCoord, MaterialRegistry, MoriaWorldPlugin, RouteTag,
-        RouteWaypoint, Voxel, VoxelCoord, WaterBodyDef, WaterKind, WorldBounds, WorldIdentity,
-        WorldPointQ8, evaluate_base_voxel,
+        AIR, ActiveBand, BrickCoord, ColumnCoord, FeatureInstance, FeatureKind, GRANITE,
+        MaterialRegistry, MoriaWorldPlugin, ObjectId, ObjectKind, ObjectPlacement,
+        QuantizedTransform, RouteTag, RouteWaypoint, SpeciesId, Voxel, VoxelCoord,
+        VoxelObjectShape, WaterBodyDef, WaterKind, WorldBounds, WorldIdentity, WorldPointQ8,
+        evaluate_base_voxel,
     };
 
     use super::{TraversalRoute, WorldRead, WorldReadState};
@@ -360,6 +362,58 @@ mod tests {
             );
         });
 
+        app.update();
+    }
+
+    #[test]
+    fn reads_overlay_registered_objects_and_generated_features_before_deltas() {
+        let mut app = App::new();
+        let mut state = ready_state();
+        state.store.install_curated_truth(
+            vec![FeatureInstance {
+                id: 1,
+                kind: FeatureKind::Stratum,
+                bounds: crate::AabbQ8::new(
+                    WorldPointQ8::new(0, 0, 0),
+                    WorldPointQ8::new(256, 256, 256),
+                )
+                .unwrap(),
+                host_material: GRANITE,
+                depth_q8: 0,
+                orientation_q16: [0, 0, 0, 65_536],
+                generator_key: 0,
+            }],
+            vec![ObjectPlacement {
+                id: ObjectId(1),
+                kind: ObjectKind::TreeA,
+                transform_q: QuantizedTransform {
+                    translation: WorldPointQ8::new(128, 0, 128),
+                    yaw_quarter_turns: 0,
+                    uniform_scale_q8: 256,
+                },
+                species: Some(SpeciesId(1)),
+                shape: VoxelObjectShape::Tree {
+                    trunk_radius_q8: 128,
+                    trunk_height_q8: 256,
+                    canopy_radii_q8: [128, 128, 128],
+                },
+                anchor: VoxelCoord::new(2, 0, 2),
+            }],
+        );
+        let coordinate = VoxelCoord::new(2, 0, 2);
+        state
+            .store
+            .commit_current([(coordinate, Voxel::new(AIR, 0, 0, 0))]);
+        app.insert_resource(state);
+        app.add_systems(Update, move |read: WorldRead| {
+            assert_eq!(
+                read.sample_voxel(VoxelCoord::new(0, 0, 0))
+                    .unwrap()
+                    .material,
+                GRANITE
+            );
+            assert_eq!(read.sample_voxel(coordinate).unwrap().material, AIR);
+        });
         app.update();
     }
 }
