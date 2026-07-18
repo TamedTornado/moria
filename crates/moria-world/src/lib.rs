@@ -13,6 +13,7 @@ pub mod objects;
 pub mod presentation;
 mod query;
 mod storage;
+mod streaming;
 pub mod telemetry;
 pub mod terrain;
 pub mod testing;
@@ -51,7 +52,10 @@ pub use objects::{
     validate_object_shape_disjointness,
 };
 pub use query::{
-    ActiveBand, MAX_RAY_DISTANCE_Q8, MAX_RAY_VOXEL_VISITS, QueryError, QueryLimitKind, QueryMask,
+    ActiveBand, DiagnosticBrick, DiagnosticCell, DiagnosticDirtyFlags, DiagnosticFocus,
+    DiagnosticPage, DiagnosticPageRequest, DiagnosticRenderChunk, DiagnosticRenderChunkKey,
+    DiagnosticRenderChunkPhase, DiagnosticSnapshotToken, DiagnosticTaskKind, FocusPurposeFlags,
+    MAX_RAY_DISTANCE_Q8, MAX_RAY_VOXEL_VISITS, QueryError, QueryLimitKind, QueryMask,
     TraversalRoute, WaterSample, WorldHit, WorldRayQ8, WorldRead, WorldSample,
 };
 pub use storage::{
@@ -59,6 +63,10 @@ pub use storage::{
     IRON_ORE, LEAF, LIMESTONE, Q8_UNITS_PER_METER, SAND, SANDSTONE, SHALE, SUBSOIL, TOPSOIL,
     VOXEL_EDGE_Q8, Voxel, VoxelCoord, WATER, WOOD, WorldPointQ8, material_present, solid_collision,
     water_volume,
+};
+pub use streaming::{FocusPurpose, FocusSource, RemoveFocusSource, SetFocusSource};
+pub use telemetry::{
+    ActiveCounts, EditObservation, GraphicsMemoryEstimate, QueueDepths, WorldTelemetryRead,
 };
 pub use terrain::{SolidPresentationOwner, VoxelSource, solid_presentation_owner};
 
@@ -69,7 +77,13 @@ pub struct MoriaWorldPlugin;
 
 impl Plugin for MoriaWorldPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<WorldLifecycle>();
+        app.init_resource::<WorldLifecycle>()
+            .init_resource::<streaming::FocusState>()
+            .init_resource::<telemetry::WorldTelemetryState>()
+            .add_message::<SetFocusSource>()
+            .add_message::<RemoveFocusSource>()
+            .add_systems(Update, streaming::apply_focus_messages)
+            .add_systems(PostUpdate, telemetry::advance_frame_index);
     }
 }
 
