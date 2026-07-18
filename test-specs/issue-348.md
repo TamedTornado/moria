@@ -16,11 +16,11 @@ References: `docs/tdd/api.md` §Read-only world observations/capsule limits and 
 
 ## Edge cases
 
-- Radius 31/129, half-segment 193, displacement 3,073, 8,193 sweep work, 513 overlap work, and 513 exact contacts each return the documented `InvalidInput` or matching `LimitExceeded` kind before sampling/partial output.
+- Radius 31/129 returns `LimitExceeded(CapsuleRadius)`; half-segment 193 returns `LimitExceeded(CapsuleHeight)`; displacement 3,073 returns `LimitExceeded(SweepDisplacement)`; 8,193 conservative sweep candidates returns `LimitExceeded(SweepCandidateWork)`; and 513 exact contacts returns `LimitExceeded(ResultCount)`, all before partial output.
+- A 513-candidate overlap is rejected before sampling or returning hits. TDD gap: the 512-cell overlap ceiling is explicit, but `QueryLimitKind` defines no overlap-work variant and the text does not assign another exact variant; tests must assert rejection/no partial result until the enum contract is amended, without guessing a variant.
 - Overflow in Q8 endpoint, Euclidean length, expanded AABB, or candidate estimate is rejected rather than wrapped.
 
 ## Error paths
 
-- Invalid shape/mask, out-of-bounds query, and every limit failure return no partial `SweepResult`/hit vector and perform no authoritative traversal beyond validation.
+- Empty/invalid masks return `InvalidInput`; an out-of-bounds query returns `OutOfBounds`; every validation or limit failure returns no partial `SweepResult`/hit vector and performs no authoritative traversal beyond validation.
 - Completion order, hash order, and cache state must not alter safe fraction/contact ordering.
-
