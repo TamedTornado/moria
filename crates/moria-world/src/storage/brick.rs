@@ -69,10 +69,10 @@ pub(super) struct BrickRecord {
 }
 
 impl BrickRecord {
-    pub(super) fn regenerate(identity: &WorldIdentity, brick: BrickCoord) -> Self {
+    pub(super) fn regenerate(identity: &WorldIdentity, brick: BrickCoord, revision: u64) -> Self {
         Self {
             base: BrickBase::regenerate(identity, brick),
-            revision: 0,
+            revision,
         }
     }
 
@@ -91,5 +91,10 @@ impl BrickRecord {
 
     pub(super) fn set_revision(&mut self, revision: u64) {
         self.revision = revision;
+    }
+
+    #[cfg(test)]
+    pub(super) const fn revision(&self) -> u64 {
+        self.revision
     }
 }
