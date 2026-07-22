@@ -38,6 +38,10 @@ fn pine_near_placeholder_is_a_shared_material_support_centered_glb() {
     let (document, binary_length) = glb_document(&bytes);
 
     assert_eq!(document["asset"]["version"], "2.0");
+    assert_eq!(
+        document["asset"]["generator"],
+        "moria procedural pine-near placeholder"
+    );
     assert_eq!(document["asset"]["extras"]["units"], "metres");
     assert_eq!(document["asset"]["extras"]["up_axis"], "Y");
     assert_eq!(document["asset"]["extras"]["forward_axis"], "+Z");
