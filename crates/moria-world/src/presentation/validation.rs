@@ -473,12 +473,18 @@ fn valid_glb(
     max: [i32; 3],
     origin: [i32; 3],
 ) -> bool {
-    let Ok(value) = glb_json(bytes) else {
+    let Ok((value, binary)) = glb_document(bytes) else {
+        return false;
+    };
+    let Some(layout) = GlbLayout::new(&value, binary) else {
         return false;
     };
     let Some(meshes) = value.get("meshes").and_then(serde_json::Value::as_array) else {
         return false;
     };
+    if meshes.is_empty() {
+        return false;
+    }
     let names: BTreeSet<_> = meshes
         .iter()
         .filter_map(|mesh| mesh.get("name").and_then(serde_json::Value::as_str))
@@ -502,49 +508,419 @@ fn valid_glb(
     {
         return false;
     }
-    min.iter()
+    if !min
+        .iter()
         .zip(max)
         .all(|(minimum, maximum)| *minimum < maximum)
-        && min
+        || !min
             .iter()
             .zip(max)
             .all(|(minimum, maximum)| *minimum <= 0 && 0 <= maximum)
-        && origin
+        || !origin
             .iter()
             .zip(min)
             .zip(max)
             .all(|((origin, minimum), maximum)| *origin >= minimum && *origin <= maximum)
-        && meshes
-            .iter()
-            .flat_map(|mesh| {
-                mesh.get("primitives")
-                    .and_then(serde_json::Value::as_array)
-                    .into_iter()
-                    .flatten()
-            })
-            .all(|primitive| {
-                primitive
-                    .get("attributes")
-                    .and_then(serde_json::Value::as_object)
-                    .is_some_and(|attributes| {
-                        attributes.contains_key("POSITION")
-                            && attributes.contains_key("NORMAL")
-                            && attributes.contains_key("TEXCOORD_0")
+    {
+        return false;
+    }
+
+    meshes.iter().all(|mesh| {
+        mesh.get("primitives")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|primitives| {
+                !primitives.is_empty()
+                    && primitives.iter().all(|primitive| {
+                        valid_primitive(primitive, &value, &layout, max_triangles, min, max)
                     })
-                    && primitive
-                        .pointer("/extras/triangle_count")
-                        .and_then(serde_json::Value::as_u64)
-                        .is_some_and(|count| count <= u64::from(max_triangles))
+            })
+    })
+}
+
+fn valid_primitive(
+    primitive: &serde_json::Value,
+    document: &serde_json::Value,
+    layout: &GlbLayout<'_>,
+    max_triangles: u32,
+    bounds_min_q8: [i32; 3],
+    bounds_max_q8: [i32; 3],
+) -> bool {
+    if primitive.get("mode").and_then(serde_json::Value::as_u64) != Some(4) {
+        return false;
+    }
+    let Some(attributes) = primitive
+        .get("attributes")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return false;
+    };
+    let Some(position) = attributes
+        .get("POSITION")
+        .and_then(value_index)
+        .and_then(|index| layout.accessor(index))
+    else {
+        return false;
+    };
+    let Some(normal) = attributes
+        .get("NORMAL")
+        .and_then(value_index)
+        .and_then(|index| layout.accessor(index))
+    else {
+        return false;
+    };
+    let Some(uv) = attributes
+        .get("TEXCOORD_0")
+        .and_then(value_index)
+        .and_then(|index| layout.accessor(index))
+    else {
+        return false;
+    };
+    if !position.is_f32_type("VEC3")
+        || !normal.is_f32_type("VEC3")
+        || !uv.is_f32_type("VEC2")
+        || position.count == 0
+        || normal.count != position.count
+        || uv.count != position.count
+        || !finite_f32_accessor(position, layout.binary)
+        || !finite_f32_accessor(normal, layout.binary)
+        || !finite_f32_accessor(uv, layout.binary)
+        || !position_bounds_match(position, layout.binary, bounds_min_q8, bounds_max_q8)
+    {
+        return false;
+    }
+
+    let normal_mapped = primitive
+        .get("material")
+        .and_then(value_index)
+        .and_then(|index| document.get("materials")?.as_array()?.get(index))
+        .is_some_and(|material| material.get("normalTexture").is_some());
+    if normal_mapped {
+        let Some(tangent) = attributes
+            .get("TANGENT")
+            .and_then(value_index)
+            .and_then(|index| layout.accessor(index))
+        else {
+            return false;
+        };
+        if !tangent.is_f32_type("VEC4")
+            || tangent.count != position.count
+            || !finite_f32_accessor(tangent, layout.binary)
+        {
+            return false;
+        }
+    }
+
+    let Some(indices) = primitive
+        .get("indices")
+        .and_then(value_index)
+        .and_then(|index| layout.accessor(index))
+    else {
+        return false;
+    };
+    indices.is_index_type()
+        && indices.count % 3 == 0
+        && indices.count / 3 <= max_triangles
+        && indices_are_in_range(indices, layout.binary, position.count)
+}
+
+fn glb_document(bytes: &[u8]) -> Result<(serde_json::Value, &[u8]), ()> {
+    if bytes.len() < 20 || &bytes[..4] != b"glTF" || le_u32(bytes, 4)? != 2 {
+        return Err(());
+    }
+    if usize::try_from(le_u32(bytes, 8)?).map_err(|_| ())? != bytes.len() {
+        return Err(());
+    }
+    let json_length = usize::try_from(le_u32(bytes, 12)?).map_err(|_| ())?;
+    if !json_length.is_multiple_of(4) || le_u32(bytes, 16)? != 0x4E4F_534A {
+        return Err(());
+    }
+    let json_end = 20usize.checked_add(json_length).ok_or(())?;
+    let binary_header = json_end.checked_add(8).ok_or(())?;
+    if binary_header > bytes.len() || le_u32(bytes, json_end + 4)? != 0x004E_4942 {
+        return Err(());
+    }
+    let binary_length = usize::try_from(le_u32(bytes, json_end)?).map_err(|_| ())?;
+    let binary_end = binary_header.checked_add(binary_length).ok_or(())?;
+    if !binary_length.is_multiple_of(4) || binary_end != bytes.len() {
+        return Err(());
+    }
+    let document = serde_json::from_slice(bytes.get(20..json_end).ok_or(())?).map_err(|_| ())?;
+    Ok((document, &bytes[binary_header..binary_end]))
+}
+
+struct GlbLayout<'a> {
+    binary: &'a [u8],
+    accessors: Vec<GlbAccessor>,
+}
+
+impl<'a> GlbLayout<'a> {
+    fn new(document: &serde_json::Value, binary: &'a [u8]) -> Option<Self> {
+        let buffers = document.get("buffers")?.as_array()?;
+        if buffers.len() != 1 || buffers[0].get("uri").is_some() {
+            return None;
+        }
+        let buffer_length = value_usize(buffers[0].get("byteLength")?)?;
+        if buffer_length > binary.len() {
+            return None;
+        }
+        let views = document.get("bufferViews")?.as_array()?;
+        let mut view_ranges = Vec::with_capacity(views.len());
+        for view in views {
+            if value_usize(view.get("buffer")?)? != 0 {
+                return None;
+            }
+            let offset = view.get("byteOffset").and_then(value_usize).unwrap_or(0);
+            let length = value_usize(view.get("byteLength")?)?;
+            if offset % 4 != 0 || offset.checked_add(length)? > buffer_length {
+                return None;
+            }
+            let stride = match view.get("byteStride") {
+                Some(stride) => Some(value_usize(stride)?),
+                None => None,
+            };
+            if stride.is_some_and(|stride| !(4..=252).contains(&stride) || stride % 4 != 0) {
+                return None;
+            }
+            view_ranges.push((offset, length, stride));
+        }
+        let accessors = document.get("accessors")?.as_array()?;
+        let mut parsed = Vec::with_capacity(accessors.len());
+        for accessor in accessors {
+            if accessor.get("sparse").is_some() {
+                return None;
+            }
+            let view_index = value_usize(accessor.get("bufferView")?)?;
+            let &(view_offset, view_length, stride) = view_ranges.get(view_index)?;
+            let component_type =
+                u32::try_from(value_usize(accessor.get("componentType")?)?).ok()?;
+            let component_size = component_size(component_type)?;
+            let accessor_type = match accessor.get("type")?.as_str()? {
+                "SCALAR" => "SCALAR",
+                "VEC2" => "VEC2",
+                "VEC3" => "VEC3",
+                "VEC4" => "VEC4",
+                "MAT2" => "MAT2",
+                "MAT3" => "MAT3",
+                "MAT4" => "MAT4",
+                _ => return None,
+            };
+            let components = component_count(accessor_type)?;
+            let count = u32::try_from(value_usize(accessor.get("count")?)?).ok()?;
+            let element_size = component_size.checked_mul(components)?;
+            let accessor_offset = accessor
+                .get("byteOffset")
+                .and_then(value_usize)
+                .unwrap_or(0);
+            let element_stride = stride.unwrap_or(element_size);
+            let used = if count == 0 {
+                0
+            } else {
+                usize::try_from(count)
+                    .ok()?
+                    .checked_sub(1)?
+                    .checked_mul(element_stride)?
+                    .checked_add(element_size)?
+            };
+            if accessor_offset % component_size != 0
+                || element_stride < element_size
+                || accessor_offset.checked_add(used)? > view_length
+            {
+                return None;
+            }
+            parsed.push(GlbAccessor {
+                component_type,
+                count,
+                accessor_type,
+                offset: view_offset.checked_add(accessor_offset)?,
+                stride: element_stride,
+                bounds: accessor_bounds(accessor, accessor_type),
+            });
+        }
+        Some(Self {
+            binary,
+            accessors: parsed,
+        })
+    }
+
+    fn accessor(&self, index: usize) -> Option<&GlbAccessor> {
+        self.accessors.get(index)
+    }
+}
+
+struct GlbAccessor {
+    component_type: u32,
+    count: u32,
+    accessor_type: &'static str,
+    offset: usize,
+    stride: usize,
+    bounds: Option<([f32; 3], [f32; 3])>,
+}
+
+impl GlbAccessor {
+    fn is_f32_type(&self, expected_type: &str) -> bool {
+        self.component_type == 5126 && self.accessor_type == expected_type
+    }
+
+    fn is_index_type(&self) -> bool {
+        self.accessor_type == "SCALAR" && matches!(self.component_type, 5121 | 5123 | 5125)
+    }
+}
+
+fn finite_f32_accessor(accessor: &GlbAccessor, binary: &[u8]) -> bool {
+    let Some(components) = component_count(accessor.accessor_type) else {
+        return false;
+    };
+    (0..usize::try_from(accessor.count).unwrap_or(usize::MAX)).all(|element| {
+        (0..components).all(|component| {
+            let offset = element
+                .checked_mul(accessor.stride)
+                .and_then(|offset| offset.checked_add(accessor.offset))
+                .and_then(|offset| offset.checked_add(component * 4));
+            offset
+                .and_then(|offset| binary.get(offset..offset + 4))
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(f32::from_le_bytes)
+                .is_some_and(f32::is_finite)
+        })
+    })
+}
+
+fn position_bounds_match(
+    position: &GlbAccessor,
+    binary: &[u8],
+    bounds_min_q8: [i32; 3],
+    bounds_max_q8: [i32; 3],
+) -> bool {
+    let mut minimum = [f32::INFINITY; 3];
+    let mut maximum = [f32::NEG_INFINITY; 3];
+    for element in 0..usize::try_from(position.count).unwrap_or(usize::MAX) {
+        for component in 0..3 {
+            let Some(value) = f32_at(
+                binary,
+                position.offset + element * position.stride + component * 4,
+            ) else {
+                return false;
+            };
+            minimum[component] = minimum[component].min(value);
+            maximum[component] = maximum[component].max(value);
+        }
+    }
+    let bounds_match = minimum
+        .iter()
+        .zip(&maximum)
+        .zip(&bounds_min_q8)
+        .zip(&bounds_max_q8)
+        .all(
+            |(((minimum, maximum), expected_minimum), expected_maximum)| {
+                q8(*minimum) == Some(*expected_minimum) && q8(*maximum) == Some(*expected_maximum)
+            },
+        );
+    bounds_match
+        && position
+            .bounds
+            .is_some_and(|(declared_minimum, declared_maximum)| {
+                declared_minimum == minimum && declared_maximum == maximum
             })
 }
 
-fn glb_json(bytes: &[u8]) -> Result<serde_json::Value, ()> {
-    if bytes.starts_with(b"glTF") && bytes.len() >= 20 {
-        let length = u32::from_le_bytes(bytes[12..16].try_into().map_err(|_| ())?) as usize;
-        serde_json::from_slice(bytes.get(20..20 + length).ok_or(())?).map_err(|_| ())
-    } else {
-        serde_json::from_slice(bytes).map_err(|_| ())
+fn accessor_bounds(value: &serde_json::Value, accessor_type: &str) -> Option<([f32; 3], [f32; 3])> {
+    if accessor_type != "VEC3" {
+        return None;
     }
+    Some((
+        f32_values(value.get("min")?)?,
+        f32_values(value.get("max")?)?,
+    ))
+}
+
+fn f32_values(value: &serde_json::Value) -> Option<[f32; 3]> {
+    let values = value.as_array()?;
+    if values.len() != 3 {
+        return None;
+    }
+    let values = [
+        values[0].as_f64()? as f32,
+        values[1].as_f64()? as f32,
+        values[2].as_f64()? as f32,
+    ];
+    values
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(values)
+}
+
+fn indices_are_in_range(accessor: &GlbAccessor, binary: &[u8], vertex_count: u32) -> bool {
+    (0..usize::try_from(accessor.count).unwrap_or(usize::MAX)).all(|element| {
+        let offset = accessor.offset + element * accessor.stride;
+        let index = match accessor.component_type {
+            5121 => binary.get(offset).copied().map(u32::from),
+            5123 => binary
+                .get(offset..offset + 2)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u16::from_le_bytes)
+                .map(u32::from),
+            5125 => binary
+                .get(offset..offset + 4)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u32::from_le_bytes),
+            _ => None,
+        };
+        index.is_some_and(|index| index < vertex_count)
+    })
+}
+
+fn component_size(component_type: u32) -> Option<usize> {
+    match component_type {
+        5120 | 5121 => Some(1),
+        5122 | 5123 => Some(2),
+        5125 | 5126 => Some(4),
+        _ => None,
+    }
+}
+
+fn component_count(accessor_type: &str) -> Option<usize> {
+    match accessor_type {
+        "SCALAR" => Some(1),
+        "VEC2" => Some(2),
+        "VEC3" => Some(3),
+        "VEC4" => Some(4),
+        "MAT2" => Some(4),
+        "MAT3" => Some(9),
+        "MAT4" => Some(16),
+        _ => None,
+    }
+}
+
+fn f32_at(bytes: &[u8], offset: usize) -> Option<f32> {
+    bytes
+        .get(offset..offset + 4)?
+        .try_into()
+        .ok()
+        .map(f32::from_le_bytes)
+}
+
+fn q8(value: f32) -> Option<i32> {
+    let scaled = value * 256.0;
+    if !scaled.is_finite() || scaled < i32::MIN as f32 || scaled > i32::MAX as f32 {
+        return None;
+    }
+    Some(scaled.round() as i32)
+}
+
+fn le_u32(bytes: &[u8], offset: usize) -> Result<u32, ()> {
+    bytes
+        .get(offset..offset + 4)
+        .and_then(|value| value.try_into().ok())
+        .map(u32::from_le_bytes)
+        .ok_or(())
+}
+
+fn value_index(value: &serde_json::Value) -> Option<usize> {
+    value_usize(value)
+}
+
+fn value_usize(value: &serde_json::Value) -> Option<usize> {
+    usize::try_from(value.as_u64()?).ok()
 }
 
 fn valid_wgsl(bytes: &[u8], entry_points: &[String], forbids_i64_atomics: bool) -> bool {
@@ -626,6 +1002,143 @@ fn valid_provenance(root: &Path, provenance: &AssetProvenance) -> bool {
                 && !modifications.is_empty()
                 && modifications.iter().all(|value| nonblank(value))
         }
+    }
+}
+
+#[cfg(test)]
+mod glb_tests {
+    use std::fs;
+
+    use serde_json::Value;
+
+    use super::valid_glb;
+
+    #[test]
+    fn glb_validation_rejects_a_truncated_binary_chunk() {
+        let mut bytes = fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/vegetation/pine_near.glb"
+        ))
+        .expect("pine-near fixture exists");
+        bytes.pop();
+
+        assert!(!valid_pine(&bytes));
+    }
+
+    #[test]
+    fn glb_validation_rejects_invalid_pine_layouts_and_geometry() {
+        let fixture = pine_fixture();
+        assert!(valid_pine(&fixture));
+
+        let misaligned_view = mutate_pine(&fixture, |document, _| {
+            document["bufferViews"][0]["byteOffset"] = Value::from(1);
+        });
+        assert!(!valid_pine(&misaligned_view));
+
+        let accessor_overrun = mutate_pine(&fixture, |document, _| {
+            document["accessors"][0]["count"] = Value::from(14);
+        });
+        assert!(!valid_pine(&accessor_overrun));
+
+        let index_overrun = mutate_pine(&fixture, |_, binary| {
+            binary[624..626].copy_from_slice(&13_u16.to_le_bytes());
+        });
+        assert!(!valid_pine(&index_overrun));
+
+        let missing_uv = mutate_pine(&fixture, |document, _| {
+            document["meshes"][0]["primitives"][0]["attributes"]
+                .as_object_mut()
+                .unwrap()
+                .remove("TEXCOORD_0");
+        });
+        assert!(!valid_pine(&missing_uv));
+
+        let missing_normal = mutate_pine(&fixture, |document, _| {
+            document["meshes"][0]["primitives"][0]["attributes"]
+                .as_object_mut()
+                .unwrap()
+                .remove("NORMAL");
+        });
+        assert!(!valid_pine(&missing_normal));
+
+        let missing_normal_map_tangent = mutate_pine(&fixture, |document, _| {
+            document["materials"][0]["normalTexture"] = serde_json::json!({ "index": 0 });
+            document["meshes"][0]["primitives"][0]["attributes"]
+                .as_object_mut()
+                .unwrap()
+                .remove("TANGENT");
+        });
+        assert!(!valid_pine(&missing_normal_map_tangent));
+
+        let non_finite_position = mutate_pine(&fixture, |_, binary| {
+            binary[..4].copy_from_slice(&f32::NAN.to_le_bytes());
+        });
+        assert!(!valid_pine(&non_finite_position));
+
+        let wrong_declared_bounds = mutate_pine(&fixture, |document, _| {
+            document["accessors"][0]["max"][1] = Value::from(19);
+        });
+        assert!(!valid_pine(&wrong_declared_bounds));
+
+        let over_triangle_limit = mutate_pine(&fixture, |document, binary| {
+            document["buffers"][0]["byteLength"] = Value::from(72_630);
+            document["bufferViews"][4]["byteLength"] = Value::from(72_006);
+            document["accessors"][4]["count"] = Value::from(36_003);
+            document["meshes"][0]["primitives"][0]["extras"]["triangle_count"] = Value::from(0);
+            binary.resize(72_630, 0);
+        });
+        assert!(!valid_pine(&over_triangle_limit));
+    }
+
+    fn valid_pine(bytes: &[u8]) -> bool {
+        valid_glb(
+            bytes,
+            12_000,
+            &["PineNear".to_owned()],
+            &[],
+            [-1_024, 0, -1_024],
+            [1_024, 4_608, 1_024],
+            [0, 0, 0],
+        )
+    }
+
+    fn pine_fixture() -> Vec<u8> {
+        fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/vegetation/pine_near.glb"
+        ))
+        .expect("pine-near fixture exists")
+    }
+
+    fn mutate_pine(mutate_from: &[u8], mutate: impl FnOnce(&mut Value, &mut Vec<u8>)) -> Vec<u8> {
+        let json_length = u32::from_le_bytes(mutate_from[12..16].try_into().unwrap()) as usize;
+        let binary_offset = 20 + json_length + 8;
+        let mut document = serde_json::from_slice(&mutate_from[20..20 + json_length]).unwrap();
+        let mut binary = mutate_from[binary_offset..].to_vec();
+        mutate(&mut document, &mut binary);
+        glb_bytes(document, binary)
+    }
+
+    fn glb_bytes(document: Value, mut binary: Vec<u8>) -> Vec<u8> {
+        let mut json = serde_json::to_vec(&document).unwrap();
+        while !json.len().is_multiple_of(4) {
+            json.push(b' ');
+        }
+        while !binary.len().is_multiple_of(4) {
+            binary.push(0);
+        }
+        let mut bytes = Vec::with_capacity(28 + json.len() + binary.len());
+        bytes.extend_from_slice(b"glTF");
+        bytes.extend_from_slice(&2_u32.to_le_bytes());
+        let total_length = u32::try_from(28 + json.len() + binary.len()).unwrap();
+        bytes.extend_from_slice(&total_length.to_le_bytes());
+        bytes.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&0x4E4F_534Au32.to_le_bytes());
+        bytes.extend_from_slice(&json);
+        bytes.extend_from_slice(&(binary.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&0x004E_4942u32.to_le_bytes());
+        bytes.extend_from_slice(&binary);
+        bytes
     }
 }
 fn nonblank(value: &str) -> bool {
