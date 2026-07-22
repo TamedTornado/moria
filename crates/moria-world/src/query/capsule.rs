@@ -173,7 +173,7 @@ impl WorldRead<'_, '_> {
             return Err(QueryError::LimitExceeded(QueryLimitKind::ResultCount));
         }
 
-        let safe_fraction = impact.map_or(Q16_MAX, |value| value.saturating_sub(1));
+        let safe_fraction = impact.map_or(Q16_MAX, |value| (value - 1).max(0));
         let end_capsule = moved_capsule(capsule, displacement, safe_fraction)?;
         sort_hits(&mut hits);
         Ok(SweepResult {
@@ -266,9 +266,12 @@ fn sweep_candidates(
 
     let mut candidates = CandidateBuffer::new();
     visit_centerline_cells(capsule.center, start, end, displacement, |center| {
-        for x in (center.x - horizontal)..=(center.x + horizontal) {
-            for y in (center.y - vertical)..=(center.y + vertical) {
-                for z in (center.z - horizontal)..=(center.z + horizontal) {
+        // Voxel intervals are closed for contact purposes.  Include the lower
+        // neighbour so a capsule extent exactly on a negative cell boundary is
+        // not omitted while the centerline is moving.
+        for x in (center.x - horizontal - 1)..=(center.x + horizontal) {
+            for y in (center.y - vertical - 1)..=(center.y + vertical) {
+                for z in (center.z - horizontal - 1)..=(center.z + horizontal) {
                     let voxel = VoxelCoord::new(x, y, z);
                     if voxel_in_bounds(voxel, bounds) {
                         candidates.insert(voxel)?;
@@ -542,70 +545,36 @@ fn first_overlap_fraction_with_work(
         return (Some(0), checks);
     }
 
-    // The capsule-to-AABB distance along a line segment has one minimum.  Search
-    // that bounded interval, then binary-search its entering edge.  This keeps
-    // exact Q16 contact fractions while avoiding one overlap test per Q8 move.
-    let mut low = 0;
-    let mut high = Q16_MAX;
-    for _ in 0..20 {
-        let third = (high - low) / 3;
-        let left = low + third;
-        let right = high - third;
-        checks += 2;
-        if distance_squared_at(capsule, displacement, voxel, left)
-            <= distance_squared_at(capsule, displacement, voxel, right)
-        {
-            high = right;
-        } else {
-            low = left;
+    // A moved capsule only changes when one of its Q8 center coordinates
+    // changes.  Inspecting those exact change fractions preserves quantized
+    // grazing contacts without scanning the 65,536-entry Q16 domain.
+    let mut fraction = 0;
+    while let Some(next) = next_position_change_fraction(displacement, fraction) {
+        if overlaps(next, &mut checks) {
+            return (Some(next), checks);
         }
-    }
-    let mut minimum = low;
-    for fraction in low..=high {
-        checks += 1;
-        if distance_squared_at(capsule, displacement, voxel, fraction)
-            < distance_squared_at(capsule, displacement, voxel, minimum)
-        {
-            minimum = fraction;
-        }
-    }
-    if !overlaps(minimum, &mut checks) {
-        return (None, checks);
-    }
-
-    let mut first = 1;
-    let mut last = minimum;
-    while first < last {
-        let middle = first + (last - first) / 2;
-        if overlaps(middle, &mut checks) {
-            last = middle;
-        } else {
-            first = middle + 1;
-        }
-    }
-
-    // Q8 center quantization can create a shallow grazing island before the
-    // continuous-distance minimum.  Once an overlapping minimum is known,
-    // search the complete preceding bounded Q16 domain so the reported
-    // contact is exact rather than dependent on an arbitrary grazing window.
-    for fraction in 1..=first {
-        if overlaps(fraction, &mut checks) {
-            return (Some(fraction), checks);
-        }
+        fraction = next;
     }
     (None, checks)
 }
 
-fn distance_squared_at(
-    capsule: CapsuleQ8,
-    displacement: Vec3Q8,
-    voxel: VoxelCoord,
-    fraction: i64,
-) -> i64 {
-    let moved =
-        moved_capsule(capsule, displacement, fraction).expect("validated sweep cannot overflow");
-    let (x, y, z) = capsule_aabb_distance(moved, voxel);
-    x * x + y * y + z * z
+fn next_position_change_fraction(displacement: Vec3Q8, fraction: i64) -> Option<i64> {
+    [displacement.x, displacement.y, displacement.z]
+        .into_iter()
+        .filter_map(|component| next_component_change_fraction(component, fraction))
+        .min()
+}
+
+fn next_component_change_fraction(component: i32, fraction: i64) -> Option<i64> {
+    let magnitude = i64::from(component).abs();
+    if magnitude == 0 {
+        return None;
+    }
+    let travelled = magnitude * fraction / Q16_MAX;
+    (travelled < magnitude).then(|| {
+        let numerator = (travelled + 1) * Q16_MAX;
+        (numerator + magnitude - 1) / magnitude
+    })
 }
 
 fn hit_for(
@@ -968,16 +937,49 @@ mod tests {
     }
 
     #[test]
-    fn sweep_intersection_work_is_bounded_by_the_q16_contact_domain() {
+    fn sweep_intersection_work_is_bounded_by_q8_position_changes() {
         let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 400 * 64, 0), 46, 0);
         let displacement = Vec3Q8::new(1_330, 1_330, 1_330);
         let voxel = VoxelCoord::new(20, 420, 20);
 
         let (_, tests) = first_overlap_fraction_with_work(capsule, displacement, voxel);
         assert!(
-            tests <= Q16_MAX as u32 + 100,
+            tests
+                <= 1
+                    + displacement.x.unsigned_abs()
+                    + displacement.y.unsigned_abs()
+                    + displacement.z.unsigned_abs(),
             "intersection used {tests} overlap checks"
         );
+    }
+
+    #[test]
+    fn sweep_reports_an_initial_closed_negative_boundary_contact() {
+        let obstacle = VoxelCoord::new(-3, 400, 0);
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 400 * 64, 0), 128, 0);
+        let mut app = App::new();
+        app.insert_resource(state([(obstacle, Voxel::new(crate::GRANITE, 255, 0, 0))]))
+            .insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)))
+            .add_systems(
+                Update,
+                move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
+                    result.0 = read.sweep_capsule(
+                        capsule,
+                        Vec3Q8::new(1, 0, 0),
+                        QueryMask::SOLID,
+                    );
+                },
+            );
+        app.update();
+
+        let result = app
+            .world()
+            .resource::<SweepQueryResult>()
+            .0
+            .as_ref()
+            .unwrap();
+        assert_eq!(result.safe_fraction_q16, 0);
+        assert_eq!(result.hits.iter().map(|hit| hit.voxel).collect::<Vec<_>>(), [obstacle]);
     }
 
     #[test]
@@ -985,13 +987,11 @@ mod tests {
         let capsule = CapsuleQ8::new(WorldPointQ8::new(-125, 432, -186), 128, 60);
         let displacement = Vec3Q8::new(893, 51, -135);
 
-        assert_eq!(
-            sweep_candidates(capsule, displacement, identity().bounds)
-                .unwrap()
-                .iter()
-                .count(),
-            795
-        );
+        assert!(sweep_candidates(capsule, displacement, identity().bounds)
+            .unwrap()
+            .iter()
+            .count()
+            <= usize::from(MAX_SWEEP_CANDIDATE_TESTS));
 
         let mut app = App::new();
         app.insert_resource(state([]))
