@@ -123,7 +123,7 @@ fn report() -> BenchmarkReport {
             round_trip: None,
         },
         coverage: Some(CoverageEvidence {
-            route_tags_visited: vec!["cave".into(), "forest".into()],
+            route_tags_visited: complete_route_tags(),
             active_bands_entered: vec![
                 ActiveBand::Far,
                 ActiveBand::Horizon,
@@ -161,6 +161,27 @@ const ALL_BANDS: [ActiveBand; 4] = [
     ActiveBand::Near,
 ];
 
+fn complete_route_tags() -> Vec<String> {
+    [
+        "aquifer",
+        "cave-floor",
+        "cave-mouth",
+        "cliff-top",
+        "forest",
+        "lake",
+        "meadow",
+        "ore-vein",
+        "river",
+        "rock-shelves",
+        "ruin-stair-bottom",
+        "ruin-stair-top",
+        "signature-carve-hillside",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
 fn mutation_report() -> BenchmarkReport {
     let mut report = report();
     let latency = Distribution {
@@ -196,7 +217,7 @@ fn mutation_report() -> BenchmarkReport {
         }),
     };
     report.coverage = Some(CoverageEvidence {
-        route_tags_visited: vec!["cave".into(), "forest".into()],
+        route_tags_visited: complete_route_tags(),
         active_bands_entered: ALL_BANDS.to_vec(),
         edited_material_counts: BTreeMap::from([("granite".into(), 512)]),
         final_changed_spheres: 3,
@@ -374,6 +395,18 @@ fn canonical_json_rejects_unknown_enum_literals_and_unsorted_vectors() {
     assert!(matches!(
         invalid.validate(),
         Err(ReportValidationError::Inconsistent { field: "coverage" })
+    ));
+}
+
+#[test]
+fn passing_flythrough_requires_every_product_one_route_tag() {
+    let mut invalid = report();
+    invalid.coverage.as_mut().unwrap().route_tags_visited = vec!["cave".into(), "forest".into()];
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "coverage pass"
+        })
     ));
 }
 

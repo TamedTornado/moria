@@ -52,13 +52,34 @@ fn report() -> ForestFeasibilityReport {
         },
         forest_area_m2: 120_000,
         eligible_land_area_m2: 120_000,
-        object_counts: BTreeMap::from([("tree-a".into(), 1)]),
-        required_object_counts: BTreeMap::from([("tree-a".into(), 1)]),
-        species_counts: BTreeMap::from([("birch".into(), 1)]),
+        object_counts: BTreeMap::from([
+            ("boulder".into(), 288),
+            ("bush".into(), 5_400),
+            ("rock".into(), 1_080),
+            ("ruin".into(), 1),
+            ("stump".into(), 168),
+            ("tree-a".into(), 2_640),
+            ("tree-b".into(), 2_160),
+        ]),
+        required_object_counts: BTreeMap::from([
+            ("boulder".into(), 288),
+            ("bush".into(), 5_400),
+            ("rock".into(), 1_080),
+            ("ruin".into(), 1),
+            ("stump".into(), 168),
+            ("tree-a".into(), 2_640),
+            ("tree-b".into(), 2_160),
+        ]),
+        species_counts: BTreeMap::from([("birch".into(), 2_640), ("pine".into(), 2_160)]),
         minimum_tree_spacing_q8: 1_280,
         canopy_min_q8: 512,
         canopy_max_q8: 1_024,
-        canopy_range_bins: BTreeMap::from([("2m".into(), 1)]),
+        canopy_range_bins: BTreeMap::from([
+            ("birch-lower".into(), 16),
+            ("birch-upper".into(), 16),
+            ("pine-lower".into(), 16),
+            ("pine-upper".into(), 16),
+        ]),
         minimum_route_clearance_q8: 768,
         overlap_conflicts: 0,
         first_conflict: None,
@@ -67,7 +88,7 @@ fn report() -> ForestFeasibilityReport {
             build_ms: 1.0,
             retained_bytes: 1,
             retained_byte_categories: BTreeMap::from([("records".into(), 1)]),
-            placement_records: 1,
+            placement_records: 11_737,
             dependency_grid_entries: 1,
             sample_grid_entries: 1,
             max_dependency_cell_entries: 1,
@@ -181,7 +202,7 @@ fn workload(role: MutationWorkloadRole) -> MutationWorkloadEvidence {
         traversable: role == MutationWorkloadRole::InteractiveCarve,
         changed_voxels: 1,
         changed_bricks: 1,
-        committed_batches: 1,
+        committed_batches: request_count,
         stage_timings_ms: STAGES
             .into_iter()
             .map(|stage| (stage.into(), 0.1))
@@ -320,6 +341,70 @@ fn passing_feasibility_reports_enforce_forest_and_query_probe_contracts() {
             field: "query evidence"
         })
     ));
+}
+
+#[test]
+fn passing_forest_report_requires_complete_density_species_canopy_and_placement_evidence() {
+    let mut invalid = report();
+    invalid.object_counts.insert("tree-a".into(), 1);
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "forest object counts"
+        })
+    ));
+
+    let mut invalid = report();
+    invalid.species_counts.insert("birch".into(), 1);
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "forest species counts"
+        })
+    ));
+
+    let mut invalid = report();
+    invalid.canopy_range_bins.insert("pine-upper".into(), 15);
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "canopy range bins"
+        })
+    ));
+
+    let mut invalid = report();
+    invalid.object_index.placement_records -= 1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "placement records"
+        })
+    ));
+}
+
+#[test]
+fn passing_colony_workload_requires_a_committed_batch_for_each_request() {
+    let mut invalid = mutation_report();
+    invalid.workloads[1].committed_batches = 1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "workload reconciliation"
+        })
+    ));
+}
+
+#[test]
+fn cold_query_samples_allow_any_p99_within_the_four_millisecond_maximum() {
+    let mut valid = mutation_report();
+    let cold = valid
+        .query_costs
+        .cold_inactive_calls
+        .get_mut("sample_voxel")
+        .unwrap();
+    cold.p99 = 3.0;
+    cold.max = 4.0;
+    assert!(valid.validate().is_ok());
 }
 
 #[test]

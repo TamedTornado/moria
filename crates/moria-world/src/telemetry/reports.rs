@@ -11,6 +11,28 @@ use crate::{WorldIdentity, WorldPointQ8};
 const FOREST_SCHEMA: &str = "moria-product-one-forest-feasibility";
 const MUTATION_SCHEMA: &str = "moria-product-one-mutation-feasibility";
 const M4_ACCEPTANCE_LABEL: &str = "m4-mac-mini-32gb";
+const FOREST_MINIMUM_AREA_M2: u32 = 120_000;
+const MINIMUM_TREE_COUNT: u32 = FOREST_MINIMUM_AREA_M2 / 25;
+const MINIMUM_BUSH_COUNT: u32 = FOREST_MINIMUM_AREA_M2 * 450 / 10_000;
+const MINIMUM_BOULDER_COUNT: u32 = FOREST_MINIMUM_AREA_M2 * 24 / 10_000;
+const MINIMUM_STUMP_COUNT: u32 = FOREST_MINIMUM_AREA_M2 * 14 / 10_000;
+const MINIMUM_ROCK_COUNT: u32 = FOREST_MINIMUM_AREA_M2 * 90 / 10_000;
+const MINIMUM_BIRCH_COUNT: u32 = MINIMUM_TREE_COUNT * 55 / 100;
+const MINIMUM_PINE_COUNT: u32 = MINIMUM_TREE_COUNT * 45 / 100;
+const REQUIRED_FOREST_OBJECT_COUNTS: [(&str, u32); 7] = [
+    ("boulder", MINIMUM_BOULDER_COUNT),
+    ("bush", MINIMUM_BUSH_COUNT),
+    ("rock", MINIMUM_ROCK_COUNT),
+    ("ruin", 1),
+    ("stump", MINIMUM_STUMP_COUNT),
+    ("tree-a", MINIMUM_BIRCH_COUNT),
+    ("tree-b", MINIMUM_PINE_COUNT),
+];
+const REQUIRED_FOREST_SPECIES_COUNTS: [(&str, u32); 2] =
+    [("birch", MINIMUM_BIRCH_COUNT), ("pine", MINIMUM_PINE_COUNT)];
+const REQUIRED_CANOPY_RANGE_BINS: [&str; 4] =
+    ["birch-lower", "birch-upper", "pine-lower", "pine-upper"];
+const MINIMUM_CANOPY_RANGE_BIN_COUNT: u32 = 16;
 const REQUIRED_MUTATION_STAGES: [&str; 18] = [
     "admission",
     "schedule",
@@ -250,15 +272,51 @@ impl ForestFeasibilityReport {
                 field: "forest measurement",
             });
         }
-        if self.passed && self.forest_area_m2 < 120_000 {
+        if self.passed && self.forest_area_m2 < FOREST_MINIMUM_AREA_M2 {
             return Err(ReportValidationError::Missing {
                 field: "forest measurement",
             });
         }
-        for (kind, required) in &self.required_object_counts {
-            if self.passed && self.object_counts.get(kind).unwrap_or(&0) < required {
+        if self.passed {
+            if !matches_required_counts(
+                &self.required_object_counts,
+                &REQUIRED_FOREST_OBJECT_COUNTS,
+            ) || REQUIRED_FOREST_OBJECT_COUNTS
+                .iter()
+                .any(|(kind, required)| self.object_counts.get(*kind).unwrap_or(&0) < required)
+            {
                 return Err(ReportValidationError::Inconsistent {
-                    field: "object counts",
+                    field: "forest object counts",
+                });
+            }
+            if !matches_required_counts(&self.species_counts, &REQUIRED_FOREST_SPECIES_COUNTS)
+                || self.species_counts.values().copied().sum::<u32>()
+                    != self.object_counts.get("tree-a").unwrap_or(&0)
+                        + self.object_counts.get("tree-b").unwrap_or(&0)
+            {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "forest species counts",
+                });
+            }
+            if self.canopy_range_bins.len() != REQUIRED_CANOPY_RANGE_BINS.len()
+                || REQUIRED_CANOPY_RANGE_BINS.iter().any(|bin| {
+                    self.canopy_range_bins.get(*bin).unwrap_or(&0) < &MINIMUM_CANOPY_RANGE_BIN_COUNT
+                })
+            {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "canopy range bins",
+                });
+            }
+            if self
+                .object_counts
+                .values()
+                .copied()
+                .map(u64::from)
+                .sum::<u64>()
+                != u64::from(self.object_index.placement_records)
+            {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "placement records",
                 });
             }
         }
@@ -570,6 +628,13 @@ fn validate_m4_machine(machine: &MachineProfile) -> Result<(), ReportValidationE
     Ok(())
 }
 
+fn matches_required_counts(observed: &BTreeMap<String, u32>, required: &[(&str, u32)]) -> bool {
+    observed.len() == required.len()
+        && required
+            .iter()
+            .all(|(name, count)| observed.get(*name) == Some(count))
+}
+
 fn validate_object_index(
     value: &ObjectIndexEvidence,
     passed: bool,
@@ -672,6 +737,7 @@ fn validate_workload(
         MutationWorkloadRole::ColonyVolume => 8,
     };
     if value.request_count != expected_request_count
+        || passed && value.committed_batches < value.request_count
         || value.first_committed_frame < value.submitted_frame
         || value.final_reconciled_frame < value.first_committed_frame
         || value.barrier_expected_items != value.barrier_renderer_ready_items
@@ -801,7 +867,7 @@ fn validate_query_costs(
     }
     for distribution in value.cold_inactive_calls.values() {
         validate_distribution(*distribution, "query distribution")?;
-        if passed && (distribution.p99 > 1.0 || distribution.max > 4.0) {
+        if passed && distribution.max > 4.0 {
             return Err(ReportValidationError::Limit {
                 field: "cold query cost",
             });

@@ -62,6 +62,21 @@ const ALL_ACTIVE_BANDS: [ActiveBand; 4] = [
     ActiveBand::Middle,
     ActiveBand::Near,
 ];
+const REQUIRED_FLYTHROUGH_ROUTE_TAGS: [&str; 13] = [
+    "aquifer",
+    "cave-floor",
+    "cave-mouth",
+    "cliff-top",
+    "forest",
+    "lake",
+    "meadow",
+    "ore-vein",
+    "river",
+    "rock-shelves",
+    "ruin-stair-bottom",
+    "ruin-stair-top",
+    "signature-carve-hillside",
+];
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -715,7 +730,12 @@ fn validate_coverage(
             || !value.workload_minimum_met
             || match scenario {
                 ScenarioName::Flythrough => {
-                    !value.edited_material_counts.is_empty()
+                    REQUIRED_FLYTHROUGH_ROUTE_TAGS.iter().any(|tag| {
+                        !value
+                            .route_tags_visited
+                            .binary_search_by(|visited| visited.as_str().cmp(tag))
+                            .is_ok()
+                    }) || !value.edited_material_counts.is_empty()
                         || value.final_changed_spheres != 0
                         || value.final_changed_region_cells != 0
                 }
