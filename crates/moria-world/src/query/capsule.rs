@@ -224,8 +224,12 @@ impl CandidateBuffer {
 
 fn candidate_hash(voxel: VoxelCoord) -> usize {
     let mut value = u32::from_ne_bytes(voxel.x.to_ne_bytes()).wrapping_mul(0x9E37_79B1);
-    value ^= u32::from_ne_bytes(voxel.y.to_ne_bytes()).wrapping_mul(0x85EB_CA77).rotate_left(11);
-    value ^= u32::from_ne_bytes(voxel.z.to_ne_bytes()).wrapping_mul(0xC2B2_AE3D).rotate_left(22);
+    value ^= u32::from_ne_bytes(voxel.y.to_ne_bytes())
+        .wrapping_mul(0x85EB_CA77)
+        .rotate_left(11);
+    value ^= u32::from_ne_bytes(voxel.z.to_ne_bytes())
+        .wrapping_mul(0xC2B2_AE3D)
+        .rotate_left(22);
     value as usize
 }
 
@@ -244,15 +248,11 @@ fn sweep_candidates(
         q8_to_voxel(i64::from(capsule.center.y) + i64::from(displacement.y))?,
         q8_to_voxel(i64::from(capsule.center.z) + i64::from(displacement.z))?,
     );
-    let horizontal = i32::try_from(
-        (i64::from(capsule.radius_q8) + VOXEL_EDGE_Q8_I64 - 1) / VOXEL_EDGE_Q8_I64,
-    )
-        .map_err(|_| QueryError::InvalidInput)?;
+    let horizontal =
+        i32::try_from((i64::from(capsule.radius_q8) + VOXEL_EDGE_Q8_I64 - 1) / VOXEL_EDGE_Q8_I64)
+            .map_err(|_| QueryError::InvalidInput)?;
     let vertical = i32::try_from(
-        (i64::from(capsule.radius_q8)
-            + i64::from(capsule.half_segment_q8)
-            + VOXEL_EDGE_Q8_I64
-            - 1)
+        (i64::from(capsule.radius_q8) + i64::from(capsule.half_segment_q8) + VOXEL_EDGE_Q8_I64 - 1)
             / VOXEL_EDGE_Q8_I64,
     )
     .map_err(|_| QueryError::InvalidInput)?;
@@ -302,12 +302,8 @@ fn visit_centerline_cells(
     for axis in 0..3 {
         if steps[axis] != 0 {
             let coordinate = [current.x, current.y, current.z][axis];
-            let offset = [
-                i64::from(start.x),
-                i64::from(start.y),
-                i64::from(start.z),
-            ][axis]
-            .rem_euclid(VOXEL_EDGE_Q8_I64);
+            let offset = [i64::from(start.x), i64::from(start.y), i64::from(start.z)][axis]
+                .rem_euclid(VOXEL_EDGE_Q8_I64);
             distances[axis] = if steps[axis] > 0 {
                 VOXEL_EDGE_Q8_I64 - offset
             } else if offset == 0 {
@@ -595,8 +591,8 @@ fn distance_squared_at(
     voxel: VoxelCoord,
     fraction: i64,
 ) -> i64 {
-    let moved = moved_capsule(capsule, displacement, fraction)
-        .expect("validated sweep cannot overflow");
+    let moved =
+        moved_capsule(capsule, displacement, fraction).expect("validated sweep cannot overflow");
     let (x, y, z) = capsule_aabb_distance(moved, voxel);
     x * x + y * y + z * z
 }
@@ -909,18 +905,22 @@ mod tests {
         );
         let displacement = Vec3Q8::new(1_700, 0, 0);
         let bounds = identity().bounds;
-        assert!(sweep_candidates(capsule, displacement, bounds)
-            .unwrap()
-            .iter()
-            .count()
-            <= usize::from(MAX_SWEEP_CANDIDATE_TESTS));
+        assert!(
+            sweep_candidates(capsule, displacement, bounds)
+                .unwrap()
+                .iter()
+                .count()
+                <= usize::from(MAX_SWEEP_CANDIDATE_TESTS)
+        );
         let mut candidates = CandidateBuffer::new();
         for x in 0..i32::from(MAX_SWEEP_CANDIDATE_TESTS) {
             candidates.insert(VoxelCoord::new(x, 0, 0)).unwrap();
         }
         assert_eq!(
             candidates.insert(VoxelCoord::new(i32::from(MAX_SWEEP_CANDIDATE_TESTS), 0, 0)),
-            Err(QueryError::LimitExceeded(QueryLimitKind::SweepCandidateWork))
+            Err(QueryError::LimitExceeded(
+                QueryLimitKind::SweepCandidateWork
+            ))
         );
     }
 
@@ -947,12 +947,13 @@ mod tests {
                 },
             )
             .unwrap();
-        assert!(app
-            .world()
-            .resource::<SweepQueryResult>()
-            .0
-            .as_ref()
-            .is_ok());
+        assert!(
+            app.world()
+                .resource::<SweepQueryResult>()
+                .0
+                .as_ref()
+                .is_ok()
+        );
     }
 
     #[test]
