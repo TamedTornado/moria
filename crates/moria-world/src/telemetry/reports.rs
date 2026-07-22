@@ -181,6 +181,10 @@ pub struct ObjectIndexEvidence {
 }
 
 impl ObjectIndexEvidence {
+    pub fn validate_measured(&self) -> Result<(), ReportValidationError> {
+        validate_forest_object_index(self, false)
+    }
+
     pub fn validate_complete(&self) -> Result<(), ReportValidationError> {
         validate_forest_object_index(self, true)
     }
@@ -242,6 +246,11 @@ impl ForestFeasibilityReport {
             || self.minimum_tree_spacing_q8 == 0
             || self.minimum_route_clearance_q8 == 0
         {
+            return Err(ReportValidationError::Missing {
+                field: "forest measurement",
+            });
+        }
+        if self.passed && self.forest_area_m2 < 120_000 {
             return Err(ReportValidationError::Missing {
                 field: "forest measurement",
             });
@@ -745,15 +754,16 @@ fn validate_workload(
             field: "workload acceptance",
         });
     }
-    if value.role == MutationWorkloadRole::InteractiveCarve && !value.traversable {
+    if passed && value.role == MutationWorkloadRole::InteractiveCarve && !value.traversable {
         return Err(ReportValidationError::Inconsistent {
             field: "interactive traversal",
         });
     }
     if value.role == MutationWorkloadRole::CatastrophicCarve {
-        if !value.horizon_partition_checked
-            || value.horizon_excluded_base_cards == 0
-            || value.horizon_derived_records == 0
+        if passed
+            && (!value.horizon_partition_checked
+                || value.horizon_excluded_base_cards == 0
+                || value.horizon_derived_records == 0)
         {
             return Err(ReportValidationError::Missing {
                 field: "catastrophic Horizon evidence",
@@ -794,6 +804,60 @@ fn validate_query_costs(
         if passed && (distribution.p99 > 1.0 || distribution.max > 4.0) {
             return Err(ReportValidationError::Limit {
                 field: "cold query cost",
+            });
+        }
+    }
+    for (name, count) in [
+        ("cold_inactive_sample_voxel", 256),
+        ("normal_query_bundles", 1_000),
+        ("sample_column", 128),
+        ("diagnostic_metadata_page", 128),
+        ("diagnostic_cells_page", 128),
+        ("player_sweep", 4_000),
+        ("camera_sweep", 1_000),
+        ("debug_ray", 1_000),
+        ("water_surface", 1_000),
+        ("water_contact", 1_000),
+        ("active_band", 1_000),
+    ] {
+        if value.sample_counts.get(name) != Some(&count) {
+            return Err(ReportValidationError::Missing {
+                field: "query evidence",
+            });
+        }
+    }
+    if !value.cold_inactive_calls.contains_key("sample_voxel") {
+        return Err(ReportValidationError::Missing {
+            field: "query evidence",
+        });
+    }
+    for name in [
+        "player_sweep",
+        "camera_sweep",
+        "debug_ray",
+        "water_surface",
+        "water_contact",
+        "active_band",
+    ] {
+        if !value.frame_critical_calls.contains_key(name) {
+            return Err(ReportValidationError::Missing {
+                field: "query evidence",
+            });
+        }
+    }
+    for (name, maximum) in [
+        ("cold_coordinates_distinct", 256),
+        ("ray_voxel_visits", 448),
+        ("sweep_candidate_tests", 8_192),
+        ("overlap_candidate_tests", 512),
+        ("column_runs", 64),
+        ("diagnostic_metadata_bricks", 256),
+        ("diagnostic_cells_bricks", 2),
+        ("diagnostic_cells", 8_192),
+    ] {
+        if value.observed_work_maxima.get(name) != Some(&maximum) {
+            return Err(ReportValidationError::Missing {
+                field: "query evidence",
             });
         }
     }

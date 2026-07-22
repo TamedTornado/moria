@@ -436,6 +436,22 @@ fn canonical_json_preserves_measured_benchmark_failures() {
 }
 
 #[test]
+fn failed_streaming_object_index_limit_is_serializable() {
+    let mut failed = report();
+    failed.passed = false;
+    failed.failure_reasons = vec!["object_index".into()];
+    failed
+        .streaming
+        .as_mut()
+        .unwrap()
+        .object_index
+        .max_edit_candidates = 257;
+
+    let json = failed.to_canonical_json().unwrap();
+    assert!(BenchmarkReport::from_json(&json).is_ok());
+}
+
+#[test]
 fn failed_round_trip_comparison_is_serializable() {
     let mut failed = mutation_report();
     failed.passed = false;

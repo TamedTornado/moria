@@ -98,6 +98,48 @@ fn distribution() -> Distribution {
     }
 }
 
+fn query_costs() -> QueryCostEvidence {
+    let distribution = distribution();
+    QueryCostEvidence {
+        sample_counts: BTreeMap::from([
+            ("cold_inactive_sample_voxel".into(), 256),
+            ("normal_query_bundles".into(), 1_000),
+            ("sample_column".into(), 128),
+            ("diagnostic_metadata_page".into(), 128),
+            ("diagnostic_cells_page".into(), 128),
+            ("player_sweep".into(), 4_000),
+            ("camera_sweep".into(), 1_000),
+            ("debug_ray".into(), 1_000),
+            ("water_surface".into(), 1_000),
+            ("water_contact".into(), 1_000),
+            ("active_band".into(), 1_000),
+        ]),
+        cold_inactive_calls: BTreeMap::from([("sample_voxel".into(), distribution)]),
+        frame_critical_calls: BTreeMap::from([
+            ("player_sweep".into(), distribution),
+            ("camera_sweep".into(), distribution),
+            ("debug_ray".into(), distribution),
+            ("water_surface".into(), distribution),
+            ("water_contact".into(), distribution),
+            ("active_band".into(), distribution),
+        ]),
+        normal_bundle_ms: distribution,
+        column_ms: distribution,
+        diagnostic_metadata_page_ms: distribution,
+        diagnostic_cells_page_ms: distribution,
+        observed_work_maxima: BTreeMap::from([
+            ("cold_coordinates_distinct".into(), 256),
+            ("ray_voxel_visits".into(), 448),
+            ("sweep_candidate_tests".into(), 8_192),
+            ("overlap_candidate_tests".into(), 512),
+            ("column_runs".into(), 64),
+            ("diagnostic_metadata_bricks".into(), 256),
+            ("diagnostic_cells_bricks".into(), 2),
+            ("diagnostic_cells".into(), 8_192),
+        ]),
+    }
+}
+
 fn workload(role: MutationWorkloadRole) -> MutationWorkloadEvidence {
     const STAGES: [&str; 18] = [
         "admission",
@@ -177,16 +219,7 @@ fn mutation_report() -> MutationFeasibilityReport {
         .into_iter()
         .map(workload)
         .collect(),
-        query_costs: QueryCostEvidence {
-            sample_counts: BTreeMap::from([("cold-inactive".into(), 256)]),
-            cold_inactive_calls: BTreeMap::from([("voxel".into(), distribution())]),
-            frame_critical_calls: BTreeMap::from([("capsule-sweep".into(), distribution())]),
-            normal_bundle_ms: distribution(),
-            column_ms: distribution(),
-            diagnostic_metadata_page_ms: distribution(),
-            diagnostic_cells_page_ms: distribution(),
-            observed_work_maxima: BTreeMap::from([("voxel-candidates".into(), 1)]),
-        },
+        query_costs: query_costs(),
     }
 }
 
@@ -250,6 +283,39 @@ fn feasibility_reports_reject_wrong_world_identity_and_fabricated_zeroes() {
     assert!(matches!(
         invalid.validate(),
         Err(ReportValidationError::Missing { .. })
+    ));
+}
+
+#[test]
+fn passing_feasibility_reports_enforce_forest_and_query_probe_contracts() {
+    let mut invalid = report();
+    invalid.forest_area_m2 = 1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Missing {
+            field: "forest measurement"
+        })
+    ));
+
+    let mut invalid = mutation_report();
+    invalid.query_costs.sample_counts.remove("normal_query_bundles");
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Missing {
+            field: "query evidence"
+        })
+    ));
+
+    let mut invalid = mutation_report();
+    invalid
+        .query_costs
+        .sample_counts
+        .insert("normal_query_bundles".into(), 999);
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Missing {
+            field: "query evidence"
+        })
     ));
 }
 
@@ -348,8 +414,8 @@ fn feasibility_reports_reject_zero_filled_present_collections() {
 fn feasibility_failure_reports_serialize_measured_gate_violations() {
     let mut forest = report();
     forest.passed = false;
-    forest.failure_reasons = vec!["forest clearance".into()];
-    forest.minimum_tree_spacing_q8 = 1;
+    forest.failure_reasons = vec!["forest area".into()];
+    forest.forest_area_m2 = 1;
     let forest_json = forest.to_canonical_json().unwrap();
     assert!(forest_json.contains("\"passed\":false"));
     assert!(ForestFeasibilityReport::from_json(&forest_json).is_ok());
@@ -369,6 +435,23 @@ fn feasibility_failure_reports_serialize_measured_gate_violations() {
     let workload_json = workload_failure.to_canonical_json().unwrap();
     assert!(workload_json.contains("\"maximum_frame_ms\":33.4"));
     assert!(MutationFeasibilityReport::from_json(&workload_json).is_ok());
+
+    let mut traversal_failure = mutation_report();
+    traversal_failure.passed = false;
+    traversal_failure.failure_reasons = vec!["interactive traversal".into()];
+    traversal_failure.workloads[0].traversable = false;
+    let traversal_json = traversal_failure.to_canonical_json().unwrap();
+    assert!(MutationFeasibilityReport::from_json(&traversal_json).is_ok());
+
+    let mut horizon_failure = mutation_report();
+    horizon_failure.passed = false;
+    horizon_failure.failure_reasons = vec!["catastrophic Horizon evidence".into()];
+    let catastrophic = &mut horizon_failure.workloads[2];
+    catastrophic.horizon_partition_checked = false;
+    catastrophic.horizon_excluded_base_cards = 0;
+    catastrophic.horizon_derived_records = 0;
+    let horizon_json = horizon_failure.to_canonical_json().unwrap();
+    assert!(MutationFeasibilityReport::from_json(&horizon_json).is_ok());
 }
 
 #[test]

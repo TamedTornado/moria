@@ -731,7 +731,11 @@ fn validate_streaming(
             field: "streaming measurement",
         });
     }
-    value.object_index.validate_complete()?;
+    if passed {
+        value.object_index.validate_complete()?;
+    } else {
+        value.object_index.validate_measured()?;
+    }
     if passed
         && (!value.monotonic_growth_check_passed
             || value.return_steady_derived_bytes
