@@ -348,57 +348,33 @@ fn first_overlap_fraction(
     displacement: Vec3Q8,
     voxel: VoxelCoord,
 ) -> Option<i64> {
-    if capsule_overlaps_voxel(capsule, voxel) {
-        return Some(0);
-    }
-    let mut low = 0;
-    let mut high = Q16_MAX;
-    for _ in 0..20 {
-        let third = (high - low) / 3;
-        let left = low + third;
-        let right = high - third;
-        if distance_squared_at(capsule, displacement, voxel, left)
-            <= distance_squared_at(capsule, displacement, voxel, right)
-        {
-            high = right;
-        } else {
-            low = left;
+    let mut fraction = 0;
+    loop {
+        if capsule_overlaps_voxel(moved_capsule(capsule, displacement, fraction).ok()?, voxel) {
+            return Some(fraction);
         }
+        let next = next_position_change_fraction(displacement, fraction)?;
+        fraction = next;
     }
-    let mut minimum = low;
-    for fraction in low..=high {
-        if distance_squared_at(capsule, displacement, voxel, fraction)
-            < distance_squared_at(capsule, displacement, voxel, minimum)
-        {
-            minimum = fraction;
-        }
-    }
-    if !capsule_overlaps_voxel(moved_capsule(capsule, displacement, minimum).ok()?, voxel) {
-        return None;
-    }
-    let mut first = 1;
-    let mut last = minimum;
-    while first < last {
-        let middle = first + (last - first) / 2;
-        if capsule_overlaps_voxel(moved_capsule(capsule, displacement, middle).ok()?, voxel) {
-            last = middle;
-        } else {
-            first = middle + 1;
-        }
-    }
-    Some(first)
 }
 
-fn distance_squared_at(
-    capsule: CapsuleQ8,
-    displacement: Vec3Q8,
-    voxel: VoxelCoord,
-    fraction: i64,
-) -> i64 {
-    let moved =
-        moved_capsule(capsule, displacement, fraction).expect("validated sweep cannot overflow");
-    let (x, y, z) = capsule_aabb_distance(moved, voxel);
-    x * x + y * y + z * z
+fn next_position_change_fraction(displacement: Vec3Q8, fraction: i64) -> Option<i64> {
+    [displacement.x, displacement.y, displacement.z]
+        .into_iter()
+        .filter_map(|component| next_component_change_fraction(component, fraction))
+        .min()
+}
+
+fn next_component_change_fraction(component: i32, fraction: i64) -> Option<i64> {
+    let magnitude = i64::from(component).abs();
+    if magnitude == 0 {
+        return None;
+    }
+    let travelled = magnitude * fraction / Q16_MAX;
+    (travelled < magnitude).then(|| {
+        let numerator = (travelled + 1) * Q16_MAX;
+        (numerator + magnitude - 1) / magnitude
+    })
 }
 
 fn hit_for(
@@ -789,6 +765,59 @@ mod tests {
                 first_overlap_fraction(capsule, displacement, voxel),
                 oracle,
                 "capsule={capsule:?}, displacement={displacement:?}, voxel={voxel:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sweep_finds_the_first_diagonal_grazing_contact() {
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(-175, 146, -16), 126, 119);
+        let displacement = Vec3Q8::new(120, -272, -854);
+        let voxel = VoxelCoord::new(-2, 5, -5);
+        let oracle = (0..=Q16_MAX).find(|&fraction| {
+            capsule_overlaps_voxel(
+                moved_capsule(capsule, displacement, fraction).unwrap(),
+                voxel,
+            )
+        });
+
+        assert_eq!(oracle, Some(15_655));
+        assert_eq!(first_overlap_fraction(capsule, displacement, voxel), oracle);
+    }
+
+    #[test]
+    fn sweep_fractions_match_exhaustive_q16_oracles_across_deterministic_cases() {
+        for case_index in 0..32_i32 {
+            let capsule = CapsuleQ8::new(
+                WorldPointQ8::new(
+                    (case_index * 137 + 19).rem_euclid(801) - 400,
+                    (case_index * 211 + 43).rem_euclid(801) - 400,
+                    (case_index * 317 + 71).rem_euclid(801) - 400,
+                ),
+                32 + u16::try_from((case_index * 13).rem_euclid(97)).unwrap(),
+                u16::try_from((case_index * 29).rem_euclid(193)).unwrap(),
+            );
+            let displacement = Vec3Q8::new(
+                (case_index * 251 + 17).rem_euclid(2_049) - 1_024,
+                (case_index * 509 + 31).rem_euclid(2_049) - 1_024,
+                (case_index * 761 + 47).rem_euclid(2_049) - 1_024,
+            );
+            let voxel = VoxelCoord::new(
+                (case_index * 7 + 3).rem_euclid(33) - 16,
+                (case_index * 11 + 5).rem_euclid(33) - 16,
+                (case_index * 13 + 7).rem_euclid(33) - 16,
+            );
+            let oracle = (0..=Q16_MAX).find(|&fraction| {
+                capsule_overlaps_voxel(
+                    moved_capsule(capsule, displacement, fraction).unwrap(),
+                    voxel,
+                )
+            });
+
+            assert_eq!(
+                first_overlap_fraction(capsule, displacement, voxel),
+                oracle,
+                "case_index={case_index}, capsule={capsule:?}, displacement={displacement:?}, voxel={voxel:?}"
             );
         }
     }
