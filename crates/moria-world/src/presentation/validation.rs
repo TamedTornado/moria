@@ -6,7 +6,11 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use bevy::prelude::*;
+use bevy::{
+    asset::RenderAssetUsages,
+    image::{CompressedImageFormats, Image, ImageSampler, ImageType},
+    prelude::*,
+};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -456,12 +460,31 @@ fn valid_ktx2(
         TextureColorSpace::Srgb => format!("{:?}", reader.transfer_function()).contains("Srgb"),
         TextureColorSpace::Linear => format!("{:?}", reader.transfer_function()).contains("Linear"),
     };
-    header.pixel_width == width
+    let metadata_matches = header.pixel_width == width
         && header.pixel_height == height
         && header.layer_count == u32::from(layers)
         && header.level_count == u32::from(mip_count)
         && transfer_matches
-        && (!basis || header.format.is_none())
+        && (!basis || header.format.is_none());
+    if !metadata_matches {
+        return false;
+    }
+
+    let Ok(image) = Image::from_buffer(
+        bytes,
+        ImageType::Extension("ktx2"),
+        CompressedImageFormats::BC,
+        color_space == TextureColorSpace::Srgb,
+        ImageSampler::Default,
+        RenderAssetUsages::default(),
+    ) else {
+        return false;
+    };
+    image.width() == width
+        && image.height() == height
+        && image.texture_descriptor.size.depth_or_array_layers == u32::from(layers)
+        && image.texture_descriptor.mip_level_count == u32::from(mip_count)
+        && image.texture_descriptor.format.is_srgb() == (color_space == TextureColorSpace::Srgb)
 }
 
 fn valid_glb(
@@ -684,6 +707,33 @@ mod tests {
             1,
             TextureColorSpace::Linear,
             true
+        ));
+    }
+
+    #[test]
+    fn ktx2_validation_rejects_corrupt_and_truncated_basis_payloads() {
+        let bytes = fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/materials/terrain_orm.ktx2"),
+        )
+        .expect("terrain ORM asset exists");
+        let contract = (1024, 1024, 14, 11, TextureColorSpace::Linear, true);
+
+        assert!(valid_ktx2(
+            &bytes, contract.0, contract.1, contract.2, contract.3, contract.4, contract.5
+        ));
+
+        let mut corrupt = bytes.clone();
+        let level_zero_offset =
+            u64::from_le_bytes(corrupt[80..88].try_into().expect("level offset")) as usize;
+        corrupt[level_zero_offset] ^= u8::MAX;
+        assert!(!valid_ktx2(
+            &corrupt, contract.0, contract.1, contract.2, contract.3, contract.4, contract.5
+        ));
+
+        let mut truncated = bytes;
+        truncated.pop();
+        assert!(!valid_ktx2(
+            &truncated, contract.0, contract.1, contract.2, contract.3, contract.4, contract.5
         ));
     }
 }
