@@ -107,3 +107,20 @@ fn horizon_members_and_overlap_witnesses_are_stable() {
         })
     );
 }
+
+#[test]
+fn broad_edit_candidates_are_not_mistaken_for_exact_affected_objects() {
+    let placements = (0..70)
+        .map(|index| {
+            boulder(
+                u64::try_from(index + 1).unwrap(),
+                (index % 10) * 4,
+                (index / 10) * 4,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
+
+    assert_eq!(index.placements().len(), 70);
+}
