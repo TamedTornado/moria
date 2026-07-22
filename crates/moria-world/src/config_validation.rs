@@ -700,27 +700,29 @@ pub fn validate_input_config(config: &InputConfig) -> Result {
         "input.bindings",
         "each action must have a physical binding",
     )?;
-    let required = [
-        InputAction::Move,
-        InputAction::Sprint,
-        InputAction::Jump,
-        InputAction::Orbit,
-        InputAction::Zoom,
-        InputAction::Dig,
-        InputAction::Place,
-        InputAction::PreviousMaterial,
-        InputAction::NextMaterial,
-        InputAction::BrickBounds,
-        InputAction::RawVoxels,
-        InputAction::StreamingBands,
-        InputAction::TimeDown,
-        InputAction::TimeUp,
-        InputAction::TimeSliderFocus,
-        InputAction::Save,
-        InputAction::Load,
+    const REQUIRED_BINDINGS: [(InputAction, &[&str], &[&str]); 17] = [
+        (InputAction::Move, &["W", "A", "S", "D"], &["LeftStick"]),
+        (InputAction::Sprint, &["LeftShift"], &["LeftStickPress"]),
+        (InputAction::Jump, &["Space"], &["South"]),
+        (InputAction::Orbit, &["MouseMotion"], &["RightStick"]),
+        (InputAction::Zoom, &["MouseWheel"], &["TriggersDifference"]),
+        (InputAction::Dig, &["G", "LeftMouse"], &["RightShoulder"]),
+        (InputAction::Place, &["P", "RightMouse"], &["LeftShoulder"]),
+        (InputAction::PreviousMaterial, &["["], &["DpadLeft"]),
+        (InputAction::NextMaterial, &["]"], &["DpadRight"]),
+        (InputAction::BrickBounds, &["F1"], &[]),
+        (InputAction::RawVoxels, &["F2"], &[]),
+        (InputAction::StreamingBands, &["F3"], &[]),
+        (InputAction::TimeDown, &["-"], &["DebugDpadDown"]),
+        (InputAction::TimeUp, &["="], &["DebugDpadUp"]),
+        (InputAction::TimeSliderFocus, &["Tab"], &[]),
+        (InputAction::Save, &["F5"], &[]),
+        (InputAction::Load, &["F9"], &[]),
     ];
     require(
-        required.into_iter().all(|action| actions.contains(&action)),
+        REQUIRED_BINDINGS
+            .iter()
+            .all(|(action, _, _)| actions.contains(action)),
         "input.bindings",
         "must bind every Product One action",
     )?;
@@ -781,5 +783,24 @@ pub fn validate_input_config(config: &InputConfig) -> Result {
             "must contain unique known physical bindings",
         )?;
     }
+    for (action, expected_keyboard_mouse, expected_gamepad) in REQUIRED_BINDINGS {
+        let binding = config
+            .bindings
+            .iter()
+            .find(|binding| binding.action == action)
+            .ok_or_else(|| invalid("input.bindings", "must bind every Product One action"))?;
+        require(
+            matches_binding_set(&binding.keyboard_mouse, expected_keyboard_mouse)
+                && matches_binding_set(&binding.gamepad, expected_gamepad),
+            "input.bindings",
+            "must retain the documented binding set for each action",
+        )?;
+    }
     Ok(())
+}
+
+fn matches_binding_set(actual: &[String], expected: &[&str]) -> bool {
+    actual.len() == expected.len()
+        && actual.iter().map(String::as_str).collect::<BTreeSet<_>>()
+            == expected.iter().copied().collect()
 }

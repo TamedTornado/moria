@@ -1,7 +1,7 @@
 use moria_world::{
     config::{
-        CollisionClass, InputConfig, MaterialRegistry, PresentationConfig, RangeQ8, RegionConfig,
-        parameters_digest_from_bytes,
+        parameters_digest_from_bytes, CollisionClass, InputConfig, MaterialRegistry,
+        PresentationConfig, RangeQ8, RegionConfig,
     },
     config_validation::{
         validate_input_config, validate_material_registry, validate_presentation_config,
@@ -14,6 +14,7 @@ fn product_one_defaults_are_valid() {
     assert!(validate_region_config(&RegionConfig::default()).is_ok());
     assert!(validate_material_registry(&MaterialRegistry::default()).is_ok());
     assert!(validate_presentation_config(&PresentationConfig::default()).is_ok());
+    assert!(validate_input_config(&InputConfig::default()).is_ok());
 }
 
 #[test]
@@ -103,6 +104,21 @@ fn input_validation_rejects_unknown_empty_and_duplicate_physical_bindings() {
 
     let mut input = InputConfig::default();
     input.bindings[0].keyboard_mouse.push("W".into());
+    assert!(validate_input_config(&input).is_err());
+}
+
+#[test]
+fn input_validation_requires_each_action_to_keep_its_complete_product_one_bindings() {
+    let mut input = InputConfig::default();
+    let (move_binding, brick_bounds_binding) = input.bindings.split_at_mut(9);
+    std::mem::swap(
+        &mut move_binding[0].keyboard_mouse,
+        &mut brick_bounds_binding[0].keyboard_mouse,
+    );
+    assert!(validate_input_config(&input).is_err());
+
+    let mut input = InputConfig::default();
+    input.bindings[0].keyboard_mouse.pop();
     assert!(validate_input_config(&input).is_err());
 }
 
