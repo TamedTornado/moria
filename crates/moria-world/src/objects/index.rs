@@ -3,17 +3,17 @@
 use std::{collections::BTreeMap, mem::size_of};
 
 use crate::{
-    AabbQ8, ManifestError, ObjectGenConfig, ObjectId, ObjectKind, ObjectPlacement,
-    Q8_UNITS_PER_METER, VOXEL_EDGE_Q8, VoxelCoord, WorldPointQ8,
+    AabbQ8, ManifestError, ObjectGenConfig, ObjectId, ObjectKind, ObjectPlacement, VoxelCoord,
+    WorldPointQ8, Q8_UNITS_PER_METER, VOXEL_EDGE_Q8,
 };
 
-use super::{OBJECT_EXTRACTION_STENCIL, dependency_contains, raw_shape_bounds, raw_shape_contains};
+use super::{dependency_contains, raw_shape_bounds, raw_shape_contains, OBJECT_EXTRACTION_STENCIL};
 
 const ALLOCATOR_BYTES: u64 = 16;
 const DEPENDENCY_CELL_METERS: i32 = 32;
 const SAMPLE_CELL_METERS: i32 = 4;
 const HORIZON_CELL_METERS: i32 = 64;
-const SUPPORTED_EDIT_RADIUS_Q8: i32 = 3 * Q8_UNITS_PER_METER;
+const SUPPORTED_EDIT_RADIUS_VOXELS: i32 = 3 * Q8_UNITS_PER_METER / VOXEL_EDGE_Q8;
 const REGION_XZ_MIN_VOXEL: i32 = -2_000;
 const REGION_XZ_MIN_Q8: i32 = -500 * Q8_UNITS_PER_METER;
 const REGION_XZ_MAX_Q8_EXCLUSIVE: i32 = 500 * Q8_UNITS_PER_METER;
@@ -262,7 +262,7 @@ pub fn build_object_index<'a>(
         actual: u64::MAX,
         maximum: config.max_retained_bytes,
     })?;
-    validate_edit_caps(&dependency_cells, &records, config)?;
+    validate_edit_caps(&dependency_cells, placements, &records, config)?;
     if retained_bytes > u64::from(config.max_retained_bytes) {
         return Err(ManifestError::ObjectIndexRetainedBytesExceeded {
             actual: retained_bytes,
@@ -280,6 +280,7 @@ pub fn build_object_index<'a>(
 
 fn validate_edit_caps(
     cells: &[DependencyGridCell],
+    placements: &[ObjectPlacement],
     records: &[ObjectIndexRecord],
     config: &ObjectIndexConfig,
 ) -> Result<(), ManifestError> {
@@ -320,7 +321,7 @@ fn validate_edit_caps(
             });
         }
         if actual > u16::from(config.max_affected_objects_per_edit) {
-            let affected = max_affected_objects_for_edit(&members, records);
+            let affected = max_affected_objects_for_edit(&members, placements, records);
             if affected > u16::from(config.max_affected_objects_per_edit) {
                 return Err(ManifestError::ObjectEditAffectedExceeded {
                     actual: affected,
@@ -332,62 +333,92 @@ fn validate_edit_caps(
     Ok(())
 }
 
-fn max_affected_objects_for_edit(members: &[u32], records: &[ObjectIndexRecord]) -> u16 {
-    let mut centers_x = Vec::with_capacity(members.len());
-    let mut centers_y = Vec::with_capacity(members.len());
-    let mut centers_z = Vec::with_capacity(members.len());
-    let mut affected_bounds = Vec::with_capacity(members.len());
+fn max_affected_objects_for_edit(
+    members: &[u32],
+    placements: &[ObjectPlacement],
+    records: &[ObjectIndexRecord],
+) -> u16 {
+    let mut centers = BTreeMap::<VoxelCoord, ()>::new();
+    let dependencies = members
+        .iter()
+        .filter_map(|&member| {
+            let position = usize::try_from(member).ok()?;
+            let placement = placements.get(position)?;
+            let record = records.get(position)?;
+            let coordinates = dependency_coordinates(placement, record.dependency_bounds);
+            centers.extend(
+                coordinates
+                    .iter()
+                    .copied()
+                    .map(|coordinate| (coordinate, ())),
+            );
+            Some((record.dependency_bounds, coordinates))
+        })
+        .collect::<Vec<_>>();
 
-    for &member in members {
-        let Some(record) = records.get(member as usize) else {
-            continue;
-        };
-        let bounds = expand_for_supported_edit(record.dependency_bounds);
-        centers_x.push(bounds.min.x);
-        centers_y.push(bounds.min.y);
-        centers_z.push(bounds.min.z);
-        affected_bounds.push(bounds);
-    }
+    centers
+        .into_keys()
+        .map(|center| {
+            u16::try_from(
+                dependencies
+                    .iter()
+                    .filter(|(bounds, coordinates)| {
+                        dependency_bounds_near_edit_center(*bounds, center)
+                            && coordinates
+                                .iter()
+                                .any(|&coordinate| voxel_in_edit_sphere(coordinate, center))
+                    })
+                    .count(),
+            )
+            .unwrap_or(u16::MAX)
+        })
+        .max()
+        .unwrap_or(0)
+}
 
-    let mut maximum = 0_u16;
-    for x in centers_x {
-        for y in &centers_y {
-            for z in &centers_z {
-                let actual = u16::try_from(
-                    affected_bounds
-                        .iter()
-                        .filter(|bounds| {
-                            bounds.min.x <= x
-                                && x < bounds.max_exclusive.x
-                                && bounds.min.y <= *y
-                                && *y < bounds.max_exclusive.y
-                                && bounds.min.z <= *z
-                                && *z < bounds.max_exclusive.z
-                        })
-                        .count(),
-                )
-                .unwrap_or(u16::MAX);
-                maximum = maximum.max(actual);
+fn dependency_coordinates(placement: &ObjectPlacement, bounds: AabbQ8) -> Vec<VoxelCoord> {
+    let min = VoxelCoord::new(
+        bounds.min.x.div_euclid(VOXEL_EDGE_Q8),
+        bounds.min.y.div_euclid(VOXEL_EDGE_Q8),
+        bounds.min.z.div_euclid(VOXEL_EDGE_Q8),
+    );
+    let max = VoxelCoord::new(
+        (bounds.max_exclusive.x - 1).div_euclid(VOXEL_EDGE_Q8),
+        (bounds.max_exclusive.y - 1).div_euclid(VOXEL_EDGE_Q8),
+        (bounds.max_exclusive.z - 1).div_euclid(VOXEL_EDGE_Q8),
+    );
+    let mut coordinates = Vec::new();
+    for x in min.x..=max.x {
+        for y in min.y..=max.y {
+            for z in min.z..=max.z {
+                let coordinate = VoxelCoord::new(x, y, z);
+                if dependency_contains(placement, coordinate) {
+                    coordinates.push(coordinate);
+                }
             }
         }
     }
-    maximum
+    coordinates
 }
 
-fn expand_for_supported_edit(bounds: AabbQ8) -> AabbQ8 {
-    AabbQ8::new(
-        WorldPointQ8::new(
-            bounds.min.x - SUPPORTED_EDIT_RADIUS_Q8,
-            bounds.min.y - SUPPORTED_EDIT_RADIUS_Q8,
-            bounds.min.z - SUPPORTED_EDIT_RADIUS_Q8,
-        ),
-        WorldPointQ8::new(
-            bounds.max_exclusive.x + SUPPORTED_EDIT_RADIUS_Q8,
-            bounds.max_exclusive.y + SUPPORTED_EDIT_RADIUS_Q8,
-            bounds.max_exclusive.z + SUPPORTED_EDIT_RADIUS_Q8,
-        ),
-    )
-    .expect("region-clipped dependency bounds expand safely by the supported edit radius")
+fn voxel_in_edit_sphere(coordinate: VoxelCoord, center: VoxelCoord) -> bool {
+    let x = i64::from(coordinate.x) - i64::from(center.x);
+    let y = i64::from(coordinate.y) - i64::from(center.y);
+    let z = i64::from(coordinate.z) - i64::from(center.z);
+    x * x + y * y + z * z <= i64::from(SUPPORTED_EDIT_RADIUS_VOXELS).pow(2)
+}
+
+fn dependency_bounds_near_edit_center(bounds: AabbQ8, center: VoxelCoord) -> bool {
+    let radius = SUPPORTED_EDIT_RADIUS_VOXELS * VOXEL_EDGE_Q8;
+    let x = center.x * VOXEL_EDGE_Q8;
+    let y = center.y * VOXEL_EDGE_Q8;
+    let z = center.z * VOXEL_EDGE_Q8;
+    bounds.min.x < x + radius + VOXEL_EDGE_Q8
+        && x - radius < bounds.max_exclusive.x
+        && bounds.min.y < y + radius + VOXEL_EDGE_Q8
+        && y - radius < bounds.max_exclusive.y
+        && bounds.min.z < z + radius + VOXEL_EDGE_Q8
+        && z - radius < bounds.max_exclusive.z
 }
 
 /// Returns active placements whose raw bounds overlap `bounds`, sorted by ID.

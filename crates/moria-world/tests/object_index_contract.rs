@@ -1,8 +1,8 @@
 use moria_world::{
-    CUT_STONE, ManifestError, ObjectId, ObjectIndexConfig, ObjectKind, ObjectPlacement,
-    QuantizedTransform, RuinPoi, SparseVoxelStamp, StampRun, VoxelCoord, VoxelObjectShape,
-    WorldPointQ8, build_object_index, dependency_ids_at, horizon_tree_ids, placement_ids_in,
-    raw_shape_contains, sample_object_ids_at, validate_object_shape_disjointness,
+    build_object_index, dependency_ids_at, horizon_tree_ids, placement_ids_in, raw_shape_contains,
+    sample_object_ids_at, validate_object_shape_disjointness, ManifestError, ObjectId,
+    ObjectIndexConfig, ObjectKind, ObjectPlacement, QuantizedTransform, RuinPoi, SparseVoxelStamp,
+    StampRun, VoxelCoord, VoxelObjectShape, WorldPointQ8, CUT_STONE,
 };
 
 fn boulder(id: u64, x_voxels: i32, z_voxels: i32) -> ObjectPlacement {
@@ -229,6 +229,35 @@ fn edit_affected_cap_filters_separated_broad_candidates_exactly() {
         build_object_index(&collocated, &config),
         Err(ManifestError::ObjectEditAffectedExceeded { maximum: 1, .. })
     ));
+}
+
+#[test]
+fn edit_affected_cap_excludes_diagonally_separated_dependencies() {
+    // Their dependency boxes overlap after a 3 m cube expansion, but the
+    // nearest dependency voxels are more than a 3 m sphere radius apart.
+    let diagonal = [boulder(1, 0, 0), boulder(2, 30, 30)];
+    let config = ObjectIndexConfig {
+        max_affected_objects_per_edit: 1,
+        ..Default::default()
+    };
+
+    assert!(build_object_index(&diagonal, &config).is_ok());
+}
+
+#[test]
+fn edit_affected_cap_handles_maximum_candidate_count() {
+    let placements = (0..16)
+        .flat_map(|x| {
+            (0..16).map(move |z| boulder(u64::from((x * 16 + z + 1) as u32), x * 4, z * 4))
+        })
+        .collect::<Vec<_>>();
+    let config = ObjectIndexConfig {
+        max_edit_dependency_candidates: 256,
+        max_affected_objects_per_edit: 64,
+        ..Default::default()
+    };
+
+    assert!(build_object_index(&placements, &config).is_ok());
 }
 
 #[test]
