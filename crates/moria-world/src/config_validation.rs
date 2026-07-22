@@ -52,20 +52,33 @@ fn range_q8(range: &RangeQ8, field: &'static str) -> Result {
     )
 }
 
+fn bounded_range_q8(
+    range: &RangeQ8,
+    allowed: std::ops::RangeInclusive<u16>,
+    field: &'static str,
+) -> Result {
+    range_q8(range, field)?;
+    require(
+        allowed.contains(&range.min_q8) && allowed.contains(&range.max_q8),
+        field,
+        "must remain within the documented Product One envelope",
+    )
+}
+
 pub fn validate_region_config(config: &RegionConfig) -> Result {
     let b = &config.bounds;
     require(
-        b.x_min_m < b.x_max_m && b.x_max_m - b.x_min_m == 1_000,
+        b.x_min_m < b.x_max_m && i32::from(b.x_max_m) - i32::from(b.x_min_m) == 1_000,
         "bounds.x",
         "must be an exact 1 km exclusive interval",
     )?;
     require(
-        b.z_min_m < b.z_max_m && b.z_max_m - b.z_min_m == 1_000,
+        b.z_min_m < b.z_max_m && i32::from(b.z_max_m) - i32::from(b.z_min_m) == 1_000,
         "bounds.z",
         "must be an exact 1 km exclusive interval",
     )?;
     require(
-        b.y_min_m < b.y_max_m && b.y_max_m - b.y_min_m == 256,
+        b.y_min_m < b.y_max_m && i32::from(b.y_max_m) - i32::from(b.y_min_m) == 256,
         "bounds.y",
         "must be an exact 256 m exclusive interval",
     )?;
@@ -170,16 +183,30 @@ pub fn validate_region_config(config: &RegionConfig) -> Result {
         "biome.forest_tree_spacing_m",
     )?;
     require(
-        u16::from(biome.tree_species_mix_percent[0]) + u16::from(biome.tree_species_mix_percent[1])
-            == 100,
+        biome
+            .tree_species_mix_percent
+            .iter()
+            .all(|&share| share > 0)
+            && u16::from(biome.tree_species_mix_percent[0])
+                + u16::from(biome.tree_species_mix_percent[1])
+                == 100,
         "biome.tree_species_mix_percent",
-        "must sum to 100",
+        "must contain both species and sum to 100",
     )?;
     positive(
         u64::from(biome.bushes_per_hectare),
         "biome.bushes_per_hectare",
     )?;
     let o = &config.objects;
+    positive(
+        u64::from(o.boulders_per_hectare),
+        "objects.boulders_per_hectare",
+    )?;
+    positive(
+        u64::from(o.stumps_per_hectare),
+        "objects.stumps_per_hectare",
+    )?;
+    positive(u64::from(o.rocks_per_hectare), "objects.rocks_per_hectare")?;
     require(
         o.max_anchor_slope_degrees <= 90,
         "objects.max_anchor_slope_degrees",
@@ -192,43 +219,56 @@ pub fn validate_region_config(config: &RegionConfig) -> Result {
         "must be 32 m and 4 m",
     )?;
     require(
-        o.max_index_cells_per_object > 0
-            && o.max_sample_cells_per_object > 0
-            && o.max_dependency_bricks_per_object > 0,
+        (1..=16).contains(&o.max_index_cells_per_object)
+            && (1..=16).contains(&o.max_sample_cells_per_object)
+            && (1..=128).contains(&o.max_dependency_bricks_per_object),
         "objects index caps",
-        "must be positive",
+        "must fit the documented bounded index",
     )?;
     require(
-        o.max_index_entries_per_cell > 0
-            && o.max_sample_entries_per_cell > 0
-            && o.max_edit_dependency_candidates > 0
-            && o.max_affected_objects_per_edit > 0,
+        (1..=1_024).contains(&o.max_index_entries_per_cell)
+            && (1..=64).contains(&o.max_sample_entries_per_cell)
+            && (1..=256).contains(&o.max_edit_dependency_candidates)
+            && (1..=64).contains(&o.max_affected_objects_per_edit)
+            && u16::from(o.max_affected_objects_per_edit) <= o.max_edit_dependency_candidates,
         "objects query caps",
-        "must be positive",
+        "must fit the documented broad- and exact-query bounds",
     )?;
-    positive(
-        u64::from(o.max_retained_index_bytes),
-        "objects.max_retained_index_bytes",
-    )?;
-    for (range, field) in [
-        (&o.birch_trunk_radius_q8, "objects.birch_trunk_radius_q8"),
-        (&o.birch_trunk_height_q8, "objects.birch_trunk_height_q8"),
-        (&o.pine_trunk_radius_q8, "objects.pine_trunk_radius_q8"),
-        (&o.pine_trunk_height_q8, "objects.pine_trunk_height_q8"),
-        (&o.canopy_radius_q8, "objects.canopy_radius_q8"),
-        (&o.bush_radius_q8, "objects.bush_radius_q8"),
-        (&o.boulder_radius_q8, "objects.boulder_radius_q8"),
-        (&o.stump_radius_q8, "objects.stump_radius_q8"),
-        (&o.stump_height_q8, "objects.stump_height_q8"),
-        (&o.rock_radius_q8, "objects.rock_radius_q8"),
-    ] {
-        range_q8(range, field)?;
-    }
     require(
-        o.canopy_radius_q8.min_q8 >= 512 && o.canopy_radius_q8.max_q8 <= 1024,
-        "objects.canopy_radius_q8",
-        "must remain within 2..=4 m",
+        (1..=16_777_216).contains(&o.max_retained_index_bytes),
+        "objects.max_retained_index_bytes",
+        "must fit the 16 MiB retained-index cap",
     )?;
+    for (range, allowed, field) in [
+        (
+            &o.birch_trunk_radius_q8,
+            51..=90,
+            "objects.birch_trunk_radius_q8",
+        ),
+        (
+            &o.birch_trunk_height_q8,
+            2_048..=3_584,
+            "objects.birch_trunk_height_q8",
+        ),
+        (
+            &o.pine_trunk_radius_q8,
+            64..=115,
+            "objects.pine_trunk_radius_q8",
+        ),
+        (
+            &o.pine_trunk_height_q8,
+            2_560..=4_608,
+            "objects.pine_trunk_height_q8",
+        ),
+        (&o.canopy_radius_q8, 512..=1_024, "objects.canopy_radius_q8"),
+        (&o.bush_radius_q8, 128..=307, "objects.bush_radius_q8"),
+        (&o.boulder_radius_q8, 128..=461, "objects.boulder_radius_q8"),
+        (&o.stump_radius_q8, 64..=141, "objects.stump_radius_q8"),
+        (&o.stump_height_q8, 64..=192, "objects.stump_height_q8"),
+        (&o.rock_radius_q8, 38..=154, "objects.rock_radius_q8"),
+    ] {
+        bounded_range_q8(range, allowed, field)?;
+    }
     require(
         !config.ruin_stamp.is_empty(),
         "ruin_stamp",
@@ -279,6 +319,12 @@ pub fn validate_material_registry(registry: &MaterialRegistry) -> Result {
                 || (expected_id >= 2 && material.hardness > 0),
             "materials.hardness",
             "air/water must be zero and solids must be 1..=255",
+        )?;
+        require(
+            material.albedo_layer == expected_id as u16
+                && material.normal_layer == expected_id as u16,
+            "materials texture layers",
+            "must use the canonical 14-layer material order",
         )?;
     }
     require(
@@ -369,38 +415,45 @@ pub fn validate_presentation_config(config: &PresentationConfig) -> Result {
         "streaming.max_install_bytes_per_frame",
     )?;
     require(
-        s.edit_reserved_workers > 0 && s.edit_reserved_workers <= s.max_mesh_jobs as u8,
+        s.edit_reserved_workers > 0 && u16::from(s.edit_reserved_workers) <= s.max_mesh_jobs,
         "streaming.edit_reserved_workers",
         "must reserve a valid edit lane",
     )?;
     let m = &config.mutation;
     require(
         m.fixed_hz > 0
-            && m.min_radius_q8 > 0
+            && m.min_radius_q8 >= 64
             && m.min_radius_q8 <= m.debug_radius_q8
-            && m.debug_radius_q8 <= m.max_radius_q8,
+            && m.debug_radius_q8 <= m.max_radius_q8
+            && m.max_radius_q8 <= 4_096,
         "mutation radii",
-        "must be positive and ordered",
+        "must be ordered within the proven 0.25..=16 m range",
     )?;
     require(
-        m.inner_full_strength_percent <= 100,
+        m.dig_strength > 0 && m.place_strength > 0,
+        "mutation strengths",
+        "must be positive",
+    )?;
+    require(
+        (1..=100).contains(&m.inner_full_strength_percent),
         "mutation.inner_full_strength_percent",
-        "must be at most 100",
+        "must be in 1..=100",
     )?;
     require(
-        m.max_atomic_bricks > 0
-            && m.max_commit_bricks_per_batch > 0
+        (1..=32).contains(&m.max_atomic_bricks)
+            && (1..=8).contains(&m.max_commit_bricks_per_batch)
             && m.max_commit_bricks_per_batch <= m.max_atomic_bricks,
         "mutation atomic caps",
-        "must be positive and ordered",
+        "must be ordered within the proven Product One bounds",
     )?;
     require(
-        m.max_progressive_bricks >= u32::from(m.max_atomic_bricks),
+        m.max_progressive_bricks >= u32::from(m.max_atomic_bricks)
+            && m.max_progressive_bricks <= 8_192,
         "mutation.max_progressive_bricks",
-        "must cover atomic operations",
+        "must cover atomic operations within the proven bound",
     )?;
     require(
-        m.max_queued_edits > 0 && m.max_mutation_stage_ms_per_frame_q8 > 0,
+        (1..=32).contains(&m.max_queued_edits) && m.max_mutation_stage_ms_per_frame_q8 > 0,
         "mutation queue and stage caps",
         "must be positive",
     )?;
@@ -410,10 +463,11 @@ pub fn validate_presentation_config(config: &PresentationConfig) -> Result {
 }
 
 fn validate_band(band: &BandConfig, index: usize, expected_start: u16) -> Result {
+    let expected_end = [64, 160, 320, 720][index];
     require(
-        band.start_m == expected_start && band.end_m > band.start_m,
+        band.start_m == expected_start && band.end_m == expected_end,
         "streaming.bands",
-        "must be contiguous ascending ranges",
+        "must use Product One radial ranges",
     )?;
     let expected_edge = [64, 128, 256, 1024][index];
     require(
@@ -483,6 +537,11 @@ fn validate_rendering(config: &PresentationConfig) -> Result {
     positive(u64::from(r.shadow_map_size), "rendering.shadow_map_size")?;
     ascending(r.time_limits_hours, "rendering.time_limits_hours")?;
     require(
+        r.time_limits_hours[0] >= 0.0 && r.time_limits_hours[1] <= 24.0,
+        "rendering.time_limits_hours",
+        "must be within 0..=24 hours",
+    )?;
+    require(
         r.time_of_day_hours >= r.time_limits_hours[0]
             && r.time_of_day_hours <= r.time_limits_hours[1],
         "rendering.time_of_day_hours",
@@ -508,19 +567,25 @@ fn validate_rendering(config: &PresentationConfig) -> Result {
         "must be in 0..=1",
     )?;
     require(
-        r.object_visibility_m <= r.cluster_visibility_m && r.cluster_visibility_m == 720,
+        r.object_visibility_m == config.streaming.bands[2].end_m
+            && r.cluster_visibility_m == config.streaming.bands[3].end_m,
         "rendering visibility",
-        "must cover ordered Product One bands",
+        "must match the Far and Horizon band ends",
     )?;
     require(
         r.horizon_object_cell_size_m == 64,
         "rendering.horizon_object_cell_size_m",
         "must be 64 m",
     )?;
-    finite_positive(r.horizon_derived_lod_m, "rendering.horizon_derived_lod_m")?;
-    positive(
-        u64::from(r.max_horizon_tree_members_per_cell),
+    require(
+        r.horizon_derived_lod_m == f32::from(config.streaming.bands[3].voxel_edge_q8) / 256.0,
+        "rendering.horizon_derived_lod_m",
+        "must match the Horizon terrain resolution",
+    )?;
+    require(
+        (1..=1_024).contains(&r.max_horizon_tree_members_per_cell),
         "rendering.max_horizon_tree_members_per_cell",
+        "must fit the documented Horizon member cap",
     )
 }
 fn validate_benchmark(config: &PresentationConfig) -> Result {
@@ -573,13 +638,17 @@ fn validate_benchmark(config: &PresentationConfig) -> Result {
     require(
         b.max_primary_ready_p95_ms <= b.max_primary_ready_ms
             && b.query_frame_critical_p99_ms <= b.query_frame_critical_max_ms
-            && b.query_cells_page_p99_ms <= b.query_cells_page_max_ms,
+            && b.query_cells_page_p99_ms <= b.query_cells_page_max_ms
+            && b.forest_object_index_build_max_ms <= b.forest_object_validation_max_ms,
         "benchmark percentile caps",
         "percentile targets must not exceed maxima",
     )?;
     require(
-        b.max_first_commit_interactive_ms > 0
+        b.watchdog_s > 0
+            && b.max_first_commit_interactive_ms > 0
             && b.max_first_commit_colony_ms > 0
+            && b.max_primary_ready_p95_ms > 0
+            && b.max_primary_ready_ms > 0
             && b.min_changed_bricks_per_second > 0
             && b.max_runnable_wait_ms > 0
             && b.max_reconciliation_interactive_ms > 0
@@ -654,5 +723,63 @@ pub fn validate_input_config(config: &InputConfig) -> Result {
         required.into_iter().all(|action| actions.contains(&action)),
         "input.bindings",
         "must bind every Product One action",
-    )
+    )?;
+
+    const KEYBOARD_MOUSE_BINDINGS: [&str; 22] = [
+        "W",
+        "A",
+        "S",
+        "D",
+        "LeftShift",
+        "Space",
+        "MouseMotion",
+        "MouseWheel",
+        "G",
+        "LeftMouse",
+        "P",
+        "RightMouse",
+        "[",
+        "]",
+        "F1",
+        "F2",
+        "F3",
+        "-",
+        "=",
+        "Tab",
+        "F5",
+        "F9",
+    ];
+    const GAMEPAD_BINDINGS: [&str; 11] = [
+        "LeftStick",
+        "LeftStickPress",
+        "South",
+        "RightStick",
+        "TriggersDifference",
+        "RightShoulder",
+        "LeftShoulder",
+        "DpadLeft",
+        "DpadRight",
+        "DebugDpadDown",
+        "DebugDpadUp",
+    ];
+    let mut keyboard_mouse = BTreeSet::new();
+    let mut gamepad = BTreeSet::new();
+    for binding in &config.bindings {
+        require(
+            binding.keyboard_mouse.iter().all(|physical| {
+                KEYBOARD_MOUSE_BINDINGS.contains(&physical.as_str())
+                    && keyboard_mouse.insert(physical.as_str())
+            }),
+            "input.bindings.keyboard_mouse",
+            "must contain unique known physical bindings",
+        )?;
+        require(
+            binding.gamepad.iter().all(|physical| {
+                GAMEPAD_BINDINGS.contains(&physical.as_str()) && gamepad.insert(physical.as_str())
+            }),
+            "input.bindings.gamepad",
+            "must contain unique known physical bindings",
+        )?;
+    }
+    Ok(())
 }
