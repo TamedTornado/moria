@@ -126,7 +126,7 @@ mod tests {
         write_report_atomic,
     };
     use crate::capture::schema::BenchmarkReport;
-    use crate::cli::{exit_code_after_output, BenchmarkExitCode};
+    use crate::cli::{BenchmarkExitCode, exit_code_after_output};
 
     #[test]
     fn atomic_write_replaces_the_target_without_leaving_a_temp_file() {

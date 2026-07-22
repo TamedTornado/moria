@@ -4,7 +4,7 @@ use moria_bench::capture::{
     schema::BenchmarkReport,
 };
 use moria_bench::cli::{
-    exit_code_after_output, validate_output_path, BenchmarkArgs, BenchmarkExitCode,
+    BenchmarkArgs, BenchmarkExitCode, exit_code_after_output, validate_output_path,
 };
 use moria_world::MoriaWorldPlugin;
 use std::time::{SystemTime, UNIX_EPOCH};

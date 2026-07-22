@@ -185,7 +185,7 @@ pub(crate) fn sibling_temp_path(path: &Path) -> Result<PathBuf, CliError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{exit_code_after_output, BenchmarkArgs, BenchmarkExitCode, BenchmarkScenario};
+    use super::{BenchmarkArgs, BenchmarkExitCode, BenchmarkScenario, exit_code_after_output};
 
     #[test]
     fn parses_a_flythrough_with_default_resolution_and_curated_seed() {
