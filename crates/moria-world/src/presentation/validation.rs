@@ -1171,10 +1171,7 @@ mod glb_tests {
         assert!(!valid_pine(&translated_node));
 
         let orphaned_mesh = mutate_pine(&fixture, |document, _| {
-            document["nodes"][0]
-                .as_object_mut()
-                .unwrap()
-                .remove("mesh");
+            document["nodes"][0].as_object_mut().unwrap().remove("mesh");
         });
         assert!(!valid_pine(&orphaned_mesh));
 
