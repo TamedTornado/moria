@@ -475,7 +475,7 @@ fn valid_basis_payload(bytes: &[u8], header: ktx2::Header) -> bool {
     };
     if transcoder.base_dimensions() != (header.pixel_width, header.pixel_height)
         || transcoder.level_count() != header.level_count.max(1)
-        || transcoder.layer_count() != header.layer_count.max(1)
+        || transcoder.layer_count().max(1) != header.layer_count.max(1)
         || transcoder.face_count() != header.face_count.max(1)
     {
         return false;
@@ -764,6 +764,21 @@ mod tests {
             1024,
             14,
             11,
+            TextureColorSpace::Linear,
+            true
+        ));
+    }
+
+    #[test]
+    fn basis_ktx2_contract_accepts_a_decodable_non_array_texture() {
+        let source = include_bytes!("../../../../assets/materials/water_normal.ktx2");
+
+        assert!(valid_ktx2(
+            source,
+            64,
+            64,
+            0,
+            7,
             TextureColorSpace::Linear,
             true
         ));
