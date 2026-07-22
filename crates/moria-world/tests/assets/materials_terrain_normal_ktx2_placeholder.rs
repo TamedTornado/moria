@@ -11,6 +11,9 @@ const TERRAIN_LAYER_COUNT: u32 = 14;
 const TERRAIN_MIP_COUNT: u32 = 11;
 const KTX2_HEADER_BYTES: usize = 80;
 const KTX2_LEVEL_INDEX_BYTES: usize = 24;
+const ETC1S_GLOBAL_HEADER_BYTES: usize = 20;
+const ETC1S_IMAGE_DESCRIPTOR_BYTES: usize = 20;
+const KHR_DF_MODEL_ETC1S: u8 = 163;
 const KHR_DF_TRANSFER_LINEAR: u8 = 1;
 
 #[test]
@@ -41,6 +44,7 @@ fn terrain_normal_placeholder_is_a_linear_mipmapped_basis_ktx2_array() {
         bytes.len() >= KTX2_HEADER_BYTES + KTX2_LEVEL_INDEX_BYTES * TERRAIN_MIP_COUNT as usize,
         "every mip must have a KTX2 level-index entry"
     );
+    let mut level_lengths = Vec::with_capacity(TERRAIN_MIP_COUNT as usize);
     for mip in 0..TERRAIN_MIP_COUNT as usize {
         let index_offset = KTX2_HEADER_BYTES + mip * KTX2_LEVEL_INDEX_BYTES;
         let byte_offset = read_u64_le(&bytes, index_offset) as usize;
@@ -52,6 +56,7 @@ fn terrain_normal_placeholder_is_a_linear_mipmapped_basis_ktx2_array() {
                 .is_some_and(|end| end <= bytes.len()),
             "mip {mip} payload lies within the KTX2 file"
         );
+        level_lengths.push(byte_length);
     }
 
     let dfd_offset = read_u32_le(&bytes, 48) as usize;
@@ -67,10 +72,68 @@ fn terrain_normal_placeholder_is_a_linear_mipmapped_basis_ktx2_array() {
         "the data-format descriptor lies within the KTX2 file"
     );
     assert_eq!(
+        bytes[dfd_offset + 12],
+        KHR_DF_MODEL_ETC1S,
+        "the descriptor identifies a Basis Universal ETC1S payload"
+    );
+    assert_eq!(
         bytes[dfd_offset + 14],
         KHR_DF_TRANSFER_LINEAR,
         "normal layers use the KTX2 linear transfer function"
     );
+
+    let sgd_offset = read_u64_le(&bytes, 64) as usize;
+    let sgd_length = read_u64_le(&bytes, 72) as usize;
+    let descriptor_count = TERRAIN_LAYER_COUNT as usize * TERRAIN_MIP_COUNT as usize;
+    let descriptors_bytes = descriptor_count * ETC1S_IMAGE_DESCRIPTOR_BYTES;
+    assert!(
+        sgd_offset
+            .checked_add(sgd_length)
+            .is_some_and(|end| end <= bytes.len()),
+        "BasisLZ supercompression global data lies within the KTX2 file"
+    );
+    assert!(
+        sgd_length > ETC1S_GLOBAL_HEADER_BYTES + descriptors_bytes,
+        "BasisLZ global data contains every layer/mip descriptor and shared codebooks"
+    );
+
+    let endpoint_count = read_u16_le(&bytes, sgd_offset);
+    let selector_count = read_u16_le(&bytes, sgd_offset + 2);
+    let endpoints_length = read_u32_le(&bytes, sgd_offset + 4) as usize;
+    let selectors_length = read_u32_le(&bytes, sgd_offset + 8) as usize;
+    let tables_length = read_u32_le(&bytes, sgd_offset + 12) as usize;
+    let extended_length = read_u32_le(&bytes, sgd_offset + 16) as usize;
+    assert!(endpoint_count > 0 && selector_count > 0);
+    assert!(endpoints_length > 0 && selectors_length > 0 && tables_length > 0);
+    assert_eq!(
+        sgd_length,
+        ETC1S_GLOBAL_HEADER_BYTES
+            + descriptors_bytes
+            + endpoints_length
+            + selectors_length
+            + tables_length
+            + extended_length,
+        "BasisLZ global-data sections exactly fill the declared range"
+    );
+
+    for (mip, &level_length) in level_lengths.iter().enumerate() {
+        for layer in 0..TERRAIN_LAYER_COUNT as usize {
+            let descriptor_offset = sgd_offset
+                + ETC1S_GLOBAL_HEADER_BYTES
+                + (mip * TERRAIN_LAYER_COUNT as usize + layer) * ETC1S_IMAGE_DESCRIPTOR_BYTES;
+            let rgb_offset = read_u32_le(&bytes, descriptor_offset + 4) as usize;
+            let rgb_length = read_u32_le(&bytes, descriptor_offset + 8) as usize;
+            let alpha_length = read_u32_le(&bytes, descriptor_offset + 16);
+            assert!(rgb_length > 0, "mip {mip} layer {layer} has Basis data");
+            assert!(
+                rgb_offset
+                    .checked_add(rgb_length)
+                    .is_some_and(|end| end <= level_length),
+                "mip {mip} layer {layer} Basis slice lies within its mip payload"
+            );
+            assert_eq!(alpha_length, 0, "normal layers do not carry alpha slices");
+        }
+    }
 }
 
 #[test]
@@ -109,6 +172,14 @@ fn read_u32_le(bytes: &[u8], offset: usize) -> u32 {
         bytes[offset..offset + 4]
             .try_into()
             .expect("four-byte field"),
+    )
+}
+
+fn read_u16_le(bytes: &[u8], offset: usize) -> u16 {
+    u16::from_le_bytes(
+        bytes[offset..offset + 2]
+            .try_into()
+            .expect("two-byte field"),
     )
 }
 
