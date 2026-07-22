@@ -232,6 +232,22 @@ fn edit_affected_cap_filters_separated_broad_candidates_exactly() {
 }
 
 #[test]
+fn edit_affected_cap_rejects_dependencies_reached_from_an_intervening_center() {
+    // Neither object's dependency contains the legal center at x = 4, but a
+    // three-meter edit centered there reaches both dependency sets.
+    let placements = [boulder(1, 0, 0), boulder(2, 20, 0)];
+    let config = ObjectIndexConfig {
+        max_affected_objects_per_edit: 1,
+        ..Default::default()
+    };
+
+    assert!(matches!(
+        build_object_index(&placements, &config),
+        Err(ManifestError::ObjectEditAffectedExceeded { maximum: 1, .. })
+    ));
+}
+
+#[test]
 fn edit_affected_cap_excludes_diagonally_separated_dependencies() {
     // Their dependency boxes overlap after a 3 m cube expansion, but the
     // nearest dependency voxels are more than a 3 m sphere radius apart.
