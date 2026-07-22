@@ -75,7 +75,13 @@ impl WorldReadState {
         dead_code,
         reason = "streaming installs and removes active bands once its lifecycle is available"
     )]
-    pub(crate) fn set_active_band(&mut self, brick: BrickCoord, band: Option<ActiveBand>) {
+    pub(crate) fn set_active_band(
+        &mut self,
+        brick: BrickCoord,
+        band: Option<ActiveBand>,
+        focuses: &mut FocusState,
+    ) {
+        let was_active = self.active_bands.contains_key(&brick);
         let mut auxiliary_changed = false;
         let previous = match band {
             Some(band) => self.active_bands.insert(brick, band),
@@ -87,9 +93,17 @@ impl WorldReadState {
                 self.active_bands.remove(&brick)
             }
         };
+        let is_active = self.active_bands.contains_key(&brick);
+        if was_active != is_active {
+            focuses.set_brick_active(brick, is_active);
+        }
         if previous != band || auxiliary_changed {
             self.invalidate_diagnostics();
         }
+    }
+
+    pub(crate) fn is_active_brick(&self, brick: BrickCoord) -> bool {
+        self.active_bands.contains_key(&brick)
     }
 
     #[allow(
@@ -344,13 +358,15 @@ impl WorldRead<'_, '_> {
         for (&coord, &band) in candidates.by_ref().take(usize::from(request.max_bricks)) {
             page_bricks.push((coord, band));
         }
-        let next_after_brick = candidates
-            .next()
-            .map(|(&coord, _)| coord)
-            .and_then(|_| page_bricks.last().map(|(coord, _)| *coord));
+        let has_more_bricks = candidates.next().map(|(&coord, _)| coord).is_some();
 
         let render_chunks = diagnostic_render_chunks(state, &page_bricks)?;
-        let focuses = diagnostic_focuses(state, focus_state, &page_bricks)?;
+        let focuses = diagnostic_focuses(focus_state, &page_bricks)?;
+        let next_after_brick = (has_more_bricks
+            || (!page_bricks.is_empty()
+                && focus_state.is_some_and(|focuses| !focuses.inactive_sources().is_empty())))
+        .then(|| page_bricks.last().map(|(coord, _)| *coord))
+        .flatten();
         let bricks = page_bricks
             .into_iter()
             .map(|(coord, band)| {
@@ -515,7 +531,6 @@ fn diagnostic_render_chunks(
 }
 
 fn diagnostic_focuses(
-    state: &WorldReadState,
     focuses: Option<&FocusState>,
     bricks: &[(BrickCoord, ActiveBand)],
 ) -> Result<Vec<DiagnosticFocus>, QueryError> {
@@ -523,34 +538,38 @@ fn diagnostic_focuses(
         return Ok(Vec::new());
     };
     let mut page_focuses = Vec::new();
-    for focus in focuses.sources().values() {
-        let focus_brick = focus
-            .position
-            .to_voxel_coord()
-            .ok()
-            .and_then(|point| point.to_brick_coord().ok());
-        let contributes = if bricks.is_empty() {
-            focus_brick.is_none_or(|brick| !state.active_bands.contains_key(&brick))
-        } else {
-            focus_brick.is_some_and(|brick| {
-                bricks
-                    .binary_search_by_key(&brick, |(coord, _)| *coord)
-                    .is_ok()
-            })
-        };
-        if !contributes {
-            continue;
+    if bricks.is_empty() {
+        page_focuses.extend(
+            focuses
+                .inactive_sources()
+                .values()
+                .take(17)
+                .map(diagnostic_focus),
+        );
+    } else {
+        for (brick, _) in bricks {
+            page_focuses.extend(
+                focuses
+                    .sources_at(*brick)
+                    .into_iter()
+                    .flat_map(|sources| sources.values().take(17))
+                    .map(diagnostic_focus),
+            );
         }
-        if page_focuses.len() == 16 {
-            return Err(QueryError::LimitExceeded(QueryLimitKind::DiagnosticFocuses));
-        }
-        page_focuses.push(DiagnosticFocus {
-            id: focus.id,
-            position: focus.position,
-            purpose: focus.purpose,
-        });
+    }
+    page_focuses.sort_unstable_by_key(|focus| focus.id);
+    if page_focuses.len() > 16 {
+        return Err(QueryError::LimitExceeded(QueryLimitKind::DiagnosticFocuses));
     }
     Ok(page_focuses)
+}
+
+fn diagnostic_focus(focus: &crate::FocusSource) -> DiagnosticFocus {
+    DiagnosticFocus {
+        id: focus.id,
+        position: focus.position,
+        purpose: focus.purpose,
+    }
 }
 
 const fn sample_run_kind(material: u8) -> RunKind {
@@ -864,6 +883,118 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_pages_continue_to_the_terminal_inactive_focus_page() {
+        let mut state = ready_state();
+        let active_brick = BrickCoord::new(0, 0, 0).unwrap();
+        let inactive_brick = BrickCoord::new(1, 0, 0).unwrap();
+        state.active_bands.insert(active_brick, ActiveBand::Near);
+
+        let mut app = App::new();
+        app.init_resource::<crate::streaming::FocusState>()
+            .add_message::<SetFocusSource>()
+            .add_message::<RemoveFocusSource>()
+            .add_systems(Update, crate::streaming::apply_focus_messages);
+        app.world_mut().write_message(SetFocusSource(FocusSource {
+            id: 1,
+            position: super::brick_origin(active_brick),
+            purpose: FocusPurpose::Inspection,
+        }));
+        app.world_mut().write_message(SetFocusSource(FocusSource {
+            id: 2,
+            position: super::brick_origin(inactive_brick),
+            purpose: FocusPurpose::Camera,
+        }));
+        app.insert_resource(state)
+            .add_systems(PostUpdate, move |read: WorldRead| {
+                let brick_page = read
+                    .diagnostic_snapshot(crate::DiagnosticPageRequest {
+                        snapshot: None,
+                        after_brick: None,
+                        max_bricks: 1,
+                        include_cells: false,
+                    })
+                    .unwrap();
+                assert_eq!(brick_page.bricks.len(), 1);
+                assert_eq!(
+                    brick_page
+                        .focuses
+                        .iter()
+                        .map(|focus| focus.id)
+                        .collect::<Vec<_>>(),
+                    [1]
+                );
+                assert_eq!(brick_page.next_after_brick, Some(active_brick));
+
+                let terminal_page = read
+                    .diagnostic_snapshot(crate::DiagnosticPageRequest {
+                        snapshot: Some(brick_page.snapshot),
+                        after_brick: brick_page.next_after_brick,
+                        max_bricks: 1,
+                        include_cells: false,
+                    })
+                    .unwrap();
+                assert!(terminal_page.bricks.is_empty());
+                assert_eq!(
+                    terminal_page
+                        .focuses
+                        .iter()
+                        .map(|focus| focus.id)
+                        .collect::<Vec<_>>(),
+                    [2]
+                );
+                assert_eq!(terminal_page.next_after_brick, None);
+            });
+
+        app.update();
+    }
+
+    #[test]
+    fn diagnostic_focus_pages_ignore_many_noncontributing_sources() {
+        let mut state = ready_state();
+        let requested_brick = BrickCoord::new(0, 0, 0).unwrap();
+        let noncontributing_brick = BrickCoord::new(1, 0, 0).unwrap();
+        state.active_bands.insert(requested_brick, ActiveBand::Near);
+
+        let mut app = App::new();
+        app.init_resource::<crate::streaming::FocusState>()
+            .add_message::<SetFocusSource>()
+            .add_message::<RemoveFocusSource>()
+            .add_systems(Update, crate::streaming::apply_focus_messages);
+        app.world_mut().write_message(SetFocusSource(FocusSource {
+            id: 1,
+            position: super::brick_origin(requested_brick),
+            purpose: FocusPurpose::Inspection,
+        }));
+        for id in 2..=257 {
+            app.world_mut().write_message(SetFocusSource(FocusSource {
+                id,
+                position: super::brick_origin(noncontributing_brick),
+                purpose: FocusPurpose::Camera,
+            }));
+        }
+        app.insert_resource(state)
+            .add_systems(PostUpdate, |read: WorldRead| {
+                let page = read
+                    .diagnostic_snapshot(crate::DiagnosticPageRequest {
+                        snapshot: None,
+                        after_brick: None,
+                        max_bricks: 1,
+                        include_cells: false,
+                    })
+                    .unwrap();
+                assert_eq!(
+                    page.focuses
+                        .iter()
+                        .map(|focus| focus.id)
+                        .collect::<Vec<_>>(),
+                    [1]
+                );
+            });
+
+        app.update();
+    }
+
+    #[test]
     fn diagnostic_chunk_limit_rejects_the_513th_chunk_without_truncation() {
         let mut state = ready_state();
         let bricks = [
@@ -871,8 +1002,9 @@ mod tests {
             BrickCoord::new(1, 0, 0).unwrap(),
             BrickCoord::new(2, 0, 0).unwrap(),
         ];
+        let mut focuses = crate::streaming::FocusState::default();
         for brick in bricks {
-            state.set_active_band(brick, Some(ActiveBand::Near));
+            state.set_active_band(brick, Some(ActiveBand::Near), &mut focuses);
         }
         for brick in &bricks[..2] {
             for lod in 0..=u8::MAX {
