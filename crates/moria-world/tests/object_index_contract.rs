@@ -1,8 +1,8 @@
 use moria_world::{
-    build_object_index, dependency_ids_at, horizon_tree_ids, placement_ids_in, raw_shape_contains,
-    sample_object_ids_at, validate_object_shape_disjointness, ManifestError, ObjectId,
-    ObjectIndexConfig, ObjectKind, ObjectPlacement, QuantizedTransform, RuinPoi, SparseVoxelStamp,
-    StampRun, VoxelCoord, VoxelObjectShape, WorldPointQ8, CUT_STONE,
+    CUT_STONE, ManifestError, ObjectId, ObjectIndexConfig, ObjectKind, ObjectPlacement,
+    QuantizedTransform, RuinPoi, SparseVoxelStamp, StampRun, VoxelCoord, VoxelObjectShape,
+    WorldPointQ8, build_object_index, dependency_ids_at, horizon_tree_ids, placement_ids_in,
+    raw_shape_contains, sample_object_ids_at, validate_object_shape_disjointness,
 };
 
 fn boulder(id: u64, x_voxels: i32, z_voxels: i32) -> ObjectPlacement {

@@ -3,11 +3,11 @@
 use std::{collections::BTreeMap, mem::size_of};
 
 use crate::{
-    AabbQ8, ManifestError, ObjectGenConfig, ObjectId, ObjectKind, ObjectPlacement, VoxelCoord,
-    WorldPointQ8, Q8_UNITS_PER_METER, VOXEL_EDGE_Q8,
+    AabbQ8, ManifestError, ObjectGenConfig, ObjectId, ObjectKind, ObjectPlacement,
+    Q8_UNITS_PER_METER, VOXEL_EDGE_Q8, VoxelCoord, WorldPointQ8,
 };
 
-use super::{dependency_contains, raw_shape_bounds, raw_shape_contains, OBJECT_EXTRACTION_STENCIL};
+use super::{OBJECT_EXTRACTION_STENCIL, dependency_contains, raw_shape_bounds, raw_shape_contains};
 
 const ALLOCATOR_BYTES: u64 = 16;
 const DEPENDENCY_CELL_METERS: i32 = 32;
