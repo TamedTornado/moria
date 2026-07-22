@@ -31,9 +31,9 @@ pub use config_validation::{
     validate_presentation_config, validate_region_config,
 };
 pub use curation::{
-    CuratedManifest, FeatureInstance, FeatureKind, ManifestError, ObjectId, ObjectKind,
-    ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi, SparseVoxelStamp,
-    SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
+    CuratedManifest, CuratedRoute, FeatureInstance, FeatureKind, ManifestError, ObjectId,
+    ObjectKind, ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi,
+    SparseVoxelStamp, SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
 };
 #[cfg(feature = "curation")]
 pub use curation::{CurationError, CurationReport, derive_manifest, validate_manifest};
