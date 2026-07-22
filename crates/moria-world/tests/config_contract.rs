@@ -1,7 +1,7 @@
 use moria_world::{
     config::{
-        parameters_digest_from_bytes, CollisionClass, InputConfig, MaterialRegistry,
-        PresentationConfig, RangeQ8, RegionConfig,
+        CollisionClass, InputConfig, MaterialRegistry, PresentationConfig, RangeQ8, RegionConfig,
+        parameters_digest_from_bytes,
     },
     config_validation::{
         validate_input_config, validate_material_registry, validate_presentation_config,
