@@ -99,10 +99,10 @@ impl WorldRead<'_, '_> {
     }
 
     fn ready_state(&self) -> Result<&WorldReadState, QueryError> {
-        if self
+        if !self
             .lifecycle
             .as_deref()
-            .is_some_and(|lifecycle| !lifecycle.is_ready())
+            .is_some_and(WorldLifecycle::is_ready)
         {
             return Err(QueryError::NotReady);
         }
@@ -254,7 +254,7 @@ impl WorldRead<'_, '_> {
         request: DiagnosticPageRequest,
     ) -> Result<DiagnosticPage, QueryError> {
         validate_diagnostic_request(request)?;
-        let state = self.state.as_deref().ok_or(QueryError::NotReady)?;
+        let state = self.ready_state()?;
         let focus_state = self.focuses.as_deref();
         if focus_state.is_some_and(|focuses| focuses.sources().len() > 16) {
             return Err(QueryError::LimitExceeded(QueryLimitKind::DiagnosticFocuses));
@@ -462,8 +462,8 @@ mod tests {
         AIR, ActiveBand, BrickCoord, ColumnCoord, FeatureInstance, FeatureKind, GRANITE,
         MaterialRegistry, MoriaWorldPlugin, ObjectId, ObjectKind, ObjectPlacement,
         QuantizedTransform, QueryMask, RouteTag, RouteWaypoint, SpeciesId, Voxel, VoxelCoord,
-        VoxelObjectShape, WaterBodyDef, WaterKind, WorldBounds, WorldIdentity, WorldPointQ8,
-        WorldRayQ8, evaluate_base_voxel,
+        VoxelObjectShape, WaterBodyDef, WaterKind, WorldBounds, WorldIdentity, WorldLifecycle,
+        WorldPointQ8, WorldRayQ8, evaluate_base_voxel,
     };
 
     use super::{TraversalRoute, WorldRead, WorldReadState};
@@ -510,6 +510,13 @@ mod tests {
         )
     }
 
+    fn install_ready_state(app: &mut App, state: WorldReadState) {
+        let mut lifecycle = WorldLifecycle::default();
+        lifecycle.start_loading().unwrap();
+        lifecycle.mark_ready().unwrap();
+        app.insert_resource(state).insert_resource(lifecycle);
+    }
+
     #[test]
     fn unavailable_world_reads_are_not_ready() {
         let mut app = App::new();
@@ -520,6 +527,38 @@ mod tests {
                 read.sample_voxel(VoxelCoord::new(0, 0, 0)),
                 Err(super::super::QueryError::NotReady)
             ));
+            assert_eq!(
+                read.diagnostic_snapshot(crate::DiagnosticPageRequest {
+                    snapshot: None,
+                    after_brick: None,
+                    max_bricks: 1,
+                    include_cells: false,
+                }),
+                Err(super::super::QueryError::NotReady)
+            );
+        });
+
+        app.update();
+    }
+
+    #[test]
+    fn installed_read_state_without_a_lifecycle_is_not_ready() {
+        let mut app = App::new();
+        app.insert_resource(ready_state());
+        app.add_systems(Update, |read: WorldRead| {
+            assert!(matches!(
+                read.sample_voxel(VoxelCoord::new(0, 0, 0)),
+                Err(super::super::QueryError::NotReady)
+            ));
+            assert_eq!(
+                read.diagnostic_snapshot(crate::DiagnosticPageRequest {
+                    snapshot: None,
+                    after_brick: None,
+                    max_bricks: 1,
+                    include_cells: false,
+                }),
+                Err(super::super::QueryError::NotReady)
+            );
         });
 
         app.update();
@@ -535,7 +574,7 @@ mod tests {
         state
             .active_bands
             .insert(BrickCoord::new(125, 32, 125).unwrap(), ActiveBand::Near);
-        app.insert_resource(state);
+        install_ready_state(&mut app, state);
         app.add_systems(Update, move |read: WorldRead| {
             assert_eq!(read.identity(), &identity());
             assert_eq!(read.bounds(), identity().bounds);
@@ -578,7 +617,7 @@ mod tests {
     #[test]
     fn reads_reject_out_of_bounds_coordinates_before_sampling() {
         let mut app = App::new();
-        app.insert_resource(ready_state());
+        install_ready_state(&mut app, ready_state());
         app.add_systems(Update, |read: WorldRead| {
             assert!(matches!(
                 read.sample_voxel(VoxelCoord::new(2_000, 0, 0)),
@@ -604,7 +643,7 @@ mod tests {
     #[test]
     fn water_samples_do_not_report_water_outside_the_footprint() {
         let mut app = App::new();
-        app.insert_resource(ready_state());
+        install_ready_state(&mut app, ready_state());
         app.add_systems(Update, |read: WorldRead| {
             assert!(read.water_surface_at(101, 0).unwrap().is_none());
             assert!(read.water_surface_at(0, 101).unwrap().is_none());
@@ -622,7 +661,7 @@ mod tests {
     #[test]
     fn diagnostic_pages_reject_cell_requests_that_would_exceed_the_page_limit() {
         let mut app = App::new();
-        app.insert_resource(ready_state());
+        install_ready_state(&mut app, ready_state());
         app.add_systems(Update, |read: WorldRead| {
             assert_eq!(
                 read.diagnostic_snapshot(crate::DiagnosticPageRequest {
@@ -651,7 +690,7 @@ mod tests {
         state.active_bands.insert(second, ActiveBand::Middle);
 
         let mut app = App::new();
-        app.insert_resource(state);
+        install_ready_state(&mut app, state);
         app.add_systems(Update, move |read: WorldRead| {
             let first_page = read
                 .diagnostic_snapshot(crate::DiagnosticPageRequest {
@@ -704,7 +743,7 @@ mod tests {
             (VoxelCoord::new(1, y, 0), Voxel::new(AIR, 0, 0, 0)),
             (VoxelCoord::new(2, y, 0), Voxel::new(GRANITE, u8::MAX, 0, 0)),
         ]);
-        app.insert_resource(state);
+        install_ready_state(&mut app, state);
         app.add_systems(Update, move |read: WorldRead| {
             let ray = WorldRayQ8::new(WorldPointQ8::new(0, y * 64, 0), [65_536, 0, 0])
                 .expect("axis direction is normalized");
@@ -724,8 +763,8 @@ mod tests {
     #[test]
     fn diagnostic_snapshot_tokens_expire_after_a_revision_change() {
         let mut app = App::new();
-        app.insert_resource(ready_state())
-            .insert_resource(SnapshotUnderTest::default());
+        install_ready_state(&mut app, ready_state());
+        app.insert_resource(SnapshotUnderTest::default());
         app.add_systems(
             Update,
             |read: WorldRead, mut snapshot: ResMut<SnapshotUnderTest>| match snapshot.phase {
@@ -806,7 +845,7 @@ mod tests {
         state
             .store
             .commit_current([(coordinate, Voxel::new(AIR, 0, 0, 0))]);
-        app.insert_resource(state);
+        install_ready_state(&mut app, state);
         app.add_systems(Update, move |read: WorldRead| {
             assert_eq!(
                 read.sample_voxel(VoxelCoord::new(0, 0, 0))
