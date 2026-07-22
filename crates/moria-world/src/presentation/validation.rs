@@ -524,7 +524,7 @@ fn valid_glb(
     {
         return false;
     }
-    if !valid_support_centered_scenes(&value) {
+    if !valid_support_centered_scenes(&value, meshes.len()) {
         return false;
     }
 
@@ -617,6 +617,7 @@ fn valid_primitive(
         .and_then(value_index)
         .and_then(|index| layout.accessor(index))?;
     (indices.is_index_type()
+        && indices.count != 0
         && indices.count % 3 == 0
         && indices.count / 3 <= max_triangles
         && indices_are_in_range(indices, layout.binary, position.count))
@@ -660,7 +661,8 @@ impl<'a> GlbLayout<'a> {
             return None;
         }
         let buffer_length = value_usize(buffers[0].get("byteLength")?)?;
-        if buffer_length > binary.len() {
+        let padded_buffer_length = buffer_length.checked_add(3)? & !3;
+        if padded_buffer_length != binary.len() {
             return None;
         }
         let views = document.get("bufferViews")?.as_array()?;
@@ -706,21 +708,20 @@ impl<'a> GlbLayout<'a> {
             };
             let components = component_count(accessor_type)?;
             let count = u32::try_from(value_usize(accessor.get("count")?)?).ok()?;
+            if count == 0 {
+                return None;
+            }
             let element_size = component_size.checked_mul(components)?;
             let accessor_offset = accessor
                 .get("byteOffset")
                 .and_then(value_usize)
                 .unwrap_or(0);
             let element_stride = stride.unwrap_or(element_size);
-            let used = if count == 0 {
-                0
-            } else {
-                usize::try_from(count)
-                    .ok()?
-                    .checked_sub(1)?
-                    .checked_mul(element_stride)?
-                    .checked_add(element_size)?
-            };
+            let used = usize::try_from(count)
+                .ok()?
+                .checked_sub(1)?
+                .checked_mul(element_stride)?
+                .checked_add(element_size)?;
             if accessor_offset % component_size != 0
                 || element_stride < element_size
                 || accessor_offset.checked_add(used)? > view_length
@@ -785,7 +786,7 @@ fn finite_f32_accessor(accessor: &GlbAccessor, binary: &[u8]) -> bool {
     })
 }
 
-fn valid_support_centered_scenes(document: &serde_json::Value) -> bool {
+fn valid_support_centered_scenes(document: &serde_json::Value, mesh_count: usize) -> bool {
     if document
         .pointer("/asset/extras/origin")
         .and_then(serde_json::Value::as_str)
@@ -809,15 +810,74 @@ fn valid_support_centered_scenes(document: &serde_json::Value) -> bool {
     else {
         return false;
     };
-    scene
-        .get("nodes")
-        .and_then(serde_json::Value::as_array)
-        .is_some_and(|roots| {
-            !roots.is_empty()
-                && roots
-                    .iter()
-                    .all(|root| value_index(root).is_some_and(|index| index < nodes.len()))
-        })
+    let Some(roots) = scene.get("nodes").and_then(serde_json::Value::as_array) else {
+        return false;
+    };
+    if roots.is_empty() {
+        return false;
+    }
+
+    let mut visited_nodes = BTreeSet::new();
+    let mut reachable_meshes = BTreeSet::new();
+    for root in roots {
+        let Some(root_index) = value_index(root) else {
+            return false;
+        };
+        if !visit_active_scene_node(
+            nodes,
+            root_index,
+            mesh_count,
+            &mut visited_nodes,
+            &mut reachable_meshes,
+        ) {
+            return false;
+        }
+    }
+    reachable_meshes.len() == mesh_count
+}
+
+fn visit_active_scene_node(
+    nodes: &[serde_json::Value],
+    node_index: usize,
+    mesh_count: usize,
+    visited_nodes: &mut BTreeSet<usize>,
+    reachable_meshes: &mut BTreeSet<usize>,
+) -> bool {
+    let Some(node) = nodes.get(node_index) else {
+        return false;
+    };
+    if !visited_nodes.insert(node_index) {
+        return true;
+    }
+    if let Some(mesh) = node.get("mesh") {
+        let Some(mesh_index) = value_index(mesh) else {
+            return false;
+        };
+        if mesh_index >= mesh_count {
+            return false;
+        }
+        reachable_meshes.insert(mesh_index);
+    }
+    if let Some(children) = node.get("children") {
+        let Some(children) = children.as_array() else {
+            return false;
+        };
+        for child in children {
+            let Some(child_index) = value_index(child) else {
+                return false;
+            };
+            if !visit_active_scene_node(
+                nodes,
+                child_index,
+                mesh_count,
+                visited_nodes,
+                reachable_meshes,
+            ) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn identity_node_transform(node: &serde_json::Value) -> bool {
@@ -1110,6 +1170,14 @@ mod glb_tests {
         });
         assert!(!valid_pine(&translated_node));
 
+        let orphaned_mesh = mutate_pine(&fixture, |document, _| {
+            document["nodes"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("mesh");
+        });
+        assert!(!valid_pine(&orphaned_mesh));
+
         let omitted_triangle_mode = mutate_pine(&fixture, |document, _| {
             document["meshes"][0]["primitives"][0]
                 .as_object_mut()
@@ -1135,6 +1203,23 @@ mod glb_tests {
             document["accessors"][0]["count"] = Value::from(14);
         });
         assert!(!valid_pine(&accessor_overrun));
+
+        let zero_count_index_accessor = mutate_pine(&fixture, |document, _| {
+            document["accessors"][4]["count"] = Value::from(0);
+        });
+        assert!(!valid_pine(&zero_count_index_accessor));
+
+        let zero_count_accessor = mutate_pine(&fixture, |document, _| {
+            let mut accessor = document["accessors"][0].clone();
+            accessor["count"] = Value::from(0);
+            document["accessors"].as_array_mut().unwrap().push(accessor);
+        });
+        assert!(!valid_pine(&zero_count_accessor));
+
+        let excess_binary_padding = mutate_pine(&fixture, |_, binary| {
+            binary.resize(binary.len() + 4, 0);
+        });
+        assert!(!valid_pine(&excess_binary_padding));
 
         let index_overrun = mutate_pine(&fixture, |_, binary| {
             binary[624..626].copy_from_slice(&13_u16.to_le_bytes());
