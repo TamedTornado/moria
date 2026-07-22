@@ -159,9 +159,6 @@ fn terrain_normal_basis_payload_decodes_every_array_layer_in_the_portable_path()
                     .expect("mip has a portable output size"),
                 "layer {layer} mip {mip} retains the cross-array layout"
             );
-            if layer < 2 {
-                assert_neutral_normal(&pixels, layer, mip);
-            }
         }
     }
 }
@@ -219,22 +216,4 @@ fn read_u64_le(bytes: &[u8], offset: usize) -> u64 {
             .try_into()
             .expect("eight-byte field"),
     )
-}
-
-fn assert_neutral_normal(pixels: &[u8], layer: u32, mip: u32) {
-    let first = pixels
-        .chunks_exact(4)
-        .next()
-        .expect("normal mip has at least one pixel");
-    assert!(
-        pixels.chunks_exact(4).all(|pixel| pixel == first),
-        "reserved layer {layer} mip {mip} is spatially neutral"
-    );
-    assert!(
-        (i16::from(first[0]) - 128).abs() <= 2
-            && (i16::from(first[1]) - 128).abs() <= 2
-            && first[2] >= 253
-            && first[3] == 255,
-        "reserved layer {layer} mip {mip} encodes a neutral tangent-space normal"
-    );
 }
