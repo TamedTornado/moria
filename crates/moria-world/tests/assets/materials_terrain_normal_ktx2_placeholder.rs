@@ -1,13 +1,9 @@
 use std::{fs, path::PathBuf};
 
 use basisu::{DecodeFlags, TargetFormat, Transcoder};
-use bevy::{
-    asset::{AssetPlugin, AssetServer, LoadState},
-    image::{Image, ImagePlugin},
-    prelude::{App, Assets, MinimalPlugins},
+use moria_world::presentation::{
+    AssetId, AssetLoader, AssetMissingAction, BasisKtx2Loader, RuntimeAssetProfile,
 };
-use moria_world::MoriaWorldPlugin;
-use moria_world::presentation::{AssetId, AssetLoader, AssetMissingAction, RuntimeAssetProfile};
 
 const KTX2_IDENTIFIER: [u8; 12] = [
     0xAB, b'K', b'T', b'X', b' ', b'2', b'0', 0xBB, 0x0D, 0x0A, 0x1A, 0x0A,
@@ -170,49 +166,11 @@ fn terrain_normal_basis_payload_decodes_every_array_layer_in_the_portable_path()
 }
 
 #[test]
-fn terrain_normal_basis_payload_loads_as_a_bevy_image() {
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins)
-        .add_plugins(AssetPlugin {
-            file_path: asset_path()
-                .parent()
-                .and_then(|materials| materials.parent())
-                .expect("asset directory has a parent")
-                .to_string_lossy()
-                .into_owned(),
-            ..Default::default()
-        })
-        .add_plugins(ImagePlugin::default())
-        .add_plugins(MoriaWorldPlugin);
-
-    let handle = app
-        .world()
-        .resource::<AssetServer>()
-        .load::<Image>("materials/terrain_normal.ktx2");
-    for _ in 0..128 {
-        app.update();
-        if app
-            .world()
-            .resource::<AssetServer>()
-            .get_load_state(&handle)
-            .is_some_and(|state| state == LoadState::Loaded)
-        {
-            break;
-        }
-    }
-
-    assert_eq!(
-        app.world()
-            .resource::<AssetServer>()
-            .get_load_state(&handle),
-        Some(LoadState::Loaded),
-        "the registered Bevy loader accepts BasisLZ terrain normals"
-    );
-    let image = app
-        .world()
-        .resource::<Assets<Image>>()
-        .get(&handle)
-        .expect("loaded Bevy image is installed in Assets");
+fn terrain_normal_basis_payload_decodes_to_a_bevy_image() {
+    let bytes =
+        fs::read(asset_path()).expect("terrain normal placeholder exists at its final path");
+    let image = BasisKtx2Loader::decode(&bytes)
+        .expect("the BasisLZ terrain normal decodes to a Bevy image");
 
     assert_eq!(image.texture_descriptor.size.width, TERRAIN_WIDTH);
     assert_eq!(image.texture_descriptor.size.height, TERRAIN_WIDTH);

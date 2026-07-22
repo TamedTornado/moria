@@ -103,7 +103,7 @@ pub struct BasisKtx2Error(String);
 
 impl BasisKtx2Error {
     fn invalid_payload(error: basisu::Error) -> Self {
-        Self(format!("invalid Basis KTX2 payload: {error}"))
+        Self(format!("invalid Basis KTX2 payload: {error:?}"))
     }
 
     fn read(error: std::io::Error) -> Self {
