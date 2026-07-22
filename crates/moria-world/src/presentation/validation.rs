@@ -524,16 +524,32 @@ fn valid_glb(
     {
         return false;
     }
+    if !valid_support_centered_scenes(&value) {
+        return false;
+    }
 
-    meshes.iter().all(|mesh| {
-        mesh.get("primitives")
-            .and_then(serde_json::Value::as_array)
-            .is_some_and(|primitives| {
-                !primitives.is_empty()
-                    && primitives.iter().all(|primitive| {
-                        valid_primitive(primitive, &value, &layout, max_triangles, min, max)
-                    })
-            })
+    let mut asset_bounds = None;
+    for mesh in meshes {
+        let Some(primitives) = mesh.get("primitives").and_then(serde_json::Value::as_array) else {
+            return false;
+        };
+        if primitives.is_empty() {
+            return false;
+        }
+        for primitive in primitives {
+            let Some(bounds) = valid_primitive(primitive, &value, &layout, max_triangles) else {
+                return false;
+            };
+            asset_bounds = Some(match asset_bounds {
+                Some((asset_minimum, asset_maximum)) => {
+                    combine_bounds(asset_minimum, asset_maximum, bounds.0, bounds.1)
+                }
+                None => bounds,
+            });
+        }
+    }
+    asset_bounds.is_some_and(|(actual_minimum, actual_maximum)| {
+        q8_bounds_match(actual_minimum, actual_maximum, min, max)
     })
 }
 
@@ -542,39 +558,28 @@ fn valid_primitive(
     document: &serde_json::Value,
     layout: &GlbLayout<'_>,
     max_triangles: u32,
-    bounds_min_q8: [i32; 3],
-    bounds_max_q8: [i32; 3],
-) -> bool {
-    if primitive.get("mode").and_then(serde_json::Value::as_u64) != Some(4) {
-        return false;
+) -> Option<([f32; 3], [f32; 3])> {
+    if primitive
+        .get("mode")
+        .is_some_and(|mode| mode.as_u64() != Some(4))
+    {
+        return None;
     }
-    let Some(attributes) = primitive
+    let attributes = primitive
         .get("attributes")
-        .and_then(serde_json::Value::as_object)
-    else {
-        return false;
-    };
-    let Some(position) = attributes
+        .and_then(serde_json::Value::as_object)?;
+    let position = attributes
         .get("POSITION")
         .and_then(value_index)
-        .and_then(|index| layout.accessor(index))
-    else {
-        return false;
-    };
-    let Some(normal) = attributes
+        .and_then(|index| layout.accessor(index))?;
+    let normal = attributes
         .get("NORMAL")
         .and_then(value_index)
-        .and_then(|index| layout.accessor(index))
-    else {
-        return false;
-    };
-    let Some(uv) = attributes
+        .and_then(|index| layout.accessor(index))?;
+    let uv = attributes
         .get("TEXCOORD_0")
         .and_then(value_index)
-        .and_then(|index| layout.accessor(index))
-    else {
-        return false;
-    };
+        .and_then(|index| layout.accessor(index))?;
     if !position.is_f32_type("VEC3")
         || !normal.is_f32_type("VEC3")
         || !uv.is_f32_type("VEC2")
@@ -584,43 +589,38 @@ fn valid_primitive(
         || !finite_f32_accessor(position, layout.binary)
         || !finite_f32_accessor(normal, layout.binary)
         || !finite_f32_accessor(uv, layout.binary)
-        || !position_bounds_match(position, layout.binary, bounds_min_q8, bounds_max_q8)
     {
-        return false;
+        return None;
     }
+    let position_bounds = position_bounds(position, layout.binary)?;
 
-    let normal_mapped = primitive
+    let material = primitive
         .get("material")
         .and_then(value_index)
-        .and_then(|index| document.get("materials")?.as_array()?.get(index))
-        .is_some_and(|material| material.get("normalTexture").is_some());
+        .and_then(|index| document.get("materials")?.as_array()?.get(index))?;
+    let normal_mapped = material.get("normalTexture").is_some();
     if normal_mapped {
-        let Some(tangent) = attributes
+        let tangent = attributes
             .get("TANGENT")
             .and_then(value_index)
-            .and_then(|index| layout.accessor(index))
-        else {
-            return false;
-        };
+            .and_then(|index| layout.accessor(index))?;
         if !tangent.is_f32_type("VEC4")
             || tangent.count != position.count
             || !finite_f32_accessor(tangent, layout.binary)
         {
-            return false;
+            return None;
         }
     }
 
-    let Some(indices) = primitive
+    let indices = primitive
         .get("indices")
         .and_then(value_index)
-        .and_then(|index| layout.accessor(index))
-    else {
-        return false;
-    };
-    indices.is_index_type()
+        .and_then(|index| layout.accessor(index))?;
+    (indices.is_index_type()
         && indices.count % 3 == 0
         && indices.count / 3 <= max_triangles
-        && indices_are_in_range(indices, layout.binary, position.count)
+        && indices_are_in_range(indices, layout.binary, position.count))
+    .then_some(position_bounds)
 }
 
 fn glb_document(bytes: &[u8]) -> Result<(serde_json::Value, &[u8]), ()> {
@@ -785,42 +785,112 @@ fn finite_f32_accessor(accessor: &GlbAccessor, binary: &[u8]) -> bool {
     })
 }
 
-fn position_bounds_match(
-    position: &GlbAccessor,
-    binary: &[u8],
-    bounds_min_q8: [i32; 3],
-    bounds_max_q8: [i32; 3],
-) -> bool {
+fn valid_support_centered_scenes(document: &serde_json::Value) -> bool {
+    if document
+        .pointer("/asset/extras/origin")
+        .and_then(serde_json::Value::as_str)
+        != Some("support_center")
+    {
+        return false;
+    }
+    let Some(nodes) = document.get("nodes").and_then(serde_json::Value::as_array) else {
+        return false;
+    };
+    if nodes.is_empty() || !nodes.iter().all(identity_node_transform) {
+        return false;
+    }
+    let Some(scenes) = document.get("scenes").and_then(serde_json::Value::as_array) else {
+        return false;
+    };
+    let Some(scene) = document
+        .get("scene")
+        .and_then(value_index)
+        .and_then(|index| scenes.get(index))
+    else {
+        return false;
+    };
+    scene
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|roots| {
+            !roots.is_empty()
+                && roots
+                    .iter()
+                    .all(|root| value_index(root).is_some_and(|index| index < nodes.len()))
+        })
+}
+
+fn identity_node_transform(node: &serde_json::Value) -> bool {
+    if !node.is_object() {
+        return false;
+    }
+    let translation = node
+        .get("translation")
+        .is_none_or(|value| value == &serde_json::json!([0.0, 0.0, 0.0]));
+    let rotation = node
+        .get("rotation")
+        .is_none_or(|value| value == &serde_json::json!([0.0, 0.0, 0.0, 1.0]));
+    let scale = node
+        .get("scale")
+        .is_none_or(|value| value == &serde_json::json!([1.0, 1.0, 1.0]));
+    let matrix = node.get("matrix").is_none_or(|value| {
+        value
+            == &serde_json::json!([
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0
+            ])
+    });
+    translation && rotation && scale && matrix
+}
+
+fn position_bounds(position: &GlbAccessor, binary: &[u8]) -> Option<([f32; 3], [f32; 3])> {
     let mut minimum = [f32::INFINITY; 3];
     let mut maximum = [f32::NEG_INFINITY; 3];
     for element in 0..usize::try_from(position.count).unwrap_or(usize::MAX) {
         for component in 0..3 {
-            let Some(value) = f32_at(
+            let value = f32_at(
                 binary,
                 position.offset + element * position.stride + component * 4,
-            ) else {
-                return false;
-            };
+            )?;
             minimum[component] = minimum[component].min(value);
             maximum[component] = maximum[component].max(value);
         }
     }
-    let bounds_match = minimum
+    position
+        .bounds
+        .filter(|(declared_minimum, declared_maximum)| {
+            *declared_minimum == minimum && *declared_maximum == maximum
+        })
+        .map(|_| (minimum, maximum))
+}
+
+fn combine_bounds(
+    first_minimum: [f32; 3],
+    first_maximum: [f32; 3],
+    second_minimum: [f32; 3],
+    second_maximum: [f32; 3],
+) -> ([f32; 3], [f32; 3]) {
+    (
+        std::array::from_fn(|index| first_minimum[index].min(second_minimum[index])),
+        std::array::from_fn(|index| first_maximum[index].max(second_maximum[index])),
+    )
+}
+
+fn q8_bounds_match(
+    minimum: [f32; 3],
+    maximum: [f32; 3],
+    expected_minimum: [i32; 3],
+    expected_maximum: [i32; 3],
+) -> bool {
+    minimum
         .iter()
-        .zip(&maximum)
-        .zip(&bounds_min_q8)
-        .zip(&bounds_max_q8)
+        .zip(maximum)
+        .zip(expected_minimum)
+        .zip(expected_maximum)
         .all(
             |(((minimum, maximum), expected_minimum), expected_maximum)| {
-                q8(*minimum) == Some(*expected_minimum) && q8(*maximum) == Some(*expected_maximum)
+                q8(*minimum) == Some(expected_minimum) && q8(maximum) == Some(expected_maximum)
             },
-        );
-    bounds_match
-        && position
-            .bounds
-            .is_some_and(|(declared_minimum, declared_maximum)| {
-                declared_minimum == minimum && declared_maximum == maximum
-            })
+        )
 }
 
 fn accessor_bounds(value: &serde_json::Value, accessor_type: &str) -> Option<([f32; 3], [f32; 3])> {
@@ -1030,6 +1100,32 @@ mod glb_tests {
         let fixture = pine_fixture();
         assert!(valid_pine(&fixture));
 
+        let wrong_support_origin = mutate_pine(&fixture, |document, _| {
+            document["asset"]["extras"]["origin"] = Value::from("base_center");
+        });
+        assert!(!valid_pine(&wrong_support_origin));
+
+        let translated_node = mutate_pine(&fixture, |document, _| {
+            document["nodes"][0]["translation"] = serde_json::json!([1.0, 0.0, 0.0]);
+        });
+        assert!(!valid_pine(&translated_node));
+
+        let omitted_triangle_mode = mutate_pine(&fixture, |document, _| {
+            document["meshes"][0]["primitives"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("mode");
+        });
+        assert!(valid_pine(&omitted_triangle_mode));
+
+        let out_of_range_material = mutate_pine(&fixture, |document, _| {
+            document["meshes"][0]["primitives"][0]["material"] = Value::from(1);
+        });
+        assert!(!valid_pine(&out_of_range_material));
+
+        let split_bounds = split_pine_bounds(&fixture);
+        assert!(valid_pine(&split_bounds));
+
         let misaligned_view = mutate_pine(&fixture, |document, _| {
             document["bufferViews"][0]["byteOffset"] = Value::from(1);
         });
@@ -1117,6 +1213,40 @@ mod glb_tests {
         let mut binary = mutate_from[binary_offset..].to_vec();
         mutate(&mut document, &mut binary);
         glb_bytes(document, binary)
+    }
+
+    fn split_pine_bounds(mutate_from: &[u8]) -> Vec<u8> {
+        mutate_pine(mutate_from, |document, binary| {
+            document["accessors"][0]["count"] = Value::from(8);
+            document["accessors"][0]["min"] = serde_json::json!([-0.45, 0.0, -0.45]);
+            document["accessors"][0]["max"] = serde_json::json!([0.45, 10.0, 0.45]);
+            document["accessors"][1]["count"] = Value::from(8);
+            document["accessors"][2]["count"] = Value::from(8);
+            document["accessors"][3]["count"] = Value::from(8);
+            document["accessors"][4]["count"] = Value::from(3);
+            binary[624..630].copy_from_slice(&[0, 0, 1, 0, 2, 0]);
+
+            let accessors = document["accessors"].as_array_mut().unwrap();
+            for (source, offset) in [(0, 96), (1, 96), (2, 64), (3, 128)] {
+                let mut accessor = accessors[source].clone();
+                accessor["count"] = Value::from(5);
+                accessor["byteOffset"] = Value::from(offset);
+                accessors.push(accessor);
+            }
+            accessors[5]["min"] = serde_json::json!([-4.0, 10.0, -4.0]);
+            accessors[5]["max"] = serde_json::json!([4.0, 18.0, 4.0]);
+
+            let second_primitive = serde_json::json!({
+                "attributes": { "POSITION": 5, "NORMAL": 6, "TEXCOORD_0": 7, "TANGENT": 8 },
+                "indices": 4,
+                "material": 0,
+                "mode": 4,
+            });
+            document["meshes"][0]["primitives"]
+                .as_array_mut()
+                .unwrap()
+                .push(second_primitive);
+        })
     }
 
     fn glb_bytes(document: Value, mut binary: Vec<u8>) -> Vec<u8> {
