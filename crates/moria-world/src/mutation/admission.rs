@@ -132,14 +132,14 @@ impl AdmissionState {
                 self.estimate_box_bricks(*min, *max_exclusive)?
             }
         };
+        if estimated_bricks > self.config.max_progressive_bricks {
+            return Err(SubmitError::ProgressiveWorkLimitExceeded);
+        }
         match command.execution {
             EditExecution::Atomic
                 if estimated_bricks > u32::from(self.config.max_atomic_bricks) =>
             {
                 Err(SubmitError::AtomicWorkLimitExceeded)
-            }
-            EditExecution::Progressive if estimated_bricks > self.config.max_progressive_bricks => {
-                Err(SubmitError::ProgressiveWorkLimitExceeded)
             }
             EditExecution::Atomic | EditExecution::Progressive => Ok(estimated_bricks),
         }
