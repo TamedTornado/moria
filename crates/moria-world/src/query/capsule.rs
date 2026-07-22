@@ -21,6 +21,7 @@ pub const MAX_QUERY_HITS: u16 = 512;
 
 const Q16_MAX: i64 = 65_535;
 const VOXEL_EDGE_Q8_I64: i64 = 64;
+const CANDIDATE_BUCKETS: usize = 16_384;
 
 /// A signed Q8 displacement vector.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -122,12 +123,7 @@ impl WorldRead<'_, '_> {
         }
         let end = moved_capsule(capsule, displacement, Q16_MAX)?;
         validate_capsule_bounds(end, bounds)?;
-        let candidates = candidate_range(capsule, end, bounds)?;
-        if candidates.count() > u32::from(MAX_SWEEP_CANDIDATE_TESTS) {
-            return Err(QueryError::LimitExceeded(
-                QueryLimitKind::SweepCandidateWork,
-            ));
-        }
+        let candidates = sweep_candidates(capsule, displacement, bounds)?;
 
         let mut impact = None;
         let mut hits = Vec::with_capacity(usize::from(MAX_QUERY_HITS));
@@ -185,6 +181,175 @@ impl WorldRead<'_, '_> {
             end_capsule,
             hits,
         })
+    }
+}
+
+struct CandidateBuffer {
+    buckets: [Option<VoxelCoord>; CANDIDATE_BUCKETS],
+    len: u16,
+}
+
+impl CandidateBuffer {
+    fn new() -> Self {
+        Self {
+            buckets: [None; CANDIDATE_BUCKETS],
+            len: 0,
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = VoxelCoord> + '_ {
+        self.buckets.iter().flatten().copied()
+    }
+
+    fn insert(&mut self, voxel: VoxelCoord) -> Result<(), QueryError> {
+        let mut index = candidate_hash(voxel) & (CANDIDATE_BUCKETS - 1);
+        loop {
+            match self.buckets[index] {
+                Some(existing) if existing == voxel => return Ok(()),
+                Some(_) => index = (index + 1) & (CANDIDATE_BUCKETS - 1),
+                None => {
+                    if self.len == MAX_SWEEP_CANDIDATE_TESTS {
+                        return Err(QueryError::LimitExceeded(
+                            QueryLimitKind::SweepCandidateWork,
+                        ));
+                    }
+                    self.buckets[index] = Some(voxel);
+                    self.len += 1;
+                    return Ok(());
+                }
+            }
+        }
+    }
+}
+
+fn candidate_hash(voxel: VoxelCoord) -> usize {
+    let mut value = u32::from_ne_bytes(voxel.x.to_ne_bytes()).wrapping_mul(0x9E37_79B1);
+    value ^= u32::from_ne_bytes(voxel.y.to_ne_bytes()).wrapping_mul(0x85EB_CA77).rotate_left(11);
+    value ^= u32::from_ne_bytes(voxel.z.to_ne_bytes()).wrapping_mul(0xC2B2_AE3D).rotate_left(22);
+    value as usize
+}
+
+fn sweep_candidates(
+    capsule: CapsuleQ8,
+    displacement: Vec3Q8,
+    bounds: WorldBounds,
+) -> Result<CandidateBuffer, QueryError> {
+    let start = VoxelCoord::new(
+        q8_to_voxel(i64::from(capsule.center.x))?,
+        q8_to_voxel(i64::from(capsule.center.y))?,
+        q8_to_voxel(i64::from(capsule.center.z))?,
+    );
+    let end = VoxelCoord::new(
+        q8_to_voxel(i64::from(capsule.center.x) + i64::from(displacement.x))?,
+        q8_to_voxel(i64::from(capsule.center.y) + i64::from(displacement.y))?,
+        q8_to_voxel(i64::from(capsule.center.z) + i64::from(displacement.z))?,
+    );
+    let horizontal = i32::try_from(
+        (i64::from(capsule.radius_q8) + VOXEL_EDGE_Q8_I64 - 1) / VOXEL_EDGE_Q8_I64,
+    )
+        .map_err(|_| QueryError::InvalidInput)?;
+    let vertical = i32::try_from(
+        (i64::from(capsule.radius_q8)
+            + i64::from(capsule.half_segment_q8)
+            + VOXEL_EDGE_Q8_I64
+            - 1)
+            / VOXEL_EDGE_Q8_I64,
+    )
+    .map_err(|_| QueryError::InvalidInput)?;
+
+    let mut candidates = CandidateBuffer::new();
+    visit_centerline_cells(start, end, displacement, |center| {
+        for x in (center.x - horizontal)..=(center.x + horizontal) {
+            for y in (center.y - vertical)..=(center.y + vertical) {
+                for z in (center.z - horizontal)..=(center.z + horizontal) {
+                    let voxel = VoxelCoord::new(x, y, z);
+                    if voxel_in_bounds(voxel, bounds) {
+                        candidates.insert(voxel)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    })?;
+    Ok(candidates)
+}
+
+fn voxel_in_bounds(voxel: VoxelCoord, bounds: WorldBounds) -> bool {
+    let min = bounds.min();
+    let max = bounds.max_exclusive();
+    let x = i64::from(voxel.x) * VOXEL_EDGE_Q8_I64;
+    let y = i64::from(voxel.y) * VOXEL_EDGE_Q8_I64;
+    let z = i64::from(voxel.z) * VOXEL_EDGE_Q8_I64;
+    x >= i64::from(min.x)
+        && y >= i64::from(min.y)
+        && z >= i64::from(min.z)
+        && x < i64::from(max.x)
+        && y < i64::from(max.y)
+        && z < i64::from(max.z)
+}
+
+fn visit_centerline_cells(
+    start: VoxelCoord,
+    end: VoxelCoord,
+    displacement: Vec3Q8,
+    mut visit: impl FnMut(VoxelCoord) -> Result<(), QueryError>,
+) -> Result<(), QueryError> {
+    let mut current = start;
+    let deltas = [displacement.x, displacement.y, displacement.z];
+    let steps = deltas.map(i32::signum);
+    let magnitudes = deltas.map(|value| i64::from(value).abs());
+    let mut distances = [0_i64; 3];
+    for axis in 0..3 {
+        if steps[axis] != 0 {
+            let coordinate = [current.x, current.y, current.z][axis];
+            let offset = [
+                i64::from(start.x),
+                i64::from(start.y),
+                i64::from(start.z),
+            ][axis]
+            .rem_euclid(VOXEL_EDGE_Q8_I64);
+            distances[axis] = if steps[axis] > 0 {
+                VOXEL_EDGE_Q8_I64 - offset
+            } else if offset == 0 {
+                VOXEL_EDGE_Q8_I64
+            } else {
+                offset
+            };
+            debug_assert_eq!(coordinate, [start.x, start.y, start.z][axis]);
+        }
+    }
+
+    loop {
+        visit(current)?;
+        if current == end {
+            return Ok(());
+        }
+        let mut next_axis = None;
+        for axis in 0..3 {
+            if steps[axis] == 0 {
+                continue;
+            }
+            if next_axis.is_none_or(|other| {
+                distances[axis] * magnitudes[other] < distances[other] * magnitudes[axis]
+            }) {
+                next_axis = Some(axis);
+            }
+        }
+        let axis = next_axis.expect("a non-terminal DDA cell has movement");
+        for tied_axis in 0..3 {
+            if steps[tied_axis] != 0
+                && distances[tied_axis] * magnitudes[axis]
+                    == distances[axis] * magnitudes[tied_axis]
+            {
+                match tied_axis {
+                    0 => current.x += steps[tied_axis],
+                    1 => current.y += steps[tied_axis],
+                    2 => current.z += steps[tied_axis],
+                    _ => unreachable!(),
+                }
+                distances[tied_axis] += VOXEL_EDGE_Q8_I64;
+            }
+        }
     }
 }
 
@@ -348,33 +513,92 @@ fn first_overlap_fraction(
     displacement: Vec3Q8,
     voxel: VoxelCoord,
 ) -> Option<i64> {
-    let mut fraction = 0;
-    loop {
-        if capsule_overlaps_voxel(moved_capsule(capsule, displacement, fraction).ok()?, voxel) {
-            return Some(fraction);
+    first_overlap_fraction_with_work(capsule, displacement, voxel).0
+}
+
+fn first_overlap_fraction_with_work(
+    capsule: CapsuleQ8,
+    displacement: Vec3Q8,
+    voxel: VoxelCoord,
+) -> (Option<i64>, u16) {
+    let mut checks = 0_u16;
+    let overlaps = |fraction: i64, checks: &mut u16| {
+        *checks += 1;
+        capsule_overlaps_voxel(
+            moved_capsule(capsule, displacement, fraction)
+                .expect("validated sweep cannot overflow"),
+            voxel,
+        )
+    };
+    if overlaps(0, &mut checks) {
+        return (Some(0), checks);
+    }
+
+    // The capsule-to-AABB distance along a line segment has one minimum.  Search
+    // that bounded interval, then binary-search its entering edge.  This keeps
+    // exact Q16 contact fractions while avoiding one overlap test per Q8 move.
+    let mut low = 0;
+    let mut high = Q16_MAX;
+    for _ in 0..20 {
+        let third = (high - low) / 3;
+        let left = low + third;
+        let right = high - third;
+        checks += 2;
+        if distance_squared_at(capsule, displacement, voxel, left)
+            <= distance_squared_at(capsule, displacement, voxel, right)
+        {
+            high = right;
+        } else {
+            low = left;
         }
-        let next = next_position_change_fraction(displacement, fraction)?;
-        fraction = next;
     }
+    let mut minimum = low;
+    for fraction in low..=high {
+        checks += 1;
+        if distance_squared_at(capsule, displacement, voxel, fraction)
+            < distance_squared_at(capsule, displacement, voxel, minimum)
+        {
+            minimum = fraction;
+        }
+    }
+    if !overlaps(minimum, &mut checks) {
+        return (None, checks);
+    }
+
+    let mut first = 1;
+    let mut last = minimum;
+    while first < last {
+        let middle = first + (last - first) / 2;
+        if overlaps(middle, &mut checks) {
+            last = middle;
+        } else {
+            first = middle + 1;
+        }
+    }
+
+    // Q8 center quantization can create a shallow grazing island just before
+    // the continuous-distance minimum.  Search immediately before the normal
+    // entering edge exactly; the bound is independent of sweep length.
+    const GRAZING_FRACTION_WINDOW: i64 = 256;
+    let grazing_start = first.saturating_sub(GRAZING_FRACTION_WINDOW);
+    for fraction in grazing_start..=first {
+        if overlaps(fraction, &mut checks) {
+            return (Some(fraction), checks);
+        }
+    }
+    (None, checks)
 }
 
-fn next_position_change_fraction(displacement: Vec3Q8, fraction: i64) -> Option<i64> {
-    [displacement.x, displacement.y, displacement.z]
-        .into_iter()
-        .filter_map(|component| next_component_change_fraction(component, fraction))
-        .min()
-}
-
-fn next_component_change_fraction(component: i32, fraction: i64) -> Option<i64> {
-    let magnitude = i64::from(component).abs();
-    if magnitude == 0 {
-        return None;
-    }
-    let travelled = magnitude * fraction / Q16_MAX;
-    (travelled < magnitude).then(|| {
-        let numerator = (travelled + 1) * Q16_MAX;
-        (numerator + magnitude - 1) / magnitude
-    })
+fn distance_squared_at(
+    capsule: CapsuleQ8,
+    displacement: Vec3Q8,
+    voxel: VoxelCoord,
+    fraction: i64,
+) -> i64 {
+    let moved = moved_capsule(capsule, displacement, fraction)
+        .expect("validated sweep cannot overflow");
+    let (x, y, z) = capsule_aabb_distance(moved, voxel);
+    x * x + y * y + z * z
 }
 
 fn hit_for(
@@ -677,23 +901,41 @@ mod tests {
     }
 
     #[test]
-    fn exact_sweep_candidate_limit_is_accepted_and_one_more_is_rejected() {
-        let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 400 * 64, 0), 32, 0);
-        let exact_displacement = Vec3Q8::new(415, 1_951, 1_951);
-        let excessive_displacement = Vec3Q8::new(416, 1_951, 1_951);
+    fn candidate_buffer_rejects_the_first_cell_above_the_work_limit() {
+        let capsule = CapsuleQ8::new(
+            WorldPointQ8::new(0, 400 * 64, 0),
+            MAX_CAPSULE_RADIUS_Q8,
+            MAX_CAPSULE_HALF_SEGMENT_Q8,
+        );
+        let displacement = Vec3Q8::new(1_700, 0, 0);
         let bounds = identity().bounds;
-        let exact_end = moved_capsule(capsule, exact_displacement, Q16_MAX).unwrap();
-        let excessive_end = moved_capsule(capsule, excessive_displacement, Q16_MAX).unwrap();
+        assert!(sweep_candidates(capsule, displacement, bounds)
+            .unwrap()
+            .iter()
+            .count()
+            <= usize::from(MAX_SWEEP_CANDIDATE_TESTS));
+        let mut candidates = CandidateBuffer::new();
+        for x in 0..i32::from(MAX_SWEEP_CANDIDATE_TESTS) {
+            candidates.insert(VoxelCoord::new(x, 0, 0)).unwrap();
+        }
         assert_eq!(
-            candidate_range(capsule, exact_end, bounds).unwrap().count(),
-            u32::from(MAX_SWEEP_CANDIDATE_TESTS)
+            candidates.insert(VoxelCoord::new(i32::from(MAX_SWEEP_CANDIDATE_TESTS), 0, 0)),
+            Err(QueryError::LimitExceeded(QueryLimitKind::SweepCandidateWork))
         );
-        assert!(
-            candidate_range(capsule, excessive_end, bounds)
-                .unwrap()
-                .count()
-                > u32::from(MAX_SWEEP_CANDIDATE_TESTS)
-        );
+    }
+
+    #[test]
+    fn nine_meter_diagonal_camera_sweep_uses_centerline_expanded_candidates() {
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 400 * 64, 0), 46, 0);
+        let displacement = Vec3Q8::new(1_330, 1_330, 1_330);
+        let bounds = identity().bounds;
+        let end = moved_capsule(capsule, displacement, Q16_MAX).unwrap();
+
+        assert!(squared_length(displacement) < i128::from(2_304).pow(2));
+        assert!(candidate_range(capsule, end, bounds).unwrap().count() > 8_192);
+
+        let candidates = sweep_candidates(capsule, displacement, bounds).unwrap();
+        assert!(candidates.iter().count() <= usize::from(MAX_SWEEP_CANDIDATE_TESTS));
 
         let mut app = App::new();
         app.insert_resource(state([]))
@@ -701,32 +943,26 @@ mod tests {
         app.world_mut()
             .run_system_once(
                 move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
-                    result.0 = read.sweep_capsule(capsule, exact_displacement, QueryMask::SOLID);
+                    result.0 = read.sweep_capsule(capsule, displacement, QueryMask::SOLID);
                 },
             )
             .unwrap();
-        assert!(
-            app.world()
-                .resource::<SweepQueryResult>()
-                .0
-                .as_ref()
-                .is_ok()
-        );
+        assert!(app
+            .world()
+            .resource::<SweepQueryResult>()
+            .0
+            .as_ref()
+            .is_ok());
+    }
 
-        app.world_mut()
-            .run_system_once(
-                move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
-                    result.0 =
-                        read.sweep_capsule(capsule, excessive_displacement, QueryMask::SOLID);
-                },
-            )
-            .unwrap();
-        assert_eq!(
-            app.world().resource::<SweepQueryResult>().0,
-            Err(QueryError::LimitExceeded(
-                QueryLimitKind::SweepCandidateWork
-            ))
-        );
+    #[test]
+    fn sweep_intersection_work_does_not_scale_with_quantized_displacement() {
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 400 * 64, 0), 46, 0);
+        let displacement = Vec3Q8::new(1_330, 1_330, 1_330);
+        let voxel = VoxelCoord::new(20, 420, 20);
+
+        let (_, tests) = first_overlap_fraction_with_work(capsule, displacement, voxel);
+        assert!(tests <= 600, "intersection used {tests} overlap checks");
     }
 
     #[test]
