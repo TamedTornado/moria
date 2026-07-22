@@ -35,7 +35,7 @@ fn pine_near_placeholder_is_a_shared_material_support_centered_glb() {
     );
 
     let bytes = fs::read(asset_path()).expect("pine-near placeholder exists at its declared path");
-    let document = glb_json(&bytes);
+    let (document, binary_length) = glb_document(&bytes);
 
     assert_eq!(document["asset"]["version"], "2.0");
     assert_eq!(document["asset"]["extras"]["units"], "metres");
@@ -63,6 +63,49 @@ fn pine_near_placeholder_is_a_shared_material_support_centered_glb() {
     }
 
     let accessors = document["accessors"].as_array().expect("accessors array");
+    let buffer_views = document["bufferViews"]
+        .as_array()
+        .expect("buffer views array");
+    for accessor in accessors {
+        let buffer_view = &buffer_views[accessor["bufferView"]
+            .as_u64()
+            .expect("accessor buffer view") as usize];
+        let component_bytes = match accessor["componentType"]
+            .as_u64()
+            .expect("accessor component type")
+        {
+            5123 => 2,
+            5126 => 4,
+            component_type => panic!("unsupported component type {component_type}"),
+        };
+        let component_count = match accessor["type"].as_str().expect("accessor type") {
+            "SCALAR" => 1,
+            "VEC2" => 2,
+            "VEC3" => 3,
+            "VEC4" => 4,
+            accessor_type => panic!("unsupported accessor type {accessor_type}"),
+        };
+        let accessor_bytes =
+            accessor["count"].as_u64().expect("accessor count") * component_bytes * component_count;
+        let accessor_offset = accessor
+            .get("byteOffset")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        assert!(
+            accessor_offset + accessor_bytes
+                <= buffer_view["byteLength"].as_u64().expect("view length"),
+            "every accessor must fit inside its buffer view"
+        );
+        assert!(
+            buffer_view
+                .get("byteOffset")
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                + buffer_view["byteLength"].as_u64().expect("view length")
+                <= binary_length as u64,
+            "every buffer view must fit inside the GLB binary chunk"
+        );
+    }
     let index_accessor = primitive["indices"].as_u64().expect("index accessor") as usize;
     let index_count = accessors[index_accessor]["count"]
         .as_u64()
@@ -104,7 +147,7 @@ fn asset_path() -> String {
     )
 }
 
-fn glb_json(bytes: &[u8]) -> Value {
+fn glb_document(bytes: &[u8]) -> (Value, usize) {
     assert!(bytes.len() >= 20, "GLB header and JSON chunk header");
     assert_eq!(u32_at(bytes, 0), GLB_MAGIC);
     assert_eq!(u32_at(bytes, 4), GLB_VERSION);
@@ -116,7 +159,10 @@ fn glb_json(bytes: &[u8]) -> Value {
     let binary_length = u32_at(bytes, binary_offset) as usize;
     assert_eq!(u32_at(bytes, binary_offset + 4), BIN_CHUNK);
     assert_eq!(binary_offset + 8 + binary_length, bytes.len());
-    serde_json::from_slice(&bytes[20..binary_offset]).expect("valid GLB JSON chunk")
+    (
+        serde_json::from_slice(&bytes[20..binary_offset]).expect("valid GLB JSON chunk"),
+        binary_length,
+    )
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
