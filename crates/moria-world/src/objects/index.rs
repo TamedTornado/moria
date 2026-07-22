@@ -272,7 +272,7 @@ pub fn build_object_index<'a>(
         actual: u64::MAX,
         maximum: config.max_retained_bytes,
     })?;
-    validate_edit_caps(&dependency_cells, &records, config)?;
+    validate_edit_caps(&dependency_cells, &records, placements, config)?;
     if retained_bytes > u64::from(config.max_retained_bytes) {
         return Err(ManifestError::ObjectIndexRetainedBytesExceeded {
             actual: retained_bytes,
@@ -291,6 +291,7 @@ pub fn build_object_index<'a>(
 fn validate_edit_caps(
     cells: &[DependencyGridCell],
     records: &[ObjectIndexRecord],
+    placements: &[ObjectPlacement],
     config: &ObjectIndexConfig,
 ) -> Result<(), ManifestError> {
     let mut starts = BTreeMap::<DependencyGridCellKey, ()>::new();
@@ -333,6 +334,7 @@ fn validate_edit_caps(
             let affected = max_affected_objects_for_edit(
                 &members,
                 records,
+                placements,
                 config.max_affected_objects_per_edit,
             );
             if affected > u16::from(config.max_affected_objects_per_edit) {
@@ -349,11 +351,9 @@ fn validate_edit_caps(
 fn max_affected_objects_for_edit(
     members: &[u32],
     records: &[ObjectIndexRecord],
+    placements: &[ObjectPlacement],
     maximum: u8,
 ) -> u16 {
-    // A legal three-dimensional edit sphere projects to this horizontal disk.
-    // Ignoring vertical separation therefore supplies a complete conservative
-    // cap without materializing dependency voxels or sampling object shapes.
     let dependencies = members
         .iter()
         .filter_map(|&member| {
@@ -385,18 +385,43 @@ fn max_affected_objects_for_edit(
             });
     let mut observed_maximum = 0_u16;
     for x in center_bounds.min.x..=center_bounds.max.x {
-        for z in center_bounds.min.z..=center_bounds.max.z {
-            let affected = u16::try_from(
-                dependencies
+        for y in center_bounds.min.y..=center_bounds.max.y {
+            for z in center_bounds.min.z..=center_bounds.max.z {
+                let center = VoxelCoord::new(x, y, z);
+                let candidates = dependencies
                     .iter()
-                    .filter(|(_, dependency)| edit_disk_can_reach_dependency(*dependency, x, z))
-                    .count(),
-            )
-            .unwrap_or(u16::MAX);
-            if affected > u16::from(maximum) {
-                return affected;
+                    .filter(|(_, dependency)| {
+                        edit_sphere_can_reach_dependency_bounds(*dependency, center)
+                    })
+                    .count();
+                if candidates <= usize::from(maximum) {
+                    observed_maximum =
+                        observed_maximum.max(u16::try_from(candidates).unwrap_or(u16::MAX));
+                    continue;
+                }
+                let affected = u16::try_from(
+                    dependencies
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, (_, dependency))| {
+                            edit_sphere_can_reach_dependency_bounds(*dependency, center) && {
+                                let member = members[*index];
+                                let position = usize::try_from(member).ok();
+                                position
+                                    .and_then(|position| placements.get(position))
+                                    .is_some_and(|placement| {
+                                        edit_sphere_hits_dependency(placement, center)
+                                    })
+                            }
+                        })
+                        .count(),
+                )
+                .unwrap_or(u16::MAX);
+                if affected > u16::from(maximum) {
+                    return affected;
+                }
+                observed_maximum = observed_maximum.max(affected);
             }
-            observed_maximum = observed_maximum.max(affected);
         }
     }
     observed_maximum
@@ -437,7 +462,10 @@ fn dependency_voxel_bounds(bounds: AabbQ8) -> EditCenterBounds {
     }
 }
 
-fn edit_disk_can_reach_dependency(dependency: EditCenterBounds, x: i32, z: i32) -> bool {
+fn edit_sphere_can_reach_dependency_bounds(
+    dependency: EditCenterBounds,
+    center: VoxelCoord,
+) -> bool {
     let separation = |left_min: i32, left_max: i32, right_min: i32, right_max: i32| {
         if left_max < right_min {
             i64::from(right_min - left_max)
@@ -447,10 +475,43 @@ fn edit_disk_can_reach_dependency(dependency: EditCenterBounds, x: i32, z: i32) 
             0
         }
     };
-    let x = separation(dependency.min.x, dependency.max.x, x, x);
-    let z = separation(dependency.min.z, dependency.max.z, z, z);
+    let x = separation(dependency.min.x, dependency.max.x, center.x, center.x);
+    let y = separation(dependency.min.y, dependency.max.y, center.y, center.y);
+    let z = separation(dependency.min.z, dependency.max.z, center.z, center.z);
     let radius = i64::from(SUPPORTED_EDIT_RADIUS_VOXELS);
-    x * x + z * z <= radius * radius
+    x * x + y * y + z * z <= radius * radius
+}
+
+fn edit_sphere_hits_dependency(placement: &ObjectPlacement, center: VoxelCoord) -> bool {
+    if dependency_contains(placement, center) {
+        return true;
+    }
+    let radius = SUPPORTED_EDIT_RADIUS_VOXELS;
+    for x_offset in -radius..=radius {
+        for y_offset in -radius..=radius {
+            for z_offset in -radius..=radius {
+                if (x_offset, y_offset, z_offset) == (0, 0, 0)
+                    || x_offset * x_offset + y_offset * y_offset + z_offset * z_offset
+                        > radius * radius
+                {
+                    continue;
+                }
+                let Some(x) = center.x.checked_add(x_offset) else {
+                    continue;
+                };
+                let Some(y) = center.y.checked_add(y_offset) else {
+                    continue;
+                };
+                let Some(z) = center.z.checked_add(z_offset) else {
+                    continue;
+                };
+                if dependency_contains(placement, VoxelCoord::new(x, y, z)) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Returns active placements whose raw bounds overlap `bounds`, sorted by ID.
@@ -632,8 +693,22 @@ fn expand_dependency_bounds(bounds: AabbQ8) -> Option<AabbQ8> {
 fn dependency_key_for(coordinate: VoxelCoord) -> Option<DependencyGridCellKey> {
     let edge_q8 = DEPENDENCY_CELL_METERS.checked_mul(Q8_UNITS_PER_METER)?;
     Some(DependencyGridCellKey {
-        x: i16::try_from(coordinate.x.checked_mul(VOXEL_EDGE_Q8)?.div_euclid(edge_q8)).ok()?,
-        z: i16::try_from(coordinate.z.checked_mul(VOXEL_EDGE_Q8)?.div_euclid(edge_q8)).ok()?,
+        x: i16::try_from(
+            coordinate
+                .x
+                .checked_mul(VOXEL_EDGE_Q8)?
+                .checked_sub(REGION_XZ_MIN_Q8)?
+                .div_euclid(edge_q8),
+        )
+        .ok()?,
+        z: i16::try_from(
+            coordinate
+                .z
+                .checked_mul(VOXEL_EDGE_Q8)?
+                .checked_sub(REGION_XZ_MIN_Q8)?
+                .div_euclid(edge_q8),
+        )
+        .ok()?,
     })
 }
 
@@ -667,7 +742,7 @@ fn voxel_in_bounds(coordinate: VoxelCoord, bounds: AabbQ8) -> bool {
 }
 
 fn dependency_keys_for(bounds: AabbQ8) -> Vec<DependencyGridCellKey> {
-    horizontal_range(bounds, DEPENDENCY_CELL_METERS)
+    horizontal_range(bounds, DEPENDENCY_CELL_METERS, REGION_XZ_MIN_Q8)
         .flat_map(|(x, z)| {
             i16::try_from(x)
                 .ok()
@@ -678,7 +753,7 @@ fn dependency_keys_for(bounds: AabbQ8) -> Vec<DependencyGridCellKey> {
 }
 
 fn sample_keys_for(bounds: AabbQ8) -> Vec<SampleGridCellKey> {
-    horizontal_range(bounds, SAMPLE_CELL_METERS)
+    horizontal_range(bounds, SAMPLE_CELL_METERS, 0)
         .flat_map(|(x, z)| {
             i16::try_from(x)
                 .ok()
@@ -688,12 +763,16 @@ fn sample_keys_for(bounds: AabbQ8) -> Vec<SampleGridCellKey> {
         .collect()
 }
 
-fn horizontal_range(bounds: AabbQ8, meters: i32) -> impl Iterator<Item = (i32, i32)> {
+fn horizontal_range(
+    bounds: AabbQ8,
+    meters: i32,
+    origin_q8: i32,
+) -> impl Iterator<Item = (i32, i32)> {
     let edge = meters * Q8_UNITS_PER_METER;
-    let min_x = bounds.min.x.div_euclid(edge);
-    let max_x = (bounds.max_exclusive.x - 1).div_euclid(edge);
-    let min_z = bounds.min.z.div_euclid(edge);
-    let max_z = (bounds.max_exclusive.z - 1).div_euclid(edge);
+    let min_x = (bounds.min.x - origin_q8).div_euclid(edge);
+    let max_x = (bounds.max_exclusive.x - 1 - origin_q8).div_euclid(edge);
+    let min_z = (bounds.min.z - origin_q8).div_euclid(edge);
+    let max_z = (bounds.max_exclusive.z - 1 - origin_q8).div_euclid(edge);
     (min_x..=max_x).flat_map(move |x| (min_z..=max_z).map(move |z| (x, z)))
 }
 

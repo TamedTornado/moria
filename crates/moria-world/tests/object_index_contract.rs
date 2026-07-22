@@ -6,11 +6,15 @@ use moria_world::{
 };
 
 fn boulder(id: u64, x_voxels: i32, z_voxels: i32) -> ObjectPlacement {
+    boulder_at(id, x_voxels, 0, z_voxels)
+}
+
+fn boulder_at(id: u64, x_voxels: i32, y_voxels: i32, z_voxels: i32) -> ObjectPlacement {
     ObjectPlacement {
         id: ObjectId(id),
         kind: ObjectKind::Boulder,
         transform_q: QuantizedTransform {
-            translation: WorldPointQ8::new(x_voxels * 64, 0, z_voxels * 64),
+            translation: WorldPointQ8::new(x_voxels * 64, y_voxels * 64, z_voxels * 64),
             yaw_quarter_turns: 0,
             uniform_scale_q8: 256,
         },
@@ -19,7 +23,7 @@ fn boulder(id: u64, x_voxels: i32, z_voxels: i32) -> ObjectPlacement {
             radii_q8: [128, 128, 128],
             perturbation_key: id,
         },
-        anchor: VoxelCoord::new(x_voxels, 0, z_voxels),
+        anchor: VoxelCoord::new(x_voxels, y_voxels, z_voxels),
     }
 }
 
@@ -103,6 +107,31 @@ fn dependency_bounds_clip_and_horizon_cells_align_to_region_minimum() {
 }
 
 #[test]
+fn horizon_cells_overlap_at_most_four_aligned_dependency_cells() {
+    let placements = [tree(1, -2_000, -2_000), tree(2, -1_873, -1_873)];
+    let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
+
+    let x_keys = index
+        .dependency_cells()
+        .iter()
+        .map(|cell| cell.key.x)
+        .collect::<std::collections::BTreeSet<_>>();
+    let z_keys = index
+        .dependency_cells()
+        .iter()
+        .map(|cell| cell.key.z)
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(x_keys.len(), 2);
+    assert_eq!(z_keys.len(), 2);
+    assert_eq!(index.dependency_cells().len(), 4);
+    assert_eq!(
+        horizon_tree_ids(&index, moria_world::HorizonCellKey::new(0, 0)),
+        vec![ObjectId(1), ObjectId(2)]
+    );
+}
+
+#[test]
 fn every_index_capacity_is_rejected_instead_of_truncated() {
     let placement = boulder(1, 0, 0);
 
@@ -119,15 +148,21 @@ fn every_index_capacity_is_rejected_instead_of_truncated() {
         })
     ));
 
-    for config in [
-        ObjectIndexConfig {
-            max_dependency_cells_per_object: 1,
-            ..Default::default()
-        },
-        ObjectIndexConfig {
-            max_sample_cells_per_object: 1,
-            ..Default::default()
-        },
+    for (placement, config) in [
+        (
+            boulder(1, -1_872, -1_872),
+            ObjectIndexConfig {
+                max_dependency_cells_per_object: 1,
+                ..Default::default()
+            },
+        ),
+        (
+            placement.clone(),
+            ObjectIndexConfig {
+                max_sample_cells_per_object: 1,
+                ..Default::default()
+            },
+        ),
     ] {
         assert!(matches!(
             build_object_index(std::slice::from_ref(&placement), &config),
@@ -258,6 +293,17 @@ fn edit_affected_cap_excludes_diagonally_separated_dependencies() {
     };
 
     assert!(build_object_index(&diagonal, &config).is_ok());
+}
+
+#[test]
+fn edit_affected_cap_excludes_vertically_separated_dependencies() {
+    let vertical = [boulder_at(1, 0, -100, 0), boulder_at(2, 0, 100, 0)];
+    let config = ObjectIndexConfig {
+        max_affected_objects_per_edit: 1,
+        ..Default::default()
+    };
+
+    assert!(build_object_index(&vertical, &config).is_ok());
 }
 
 #[test]
