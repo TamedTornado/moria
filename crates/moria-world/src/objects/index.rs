@@ -368,20 +368,21 @@ fn max_affected_objects_for_edit(
     let Some(first) = dependencies.first() else {
         return 0;
     };
-    let center_bounds = dependencies.iter().fold(first.0, |bounds, (centers, _)| {
-        EditCenterBounds {
-            min: VoxelCoord::new(
-                bounds.min.x.min(centers.min.x),
-                bounds.min.y.min(centers.min.y),
-                bounds.min.z.min(centers.min.z),
-            ),
-            max: VoxelCoord::new(
-                bounds.max.x.max(centers.max.x),
-                bounds.max.y.max(centers.max.y),
-                bounds.max.z.max(centers.max.z),
-            ),
-        }
-    });
+    let center_bounds =
+        dependencies
+            .iter()
+            .fold(first.0, |bounds, (centers, _)| EditCenterBounds {
+                min: VoxelCoord::new(
+                    bounds.min.x.min(centers.min.x),
+                    bounds.min.y.min(centers.min.y),
+                    bounds.min.z.min(centers.min.z),
+                ),
+                max: VoxelCoord::new(
+                    bounds.max.x.max(centers.max.x),
+                    bounds.max.y.max(centers.max.y),
+                    bounds.max.z.max(centers.max.z),
+                ),
+            });
     let mut observed_maximum = 0_u16;
     for x in center_bounds.min.x..=center_bounds.max.x {
         for z in center_bounds.min.z..=center_bounds.max.z {
