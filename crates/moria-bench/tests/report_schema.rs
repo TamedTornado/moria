@@ -419,7 +419,60 @@ fn scenario_complete_and_null_rules_reject_impossible_evidence_states() {
         changed_bricks: None,
         round_trip: None,
     };
+    let save_count_reasons = [
+        "runtime-failure".into(),
+        "save.changed_bricks".into(),
+        "save.changed_voxels".into(),
+        "save.size_bytes".into(),
+    ];
+    for missing_reason in &save_count_reasons[1..] {
+        early_failure.failure_reasons = save_count_reasons
+            .iter()
+            .filter(|reason| *reason != missing_reason)
+            .cloned()
+            .collect();
+        assert!(matches!(
+            early_failure.validate(),
+            Err(ReportValidationError::Missing { field }) if field == missing_reason
+        ));
+    }
+
+    early_failure.failure_reasons = save_count_reasons.to_vec();
     assert!(early_failure.validate().is_ok());
+
+    let mut mutation_failure = mutation_report();
+    mutation_failure.passed = false;
+    mutation_failure.failure_reasons = vec!["runtime-failure".into()];
+    mutation_failure.save = SaveEvidence {
+        attempted: false,
+        completed: false,
+        size_bytes: None,
+        changed_voxels: None,
+        changed_bricks: None,
+        round_trip: None,
+    };
+    assert!(matches!(
+        mutation_failure.validate(),
+        Err(ReportValidationError::Missing {
+            field: "save.size_bytes"
+        })
+    ));
+
+    mutation_failure.failure_reasons = save_count_reasons.to_vec();
+    assert!(mutation_failure.validate().is_ok());
+}
+
+#[test]
+fn frame_rate_rejects_one_percent_low_above_arithmetic_rate() {
+    let mut invalid = report();
+    invalid.frame_rate.as_mut().unwrap().one_percent_low_fps = 61.0;
+
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "one_percent_low_fps"
+        })
+    ));
 }
 
 #[test]

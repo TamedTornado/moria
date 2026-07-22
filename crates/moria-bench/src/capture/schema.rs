@@ -402,6 +402,7 @@ fn validate_flythrough(report: &BenchmarkReport) -> Result<(), ReportValidationE
             field: "flythrough save",
         });
     }
+    validate_missing_save_counts(save, &report.failure_reasons)?;
     Ok(())
 }
 
@@ -472,6 +473,7 @@ fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidation
             field: "mutation save",
         });
     }
+    validate_missing_save_counts(save, &report.failure_reasons)?;
     if let Some(round_trip) = save.round_trip
         && round_trip.passed
         && !(round_trip.delta_voxels_compared > 0
@@ -500,6 +502,22 @@ fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidation
         return Err(ReportValidationError::Limit {
             field: "mutation save",
         });
+    }
+    Ok(())
+}
+
+fn validate_missing_save_counts(
+    save: &SaveEvidence,
+    failure_reasons: &[String],
+) -> Result<(), ReportValidationError> {
+    for (field, present) in [
+        ("save.size_bytes", save.size_bytes.is_some()),
+        ("save.changed_voxels", save.changed_voxels.is_some()),
+        ("save.changed_bricks", save.changed_bricks.is_some()),
+    ] {
+        if !present && !failure_reasons.iter().any(|reason| reason == field) {
+            return Err(ReportValidationError::Missing { field });
+        }
     }
     Ok(())
 }
@@ -547,6 +565,11 @@ fn validate_frame_rate(value: FrameRateMetrics, passed: bool) -> Result<(), Repo
     if (calculated_fps - value.arithmetic_fps).abs() > calculated_fps.abs() * 0.000_001 {
         return Err(ReportValidationError::Inconsistent {
             field: "arithmetic_fps",
+        });
+    }
+    if value.one_percent_low_fps > value.arithmetic_fps {
+        return Err(ReportValidationError::Inconsistent {
+            field: "one_percent_low_fps",
         });
     }
     if passed && value.arithmetic_fps < 60.0 {
