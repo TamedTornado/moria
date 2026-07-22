@@ -7,8 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use moria_world::{
-    BrickCoord, CapsuleQ8, ColumnCoord, DiagnosticPageRequest, QueryError, QueryMask, Vec3Q8,
-    VoxelCoord, WorldPointQ8, WorldRayQ8, WorldRead,
+    BrickCoord, CapsuleQ8, ColumnCoord, DiagnosticPageRequest, MAX_OVERLAP_CANDIDATE_TESTS,
+    MAX_RAY_DISTANCE_Q8, MAX_RAY_VOXEL_VISITS, MAX_SWEEP_CANDIDATE_TESTS, QueryError, QueryMask,
+    Vec3Q8, VoxelCoord, WorldPointQ8, WorldRayQ8, WorldRead,
     telemetry::{Distribution, QueryCostEvidence},
 };
 
@@ -18,6 +19,7 @@ pub const COLD_INACTIVE_CALLS: u32 = 256;
 pub const NORMAL_QUERY_BUNDLES: u32 = 1_000;
 pub const COLUMN_PAGE_CALLS: u32 = 128;
 pub const PLAYER_SUBSTEP_SWEEPS_PER_BUNDLE: usize = 4;
+const MAX_CAMERA_DISPLACEMENT_Q8: i64 = 9 * 256;
 
 const FRAME_CRITICAL_P99_MS: f64 = 1.0;
 const FRAME_CRITICAL_MAX_MS: f64 = 4.0;
@@ -100,6 +102,7 @@ pub enum QueryProbeError {
     RepeatedColdCoordinate,
     InvalidMetadataPage,
     InvalidCellsPage,
+    InvalidNormalBundle,
     MissingSampleCount(&'static str),
     InvalidSampleCount(&'static str),
     MissingDistribution(&'static str),
@@ -162,7 +165,11 @@ pub fn run_query_probe(read: &WorldRead<'_, '_>, inputs: &QueryProbeInputs) -> Q
             )
         });
         measure_query(&mut debug_rays, &mut failures, "debug_ray", || {
-            read.ray_cast(inputs.normal_bundle.debug_ray, 16_384, QueryMask::ALL)
+            read.ray_cast(
+                inputs.normal_bundle.debug_ray,
+                MAX_RAY_DISTANCE_Q8,
+                QueryMask::ALL,
+            )
         });
         measure_query(&mut water_surfaces, &mut failures, "water_surface", || {
             read.water_surface_at(
@@ -277,11 +284,21 @@ impl QueryProbeEvidenceValidator {
                 .ok_or(QueryProbeError::MissingDistribution(name))?;
             valid_distribution(value, name)?;
             if value.p99 > FRAME_CRITICAL_P99_MS {
-                return Err(QueryProbeError::BudgetExceeded("frame_critical_p99_ms"));
+                return Err(QueryProbeError::BudgetExceeded(frame_p99_name(name)));
             }
             if value.max > FRAME_CRITICAL_MAX_MS {
-                return Err(QueryProbeError::BudgetExceeded("frame_critical_max_ms"));
+                return Err(QueryProbeError::BudgetExceeded(frame_max_name(name)));
             }
+        }
+        let cold_sample = evidence
+            .cold_inactive_calls
+            .get("sample_voxel")
+            .ok_or(QueryProbeError::MissingDistribution("sample_voxel"))?;
+        valid_distribution(cold_sample, "sample_voxel")?;
+        if cold_sample.max > FRAME_CRITICAL_MAX_MS {
+            return Err(QueryProbeError::BudgetExceeded(
+                "cold_inactive_sample_voxel_max_ms",
+            ));
         }
         for (value, name, p99, maximum) in [
             (
@@ -294,29 +311,29 @@ impl QueryProbeEvidenceValidator {
                 &evidence.column_ms,
                 "column_p99_ms",
                 COLUMN_AND_METADATA_P99_MS,
-                None,
+                Some((FRAME_CRITICAL_MAX_MS, "sample_column_max_ms")),
             ),
             (
                 &evidence.diagnostic_metadata_page_ms,
                 "diagnostic_metadata_page_p99_ms",
                 COLUMN_AND_METADATA_P99_MS,
-                None,
+                Some((FRAME_CRITICAL_MAX_MS, "diagnostic_metadata_page_max_ms")),
             ),
             (
                 &evidence.diagnostic_cells_page_ms,
                 "diagnostic_cells_page_p99_ms",
                 CELLS_PAGE_P99_MS,
-                Some(CELLS_PAGE_MAX_MS),
+                Some((CELLS_PAGE_MAX_MS, "diagnostic_cells_page_max_ms")),
             ),
         ] {
             valid_distribution(value, name)?;
             if value.p99 > p99 {
                 return Err(QueryProbeError::BudgetExceeded(name));
             }
-            if maximum.is_some_and(|maximum| value.max > maximum) {
-                return Err(QueryProbeError::BudgetExceeded(
-                    "diagnostic_cells_page_max_ms",
-                ));
+            if let Some((maximum, budget_name)) = maximum
+                && value.max > maximum
+            {
+                return Err(QueryProbeError::BudgetExceeded(budget_name));
             }
         }
         for (name, value) in required_work_maxima() {
@@ -346,16 +363,24 @@ fn validate_inputs(inputs: &QueryProbeInputs) -> Result<(), QueryProbeError> {
         return Err(QueryProbeError::RepeatedColdCoordinate);
     }
     if inputs.metadata_page.snapshot.is_some()
+        || inputs.metadata_page.after_brick.is_some()
         || inputs.metadata_page.max_bricks != 256
         || inputs.metadata_page.include_cells
     {
         return Err(QueryProbeError::InvalidMetadataPage);
     }
     if inputs.cells_page.snapshot.is_some()
+        || inputs.cells_page.after_brick.is_some()
         || inputs.cells_page.max_bricks != 2
         || !inputs.cells_page.include_cells
     {
         return Err(QueryProbeError::InvalidCellsPage);
+    }
+    let camera = inputs.normal_bundle.camera_displacement;
+    let camera_distance_squared =
+        i64::from(camera.x).pow(2) + i64::from(camera.y).pow(2) + i64::from(camera.z).pow(2);
+    if camera_distance_squared != MAX_CAMERA_DISPLACEMENT_Q8.pow(2) {
+        return Err(QueryProbeError::InvalidNormalBundle);
     }
     Ok(())
 }
@@ -380,7 +405,10 @@ fn elapsed_ms(started: Instant) -> f64 {
 fn distribution(samples: &[f64]) -> Distribution {
     let mut sorted = samples.to_vec();
     sorted.sort_by(f64::total_cmp);
-    let percentile = |percent: usize| sorted[(sorted.len() - 1) * percent / 100];
+    let percentile = |percent: usize| {
+        let rank = (sorted.len() * percent).div_ceil(100);
+        sorted[rank.saturating_sub(1)]
+    };
     Distribution {
         min: sorted[0],
         p50: percentile(50),
@@ -410,9 +438,15 @@ fn required_work_maxima() -> BTreeMap<String, u64> {
             "cold_coordinates_distinct".into(),
             u64::from(COLD_INACTIVE_CALLS),
         ),
-        ("ray_voxel_visits".into(), 448),
-        ("sweep_candidate_tests".into(), 8_192),
-        ("overlap_candidate_tests".into(), 512),
+        ("ray_voxel_visits".into(), u64::from(MAX_RAY_VOXEL_VISITS)),
+        (
+            "sweep_candidate_tests".into(),
+            u64::from(MAX_SWEEP_CANDIDATE_TESTS),
+        ),
+        (
+            "overlap_candidate_tests".into(),
+            u64::from(MAX_OVERLAP_CANDIDATE_TESTS),
+        ),
         ("column_runs".into(), 64),
         ("diagnostic_metadata_bricks".into(), 256),
         ("diagnostic_cells_bricks".into(), 2),
@@ -431,6 +465,30 @@ fn work_name(name: &str) -> &'static str {
         "diagnostic_cells_bricks" => "diagnostic_cells_bricks",
         "diagnostic_cells" => "diagnostic_cells",
         _ => unreachable!("all work maximum keys are fixed"),
+    }
+}
+
+fn frame_p99_name(name: &str) -> &'static str {
+    match name {
+        PLAYER_SWEEP => "player_sweep_p99_ms",
+        CAMERA_SWEEP => "camera_sweep_p99_ms",
+        DEBUG_RAY => "debug_ray_p99_ms",
+        WATER_SURFACE => "water_surface_p99_ms",
+        WATER_CONTACT => "water_contact_p99_ms",
+        ACTIVE_BAND => "active_band_p99_ms",
+        _ => unreachable!("all frame-critical call keys are fixed"),
+    }
+}
+
+fn frame_max_name(name: &str) -> &'static str {
+    match name {
+        PLAYER_SWEEP => "player_sweep_max_ms",
+        CAMERA_SWEEP => "camera_sweep_max_ms",
+        DEBUG_RAY => "debug_ray_max_ms",
+        WATER_SURFACE => "water_surface_max_ms",
+        WATER_CONTACT => "water_contact_max_ms",
+        ACTIVE_BAND => "active_band_max_ms",
+        _ => unreachable!("all frame-critical call keys are fixed"),
     }
 }
 
@@ -454,5 +512,21 @@ const fn zero_distribution() -> Distribution {
         p95: 0.0,
         p99: 0.0,
         max: 0.0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::distribution;
+
+    #[test]
+    fn distributions_use_nearest_rank_percentiles() {
+        let samples = (1..=128).map(f64::from).collect::<Vec<_>>();
+
+        let observed = distribution(&samples);
+
+        assert_eq!(observed.p50, 64.0);
+        assert_eq!(observed.p95, 122.0);
+        assert_eq!(observed.p99, 127.0);
     }
 }

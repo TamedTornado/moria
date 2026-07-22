@@ -18,3 +18,21 @@ fn ray_contract_exports_the_exact_public_limits_and_validates_direction() {
     assert!((QueryMask::SOLID | QueryMask::WATER).matches(QueryMask::WATER));
     assert_eq!(QueryLimitKind::RayDistance, QueryLimitKind::RayDistance);
 }
+
+#[test]
+fn extreme_direction_components_are_rejected_without_panicking() {
+    for direction in [
+        [i32::MAX, i32::MAX, i32::MAX],
+        [i32::MIN, i32::MIN, i32::MIN],
+        [i32::MAX, i32::MIN, 0],
+    ] {
+        let result =
+            std::panic::catch_unwind(|| WorldRayQ8::new(WorldPointQ8::new(0, 0, 0), direction));
+
+        assert!(
+            result.is_ok(),
+            "invalid direction {direction:?} must return an error instead of panicking"
+        );
+        assert_eq!(result.unwrap(), Err(QueryError::InvalidInput));
+    }
+}

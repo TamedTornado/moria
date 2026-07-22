@@ -2,6 +2,13 @@
 
 use crate::{MaterialRegistry, ObjectId, Voxel, solid_collision};
 
+/// One regenerated base voxel together with its immutable provenance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BaseVoxel {
+    pub voxel: Voxel,
+    pub source: VoxelSource,
+}
+
 /// The regenerated base source of a voxel; deltas never replace this value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VoxelSource {

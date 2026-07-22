@@ -75,3 +75,41 @@ fn empty_or_base_equal_commits_do_not_advance_the_revision() {
     );
     assert_eq!(store.revision(), 0);
 }
+
+#[test]
+fn materializing_after_an_edit_uses_the_current_world_revision() {
+    let identity = identity();
+    let mut store = WorldStore::new(identity);
+    let coordinate = VoxelCoord::new(-2_000, -512, -2_000);
+    let brick = coordinate.to_brick_coord().unwrap();
+
+    assert_eq!(
+        store.commit_current([(coordinate, Voxel::new(AIR, 0, 0, 0))]),
+        1
+    );
+
+    store.materialize_detail(brick);
+
+    assert_eq!(store.active_revision(brick), Some(store.revision()));
+}
+
+#[test]
+fn unchanged_bricks_do_not_receive_another_bricks_batch_revision() {
+    let identity = identity();
+    let mut store = WorldStore::new(identity);
+    let unchanged = VoxelCoord::new(-2_000, -512, -2_000);
+    let changed = VoxelCoord::new(-1_984, -512, -2_000);
+    let unchanged_brick = unchanged.to_brick_coord().unwrap();
+    store.materialize_detail(unchanged_brick);
+
+    assert_eq!(store.active_revision(unchanged_brick), Some(0));
+    assert_eq!(
+        store.commit_current([
+            (unchanged, evaluate_base_voxel(&identity, unchanged)),
+            (changed, Voxel::new(AIR, 0, 0, 0)),
+        ]),
+        1
+    );
+
+    assert_eq!(store.active_revision(unchanged_brick), Some(0));
+}

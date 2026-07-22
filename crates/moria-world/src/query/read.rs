@@ -178,10 +178,10 @@ impl WorldRead<'_, '_> {
     }
 
     fn ready_state(&self) -> Result<&WorldReadState, QueryError> {
-        if self
+        if !self
             .lifecycle
             .as_deref()
-            .is_some_and(|lifecycle| !lifecycle.is_ready())
+            .is_some_and(WorldLifecycle::is_ready)
         {
             return Err(QueryError::NotReady);
         }
@@ -615,7 +615,7 @@ mod tests {
         GRANITE, MaterialRegistry, MoriaWorldPlugin, ObjectId, ObjectKind, ObjectPlacement,
         QuantizedTransform, QueryMask, RemoveFocusSource, RouteTag, RouteWaypoint, SetFocusSource,
         SpeciesId, Voxel, VoxelCoord, VoxelObjectShape, WaterBodyDef, WaterKind, WorldBounds,
-        WorldIdentity, WorldPointQ8, WorldRayQ8, evaluate_base_voxel,
+        WorldIdentity, WorldLifecycle, WorldPointQ8, WorldRayQ8, evaluate_base_voxel,
     };
 
     use super::{TraversalRoute, WorldRead, WorldReadState};
@@ -662,6 +662,13 @@ mod tests {
         )
     }
 
+    fn install_ready_state(app: &mut App, state: WorldReadState) {
+        let mut lifecycle = WorldLifecycle::default();
+        lifecycle.start_loading().unwrap();
+        lifecycle.mark_ready().unwrap();
+        app.insert_resource(state).insert_resource(lifecycle);
+    }
+
     #[test]
     fn unavailable_world_reads_are_not_ready() {
         let mut app = App::new();
@@ -672,6 +679,38 @@ mod tests {
                 read.sample_voxel(VoxelCoord::new(0, 0, 0)),
                 Err(super::super::QueryError::NotReady)
             ));
+            assert_eq!(
+                read.diagnostic_snapshot(crate::DiagnosticPageRequest {
+                    snapshot: None,
+                    after_brick: None,
+                    max_bricks: 1,
+                    include_cells: false,
+                }),
+                Err(super::super::QueryError::NotReady)
+            );
+        });
+
+        app.update();
+    }
+
+    #[test]
+    fn installed_read_state_without_a_lifecycle_is_not_ready() {
+        let mut app = App::new();
+        app.insert_resource(ready_state());
+        app.add_systems(Update, |read: WorldRead| {
+            assert!(matches!(
+                read.sample_voxel(VoxelCoord::new(0, 0, 0)),
+                Err(super::super::QueryError::NotReady)
+            ));
+            assert_eq!(
+                read.diagnostic_snapshot(crate::DiagnosticPageRequest {
+                    snapshot: None,
+                    after_brick: None,
+                    max_bricks: 1,
+                    include_cells: false,
+                }),
+                Err(super::super::QueryError::NotReady)
+            );
         });
 
         app.update();
@@ -687,7 +726,7 @@ mod tests {
         state
             .active_bands
             .insert(BrickCoord::new(125, 32, 125).unwrap(), ActiveBand::Near);
-        app.insert_resource(state);
+        install_ready_state(&mut app, state);
         app.add_systems(Update, move |read: WorldRead| {
             assert_eq!(read.identity(), &identity());
             assert_eq!(read.bounds(), identity().bounds);
@@ -730,7 +769,7 @@ mod tests {
     #[test]
     fn reads_reject_out_of_bounds_coordinates_before_sampling() {
         let mut app = App::new();
-        app.insert_resource(ready_state());
+        install_ready_state(&mut app, ready_state());
         app.add_systems(Update, |read: WorldRead| {
             assert!(matches!(
                 read.sample_voxel(VoxelCoord::new(2_000, 0, 0)),
@@ -756,7 +795,7 @@ mod tests {
     #[test]
     fn water_samples_do_not_report_water_outside_the_footprint() {
         let mut app = App::new();
-        app.insert_resource(ready_state());
+        install_ready_state(&mut app, ready_state());
         app.add_systems(Update, |read: WorldRead| {
             assert!(read.water_surface_at(101, 0).unwrap().is_none());
             assert!(read.water_surface_at(0, 101).unwrap().is_none());
@@ -774,7 +813,7 @@ mod tests {
     #[test]
     fn diagnostic_pages_reject_cell_requests_that_would_exceed_the_page_limit() {
         let mut app = App::new();
-        app.insert_resource(ready_state());
+        install_ready_state(&mut app, ready_state());
         app.add_systems(Update, |read: WorldRead| {
             assert_eq!(
                 read.diagnostic_snapshot(crate::DiagnosticPageRequest {
@@ -803,7 +842,7 @@ mod tests {
         state.active_bands.insert(second, ActiveBand::Middle);
 
         let mut app = App::new();
-        app.insert_resource(state);
+        install_ready_state(&mut app, state);
         app.add_systems(Update, move |read: WorldRead| {
             let first_page = read
                 .diagnostic_snapshot(crate::DiagnosticPageRequest {
@@ -865,19 +904,19 @@ mod tests {
             }));
         }
 
-        app.insert_resource(state)
-            .add_systems(PostUpdate, |read: WorldRead| {
-                let page = read
-                    .diagnostic_snapshot(crate::DiagnosticPageRequest {
-                        snapshot: None,
-                        after_brick: None,
-                        max_bricks: 16,
-                        include_cells: false,
-                    })
-                    .unwrap();
-                assert_eq!(page.focuses.len(), 16);
-                assert!(page.focuses.windows(2).all(|pair| pair[0].id < pair[1].id));
-            });
+        install_ready_state(&mut app, state);
+        app.add_systems(PostUpdate, |read: WorldRead| {
+            let page = read
+                .diagnostic_snapshot(crate::DiagnosticPageRequest {
+                    snapshot: None,
+                    after_brick: None,
+                    max_bricks: 16,
+                    include_cells: false,
+                })
+                .unwrap();
+            assert_eq!(page.focuses.len(), 16);
+            assert!(page.focuses.windows(2).all(|pair| pair[0].id < pair[1].id));
+        });
 
         app.update();
     }
@@ -904,46 +943,46 @@ mod tests {
             position: super::brick_origin(inactive_brick),
             purpose: FocusPurpose::Camera,
         }));
-        app.insert_resource(state)
-            .add_systems(PostUpdate, move |read: WorldRead| {
-                let brick_page = read
-                    .diagnostic_snapshot(crate::DiagnosticPageRequest {
-                        snapshot: None,
-                        after_brick: None,
-                        max_bricks: 1,
-                        include_cells: false,
-                    })
-                    .unwrap();
-                assert_eq!(brick_page.bricks.len(), 1);
-                assert_eq!(
-                    brick_page
-                        .focuses
-                        .iter()
-                        .map(|focus| focus.id)
-                        .collect::<Vec<_>>(),
-                    [1]
-                );
-                assert_eq!(brick_page.next_after_brick, Some(active_brick));
+        install_ready_state(&mut app, state);
+        app.add_systems(PostUpdate, move |read: WorldRead| {
+            let brick_page = read
+                .diagnostic_snapshot(crate::DiagnosticPageRequest {
+                    snapshot: None,
+                    after_brick: None,
+                    max_bricks: 1,
+                    include_cells: false,
+                })
+                .unwrap();
+            assert_eq!(brick_page.bricks.len(), 1);
+            assert_eq!(
+                brick_page
+                    .focuses
+                    .iter()
+                    .map(|focus| focus.id)
+                    .collect::<Vec<_>>(),
+                [1]
+            );
+            assert_eq!(brick_page.next_after_brick, Some(active_brick));
 
-                let terminal_page = read
-                    .diagnostic_snapshot(crate::DiagnosticPageRequest {
-                        snapshot: Some(brick_page.snapshot),
-                        after_brick: brick_page.next_after_brick,
-                        max_bricks: 1,
-                        include_cells: false,
-                    })
-                    .unwrap();
-                assert!(terminal_page.bricks.is_empty());
-                assert_eq!(
-                    terminal_page
-                        .focuses
-                        .iter()
-                        .map(|focus| focus.id)
-                        .collect::<Vec<_>>(),
-                    [2]
-                );
-                assert_eq!(terminal_page.next_after_brick, None);
-            });
+            let terminal_page = read
+                .diagnostic_snapshot(crate::DiagnosticPageRequest {
+                    snapshot: Some(brick_page.snapshot),
+                    after_brick: brick_page.next_after_brick,
+                    max_bricks: 1,
+                    include_cells: false,
+                })
+                .unwrap();
+            assert!(terminal_page.bricks.is_empty());
+            assert_eq!(
+                terminal_page
+                    .focuses
+                    .iter()
+                    .map(|focus| focus.id)
+                    .collect::<Vec<_>>(),
+                [2]
+            );
+            assert_eq!(terminal_page.next_after_brick, None);
+        });
 
         app.update();
     }
@@ -972,24 +1011,24 @@ mod tests {
                 purpose: FocusPurpose::Camera,
             }));
         }
-        app.insert_resource(state)
-            .add_systems(PostUpdate, |read: WorldRead| {
-                let page = read
-                    .diagnostic_snapshot(crate::DiagnosticPageRequest {
-                        snapshot: None,
-                        after_brick: None,
-                        max_bricks: 1,
-                        include_cells: false,
-                    })
-                    .unwrap();
-                assert_eq!(
-                    page.focuses
-                        .iter()
-                        .map(|focus| focus.id)
-                        .collect::<Vec<_>>(),
-                    [1]
-                );
-            });
+        install_ready_state(&mut app, state);
+        app.add_systems(PostUpdate, |read: WorldRead| {
+            let page = read
+                .diagnostic_snapshot(crate::DiagnosticPageRequest {
+                    snapshot: None,
+                    after_brick: None,
+                    max_bricks: 1,
+                    include_cells: false,
+                })
+                .unwrap();
+            assert_eq!(
+                page.focuses
+                    .iter()
+                    .map(|focus| focus.id)
+                    .collect::<Vec<_>>(),
+                [1]
+            );
+        });
 
         app.update();
     }
@@ -1014,36 +1053,36 @@ mod tests {
         state.set_render_chunk(diagnostic_chunk(bricks[2], 0));
 
         let mut app = App::new();
-        app.insert_resource(state)
-            .add_systems(Update, |read: WorldRead| {
-                let maximum = read
-                    .diagnostic_snapshot(crate::DiagnosticPageRequest {
-                        snapshot: None,
-                        after_brick: None,
-                        max_bricks: 2,
-                        include_cells: false,
-                    })
-                    .unwrap();
-                assert_eq!(maximum.render_chunks.len(), 512);
-                assert!(
-                    maximum
-                        .render_chunks
-                        .windows(2)
-                        .all(|pair| pair[0].key < pair[1].key)
-                );
+        install_ready_state(&mut app, state);
+        app.add_systems(Update, |read: WorldRead| {
+            let maximum = read
+                .diagnostic_snapshot(crate::DiagnosticPageRequest {
+                    snapshot: None,
+                    after_brick: None,
+                    max_bricks: 2,
+                    include_cells: false,
+                })
+                .unwrap();
+            assert_eq!(maximum.render_chunks.len(), 512);
+            assert!(
+                maximum
+                    .render_chunks
+                    .windows(2)
+                    .all(|pair| pair[0].key < pair[1].key)
+            );
 
-                assert_eq!(
-                    read.diagnostic_snapshot(crate::DiagnosticPageRequest {
-                        snapshot: None,
-                        after_brick: None,
-                        max_bricks: 3,
-                        include_cells: false,
-                    }),
-                    Err(crate::QueryError::LimitExceeded(
-                        crate::QueryLimitKind::DiagnosticChunks
-                    ))
-                );
-            });
+            assert_eq!(
+                read.diagnostic_snapshot(crate::DiagnosticPageRequest {
+                    snapshot: None,
+                    after_brick: None,
+                    max_bricks: 3,
+                    include_cells: false,
+                }),
+                Err(crate::QueryError::LimitExceeded(
+                    crate::QueryLimitKind::DiagnosticChunks
+                ))
+            );
+        });
 
         app.update();
     }
@@ -1075,7 +1114,7 @@ mod tests {
             (VoxelCoord::new(1, y, 0), Voxel::new(AIR, 0, 0, 0)),
             (VoxelCoord::new(2, y, 0), Voxel::new(GRANITE, u8::MAX, 0, 0)),
         ]);
-        app.insert_resource(state);
+        install_ready_state(&mut app, state);
         app.add_systems(Update, move |read: WorldRead| {
             let ray = WorldRayQ8::new(WorldPointQ8::new(0, y * 64, 0), [65_536, 0, 0])
                 .expect("axis direction is normalized");
@@ -1095,8 +1134,8 @@ mod tests {
     #[test]
     fn diagnostic_snapshot_tokens_expire_after_a_revision_change() {
         let mut app = App::new();
-        app.insert_resource(ready_state())
-            .insert_resource(SnapshotUnderTest::default());
+        install_ready_state(&mut app, ready_state());
+        app.insert_resource(SnapshotUnderTest::default());
         app.add_systems(
             Update,
             |read: WorldRead, mut snapshot: ResMut<SnapshotUnderTest>| match snapshot.phase {
@@ -1141,8 +1180,8 @@ mod tests {
     #[test]
     fn diagnostic_snapshot_tokens_remain_valid_across_frame_advances() {
         let mut app = App::new();
-        app.insert_resource(ready_state())
-            .init_resource::<crate::telemetry::WorldTelemetryState>()
+        install_ready_state(&mut app, ready_state());
+        app.init_resource::<crate::telemetry::WorldTelemetryState>()
             .insert_resource(SnapshotUnderTest::default())
             .add_systems(
                 Update,
@@ -1225,7 +1264,7 @@ mod tests {
         state
             .store
             .commit_current([(coordinate, Voxel::new(AIR, 0, 0, 0))]);
-        app.insert_resource(state);
+        install_ready_state(&mut app, state);
         app.add_systems(Update, move |read: WorldRead| {
             assert_eq!(
                 read.sample_voxel(VoxelCoord::new(0, 0, 0))

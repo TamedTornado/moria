@@ -4,12 +4,12 @@ use moria_world::presentation::{
 };
 
 #[test]
-fn validation_plugin_installs_one_shared_render_asset_resource() {
+fn failed_validation_does_not_publish_render_assets() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(AssetValidationPlugin::for_development());
 
-    assert!(app.world().contains_resource::<WorldRenderAssets>());
+    assert!(!app.world().contains_resource::<WorldRenderAssets>());
     assert!(matches!(
         app.world().resource::<AssetValidationStatus>(),
         AssetValidationStatus::Failed { errors }
@@ -19,11 +19,7 @@ fn validation_plugin_installs_one_shared_render_asset_resource() {
 
 #[test]
 fn repeated_placements_clone_the_same_shared_handles() {
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins)
-        .add_plugins(AssetValidationPlugin::for_development());
-
-    let assets = app.world().resource::<WorldRenderAssets>();
+    let assets = WorldRenderAssets::default();
     let expected = assets.object_handles(AssetId::BirchNear).unwrap();
     for _ in 0..1_000 {
         assert_eq!(assets.object_handles(AssetId::BirchNear), Some(expected));

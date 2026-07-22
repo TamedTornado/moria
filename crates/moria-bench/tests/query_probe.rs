@@ -64,6 +64,38 @@ fn complete_evidence() -> QueryCostEvidence {
     }
 }
 
+fn query_probe_inputs() -> QueryProbeInputs {
+    let cold_inactive_coordinates = (0..COLD_INACTIVE_CALLS)
+        .map(|index| VoxelCoord::new(100 + index as i32, 100, 100))
+        .collect();
+    QueryProbeInputs {
+        cold_inactive_coordinates,
+        maximum_column: ColumnCoord { x: 0, z: 0 },
+        metadata_page: DiagnosticPageRequest {
+            snapshot: None,
+            after_brick: None,
+            max_bricks: 256,
+            include_cells: false,
+        },
+        cells_page: DiagnosticPageRequest {
+            snapshot: None,
+            after_brick: None,
+            max_bricks: 2,
+            include_cells: true,
+        },
+        normal_bundle: NormalQueryBundle {
+            player_capsule: CapsuleQ8::new(WorldPointQ8::new(0, 0, 0), 32, 0),
+            player_substep_displacements: [Vec3Q8::new(0, 0, 0); 4],
+            camera_capsule: CapsuleQ8::new(WorldPointQ8::new(0, 0, 0), 32, 0),
+            camera_displacement: Vec3Q8::new(9 * 256, 0, 0),
+            debug_ray: WorldRayQ8::new(WorldPointQ8::new(0, 0, 0), [65_536, 0, 0]).unwrap(),
+            water_point: WorldPointQ8::new(0, 0, 0),
+            water_contact: CapsuleQ8::new(WorldPointQ8::new(0, 0, 0), 32, 0),
+            active_brick: BrickCoord::new(0, 0, 0).unwrap(),
+        },
+    }
+}
+
 #[test]
 fn complete_query_probe_evidence_meets_each_independent_budget() {
     QueryProbeEvidenceValidator::validate(&complete_evidence()).unwrap();
@@ -90,43 +122,70 @@ fn query_probe_rejects_missing_counts_and_an_independent_page_overrun() {
 }
 
 #[test]
-fn query_probe_rejects_repeated_cold_coordinates_before_any_cacheable_read() {
-    let coordinate = VoxelCoord::new(100, 100, 100);
-    let mut cold_coordinates = vec![coordinate; COLD_INACTIVE_CALLS as usize];
-    for (index, cold_coordinate) in cold_coordinates.iter_mut().enumerate().skip(1) {
-        *cold_coordinate = VoxelCoord::new(100 + index as i32, 100, 100);
-    }
-    cold_coordinates[1] = coordinate;
+fn query_probe_rejects_every_non_cell_query_over_four_milliseconds() {
+    let mut evidence = complete_evidence();
+    evidence.cold_inactive_calls.clear();
+    assert_eq!(
+        QueryProbeEvidenceValidator::validate(&evidence),
+        Err(QueryProbeError::MissingDistribution("sample_voxel"))
+    );
 
-    let inputs = QueryProbeInputs {
-        cold_inactive_coordinates: cold_coordinates,
-        maximum_column: ColumnCoord { x: 0, z: 0 },
-        metadata_page: DiagnosticPageRequest {
-            snapshot: None,
-            after_brick: None,
-            max_bricks: 256,
-            include_cells: false,
-        },
-        cells_page: DiagnosticPageRequest {
-            snapshot: None,
-            after_brick: None,
-            max_bricks: 2,
-            include_cells: true,
-        },
-        normal_bundle: NormalQueryBundle {
-            player_capsule: CapsuleQ8::new(WorldPointQ8::new(0, 0, 0), 32, 0),
-            player_substep_displacements: [Vec3Q8::new(0, 0, 0); 4],
-            camera_capsule: CapsuleQ8::new(WorldPointQ8::new(0, 0, 0), 32, 0),
-            camera_displacement: Vec3Q8::new(0, 0, 0),
-            debug_ray: WorldRayQ8::new(WorldPointQ8::new(0, 0, 0), [65_536, 0, 0]).unwrap(),
-            water_point: WorldPointQ8::new(0, 0, 0),
-            water_contact: CapsuleQ8::new(WorldPointQ8::new(0, 0, 0), 32, 0),
-            active_brick: BrickCoord::new(0, 0, 0).unwrap(),
-        },
-    };
+    let mut evidence = complete_evidence();
+    evidence
+        .cold_inactive_calls
+        .get_mut("sample_voxel")
+        .unwrap()
+        .max = 4.1;
+    assert_eq!(
+        QueryProbeEvidenceValidator::validate(&evidence),
+        Err(QueryProbeError::BudgetExceeded(
+            "cold_inactive_sample_voxel_max_ms"
+        ))
+    );
+
+    let mut evidence = complete_evidence();
+    evidence.column_ms.max = 4.1;
+    assert_eq!(
+        QueryProbeEvidenceValidator::validate(&evidence),
+        Err(QueryProbeError::BudgetExceeded("sample_column_max_ms"))
+    );
+
+    let mut evidence = complete_evidence();
+    evidence.diagnostic_metadata_page_ms.max = 4.1;
+    assert_eq!(
+        QueryProbeEvidenceValidator::validate(&evidence),
+        Err(QueryProbeError::BudgetExceeded(
+            "diagnostic_metadata_page_max_ms"
+        ))
+    );
+}
+
+#[test]
+fn query_probe_rejects_repeated_cold_coordinates_before_any_cacheable_read() {
+    let mut inputs = query_probe_inputs();
+    inputs.cold_inactive_coordinates[1] = inputs.cold_inactive_coordinates[0];
 
     assert_eq!(
         inputs.validate(),
         Err(QueryProbeError::RepeatedColdCoordinate)
     );
+}
+
+#[test]
+fn maximum_diagnostic_pages_must_start_at_the_first_brick() {
+    let mut inputs = query_probe_inputs();
+    inputs.metadata_page.after_brick = Some(BrickCoord::new(1, 1, 1).unwrap());
+
+    assert_eq!(inputs.validate(), Err(QueryProbeError::InvalidMetadataPage));
+
+    inputs.metadata_page.after_brick = None;
+    assert_eq!(inputs.validate(), Ok(()));
+}
+
+#[test]
+fn normal_bundle_requires_the_contracted_nine_meter_camera_probe() {
+    let mut inputs = query_probe_inputs();
+    inputs.normal_bundle.camera_displacement = Vec3Q8::new(0, 0, 0);
+
+    assert_eq!(inputs.validate(), Err(QueryProbeError::InvalidNormalBundle));
 }

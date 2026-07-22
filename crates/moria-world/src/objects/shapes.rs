@@ -1,8 +1,8 @@
 //! Fixed-point registered-object sampling.
 
 use crate::{
-    AabbQ8, GRANITE, LEAF, ObjectPlacement, SparseVoxelStamp, VOXEL_EDGE_Q8, Voxel, VoxelCoord,
-    VoxelObjectShape, WOOD, WorldPointQ8,
+    AabbQ8, BaseVoxel, GRANITE, LEAF, ObjectId, ObjectPlacement, SparseVoxelStamp, VOXEL_EDGE_Q8,
+    Voxel, VoxelCoord, VoxelObjectShape, VoxelSource, WOOD, WorldPointQ8,
 };
 
 /// One relative voxel read declared by the object extraction contract.
@@ -45,6 +45,48 @@ const fn extraction_stencil() -> [VoxelOffset; 125] {
 /// coarsest supported downsampling inputs while remaining below the 512-read
 /// contract cap.
 pub const OBJECT_EXTRACTION_STENCIL: [VoxelOffset; 125] = extraction_stencil();
+
+/// Evaluates registered-object precedence over an already evaluated terrain cell.
+///
+/// The ruin wins even when its authored sample is an air carve. Otherwise the
+/// lowest object ID with a solid analytic sample wins, independently of
+/// candidate iteration order.
+#[must_use]
+pub fn evaluate_base_voxel_with_objects<'a>(
+    terrain: Voxel,
+    coord: VoxelCoord,
+    object_candidates: impl IntoIterator<Item = &'a ObjectPlacement>,
+    ruin: &ObjectPlacement,
+    ruin_stamp: &SparseVoxelStamp,
+) -> BaseVoxel {
+    if let Some(voxel) = sample_sparse_stamp(ruin, ruin_stamp, coord) {
+        return BaseVoxel {
+            voxel,
+            source: VoxelSource::Ruin(ruin.id),
+        };
+    }
+
+    let mut selected = None;
+    for placement in object_candidates {
+        if selected.is_some_and(|(id, _): (ObjectId, Voxel)| id <= placement.id) {
+            continue;
+        }
+        if let Some(voxel) = sample_object_shape(placement, coord) {
+            selected = Some((placement.id, voxel));
+        }
+    }
+    if let Some((id, voxel)) = selected {
+        BaseVoxel {
+            voxel,
+            source: VoxelSource::Object(id),
+        }
+    } else {
+        BaseVoxel {
+            voxel: terrain,
+            source: VoxelSource::Terrain,
+        }
+    }
+}
 
 /// Returns the base voxel contributed by a non-ruin analytic object shape.
 #[must_use]
@@ -122,6 +164,12 @@ pub fn sample_sparse_stamp(
     stamp: &SparseVoxelStamp,
     coord: VoxelCoord,
 ) -> Option<Voxel> {
+    let VoxelObjectShape::SparseStamp { asset_key } = &placement.shape else {
+        return None;
+    };
+    if asset_key != &stamp.key {
+        return None;
+    }
     let translation = placement.transform_q.translation;
     if translation.x.rem_euclid(VOXEL_EDGE_Q8) != 0
         || translation.y.rem_euclid(VOXEL_EDGE_Q8) != 0
@@ -184,7 +232,11 @@ pub fn raw_shape_bounds(placement: &ObjectPlacement) -> Option<AabbQ8> {
             let trunk_radius = scaled(*trunk_radius_q8, scale);
             let x_radius = canopy_x.max(trunk_radius);
             let z_radius = canopy_z.max(trunk_radius);
-            ([x_radius, 0, z_radius], [x_radius, height, z_radius])
+            let canopy_below_anchor = (2 * radii[1] - height).max(0);
+            (
+                [x_radius, canopy_below_anchor, z_radius],
+                [x_radius, height, z_radius],
+            )
         }
         VoxelObjectShape::Bush { radii_q8 }
         | VoxelObjectShape::Boulder { radii_q8, .. }
