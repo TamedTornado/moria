@@ -3,3 +3,9 @@
 # headless integration fixtures. Linking those targets concurrently exceeds
 # the constrained verification runner's memory limit.
 jobs = 1
+
+[env]
+# Bevy's optional Basis Universal decoder invokes a C++ compiler. The
+# verification image provides the GCC `cc` driver but no `c++` alias; use the
+# available driver unless a caller explicitly selects another compiler.
+CXX = { value = "cc", force = false }
