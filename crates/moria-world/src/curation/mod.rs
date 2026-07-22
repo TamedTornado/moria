@@ -2,6 +2,7 @@
 
 #[cfg(feature = "curation")]
 mod facade;
+#[cfg(feature = "curation")]
 mod generate;
 mod model;
 
