@@ -673,7 +673,7 @@ impl<'a> GlbLayout<'a> {
             }
             let offset = view.get("byteOffset").and_then(value_usize).unwrap_or(0);
             let length = value_usize(view.get("byteLength")?)?;
-            if offset % 4 != 0 || offset.checked_add(length)? > buffer_length {
+            if offset.checked_add(length)? > buffer_length {
                 return None;
             }
             let stride = match view.get("byteStride") {
@@ -722,7 +722,7 @@ impl<'a> GlbLayout<'a> {
                 .checked_sub(1)?
                 .checked_mul(element_stride)?
                 .checked_add(element_size)?;
-            if accessor_offset % component_size != 0
+            if view_offset.checked_add(accessor_offset)? % component_size != 0
                 || element_stride < element_size
                 || accessor_offset.checked_add(used)? > view_length
             {
@@ -803,6 +803,9 @@ fn valid_support_centered_scenes(document: &serde_json::Value, mesh_count: usize
     let Some(scenes) = document.get("scenes").and_then(serde_json::Value::as_array) else {
         return false;
     };
+    if !valid_node_hierarchy(nodes, scenes) {
+        return false;
+    }
     let Some(scene) = document
         .get("scene")
         .and_then(value_index)
@@ -880,26 +883,119 @@ fn visit_active_scene_node(
     true
 }
 
+fn valid_node_hierarchy(nodes: &[serde_json::Value], scenes: &[serde_json::Value]) -> bool {
+    let mut parent_counts = vec![0_u32; nodes.len()];
+    for node in nodes {
+        if let Some(children) = node.get("children") {
+            let Some(children) = children.as_array() else {
+                return false;
+            };
+            for child in children {
+                let Some(child_index) = value_index(child) else {
+                    return false;
+                };
+                let Some(parent_count) = parent_counts.get_mut(child_index) else {
+                    return false;
+                };
+                *parent_count = match parent_count.checked_add(1) {
+                    Some(parent_count) if parent_count <= 1 => parent_count,
+                    _ => return false,
+                };
+            }
+        }
+    }
+
+    let mut scene_roots = BTreeSet::new();
+    for scene in scenes {
+        if let Some(roots) = scene.get("nodes") {
+            let Some(roots) = roots.as_array() else {
+                return false;
+            };
+            for root in roots {
+                let Some(root_index) = value_index(root) else {
+                    return false;
+                };
+                if parent_counts.get(root_index) != Some(&0) || !scene_roots.insert(root_index) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    let mut complete_nodes = BTreeSet::new();
+    for node_index in 0..nodes.len() {
+        if !visit_node_hierarchy(node_index, nodes, &mut complete_nodes, &mut BTreeSet::new()) {
+            return false;
+        }
+    }
+    true
+}
+
+fn visit_node_hierarchy(
+    node_index: usize,
+    nodes: &[serde_json::Value],
+    complete_nodes: &mut BTreeSet<usize>,
+    ancestors: &mut BTreeSet<usize>,
+) -> bool {
+    if complete_nodes.contains(&node_index) {
+        return true;
+    }
+    if !ancestors.insert(node_index) {
+        return false;
+    }
+    let Some(node) = nodes.get(node_index) else {
+        return false;
+    };
+    let Some(children) = node.get("children").and_then(serde_json::Value::as_array) else {
+        ancestors.remove(&node_index);
+        complete_nodes.insert(node_index);
+        return true;
+    };
+    for child in children {
+        let Some(child_index) = value_index(child) else {
+            return false;
+        };
+        if !visit_node_hierarchy(child_index, nodes, complete_nodes, ancestors) {
+            return false;
+        }
+    }
+    ancestors.remove(&node_index);
+    complete_nodes.insert(node_index);
+    true
+}
+
 fn identity_node_transform(node: &serde_json::Value) -> bool {
     if !node.is_object() {
         return false;
     }
     let translation = node
         .get("translation")
-        .is_none_or(|value| value == &serde_json::json!([0.0, 0.0, 0.0]));
+        .is_none_or(|value| identity_vector(value, &[0.0, 0.0, 0.0]));
     let rotation = node
         .get("rotation")
-        .is_none_or(|value| value == &serde_json::json!([0.0, 0.0, 0.0, 1.0]));
+        .is_none_or(|value| identity_vector(value, &[0.0, 0.0, 0.0, 1.0]));
     let scale = node
         .get("scale")
-        .is_none_or(|value| value == &serde_json::json!([1.0, 1.0, 1.0]));
+        .is_none_or(|value| identity_vector(value, &[1.0, 1.0, 1.0]));
     let matrix = node.get("matrix").is_none_or(|value| {
-        value
-            == &serde_json::json!([
-                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0
-            ])
+        identity_vector(
+            value,
+            &[
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+        )
     });
     translation && rotation && scale && matrix
+}
+
+fn identity_vector(value: &serde_json::Value, expected: &[f64]) -> bool {
+    value.as_array().is_some_and(|values| {
+        values.len() == expected.len()
+            && values
+                .iter()
+                .zip(expected)
+                .all(|(value, expected)| value.as_f64() == Some(*expected))
+    })
 }
 
 fn position_bounds(position: &GlbAccessor, binary: &[u8]) -> Option<([f32; 3], [f32; 3])> {
@@ -1170,6 +1266,39 @@ mod glb_tests {
         });
         assert!(!valid_pine(&translated_node));
 
+        let integer_identity_transform = mutate_pine(&fixture, |document, _| {
+            document["nodes"][0]["translation"] = serde_json::json!([0, 0, 0]);
+            document["nodes"][0]["rotation"] = serde_json::json!([0, 0, 0, 1]);
+            document["nodes"][0]["scale"] = serde_json::json!([1, 1, 1]);
+        });
+        assert!(valid_pine(&integer_identity_transform));
+
+        let self_referential_node = mutate_pine(&fixture, |document, _| {
+            document["nodes"][0]["children"] = serde_json::json!([0]);
+        });
+        assert!(!valid_pine(&self_referential_node));
+
+        let shared_child = mutate_pine(&fixture, |document, _| {
+            let nodes = document["nodes"].as_array_mut().unwrap();
+            nodes.push(serde_json::json!({}));
+            nodes.push(serde_json::json!({}));
+            nodes[0]["children"] = serde_json::json!([2]);
+            nodes[1]["children"] = serde_json::json!([2]);
+            document["scenes"][0]["nodes"] = serde_json::json!([0, 1]);
+        });
+        assert!(!valid_pine(&shared_child));
+
+        let cycle_in_nondefault_scene = mutate_pine(&fixture, |document, _| {
+            let nodes = document["nodes"].as_array_mut().unwrap();
+            nodes.push(serde_json::json!({ "children": [2] }));
+            nodes.push(serde_json::json!({ "children": [1] }));
+            document["scenes"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({ "nodes": [1] }));
+        });
+        assert!(!valid_pine(&cycle_in_nondefault_scene));
+
         let orphaned_mesh = mutate_pine(&fixture, |document, _| {
             document["nodes"][0].as_object_mut().unwrap().remove("mesh");
         });
@@ -1195,6 +1324,14 @@ mod glb_tests {
             document["bufferViews"][0]["byteOffset"] = Value::from(1);
         });
         assert!(!valid_pine(&misaligned_view));
+
+        let two_byte_aligned_index_view = mutate_pine(&fixture, |document, binary| {
+            document["buffers"][0]["byteLength"] = Value::from(722);
+            document["bufferViews"][4]["byteOffset"] = Value::from(626);
+            binary.resize(722, 0);
+            binary.copy_within(624..720, 626);
+        });
+        assert!(valid_pine(&two_byte_aligned_index_view));
 
         let accessor_overrun = mutate_pine(&fixture, |document, _| {
             document["accessors"][0]["count"] = Value::from(14);
