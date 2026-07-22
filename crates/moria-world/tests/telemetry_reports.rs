@@ -343,3 +343,57 @@ fn feasibility_reports_reject_zero_filled_present_collections() {
         Err(ReportValidationError::Missing { .. })
     ));
 }
+
+#[test]
+fn feasibility_failure_reports_serialize_measured_gate_violations() {
+    let mut forest = report();
+    forest.passed = false;
+    forest.failure_reasons = vec!["forest clearance".into()];
+    forest.minimum_tree_spacing_q8 = 1;
+    let forest_json = forest.to_canonical_json().unwrap();
+    assert!(forest_json.contains("\"passed\":false"));
+    assert!(ForestFeasibilityReport::from_json(&forest_json).is_ok());
+
+    let mut mutation = mutation_report();
+    mutation.passed = false;
+    mutation.failure_reasons = vec!["cold_start_ms".into()];
+    mutation.cold_start_ms = 5_000.0;
+    let mutation_json = mutation.to_canonical_json().unwrap();
+    assert!(mutation_json.contains("\"passed\":false"));
+    assert!(MutationFeasibilityReport::from_json(&mutation_json).is_ok());
+
+    let mut workload_failure = mutation_report();
+    workload_failure.passed = false;
+    workload_failure.failure_reasons = vec!["workload acceptance".into()];
+    workload_failure.workloads[0].maximum_frame_ms = 33.4;
+    let workload_json = workload_failure.to_canonical_json().unwrap();
+    assert!(workload_json.contains("\"maximum_frame_ms\":33.4"));
+    assert!(MutationFeasibilityReport::from_json(&workload_json).is_ok());
+}
+
+#[test]
+fn passing_mutation_reports_require_stage_evidence() {
+    for stage in ["seams", "bevy-install"] {
+        let mut invalid = mutation_report();
+        for workload in &mut invalid.workloads {
+            workload.stage_counts.insert(stage.into(), 0);
+        }
+        assert!(matches!(
+            invalid.validate(),
+            Err(ReportValidationError::Missing {
+                field: "aggregate mutation stage count"
+            })
+        ));
+    }
+
+    for stage in ["object-mesh", "dressing-remove", "dressing-install"] {
+        let mut invalid = mutation_report();
+        invalid.workloads[2].stage_counts.insert(stage.into(), 0);
+        assert!(matches!(
+            invalid.validate(),
+            Err(ReportValidationError::Missing {
+                field: "catastrophic mutation stage count"
+            })
+        ));
+    }
+}

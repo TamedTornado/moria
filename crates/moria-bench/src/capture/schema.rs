@@ -277,7 +277,7 @@ impl BenchmarkReport {
         }
 
         if let Some(value) = &self.build {
-            validate_build(value)?;
+            validate_build(value, self.passed)?;
         }
         if let Some(resolution) = self.resolution
             && !matches!(resolution, [1920, 1080] | [2560, 1440])
@@ -474,10 +474,10 @@ fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidation
     }
     if let Some(round_trip) = save.round_trip
         && round_trip.passed
-            != (round_trip.delta_voxels_compared > 0
-                && round_trip.base_samples_compared > 0
-                && round_trip.identity_match
-                && !round_trip.derived_bytes_found)
+        && !(round_trip.delta_voxels_compared > 0
+            && round_trip.base_samples_compared > 0
+            && round_trip.identity_match
+            && !round_trip.derived_bytes_found)
     {
         return Err(ReportValidationError::Inconsistent {
             field: "round_trip",
@@ -504,8 +504,12 @@ fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidation
     Ok(())
 }
 
-fn validate_build(build: &BuildProfile) -> Result<(), ReportValidationError> {
-    build.validate_release()
+fn validate_build(build: &BuildProfile, passed: bool) -> Result<(), ReportValidationError> {
+    if passed {
+        build.validate_release()
+    } else {
+        build.validate_complete()
+    }
 }
 
 fn validate_asset_evidence(

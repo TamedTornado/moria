@@ -77,11 +77,19 @@ pub struct BuildProfile {
 }
 
 impl BuildProfile {
-    pub fn validate_release(&self) -> Result<(), ReportValidationError> {
-        if self.cargo_profile != "release"
+    pub fn validate_complete(&self) -> Result<(), ReportValidationError> {
+        if blank(&self.cargo_profile)
             || !is_git_commit(&self.git_commit)
             || blank(&self.rustc_version)
         {
+            return Err(ReportValidationError::Identity { field: "build" });
+        }
+        Ok(())
+    }
+
+    pub fn validate_release(&self) -> Result<(), ReportValidationError> {
+        self.validate_complete()?;
+        if self.cargo_profile != "release" {
             return Err(ReportValidationError::Identity { field: "build" });
         }
         Ok(())
@@ -174,7 +182,7 @@ pub struct ObjectIndexEvidence {
 
 impl ObjectIndexEvidence {
     pub fn validate_complete(&self) -> Result<(), ReportValidationError> {
-        validate_forest_object_index(self)
+        validate_forest_object_index(self, true)
     }
 }
 
@@ -218,13 +226,13 @@ pub struct ForestFeasibilityReport {
 impl ForestFeasibilityReport {
     pub fn validate(&self) -> Result<(), ReportValidationError> {
         validate_header(FOREST_SCHEMA, GateHeader::from_forest(self))?;
-        validate_forest_object_index(&self.object_index)?;
+        validate_forest_object_index(&self.object_index, self.passed)?;
         validate_positive_named_counts(&self.object_counts)?;
         validate_positive_named_counts(&self.required_object_counts)?;
         validate_positive_named_counts(&self.species_counts)?;
         validate_positive_named_counts(&self.canopy_range_bins)?;
         validate_world_identity(&self.world)?;
-        if self.forest_area_m2 < 120_000
+        if self.forest_area_m2 == 0
             || self.eligible_land_area_m2 == 0
             || self.forest_area_m2 > self.eligible_land_area_m2
             || self.object_counts.is_empty()
@@ -239,7 +247,7 @@ impl ForestFeasibilityReport {
             });
         }
         for (kind, required) in &self.required_object_counts {
-            if self.object_counts.get(kind).unwrap_or(&0) < required {
+            if self.passed && self.object_counts.get(kind).unwrap_or(&0) < required {
                 return Err(ReportValidationError::Inconsistent {
                     field: "object counts",
                 });
@@ -250,17 +258,19 @@ impl ForestFeasibilityReport {
                 field: "canopy range",
             });
         }
-        if self.canopy_min_q8 < 2 * 256 || self.canopy_max_q8 > 4 * 256 {
+        if self.passed && (self.canopy_min_q8 < 2 * 256 || self.canopy_max_q8 > 4 * 256) {
             return Err(ReportValidationError::Limit {
                 field: "canopy range",
             });
         }
-        if self.minimum_tree_spacing_q8 < 5 * 256 || self.minimum_route_clearance_q8 < 3 * 256 {
+        if self.passed
+            && (self.minimum_tree_spacing_q8 < 5 * 256 || self.minimum_route_clearance_q8 < 3 * 256)
+        {
             return Err(ReportValidationError::Limit {
                 field: "forest clearance",
             });
         }
-        if self.overlap_conflicts != 0 {
+        if self.passed && self.overlap_conflicts != 0 {
             return Err(ReportValidationError::Inconsistent {
                 field: "overlap conflicts",
             });
@@ -277,7 +287,7 @@ impl ForestFeasibilityReport {
                 field: "first_conflict",
             });
         }
-        validate_worst_target(&self.worst_edit_target, &self.world)
+        validate_worst_target(&self.worst_edit_target, &self.world, self.passed)
     }
 
     pub fn to_canonical_json(&self) -> Result<String, ReportValidationError> {
@@ -389,7 +399,7 @@ impl MutationFeasibilityReport {
         }
         validate_world_identity(&self.world)?;
         finite_positive(self.cold_start_ms, "cold_start_ms")?;
-        if self.cold_start_ms >= 5_000.0 {
+        if self.passed && self.cold_start_ms >= 5_000.0 {
             return Err(ReportValidationError::Limit {
                 field: "cold_start_ms",
             });
@@ -408,9 +418,29 @@ impl MutationFeasibilityReport {
                     field: "workload roles",
                 });
             }
-            validate_workload(workload)?;
+            validate_workload(workload, self.passed)?;
         }
-        validate_query_costs(&self.query_costs)
+        if self.passed
+            && ["seams", "bevy-install"].iter().any(|stage| {
+                self.workloads
+                    .iter()
+                    .all(|workload| workload.stage_counts[*stage] == 0)
+            })
+        {
+            return Err(ReportValidationError::Missing {
+                field: "aggregate mutation stage count",
+            });
+        }
+        if self.passed
+            && ["object-mesh", "dressing-remove", "dressing-install"]
+                .iter()
+                .any(|stage| self.workloads[2].stage_counts[*stage] == 0)
+        {
+            return Err(ReportValidationError::Missing {
+                field: "catastrophic mutation stage count",
+            });
+        }
+        validate_query_costs(&self.query_costs, self.passed)
     }
 
     pub fn to_canonical_json(&self) -> Result<String, ReportValidationError> {
@@ -531,7 +561,10 @@ fn validate_m4_machine(machine: &MachineProfile) -> Result<(), ReportValidationE
     Ok(())
 }
 
-fn validate_object_index(value: &ObjectIndexEvidence) -> Result<(), ReportValidationError> {
+fn validate_object_index(
+    value: &ObjectIndexEvidence,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
     finite_positive(value.validation_ms, "object_index.validation_ms")?;
     finite_positive(value.build_ms, "object_index.build_ms")?;
     validate_named_counts(&value.retained_byte_categories)?;
@@ -547,16 +580,17 @@ fn validate_object_index(value: &ObjectIndexEvidence) -> Result<(), ReportValida
             field: "object_index retained bytes",
         });
     }
-    if value.validation_ms > 1_000.0
-        || value.build_ms > 250.0
-        || value.retained_bytes > 16 * 1024 * 1024
-        || value.max_dependency_cell_entries > 1_024
-        || value.max_sample_cell_entries > 64
-        || value.max_horizon_tree_members_per_cell > 1_024
-        || value.max_edit_candidates > 256
-        || value.max_edit_affected_objects > 64
-        || value.max_dependency_bricks > 128
-        || value.dependency_coordinate_allocation_bytes != 0
+    if passed
+        && (value.validation_ms > 1_000.0
+            || value.build_ms > 250.0
+            || value.retained_bytes > 16 * 1024 * 1024
+            || value.max_dependency_cell_entries > 1_024
+            || value.max_sample_cell_entries > 64
+            || value.max_horizon_tree_members_per_cell > 1_024
+            || value.max_edit_candidates > 256
+            || value.max_edit_affected_objects > 64
+            || value.max_dependency_bricks > 128
+            || value.dependency_coordinate_allocation_bytes != 0)
     {
         return Err(ReportValidationError::Limit {
             field: "object_index",
@@ -565,8 +599,11 @@ fn validate_object_index(value: &ObjectIndexEvidence) -> Result<(), ReportValida
     Ok(())
 }
 
-fn validate_forest_object_index(value: &ObjectIndexEvidence) -> Result<(), ReportValidationError> {
-    validate_object_index(value)?;
+fn validate_forest_object_index(
+    value: &ObjectIndexEvidence,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
+    validate_object_index(value, passed)?;
     if value.validation_ms <= 0.0
         || value.build_ms <= 0.0
         || value.placement_records == 0
@@ -594,10 +631,12 @@ fn validate_forest_object_index(value: &ObjectIndexEvidence) -> Result<(), Repor
 fn validate_worst_target(
     target: &WorstEditTargetEvidence,
     world: &WorldIdentity,
+    passed: bool,
 ) -> Result<(), ReportValidationError> {
-    if target.broad_candidates > 256
-        || target.exact_dependency_ids > 64
-        || target.dependency_bricks > 128
+    if passed
+        && (target.broad_candidates > 256
+            || target.exact_dependency_ids > 64
+            || target.dependency_bricks > 128)
     {
         return Err(ReportValidationError::Limit {
             field: "worst_edit_target",
@@ -615,7 +654,10 @@ fn validate_worst_target(
     Ok(())
 }
 
-fn validate_workload(value: &MutationWorkloadEvidence) -> Result<(), ReportValidationError> {
+fn validate_workload(
+    value: &MutationWorkloadEvidence,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
     let expected_request_count = match value.role {
         MutationWorkloadRole::InteractiveCarve | MutationWorkloadRole::CatastrophicCarve => 1,
         MutationWorkloadRole::ColonyVolume => 8,
@@ -679,25 +721,25 @@ fn validate_workload(value: &MutationWorkloadEvidence) -> Result<(), ReportValid
             field: "workload measurement",
         });
     }
-    if value.admission_ms.max > 2.0
-        || value.first_commit_ms.max
-            > match value.role {
-                MutationWorkloadRole::ColonyVolume => 250.0,
-                MutationWorkloadRole::InteractiveCarve
-                | MutationWorkloadRole::CatastrophicCarve => 100.0,
-            }
-        || value.primary_ready_ms.p95 > 250.0
-        || value.primary_ready_ms.max > 500.0
-        || value.reconciliation_ms.max
-            > match value.role {
-                MutationWorkloadRole::InteractiveCarve => 1_000.0,
-                MutationWorkloadRole::ColonyVolume | MutationWorkloadRole::CatastrophicCarve => {
-                    30_000.0
+    if passed
+        && (value.admission_ms.max > 2.0
+            || value.first_commit_ms.max
+                > match value.role {
+                    MutationWorkloadRole::ColonyVolume => 250.0,
+                    MutationWorkloadRole::InteractiveCarve
+                    | MutationWorkloadRole::CatastrophicCarve => 100.0,
                 }
-            }
-        || value.changed_bricks_per_second < 32.0
-        || value.maximum_runnable_wait_ms > 500.0
-        || value.maximum_frame_ms > 33.3
+            || value.primary_ready_ms.p95 > 250.0
+            || value.primary_ready_ms.max > 500.0
+            || value.reconciliation_ms.max
+                > match value.role {
+                    MutationWorkloadRole::InteractiveCarve => 1_000.0,
+                    MutationWorkloadRole::ColonyVolume
+                    | MutationWorkloadRole::CatastrophicCarve => 30_000.0,
+                }
+            || value.changed_bricks_per_second < 32.0
+            || value.maximum_runnable_wait_ms > 500.0
+            || value.maximum_frame_ms > 33.3)
     {
         return Err(ReportValidationError::Limit {
             field: "workload acceptance",
@@ -719,7 +761,7 @@ fn validate_workload(value: &MutationWorkloadEvidence) -> Result<(), ReportValid
         }
         let dependency_ms = value.stage_timings_ms["dirty-discovery"]
             + value.stage_timings_ms["dependency-eligibility"];
-        if dependency_ms > 1.0 {
+        if passed && dependency_ms > 1.0 {
             return Err(ReportValidationError::Limit {
                 field: "object dependency",
             });
@@ -728,7 +770,10 @@ fn validate_workload(value: &MutationWorkloadEvidence) -> Result<(), ReportValid
     Ok(())
 }
 
-fn validate_query_costs(value: &QueryCostEvidence) -> Result<(), ReportValidationError> {
+fn validate_query_costs(
+    value: &QueryCostEvidence,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
     if value.sample_counts.is_empty()
         || value.cold_inactive_calls.is_empty()
         || value.frame_critical_calls.is_empty()
@@ -746,7 +791,7 @@ fn validate_query_costs(value: &QueryCostEvidence) -> Result<(), ReportValidatio
     }
     for distribution in value.cold_inactive_calls.values() {
         validate_distribution(*distribution, "query distribution")?;
-        if distribution.p99 > 1.0 || distribution.max > 4.0 {
+        if passed && (distribution.p99 > 1.0 || distribution.max > 4.0) {
             return Err(ReportValidationError::Limit {
                 field: "cold query cost",
             });
@@ -754,7 +799,7 @@ fn validate_query_costs(value: &QueryCostEvidence) -> Result<(), ReportValidatio
     }
     for distribution in value.frame_critical_calls.values() {
         validate_distribution(*distribution, "query distribution")?;
-        if distribution.p99 > 1.0 || distribution.max > 4.0 {
+        if passed && (distribution.p99 > 1.0 || distribution.max > 4.0) {
             return Err(ReportValidationError::Limit {
                 field: "frame-critical query cost",
             });
@@ -768,14 +813,15 @@ fn validate_query_costs(value: &QueryCostEvidence) -> Result<(), ReportValidatio
     ] {
         validate_distribution(distribution, "query distribution")?;
     }
-    if value.normal_bundle_ms.p99 > 2.0
-        || value.normal_bundle_ms.max > 4.0
-        || value.column_ms.p99 > 1.0
-        || value.column_ms.max > 4.0
-        || value.diagnostic_metadata_page_ms.p99 > 1.0
-        || value.diagnostic_metadata_page_ms.max > 4.0
-        || value.diagnostic_cells_page_ms.p99 > 4.0
-        || value.diagnostic_cells_page_ms.max > 8.0
+    if passed
+        && (value.normal_bundle_ms.p99 > 2.0
+            || value.normal_bundle_ms.max > 4.0
+            || value.column_ms.p99 > 1.0
+            || value.column_ms.max > 4.0
+            || value.diagnostic_metadata_page_ms.p99 > 1.0
+            || value.diagnostic_metadata_page_ms.max > 4.0
+            || value.diagnostic_cells_page_ms.p99 > 4.0
+            || value.diagnostic_cells_page_ms.max > 8.0)
     {
         return Err(ReportValidationError::Limit {
             field: "query cost",

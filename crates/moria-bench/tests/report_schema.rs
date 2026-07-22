@@ -423,6 +423,31 @@ fn scenario_complete_and_null_rules_reject_impossible_evidence_states() {
 }
 
 #[test]
+fn canonical_json_preserves_measured_benchmark_failures() {
+    let mut failed = report();
+    failed.passed = false;
+    failed.failure_reasons = vec!["cold_start_ms".into()];
+    failed.build.as_mut().unwrap().cargo_profile = "dev".into();
+    failed.cold_start_ms = Some(5_000.0);
+
+    let json = failed.to_canonical_json().unwrap();
+    assert!(json.contains("\"passed\":false"));
+    assert!(BenchmarkReport::from_json(&json).is_ok());
+}
+
+#[test]
+fn failed_round_trip_comparison_is_serializable() {
+    let mut failed = mutation_report();
+    failed.passed = false;
+    failed.failure_reasons = vec!["round_trip".into()];
+    failed.save.round_trip.as_mut().unwrap().passed = false;
+
+    let json = failed.to_canonical_json().unwrap();
+    assert!(json.contains("\"round_trip\":{\"passed\":false"));
+    assert!(BenchmarkReport::from_json(&json).is_ok());
+}
+
+#[test]
 fn passed_flag_cannot_hide_failed_acceptance_metrics() {
     let mut invalid = mutation_report();
     invalid
