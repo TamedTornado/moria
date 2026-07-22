@@ -945,8 +945,7 @@ mod tests {
         let (_, tests) = first_overlap_fraction_with_work(capsule, displacement, voxel);
         assert!(
             tests
-                <= 1
-                    + displacement.x.unsigned_abs()
+                <= 1 + displacement.x.unsigned_abs()
                     + displacement.y.unsigned_abs()
                     + displacement.z.unsigned_abs(),
             "intersection used {tests} overlap checks"
@@ -963,11 +962,7 @@ mod tests {
             .add_systems(
                 Update,
                 move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
-                    result.0 = read.sweep_capsule(
-                        capsule,
-                        Vec3Q8::new(1, 0, 0),
-                        QueryMask::SOLID,
-                    );
+                    result.0 = read.sweep_capsule(capsule, Vec3Q8::new(1, 0, 0), QueryMask::SOLID);
                 },
             );
         app.update();
@@ -979,7 +974,10 @@ mod tests {
             .as_ref()
             .unwrap();
         assert_eq!(result.safe_fraction_q16, 0);
-        assert_eq!(result.hits.iter().map(|hit| hit.voxel).collect::<Vec<_>>(), [obstacle]);
+        assert_eq!(
+            result.hits.iter().map(|hit| hit.voxel).collect::<Vec<_>>(),
+            [obstacle]
+        );
     }
 
     #[test]
@@ -987,11 +985,13 @@ mod tests {
         let capsule = CapsuleQ8::new(WorldPointQ8::new(-125, 432, -186), 128, 60);
         let displacement = Vec3Q8::new(893, 51, -135);
 
-        assert!(sweep_candidates(capsule, displacement, identity().bounds)
-            .unwrap()
-            .iter()
-            .count()
-            <= usize::from(MAX_SWEEP_CANDIDATE_TESTS));
+        assert!(
+            sweep_candidates(capsule, displacement, identity().bounds)
+                .unwrap()
+                .iter()
+                .count()
+                <= usize::from(MAX_SWEEP_CANDIDATE_TESTS)
+        );
 
         let mut app = App::new();
         app.insert_resource(state([]))
