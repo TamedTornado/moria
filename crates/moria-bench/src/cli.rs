@@ -1,6 +1,8 @@
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 
+use crate::capture::output::WrittenReport;
+
 const CURATED_SEED: u64 = 0x4D4F_5249_415F_5031;
 const DEFAULT_RESOLUTION: [u32; 2] = [2560, 1440];
 
@@ -135,14 +137,10 @@ pub fn validate_output_path(path: &Path) -> Result<(), CliError> {
 }
 
 #[must_use]
-pub const fn exit_code_after_output(
-    report_passed: bool,
-    output_succeeded: bool,
-) -> BenchmarkExitCode {
-    if !output_succeeded || !report_passed {
-        BenchmarkExitCode::RuntimeFailure
-    } else {
-        BenchmarkExitCode::Success
+pub const fn exit_code_after_output(output: Option<&WrittenReport>) -> BenchmarkExitCode {
+    match output {
+        Some(written) if written.passed() => BenchmarkExitCode::Success,
+        Some(_) | None => BenchmarkExitCode::RuntimeFailure,
     }
 }
 
@@ -251,17 +249,9 @@ mod tests {
     }
 
     #[test]
-    fn maps_only_a_written_passing_report_to_success() {
+    fn missing_written_report_maps_to_runtime_failure() {
         assert_eq!(
-            exit_code_after_output(true, true),
-            BenchmarkExitCode::Success
-        );
-        assert_eq!(
-            exit_code_after_output(false, true),
-            BenchmarkExitCode::RuntimeFailure
-        );
-        assert_eq!(
-            exit_code_after_output(true, false),
+            exit_code_after_output(None),
             BenchmarkExitCode::RuntimeFailure
         );
     }
