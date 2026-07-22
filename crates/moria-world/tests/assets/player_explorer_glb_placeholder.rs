@@ -220,7 +220,10 @@ fn assert_scene_reaches_skin_and_animation_nodes(document: &Value) {
     }
 
     for animation in document["animations"].as_array().expect("animations") {
-        for channel in animation["channels"].as_array().expect("animation channels") {
+        for channel in animation["channels"]
+            .as_array()
+            .expect("animation channels")
+        {
             let target = channel["target"]["node"]
                 .as_u64()
                 .expect("animation target node");
