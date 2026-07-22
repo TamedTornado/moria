@@ -40,7 +40,7 @@ path = "tests/curation_facade.rs"
 required-features = ["curation"]
 
 [dependencies]
-bevy.workspace = true
+bevy = { workspace = true, features = ["basis-universal", "ktx2", "zstd_rust"] }
 directories.workspace = true
 ktx2 = "0.5"
 naga = { version = "29", features = ["wgsl-in"] }
@@ -51,7 +51,6 @@ sha2.workspace = true
 zstd.workspace = true
 
 [dev-dependencies]
-bevy = { workspace = true, features = ["basis-universal", "ktx2", "zstd_rust"] }
 proptest = "1"
 
 [[test]]
