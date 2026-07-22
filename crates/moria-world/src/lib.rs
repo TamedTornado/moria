@@ -52,9 +52,9 @@ pub use mutation::{
 pub use objects::{
     DependencyGridCell, DependencyGridCellKey, HorizonCellKey, OBJECT_EXTRACTION_STENCIL,
     ObjectIndexConfig, ObjectIndexRecord, ObjectSpatialIndex, SampleGridCell, SampleGridCellKey,
-    VoxelOffset, build_object_index, dependency_contains, horizon_tree_ids, placement_ids_in,
-    raw_shape_bounds, raw_shape_contains, sample_object_shape, sample_sparse_stamp,
-    validate_object_shape_disjointness,
+    VoxelOffset, build_object_index, dependency_contains, evaluate_base_voxel_with_objects,
+    horizon_tree_ids, placement_ids_in, raw_shape_bounds, raw_shape_contains, sample_object_shape,
+    sample_sparse_stamp, validate_object_shape_disjointness,
 };
 pub use query::{
     ActiveBand, CapsuleQ8, DiagnosticBrick, DiagnosticCell, DiagnosticDirtyFlags, DiagnosticFocus,
@@ -76,7 +76,7 @@ pub use streaming::{FocusPurpose, FocusSource, RemoveFocusSource, SetFocusSource
 pub use telemetry::{
     ActiveCounts, EditObservation, GraphicsMemoryEstimate, QueueDepths, WorldTelemetryRead,
 };
-pub use terrain::{SolidPresentationOwner, VoxelSource, solid_presentation_owner};
+pub use terrain::{BaseVoxel, SolidPresentationOwner, VoxelSource, solid_presentation_owner};
 
 /// Installs the reusable world feature set.
 ///
