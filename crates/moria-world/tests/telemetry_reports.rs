@@ -298,7 +298,10 @@ fn passing_feasibility_reports_enforce_forest_and_query_probe_contracts() {
     ));
 
     let mut invalid = mutation_report();
-    invalid.query_costs.sample_counts.remove("normal_query_bundles");
+    invalid
+        .query_costs
+        .sample_counts
+        .remove("normal_query_bundles");
     assert!(matches!(
         invalid.validate(),
         Err(ReportValidationError::Missing {
