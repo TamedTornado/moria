@@ -95,6 +95,10 @@ impl Plugin for MoriaWorldPlugin {
             .add_message::<EditRejected>()
             .add_systems(Update, streaming::apply_focus_messages)
             .add_systems(PostUpdate, telemetry::advance_frame_index);
+
+        if app.world().contains_resource::<bevy::asset::AssetServer>() {
+            app.add_plugins(presentation::BasisKtx2Plugin);
+        }
     }
 }
 
