@@ -7,7 +7,7 @@
 mod tests {
     use crate::{ActiveBand, BrickCoord, HorizonCellKey};
 
-    use super::{ChunkLifecycle, HorizonLifecycle, StreamLod};
+    use super::{ChunkLifecycle, ChunkPurpose, HorizonLifecycle, StreamLod};
 
     fn install_chunk(
         lifecycle: &mut ChunkLifecycle,
@@ -15,10 +15,10 @@ mod tests {
         lod: StreamLod,
         revision: u64,
     ) -> u64 {
-        let token = lifecycle.request(brick, lod, revision);
-        assert!(lifecycle.start_materializing(brick, token));
-        assert!(lifecycle.start_meshing(brick, token, revision, lod));
-        assert!(lifecycle.install(brick, token, revision, lod));
+        let token = lifecycle.request(brick, lod, revision, ChunkPurpose::Visual);
+        assert!(lifecycle.start_materializing(brick, token, ChunkPurpose::Visual));
+        assert!(lifecycle.start_meshing(brick, token, revision, lod, ChunkPurpose::Visual));
+        assert!(lifecycle.install(brick, token, revision, lod, ChunkPurpose::Visual));
         token
     }
 
@@ -37,14 +37,96 @@ mod tests {
     fn stale_chunk_token_revision_and_lod_results_cannot_become_resident() {
         let brick = BrickCoord::new(125, 32, 125).unwrap();
         let mut lifecycle = ChunkLifecycle::default();
-        let old = lifecycle.request(brick, StreamLod::Near, 4);
-        let current = lifecycle.request(brick, StreamLod::Middle, 5);
+        let old = lifecycle.request(brick, StreamLod::Near, 4, ChunkPurpose::Visual);
+        let current = lifecycle.request(brick, StreamLod::Middle, 5, ChunkPurpose::Visual);
 
-        assert!(!lifecycle.install(brick, old, 4, StreamLod::Near));
-        assert!(lifecycle.start_materializing(brick, current));
-        assert!(lifecycle.start_meshing(brick, current, 5, StreamLod::Middle));
-        assert!(lifecycle.install(brick, current, 5, StreamLod::Middle));
+        assert!(!lifecycle.install(brick, old, 4, StreamLod::Near, ChunkPurpose::Visual));
+        assert!(lifecycle.start_materializing(brick, current, ChunkPurpose::Visual));
+        assert!(lifecycle.start_meshing(
+            brick,
+            current,
+            5,
+            StreamLod::Middle,
+            ChunkPurpose::Visual
+        ));
+        assert!(lifecycle.install(brick, current, 5, StreamLod::Middle, ChunkPurpose::Visual));
         assert_eq!(lifecycle.resident_band(brick), Some(ActiveBand::Middle));
+    }
+
+    #[test]
+    fn purpose_change_invalidates_in_flight_work_with_unequal_near_maximum_values() {
+        let brick = BrickCoord::new(125, 32, 125).unwrap();
+        let revision = u64::MAX - 3;
+        let mut lifecycle = ChunkLifecycle {
+            next_token: u64::MAX - 2,
+            ..Default::default()
+        };
+
+        let visual = lifecycle.request(brick, StreamLod::Near, revision, ChunkPurpose::Visual);
+        assert!(lifecycle.start_materializing(brick, visual, ChunkPurpose::Visual));
+        let collision =
+            lifecycle.request(brick, StreamLod::Near, revision, ChunkPurpose::Collision);
+
+        assert_eq!(visual, u64::MAX - 1);
+        assert_eq!(collision, u64::MAX);
+        assert_ne!(collision, revision);
+        assert!(!lifecycle.start_meshing(
+            brick,
+            visual,
+            revision,
+            StreamLod::Near,
+            ChunkPurpose::Visual,
+        ));
+        assert!(!lifecycle.install(
+            brick,
+            visual,
+            revision,
+            StreamLod::Near,
+            ChunkPurpose::Visual,
+        ));
+        assert!(!lifecycle.start_materializing(brick, collision, ChunkPurpose::Visual));
+        assert!(lifecycle.start_materializing(brick, collision, ChunkPurpose::Collision));
+        assert!(lifecycle.start_meshing(
+            brick,
+            collision,
+            revision,
+            StreamLod::Near,
+            ChunkPurpose::Collision,
+        ));
+        assert!(!lifecycle.install(
+            brick,
+            collision,
+            revision,
+            StreamLod::Near,
+            ChunkPurpose::Visual,
+        ));
+        assert!(lifecycle.install(
+            brick,
+            collision,
+            revision,
+            StreamLod::Near,
+            ChunkPurpose::Collision,
+        ));
+    }
+
+    #[test]
+    fn resident_edit_meshes_directly_while_preserving_prior_presentation() {
+        let brick = BrickCoord::new(125, 32, 125).unwrap();
+        let mut lifecycle = ChunkLifecycle::default();
+        install_chunk(&mut lifecycle, brick, StreamLod::Near, 4);
+
+        let edit = lifecycle.request(brick, StreamLod::Near, 5, ChunkPurpose::CommittedEdit);
+
+        assert_eq!(lifecycle.resident_band(brick), Some(ActiveBand::Near));
+        assert!(lifecycle.start_meshing(
+            brick,
+            edit,
+            5,
+            StreamLod::Near,
+            ChunkPurpose::CommittedEdit,
+        ));
+        assert_eq!(lifecycle.resident_band(brick), Some(ActiveBand::Near));
+        assert!(lifecycle.install(brick, edit, 5, StreamLod::Near, ChunkPurpose::CommittedEdit,));
     }
 
     #[test]
@@ -73,15 +155,27 @@ mod tests {
         install_chunk(&mut chunks, brick, StreamLod::Near, 4);
         install_horizon(&mut horizon, cell, 8);
 
-        let replacement_chunk = chunks.request(brick, StreamLod::Middle, 5);
+        let replacement_chunk = chunks.request(brick, StreamLod::Middle, 5, ChunkPurpose::Visual);
         let replacement_horizon = horizon.request(cell, 9);
         assert_eq!(chunks.resident_band(brick), Some(ActiveBand::Near));
         assert_eq!(horizon.presented_revision(cell), Some(8));
         assert!(!horizon.is_resident(cell));
 
-        assert!(chunks.start_materializing(brick, replacement_chunk));
-        assert!(chunks.start_meshing(brick, replacement_chunk, 5, StreamLod::Middle));
-        assert!(chunks.install(brick, replacement_chunk, 5, StreamLod::Middle));
+        assert!(chunks.start_materializing(brick, replacement_chunk, ChunkPurpose::Visual));
+        assert!(chunks.start_meshing(
+            brick,
+            replacement_chunk,
+            5,
+            StreamLod::Middle,
+            ChunkPurpose::Visual
+        ));
+        assert!(chunks.install(
+            brick,
+            replacement_chunk,
+            5,
+            StreamLod::Middle,
+            ChunkPurpose::Visual
+        ));
         assert!(horizon.start_building(cell, replacement_horizon));
         assert!(horizon.install(cell, replacement_horizon, 9));
         assert_eq!(chunks.resident_band(brick), Some(ActiveBand::Middle));
@@ -94,9 +188,9 @@ mod tests {
         let mut lifecycle = ChunkLifecycle::default();
         let token = install_chunk(&mut lifecycle, brick, StreamLod::Near, 4);
 
-        assert!(!lifecycle.start_materializing(brick, token));
-        assert!(!lifecycle.start_meshing(brick, token, 4, StreamLod::Near));
-        assert!(!lifecycle.install(brick, token, 4, StreamLod::Near));
+        assert!(!lifecycle.start_materializing(brick, token, ChunkPurpose::Visual));
+        assert!(!lifecycle.start_meshing(brick, token, 4, StreamLod::Near, ChunkPurpose::Visual));
+        assert!(!lifecycle.install(brick, token, 4, StreamLod::Near, ChunkPurpose::Visual));
     }
 
     #[test]
@@ -132,13 +226,25 @@ mod tests {
         assert!(chunks.resident_band(brick).is_none());
         assert!(!horizon.is_resident(cell));
 
-        let next_chunk_token = chunks.request(brick, StreamLod::Near, 1);
+        let next_chunk_token = chunks.request(brick, StreamLod::Near, 1, ChunkPurpose::Visual);
         let next_horizon_token = horizon.request(cell, 2);
         assert_ne!(next_chunk_token, chunk_token);
         assert_ne!(next_horizon_token, horizon_token);
-        assert!(chunks.start_materializing(brick, next_chunk_token));
-        assert!(chunks.start_meshing(brick, next_chunk_token, 1, StreamLod::Near));
-        assert!(chunks.install(brick, next_chunk_token, 1, StreamLod::Near));
+        assert!(chunks.start_materializing(brick, next_chunk_token, ChunkPurpose::Visual));
+        assert!(chunks.start_meshing(
+            brick,
+            next_chunk_token,
+            1,
+            StreamLod::Near,
+            ChunkPurpose::Visual
+        ));
+        assert!(chunks.install(
+            brick,
+            next_chunk_token,
+            1,
+            StreamLod::Near,
+            ChunkPurpose::Visual
+        ));
         assert!(horizon.start_building(cell, next_horizon_token));
         assert!(horizon.install(cell, next_horizon_token, 2));
     }
@@ -171,6 +277,15 @@ pub(crate) enum StreamLod {
     Horizon,
 }
 
+/// The requirement a chunk-derived payload fulfills.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ChunkPurpose {
+    Visual,
+    Collision,
+    Traversal,
+    CommittedEdit,
+}
+
 impl StreamLod {
     const fn band(self) -> ActiveBand {
         match self {
@@ -199,6 +314,7 @@ enum ChunkPhase {
     Resident {
         revision: u64,
         lod: StreamLod,
+        meshing_token: Option<u64>,
     },
     EvictPending,
 }
@@ -209,6 +325,7 @@ struct ChunkEntry {
     token: u64,
     revision: u64,
     lod: StreamLod,
+    purpose: ChunkPurpose,
     presented: Option<PresentedChunk>,
 }
 
@@ -231,10 +348,17 @@ impl ChunkLifecycle {
         clippy::collapsible_if,
         reason = "the workspace targets Rust 2021, where the suggested let-chain requires edition 2024"
     )]
-    pub(crate) fn request(&mut self, brick: BrickCoord, lod: StreamLod, revision: u64) -> u64 {
+    pub(crate) fn request(
+        &mut self,
+        brick: BrickCoord,
+        lod: StreamLod,
+        revision: u64,
+        purpose: ChunkPurpose,
+    ) -> u64 {
         if let Some(entry) = self.entries.get(&brick) {
             if entry.lod == lod
                 && entry.revision == revision
+                && entry.purpose == purpose
                 && !matches!(entry.phase, ChunkPhase::Absent | ChunkPhase::EvictPending)
             {
                 return entry.token;
@@ -242,24 +366,45 @@ impl ChunkLifecycle {
         }
         let token = self.next_token();
         let presented = self.entries.get(&brick).and_then(|entry| entry.presented);
+        let phase = match self.entries.get(&brick).map(|entry| entry.phase) {
+            Some(ChunkPhase::Resident {
+                revision: resident_revision,
+                lod: resident_lod,
+                ..
+            }) if resident_lod == lod => ChunkPhase::Resident {
+                revision: resident_revision,
+                lod: resident_lod,
+                meshing_token: Some(token),
+            },
+            _ => ChunkPhase::Requested { token },
+        };
         self.entries.insert(
             brick,
             ChunkEntry {
-                phase: ChunkPhase::Requested { token },
+                phase,
                 token,
                 revision,
                 lod,
+                purpose,
                 presented,
             },
         );
         token
     }
 
-    pub(crate) fn start_materializing(&mut self, brick: BrickCoord, token: u64) -> bool {
+    pub(crate) fn start_materializing(
+        &mut self,
+        brick: BrickCoord,
+        token: u64,
+        purpose: ChunkPurpose,
+    ) -> bool {
         let Some(entry) = self.entries.get_mut(&brick) else {
             return false;
         };
-        if entry.token != token || !matches!(entry.phase, ChunkPhase::Requested { .. }) {
+        if entry.token != token
+            || entry.purpose != purpose
+            || !matches!(entry.phase, ChunkPhase::Requested { .. })
+        {
             return false;
         }
         entry.phase = ChunkPhase::Materializing { token };
@@ -272,6 +417,7 @@ impl ChunkLifecycle {
         token: u64,
         revision: u64,
         lod: StreamLod,
+        purpose: ChunkPurpose,
     ) -> bool {
         let Some(entry) = self.entries.get_mut(&brick) else {
             return false;
@@ -279,10 +425,17 @@ impl ChunkLifecycle {
         if entry.token != token
             || entry.revision != revision
             || entry.lod != lod
-            || !matches!(
+            || entry.purpose != purpose
+            || !(matches!(
                 entry.phase,
                 ChunkPhase::Materializing { token: phase_token } if phase_token == token
-            )
+            ) || matches!(
+                entry.phase,
+                ChunkPhase::Resident {
+                    meshing_token: Some(phase_token),
+                    ..
+                } if phase_token == token
+            ))
         {
             return false;
         }
@@ -300,11 +453,16 @@ impl ChunkLifecycle {
         token: u64,
         revision: u64,
         lod: StreamLod,
+        purpose: ChunkPurpose,
     ) -> bool {
         let Some(entry) = self.entries.get_mut(&brick) else {
             return false;
         };
-        if entry.token != token || entry.revision != revision || entry.lod != lod {
+        if entry.token != token
+            || entry.revision != revision
+            || entry.lod != lod
+            || entry.purpose != purpose
+        {
             return false;
         }
         if !matches!(
@@ -321,7 +479,11 @@ impl ChunkLifecycle {
             return false;
         }
         entry.presented = Some(PresentedChunk { revision, lod });
-        entry.phase = ChunkPhase::Resident { revision, lod };
+        entry.phase = ChunkPhase::Resident {
+            revision,
+            lod,
+            meshing_token: None,
+        };
         true
     }
 
