@@ -1,5 +1,6 @@
 use std::{fs, path::PathBuf};
 
+use basisu::{DecodeFlags, TargetFormat, Transcoder};
 use moria_world::presentation::{AssetId, AssetLoader, AssetMissingAction, RuntimeAssetProfile};
 
 const KTX2_IDENTIFIER: [u8; 12] = [
@@ -137,6 +138,35 @@ fn terrain_normal_placeholder_is_a_linear_mipmapped_basis_ktx2_array() {
 }
 
 #[test]
+fn terrain_normal_basis_payload_decodes_every_array_layer_in_the_portable_path() {
+    let bytes =
+        fs::read(asset_path()).expect("terrain normal placeholder exists at its final path");
+    let texture = Transcoder::new(&bytes).expect("the KTX2 carries decodable Basis data");
+
+    assert_eq!(texture.base_dimensions(), (TERRAIN_WIDTH, TERRAIN_WIDTH));
+    assert_eq!(texture.layer_count(), TERRAIN_LAYER_COUNT);
+    assert_eq!(texture.level_count(), TERRAIN_MIP_COUNT);
+
+    for layer in 0..TERRAIN_LAYER_COUNT {
+        for mip in [0, TERRAIN_MIP_COUNT - 1] {
+            let pixels = texture
+                .transcode_image(mip, layer, 0, TargetFormat::Rgba32, DecodeFlags::NONE)
+                .unwrap_or_else(|error| panic!("layer {layer} mip {mip} transcodes: {error:?}"));
+            assert_eq!(
+                pixels.len(),
+                texture
+                    .output_size(mip, TargetFormat::Rgba32)
+                    .expect("mip has a portable output size"),
+                "layer {layer} mip {mip} retains the cross-array layout"
+            );
+            if layer < 2 {
+                assert_neutral_normal(&pixels, layer, mip);
+            }
+        }
+    }
+}
+
+#[test]
 fn terrain_normal_placeholder_uses_the_immutable_shared_loader_path_and_fallback() {
     let loader = AssetLoader::new();
     let declaration = loader
@@ -189,4 +219,22 @@ fn read_u64_le(bytes: &[u8], offset: usize) -> u64 {
             .try_into()
             .expect("eight-byte field"),
     )
+}
+
+fn assert_neutral_normal(pixels: &[u8], layer: u32, mip: u32) {
+    let first = pixels
+        .chunks_exact(4)
+        .next()
+        .expect("normal mip has at least one pixel");
+    assert!(
+        pixels.chunks_exact(4).all(|pixel| pixel == first),
+        "reserved layer {layer} mip {mip} is spatially neutral"
+    );
+    assert!(
+        (i16::from(first[0]) - 128).abs() <= 2
+            && (i16::from(first[1]) - 128).abs() <= 2
+            && first[2] >= 253
+            && first[3] == 255,
+        "reserved layer {layer} mip {mip} encodes a neutral tangent-space normal"
+    );
 }

@@ -6,6 +6,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use basisu::{DecodeFlags, TargetFormat, Transcoder};
 use bevy::prelude::*;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -461,7 +462,38 @@ fn valid_ktx2(
         && header.layer_count == u32::from(layers)
         && header.level_count == u32::from(mip_count)
         && transfer_matches
-        && (!basis || header.format.is_none())
+        && (!basis || (header.format.is_none() && valid_basis_payload(bytes, header)))
+}
+
+/// Exercises the portable Basis Universal path instead of relying on a GPU's
+/// compressed-texture capabilities. RGBA32 is available on Metal, Vulkan, and
+/// DirectX, and decoding every array layer and mip rejects corrupt codebooks
+/// and image slices that a KTX2 container parser cannot observe.
+fn valid_basis_payload(bytes: &[u8], header: ktx2::Header) -> bool {
+    let Ok(transcoder) = Transcoder::new(bytes) else {
+        return false;
+    };
+    if transcoder.base_dimensions() != (header.pixel_width, header.pixel_height)
+        || transcoder.level_count() != header.level_count.max(1)
+        || transcoder.layer_count() != header.layer_count.max(1)
+        || transcoder.face_count() != header.face_count.max(1)
+    {
+        return false;
+    }
+
+    for level in 0..transcoder.level_count() {
+        for layer in 0..transcoder.layer_count().max(1) {
+            for face in 0..transcoder.face_count().max(1) {
+                if transcoder
+                    .transcode_image(level, layer, face, TargetFormat::Rgba32, DecodeFlags::NONE)
+                    .is_err()
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 fn valid_glb(
@@ -685,5 +717,97 @@ mod tests {
             TextureColorSpace::Linear,
             true
         ));
+    }
+
+    #[test]
+    fn basis_ktx2_contract_rejects_a_corrupt_encoded_slice() {
+        let source = include_bytes!("../../../../assets/materials/terrain_normal.ktx2");
+        let mut corrupt_slice = source.to_vec();
+        let level_zero_offset = u64::from_le_bytes(
+            corrupt_slice[80..88]
+                .try_into()
+                .expect("KTX2 level index stores a byte offset"),
+        ) as usize;
+        corrupt_slice[level_zero_offset] ^= 0x80;
+        let mut corrupt_codebook = source.to_vec();
+        let supercompression_global_data_offset = u64::from_le_bytes(
+            corrupt_codebook[64..72]
+                .try_into()
+                .expect("KTX2 header stores the global-data offset"),
+        ) as usize;
+        corrupt_codebook[supercompression_global_data_offset] = 0;
+        corrupt_codebook[supercompression_global_data_offset + 1] = 0;
+
+        assert!(valid_ktx2(
+            source,
+            1024,
+            1024,
+            14,
+            11,
+            TextureColorSpace::Linear,
+            true
+        ));
+        assert!(!valid_ktx2(
+            &corrupt_slice,
+            1024,
+            1024,
+            14,
+            11,
+            TextureColorSpace::Linear,
+            true
+        ));
+        assert!(!valid_ktx2(
+            &corrupt_codebook,
+            1024,
+            1024,
+            14,
+            11,
+            TextureColorSpace::Linear,
+            true
+        ));
+    }
+
+    #[test]
+    fn asset_validation_reports_a_corrupt_basis_payload_as_a_format_error() {
+        let source = include_bytes!("../../../../assets/materials/terrain_normal.ktx2");
+        let mut corrupt = source.to_vec();
+        let level_zero_offset = u64::from_le_bytes(
+            corrupt[80..88]
+                .try_into()
+                .expect("KTX2 level index stores a byte offset"),
+        ) as usize;
+        corrupt[level_zero_offset] ^= 0x80;
+
+        let root =
+            std::env::temp_dir().join(format!("moria-world-corrupt-basis-{}", std::process::id()));
+        let manifests = root.join("manifests");
+        let materials = root.join("materials");
+        fs::create_dir_all(&manifests).expect("fixture manifests directory");
+        fs::create_dir_all(&materials).expect("fixture materials directory");
+        fs::write(materials.join("terrain_normal.ktx2"), &corrupt).expect("fixture texture bytes");
+
+        let content_sha256 = digest(&corrupt);
+        fs::write(
+            manifests.join("asset_licenses.ron"),
+            format!(
+                "(schema_version:1,entries:[(stable_id:\"moria.materials.terrain_normal\",path:\"materials/terrain_normal.ktx2\",content_sha256:\"{content_sha256}\",provenance:InHouseGenerated(generator_or_tool:\"test\",author:\"test\",source_path:None,modifications:[]))])"
+            ),
+        )
+        .expect("fixture license registry");
+        fs::write(
+            manifests.join("asset_budgets.ron"),
+            format!(
+                "(schema_version:1,entries:[(stable_id:\"moria.materials.terrain_normal\",path:\"materials/terrain_normal.ktx2\",content_sha256:\"{content_sha256}\",max_file_bytes:{},contract:Ktx2(width:1024,height:1024,layers:14,mip_count:11,color_space:Linear,basis_payload:true))])",
+                corrupt.len()
+            ),
+        )
+        .expect("fixture budget registry");
+
+        let errors = validate_asset_directory(&root, RuntimeAssetProfile::Release)
+            .expect_err("corrupt Basis payload must fail validation");
+        assert!(errors.contains(&AssetValidationError::Format {
+            stable_id: "moria.materials.terrain_normal".to_owned(),
+        }));
+        fs::remove_dir_all(root).expect("fixture cleanup");
     }
 }
