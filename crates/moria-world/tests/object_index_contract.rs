@@ -202,6 +202,36 @@ fn every_index_capacity_is_rejected_instead_of_truncated() {
 }
 
 #[test]
+fn edit_affected_cap_filters_separated_broad_candidates_exactly() {
+    let separated = [boulder(1, 0, 0), boulder(2, 100, 0)];
+    let config = ObjectIndexConfig {
+        max_affected_objects_per_edit: 1,
+        ..Default::default()
+    };
+
+    assert!(build_object_index(&separated, &config).is_ok());
+
+    let config = ObjectIndexConfig {
+        max_edit_dependency_candidates: 1,
+        ..Default::default()
+    };
+    assert!(matches!(
+        build_object_index(&separated, &config),
+        Err(ManifestError::ObjectEditCandidatesExceeded { maximum: 1, .. })
+    ));
+
+    let collocated = [boulder(1, 0, 0), boulder(2, 0, 0)];
+    let config = ObjectIndexConfig {
+        max_affected_objects_per_edit: 1,
+        ..Default::default()
+    };
+    assert!(matches!(
+        build_object_index(&collocated, &config),
+        Err(ManifestError::ObjectEditAffectedExceeded { maximum: 1, .. })
+    ));
+}
+
+#[test]
 fn horizon_members_and_overlap_witnesses_are_stable() {
     let placements = vec![tree(9, 1, 1), tree(3, 2, 2), boulder(15, 40, 40)];
     let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();

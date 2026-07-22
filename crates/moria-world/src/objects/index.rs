@@ -13,6 +13,7 @@ const ALLOCATOR_BYTES: u64 = 16;
 const DEPENDENCY_CELL_METERS: i32 = 32;
 const SAMPLE_CELL_METERS: i32 = 4;
 const HORIZON_CELL_METERS: i32 = 64;
+const SUPPORTED_EDIT_RADIUS_Q8: i32 = 3 * Q8_UNITS_PER_METER;
 const REGION_XZ_MIN_VOXEL: i32 = -2_000;
 const REGION_XZ_MIN_Q8: i32 = -500 * Q8_UNITS_PER_METER;
 const REGION_XZ_MAX_Q8_EXCLUSIVE: i32 = 500 * Q8_UNITS_PER_METER;
@@ -261,7 +262,7 @@ pub fn build_object_index<'a>(
         actual: u64::MAX,
         maximum: config.max_retained_bytes,
     })?;
-    validate_edit_caps(&dependency_cells, config)?;
+    validate_edit_caps(&dependency_cells, &records, config)?;
     if retained_bytes > u64::from(config.max_retained_bytes) {
         return Err(ManifestError::ObjectIndexRetainedBytesExceeded {
             actual: retained_bytes,
@@ -279,6 +280,7 @@ pub fn build_object_index<'a>(
 
 fn validate_edit_caps(
     cells: &[DependencyGridCell],
+    records: &[ObjectIndexRecord],
     config: &ObjectIndexConfig,
 ) -> Result<(), ManifestError> {
     let mut starts = BTreeMap::<DependencyGridCellKey, ()>::new();
@@ -318,13 +320,74 @@ fn validate_edit_caps(
             });
         }
         if actual > u16::from(config.max_affected_objects_per_edit) {
-            return Err(ManifestError::ObjectEditAffectedExceeded {
-                actual,
-                maximum: config.max_affected_objects_per_edit,
-            });
+            let affected = max_affected_objects_for_edit(&members, records);
+            if affected > u16::from(config.max_affected_objects_per_edit) {
+                return Err(ManifestError::ObjectEditAffectedExceeded {
+                    actual: affected,
+                    maximum: config.max_affected_objects_per_edit,
+                });
+            }
         }
     }
     Ok(())
+}
+
+fn max_affected_objects_for_edit(members: &[u32], records: &[ObjectIndexRecord]) -> u16 {
+    let mut centers_x = Vec::with_capacity(members.len());
+    let mut centers_y = Vec::with_capacity(members.len());
+    let mut centers_z = Vec::with_capacity(members.len());
+    let mut affected_bounds = Vec::with_capacity(members.len());
+
+    for &member in members {
+        let Some(record) = records.get(member as usize) else {
+            continue;
+        };
+        let bounds = expand_for_supported_edit(record.dependency_bounds);
+        centers_x.push(bounds.min.x);
+        centers_y.push(bounds.min.y);
+        centers_z.push(bounds.min.z);
+        affected_bounds.push(bounds);
+    }
+
+    let mut maximum = 0_u16;
+    for x in centers_x {
+        for y in &centers_y {
+            for z in &centers_z {
+                let actual = u16::try_from(
+                    affected_bounds
+                        .iter()
+                        .filter(|bounds| {
+                            bounds.min.x <= x
+                                && x < bounds.max_exclusive.x
+                                && bounds.min.y <= *y
+                                && *y < bounds.max_exclusive.y
+                                && bounds.min.z <= *z
+                                && *z < bounds.max_exclusive.z
+                        })
+                        .count(),
+                )
+                .unwrap_or(u16::MAX);
+                maximum = maximum.max(actual);
+            }
+        }
+    }
+    maximum
+}
+
+fn expand_for_supported_edit(bounds: AabbQ8) -> AabbQ8 {
+    AabbQ8::new(
+        WorldPointQ8::new(
+            bounds.min.x - SUPPORTED_EDIT_RADIUS_Q8,
+            bounds.min.y - SUPPORTED_EDIT_RADIUS_Q8,
+            bounds.min.z - SUPPORTED_EDIT_RADIUS_Q8,
+        ),
+        WorldPointQ8::new(
+            bounds.max_exclusive.x + SUPPORTED_EDIT_RADIUS_Q8,
+            bounds.max_exclusive.y + SUPPORTED_EDIT_RADIUS_Q8,
+            bounds.max_exclusive.z + SUPPORTED_EDIT_RADIUS_Q8,
+        ),
+    )
+    .expect("region-clipped dependency bounds expand safely by the supported edit radius")
 }
 
 /// Returns active placements whose raw bounds overlap `bounds`, sorted by ID.
