@@ -1,6 +1,6 @@
 //! Development-only pure manifest curation API.
 
-use std::{error::Error, fmt, time::Instant};
+use std::{error::Error, fmt};
 
 use serde::Serialize;
 
@@ -49,7 +49,6 @@ pub struct CurationReport {
     pub retained_index_bytes: u64,
     pub radius_three_target: CurationStressTarget,
     pub dependency_coordinate_allocation_bytes: u64,
-    pub object_index_build_micros: u64,
 }
 
 /// Derives a deterministic manifest from immutable input values.
@@ -109,14 +108,11 @@ pub fn validate_manifest(
     }
     validate_manifest_without_stamp(manifest, config)
         .map_err(|error| CurationError::Manifest(error.to_string()))?;
-    let index_started = Instant::now();
     let index = build_object_index(
         &manifest.objects,
         &ObjectIndexConfig::from_configs(&config.objects, 1_024),
     )
     .map_err(|error| CurationError::Manifest(error.to_string()))?;
-    let object_index_build_micros =
-        u64::try_from(index_started.elapsed().as_micros()).unwrap_or(u64::MAX);
     let radius_three_target = select_radius_three_stress_target(&index).ok_or_else(|| {
         CurationError::Manifest("manifest has no legal radius-3 m forest stress target".to_owned())
     })?;
@@ -137,6 +133,5 @@ pub fn validate_manifest(
         retained_index_bytes: index.retained_bytes(),
         radius_three_target,
         dependency_coordinate_allocation_bytes: index.dependency_coordinate_allocation_bytes(),
-        object_index_build_micros,
     })
 }
