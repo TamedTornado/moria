@@ -1,7 +1,7 @@
-use std::fs;
+use std::{collections::BTreeSet, fs};
 
 use moria_world::presentation::{AssetId, AssetLoader, AssetMissingAction, RuntimeAssetProfile};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const EXPLORER_PATH: &str = "player/explorer.glb";
 const GLB_MAGIC: u32 = 0x4654_6C67;
@@ -85,28 +85,7 @@ fn explorer_placeholder_is_a_skeletal_capsule_glb_with_required_clips() {
     );
     assert!(skin.get("inverseBindMatrices").is_some());
 
-    let scene_index = document["scene"].as_u64().expect("default scene") as usize;
-    let scene = &document["scenes"].as_array().expect("scenes array")[scene_index];
-    let skeleton_node = skin["skeleton"].as_u64().expect("skeleton root");
-    assert!(
-        scene["nodes"].as_array().is_some_and(|nodes| nodes
-            .iter()
-            .any(|node| node.as_u64() == Some(skeleton_node))),
-        "the instantiated scene includes the skeleton root"
-    );
-    let mesh_node = document["nodes"]
-        .as_array()
-        .expect("explorer nodes")
-        .iter()
-        .position(|node| node["mesh"].as_u64() == Some(0))
-        .expect("skinned explorer mesh node") as u64;
-    assert_eq!(document["nodes"][mesh_node as usize]["skin"], 0);
-    assert!(
-        document["nodes"][skeleton_node as usize]["children"]
-            .as_array()
-            .is_some_and(|children| children.iter().any(|node| node.as_u64() == Some(mesh_node))),
-        "the skinned mesh is parented under the instantiated skeleton root"
-    );
+    assert_scene_reaches_skin_and_animation_nodes(&document);
 
     let clips: Vec<_> = document["animations"]
         .as_array()
@@ -129,6 +108,158 @@ fn explorer_placeholder_is_a_skeletal_capsule_glb_with_required_clips() {
                 .is_empty()
         );
     }
+}
+
+#[test]
+fn skin_hierarchy_allows_a_common_scene_root_with_skeleton_and_mesh_siblings() {
+    assert_scene_reaches_skin_and_animation_nodes(&scene_graph_document(
+        &[0],
+        &[&[1, 2], &[3], &[], &[]],
+        &[1, 3],
+        2,
+        &[3],
+    ));
+}
+
+#[test]
+#[should_panic(expected = "skin joint 3 is reachable from the default scene")]
+fn skin_hierarchy_rejects_an_unreachable_skin_joint() {
+    assert_scene_reaches_skin_and_animation_nodes(&scene_graph_document(
+        &[0],
+        &[&[1, 2], &[], &[], &[]],
+        &[1, 3],
+        2,
+        &[1],
+    ));
+}
+
+#[test]
+#[should_panic(expected = "animation target 4 is reachable from the default scene")]
+fn skin_hierarchy_rejects_an_unreachable_animation_target() {
+    assert_scene_reaches_skin_and_animation_nodes(&scene_graph_document(
+        &[0],
+        &[&[1, 2], &[3], &[], &[], &[]],
+        &[1, 3],
+        2,
+        &[4],
+    ));
+}
+
+fn scene_graph_document(
+    roots: &[u64],
+    children: &[&[u64]],
+    joints: &[u64],
+    skinned_mesh: usize,
+    animation_targets: &[u64],
+) -> Value {
+    let nodes: Vec<_> = children
+        .iter()
+        .enumerate()
+        .map(|(index, children)| {
+            let mut node = json!({ "children": children });
+            if index == skinned_mesh {
+                node["mesh"] = json!(0);
+                node["skin"] = json!(0);
+            }
+            node
+        })
+        .collect();
+    let channels: Vec<_> = animation_targets
+        .iter()
+        .map(|target| json!({ "target": { "node": target } }))
+        .collect();
+
+    json!({
+        "scene": 0,
+        "scenes": [{ "nodes": roots }],
+        "nodes": nodes,
+        "skins": [{ "skeleton": 1, "joints": joints }],
+        "animations": [{ "channels": channels }],
+    })
+}
+
+fn assert_scene_reaches_skin_and_animation_nodes(document: &Value) {
+    let nodes = document["nodes"].as_array().expect("explorer nodes");
+    let reachable = reachable_scene_nodes(document);
+    let skins = document["skins"].as_array().expect("explorer skins");
+
+    for (skin_index, skin) in skins.iter().enumerate() {
+        let skeleton = skin["skeleton"].as_u64().expect("skeleton root");
+        assert!(
+            reachable.contains(&skeleton),
+            "skeleton root {skeleton} is reachable from the default scene"
+        );
+        for joint in skin["joints"].as_array().expect("skin joints") {
+            let joint = joint.as_u64().expect("skin joint node");
+            assert!(
+                reachable.contains(&joint),
+                "skin joint {joint} is reachable from the default scene"
+            );
+        }
+
+        let skin_index = u64::try_from(skin_index).expect("skin index fits in u64");
+        let skinned_mesh_nodes: Vec<_> = nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(node_index, node)| {
+                (node["skin"].as_u64() == Some(skin_index)).then_some((node_index, node))
+            })
+            .collect();
+        assert!(
+            !skinned_mesh_nodes.is_empty(),
+            "skin {skin_index} has a skinned mesh node"
+        );
+        for (node_index, node) in skinned_mesh_nodes {
+            assert!(node["mesh"].is_number(), "skinned node has a mesh");
+            let node_index = u64::try_from(node_index).expect("node index fits in u64");
+            assert!(
+                reachable.contains(&node_index),
+                "skinned mesh node {node_index} is reachable from the default scene"
+            );
+        }
+    }
+
+    for animation in document["animations"].as_array().expect("animations") {
+        for channel in animation["channels"].as_array().expect("animation channels") {
+            let target = channel["target"]["node"]
+                .as_u64()
+                .expect("animation target node");
+            assert!(
+                reachable.contains(&target),
+                "animation target {target} is reachable from the default scene"
+            );
+        }
+    }
+}
+
+fn reachable_scene_nodes(document: &Value) -> BTreeSet<u64> {
+    let nodes = document["nodes"].as_array().expect("explorer nodes");
+    let scene_index = document["scene"].as_u64().expect("default scene") as usize;
+    let roots = document["scenes"].as_array().expect("scenes array")[scene_index]["nodes"]
+        .as_array()
+        .expect("default scene roots");
+    let mut reachable = BTreeSet::new();
+    let mut pending: Vec<_> = roots
+        .iter()
+        .map(|node| node.as_u64().expect("scene root node"))
+        .collect();
+
+    while let Some(node_index) = pending.pop() {
+        if !reachable.insert(node_index) {
+            continue;
+        }
+        let node_index = usize::try_from(node_index).expect("node index fits in usize");
+        let node = nodes.get(node_index).expect("scene node index is valid");
+        if let Some(children) = node["children"].as_array() {
+            pending.extend(
+                children
+                    .iter()
+                    .map(|child| child.as_u64().expect("scene child node")),
+            );
+        }
+    }
+
+    reachable
 }
 
 fn glb_json(bytes: &[u8]) -> Value {
