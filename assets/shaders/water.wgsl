@@ -22,7 +22,7 @@ struct WaterVertexOutput {
 var<uniform> water_time: WaterTime;
 
 @vertex
-fn water_vertex(input: WaterVertex) -> WaterVertexOutput {
+fn vertex(input: WaterVertex) -> WaterVertexOutput {
     return WaterVertexOutput(
         vec4<f32>(input.position, 1.0),
         normalize(input.normal),
@@ -30,7 +30,7 @@ fn water_vertex(input: WaterVertex) -> WaterVertexOutput {
 }
 
 @fragment
-fn water_fragment(input: WaterVertexOutput) -> @location(0) vec4<f32> {
+fn fragment(input: WaterVertexOutput) -> @location(0) vec4<f32> {
     let normal_light = max(input.surface_normal.y, 0.0);
     let normal_motion = fract(water_time.seconds * 0.05);
     let color = vec3<f32>(0.03, 0.23, 0.36) + vec3<f32>(0.02) * (normal_light + normal_motion);
