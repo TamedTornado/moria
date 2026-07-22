@@ -238,6 +238,13 @@ fn sweep_candidates(
     displacement: Vec3Q8,
     bounds: WorldBounds,
 ) -> Result<CandidateBuffer, QueryError> {
+    if displacement == Vec3Q8::new(0, 0, 0) {
+        let mut candidates = CandidateBuffer::new();
+        for voxel in candidate_range(capsule, capsule, bounds)?.iter() {
+            candidates.insert(voxel)?;
+        }
+        return Ok(candidates);
+    }
     let start = VoxelCoord::new(
         q8_to_voxel(i64::from(capsule.center.x))?,
         q8_to_voxel(i64::from(capsule.center.y))?,
@@ -258,7 +265,7 @@ fn sweep_candidates(
     .map_err(|_| QueryError::InvalidInput)?;
 
     let mut candidates = CandidateBuffer::new();
-    visit_centerline_cells(start, end, displacement, |center| {
+    visit_centerline_cells(capsule.center, start, end, displacement, |center| {
         for x in (center.x - horizontal)..=(center.x + horizontal) {
             for y in (center.y - vertical)..=(center.y + vertical) {
                 for z in (center.z - horizontal)..=(center.z + horizontal) {
@@ -289,6 +296,7 @@ fn voxel_in_bounds(voxel: VoxelCoord, bounds: WorldBounds) -> bool {
 }
 
 fn visit_centerline_cells(
+    origin: WorldPointQ8,
     start: VoxelCoord,
     end: VoxelCoord,
     displacement: Vec3Q8,
@@ -302,7 +310,11 @@ fn visit_centerline_cells(
     for axis in 0..3 {
         if steps[axis] != 0 {
             let coordinate = [current.x, current.y, current.z][axis];
-            let offset = [i64::from(start.x), i64::from(start.y), i64::from(start.z)][axis]
+            let offset = [
+                i64::from(origin.x),
+                i64::from(origin.y),
+                i64::from(origin.z),
+            ][axis]
                 .rem_euclid(VOXEL_EDGE_Q8_I64);
             distances[axis] = if steps[axis] > 0 {
                 VOXEL_EDGE_Q8_I64 - offset
@@ -417,9 +429,9 @@ fn candidate_range(
     let max_z = i64::from(start.center.z.max(end.center.z)) + radius;
     Ok(CandidateRange {
         min: VoxelCoord::new(
-            q8_to_voxel(min_x)?,
-            q8_to_voxel(min_y)?,
-            q8_to_voxel(min_z)?,
+            q8_to_voxel(min_x - 1)?,
+            q8_to_voxel(min_y - 1)?,
+            q8_to_voxel(min_z - 1)?,
         ),
         max: VoxelCoord::new(
             q8_to_voxel(max_x)?,
@@ -516,9 +528,9 @@ fn first_overlap_fraction_with_work(
     capsule: CapsuleQ8,
     displacement: Vec3Q8,
     voxel: VoxelCoord,
-) -> (Option<i64>, u16) {
-    let mut checks = 0_u16;
-    let overlaps = |fraction: i64, checks: &mut u16| {
+) -> (Option<i64>, u32) {
+    let mut checks = 0_u32;
+    let overlaps = |fraction: i64, checks: &mut u32| {
         *checks += 1;
         capsule_overlaps_voxel(
             moved_capsule(capsule, displacement, fraction)
@@ -572,12 +584,11 @@ fn first_overlap_fraction_with_work(
         }
     }
 
-    // Q8 center quantization can create a shallow grazing island just before
-    // the continuous-distance minimum.  Search immediately before the normal
-    // entering edge exactly; the bound is independent of sweep length.
-    const GRAZING_FRACTION_WINDOW: i64 = 256;
-    let grazing_start = first.saturating_sub(GRAZING_FRACTION_WINDOW);
-    for fraction in grazing_start..=first {
+    // Q8 center quantization can create a shallow grazing island before the
+    // continuous-distance minimum.  Once an overlapping minimum is known,
+    // search the complete preceding bounded Q16 domain so the reported
+    // contact is exact rather than dependent on an arbitrary grazing window.
+    for fraction in 1..=first {
         if overlaps(fraction, &mut checks) {
             return (Some(fraction), checks);
         }
@@ -957,13 +968,42 @@ mod tests {
     }
 
     #[test]
-    fn sweep_intersection_work_does_not_scale_with_quantized_displacement() {
+    fn sweep_intersection_work_is_bounded_by_the_q16_contact_domain() {
         let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 400 * 64, 0), 46, 0);
         let displacement = Vec3Q8::new(1_330, 1_330, 1_330);
         let voxel = VoxelCoord::new(20, 420, 20);
 
         let (_, tests) = first_overlap_fraction_with_work(capsule, displacement, voxel);
-        assert!(tests <= 600, "intersection used {tests} overlap checks");
+        assert!(
+            tests <= Q16_MAX as u32 + 100,
+            "intersection used {tests} overlap checks"
+        );
+    }
+
+    #[test]
+    fn sweep_candidates_follow_an_arbitrary_negative_q8_origin() {
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(-125, 432, -186), 128, 60);
+        let displacement = Vec3Q8::new(893, 51, -135);
+
+        assert_eq!(
+            sweep_candidates(capsule, displacement, identity().bounds)
+                .unwrap()
+                .iter()
+                .count(),
+            795
+        );
+
+        let mut app = App::new();
+        app.insert_resource(state([]))
+            .insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)));
+        app.world_mut()
+            .run_system_once(
+                move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
+                    result.0 = read.sweep_capsule(capsule, displacement, QueryMask::SOLID);
+                },
+            )
+            .unwrap();
+        assert!(app.world().resource::<SweepQueryResult>().0.is_ok());
     }
 
     #[test]
@@ -1020,6 +1060,45 @@ mod tests {
 
         assert_eq!(oracle, Some(15_655));
         assert_eq!(first_overlap_fraction(capsule, displacement, voxel), oracle);
+    }
+
+    #[test]
+    fn sweep_finds_the_exact_quantized_grazing_contact() {
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(36, 105, -18), 119, 122);
+        let displacement = Vec3Q8::new(-88, -47, -110);
+        let voxel = VoxelCoord::new(-3, 4, -2);
+        let contact = first_overlap_fraction(capsule, displacement, voxel);
+
+        assert_eq!(contact, Some(46_918));
+        assert!(!capsule_overlaps_voxel(
+            moved_capsule(capsule, displacement, contact.unwrap() - 1).unwrap(),
+            voxel
+        ));
+    }
+
+    #[test]
+    fn broad_phase_includes_closed_boundary_contacts() {
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 0, 0), 128, 0);
+        let bounds = identity().bounds;
+        for voxel in [
+            VoxelCoord::new(-3, 0, 0),
+            VoxelCoord::new(-2, -2, 0),
+            VoxelCoord::new(-2, -2, -2),
+        ] {
+            assert!(capsule_overlaps_voxel(capsule, voxel));
+            assert!(
+                candidate_range(capsule, capsule, bounds)
+                    .unwrap()
+                    .iter()
+                    .any(|candidate| candidate == voxel)
+            );
+            assert!(
+                sweep_candidates(capsule, Vec3Q8::new(0, 0, 0), bounds)
+                    .unwrap()
+                    .iter()
+                    .any(|candidate| candidate == voxel)
+            );
+        }
     }
 
     #[test]
