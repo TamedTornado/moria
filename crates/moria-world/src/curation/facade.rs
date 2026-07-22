@@ -1,6 +1,6 @@
 //! Development-only pure manifest curation API.
 
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, time::Instant};
 
 use serde::Serialize;
 
@@ -10,6 +10,7 @@ use crate::{
 };
 
 use super::generate::{generate_manifest, validate_manifest_without_stamp};
+use super::stress::{CurationStressTarget, select_radius_three_stress_target};
 
 /// A typed curation failure that does not expose implementation state.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,6 +47,9 @@ impl Error for CurationError {}
 pub struct CurationReport {
     pub placement_count: u32,
     pub retained_index_bytes: u64,
+    pub radius_three_target: CurationStressTarget,
+    pub dependency_coordinate_allocation_bytes: u64,
+    pub object_index_build_micros: u64,
 }
 
 /// Derives a deterministic manifest from immutable input values.
@@ -105,14 +109,34 @@ pub fn validate_manifest(
     }
     validate_manifest_without_stamp(manifest, config)
         .map_err(|error| CurationError::Manifest(error.to_string()))?;
+    let index_started = Instant::now();
     let index = build_object_index(
         &manifest.objects,
         &ObjectIndexConfig::from_configs(&config.objects, 1_024),
     )
     .map_err(|error| CurationError::Manifest(error.to_string()))?;
+    let object_index_build_micros =
+        u64::try_from(index_started.elapsed().as_micros()).unwrap_or(u64::MAX);
+    let radius_three_target = select_radius_three_stress_target(&index).ok_or_else(|| {
+        CurationError::Manifest("manifest has no legal radius-3 m forest stress target".to_owned())
+    })?;
+    if radius_three_target.broad_dependency_candidates
+        > config.objects.max_edit_dependency_candidates
+        || radius_three_target.exact_dependency_ids
+            > u16::from(config.objects.max_affected_objects_per_edit)
+        || radius_three_target.dependency_bricks > config.objects.max_dependency_bricks_per_object
+        || index.dependency_coordinate_allocation_bytes() != 0
+    {
+        return Err(CurationError::Manifest(
+            "radius-3 m forest stress target exceeds the index contract".to_owned(),
+        ));
+    }
     Ok(CurationReport {
         placement_count: u32::try_from(manifest.objects.len())
             .map_err(|_| CurationError::Manifest("placement count exceeds u32".to_owned()))?,
         retained_index_bytes: index.retained_bytes(),
+        radius_three_target,
+        dependency_coordinate_allocation_bytes: index.dependency_coordinate_allocation_bytes(),
+        object_index_build_micros,
     })
 }

@@ -13,10 +13,9 @@ use crate::{
 
 use super::ManifestError;
 
-const FOREST_AREA_M2: u32 = 120_000;
-const ELIGIBLE_LAND_AREA_M2: u32 = 120_000;
+const BIOME_RASTER_EDGE_METERS: i32 = 4;
 const PLACEMENT_SPACING_METERS: i32 = 8;
-const FOREST_ROUTE_OBJECT_EXCLUSION_METERS: i32 = 8;
+const FOREST_ROUTE_OBJECT_EXCLUSION_METERS: i32 = 12;
 const CANOPY_RANGE_WITNESSES_PER_SPECIES: u32 = 16;
 const Q8_PER_METER: i32 = 256;
 const VOXELS_PER_METER: i32 = 4;
@@ -58,13 +57,20 @@ pub fn generate_manifest(
 
     let parameters_digest = parameters_digest_from_bytes(region_config_bytes, ruin_stamp_bytes);
     let identity = world_identity(&config, parameters_digest)?;
-    let route = forest_route(&identity)?;
-    let route_start = route.first().expect("generated route has a start").point;
-    let route_end = route.last().expect("generated route has an end").point;
+    let forest_route = forest_route(&identity)?;
+    let route_start = forest_route
+        .first()
+        .expect("generated forest route has a start")
+        .point;
+    let route_end = forest_route
+        .last()
+        .expect("generated forest route has an end")
+        .point;
+    let route = complete_traversal_route(&identity, forest_route);
     let mut forest_cursor = CandidateCursor::new(identity, route_start, route_end);
     let mut land_cursor = CandidateCursor::new(identity, route_start, route_end);
     let mut next_id = 1_u64;
-    let tree_count = ceil_div(FOREST_AREA_M2, 25);
+    let tree_count = ceil_div(config.biome.forest_min_area_m2, 25);
     let birch_count = u32::from(config.biome.tree_species_mix_percent[0]) * tree_count / 100;
     let pine_count = tree_count - birch_count;
     let mut objects = Vec::with_capacity(usize::try_from(tree_count).unwrap_or(0));
@@ -86,7 +92,7 @@ pub fn generate_manifest(
         &mut land_cursor,
         &mut next_id,
         ceil_div(
-            FOREST_AREA_M2 * u32::from(config.biome.bushes_per_hectare),
+            config.biome.forest_min_area_m2 * u32::from(config.biome.bushes_per_hectare),
             10_000,
         ),
         ObjectKind::Bush,
@@ -96,7 +102,7 @@ pub fn generate_manifest(
         &mut land_cursor,
         &mut next_id,
         ceil_div(
-            ELIGIBLE_LAND_AREA_M2 * u32::from(config.objects.boulders_per_hectare),
+            config.biome.meadow_min_area_m2 * u32::from(config.objects.boulders_per_hectare),
             10_000,
         ),
         ObjectKind::Boulder,
@@ -106,7 +112,7 @@ pub fn generate_manifest(
         &mut land_cursor,
         &mut next_id,
         ceil_div(
-            ELIGIBLE_LAND_AREA_M2 * u32::from(config.objects.stumps_per_hectare),
+            config.biome.meadow_min_area_m2 * u32::from(config.objects.stumps_per_hectare),
             10_000,
         ),
         ObjectKind::Stump,
@@ -116,7 +122,7 @@ pub fn generate_manifest(
         &mut land_cursor,
         &mut next_id,
         ceil_div(
-            ELIGIBLE_LAND_AREA_M2 * u32::from(config.objects.rocks_per_hectare),
+            config.biome.meadow_min_area_m2 * u32::from(config.objects.rocks_per_hectare),
             10_000,
         ),
         ObjectKind::Rock,
@@ -127,42 +133,55 @@ pub fn generate_manifest(
         seed: config.seed,
         parameters_digest,
         generated_by: "moria-curate generate".to_owned(),
-        features: vec![FeatureInstance {
-            id: 1,
-            kind: FeatureKind::Stratum,
-            bounds: AabbQ8::new(
-                WorldPointQ8::new(-128_000, -32_768, -128_000),
-                WorldPointQ8::new(128_000, 32_768, 128_000),
-            )
-            .expect("fixed Product One bounds are valid"),
-            host_material: CUT_STONE,
-            depth_q8: 0,
-            orientation_q16: [0, 0, 0, 65_536],
-            generator_key: config.seed,
-        }],
-        water_bodies: vec![WaterBodyDef {
-            id: 1,
-            kind: WaterKind::Lake,
-            surface_y_q8: i32::from(config.terrain.typical_surface_m) * Q8_PER_METER,
-            footprint: vec![
-                WorldPointQ8::new(
-                    -25_600,
-                    i32::from(config.terrain.typical_surface_m) * 256,
-                    -25_600,
-                ),
-                WorldPointQ8::new(
-                    -20_480,
-                    i32::from(config.terrain.typical_surface_m) * 256,
-                    -25_600,
-                ),
-                WorldPointQ8::new(
-                    -23_040,
-                    i32::from(config.terrain.typical_surface_m) * 256,
-                    -20_480,
-                ),
-            ],
-            bed_profile_key: config.seed,
-        }],
+        features: product_one_features(&config),
+        water_bodies: vec![
+            WaterBodyDef {
+                id: 1,
+                kind: WaterKind::River,
+                surface_y_q8: i32::from(config.terrain.typical_surface_m) * Q8_PER_METER,
+                footprint: vec![
+                    WorldPointQ8::new(
+                        -115_200,
+                        i32::from(config.terrain.typical_surface_m) * 256,
+                        -128_000,
+                    ),
+                    WorldPointQ8::new(
+                        -112_640,
+                        i32::from(config.terrain.typical_surface_m) * 256,
+                        0,
+                    ),
+                    WorldPointQ8::new(
+                        -110_080,
+                        i32::from(config.terrain.typical_surface_m) * 256,
+                        128_000,
+                    ),
+                ],
+                bed_profile_key: config.seed,
+            },
+            WaterBodyDef {
+                id: 2,
+                kind: WaterKind::Lake,
+                surface_y_q8: i32::from(config.terrain.typical_surface_m) * Q8_PER_METER,
+                footprint: vec![
+                    WorldPointQ8::new(
+                        -25_600,
+                        i32::from(config.terrain.typical_surface_m) * 256,
+                        -25_600,
+                    ),
+                    WorldPointQ8::new(
+                        -20_480,
+                        i32::from(config.terrain.typical_surface_m) * 256,
+                        -25_600,
+                    ),
+                    WorldPointQ8::new(
+                        -23_040,
+                        i32::from(config.terrain.typical_surface_m) * 256,
+                        -20_480,
+                    ),
+                ],
+                bed_profile_key: config.seed,
+            },
+        ],
         objects,
         ruin,
         route,
@@ -197,22 +216,33 @@ fn validate_forest_contract(
     config: &RegionConfig,
     manifest: &CuratedManifest,
 ) -> Result<(), CurationGenerateError> {
-    if FOREST_AREA_M2 < config.biome.forest_min_area_m2 {
+    let identity = world_identity(config, manifest.parameters_digest)?;
+    let forest_area_m2 = raster_area_m2(&identity, BiomeId::Forest);
+    let meadow_area_m2 = raster_area_m2(&identity, BiomeId::Meadow);
+    if forest_area_m2 < config.biome.forest_min_area_m2 {
         return contract_error("forest eligible area is below the configured minimum");
     }
-    if ELIGIBLE_LAND_AREA_M2 < config.biome.meadow_min_area_m2 {
+    if meadow_area_m2 < config.biome.meadow_min_area_m2 {
         return contract_error("eligible land area is below the configured minimum");
     }
 
-    let required_trees = ceil_div(FOREST_AREA_M2, 25);
+    let required_trees = ceil_div(config.biome.forest_min_area_m2, 25);
     let required_bushes = ceil_div(
-        FOREST_AREA_M2 * u32::from(config.biome.bushes_per_hectare),
+        config.biome.forest_min_area_m2 * u32::from(config.biome.bushes_per_hectare),
         10_000,
     );
-    let required_boulders =
-        density_count(ELIGIBLE_LAND_AREA_M2, config.objects.boulders_per_hectare);
-    let required_stumps = density_count(ELIGIBLE_LAND_AREA_M2, config.objects.stumps_per_hectare);
-    let required_rocks = density_count(ELIGIBLE_LAND_AREA_M2, config.objects.rocks_per_hectare);
+    let required_boulders = density_count(
+        config.biome.meadow_min_area_m2,
+        config.objects.boulders_per_hectare,
+    );
+    let required_stumps = density_count(
+        config.biome.meadow_min_area_m2,
+        config.objects.stumps_per_hectare,
+    );
+    let required_rocks = density_count(
+        config.biome.meadow_min_area_m2,
+        config.objects.rocks_per_hectare,
+    );
     let count_kind = |kind| {
         u32::try_from(
             manifest
@@ -285,6 +315,20 @@ fn validate_forest_contract(
         );
         tree_points.push(placement.transform_q.translation);
     }
+    for placement in &manifest.objects {
+        let column = ColumnCoord {
+            x: placement.transform_q.translation.x.div_euclid(64),
+            z: placement.transform_q.translation.z.div_euclid(64),
+        };
+        let required_biome = if matches!(placement.kind, ObjectKind::TreeA | ObjectKind::TreeB) {
+            BiomeId::Forest
+        } else {
+            BiomeId::Meadow
+        };
+        if biome_at(&identity, column) != required_biome {
+            return contract_error("accepted placement is outside its qualifying biome");
+        }
+    }
     for species_index in 0..2 {
         let required_species =
             required_trees * u32::from(config.biome.tree_species_mix_percent[species_index]) / 100;
@@ -338,7 +382,126 @@ fn validate_forest_contract(
             }
         }
     }
+    for waypoint in manifest
+        .route
+        .iter()
+        .filter(|waypoint| waypoint.tags.contains(&RouteTag::Forest))
+    {
+        let column = ColumnCoord {
+            x: waypoint.point.x.div_euclid(64),
+            z: waypoint.point.z.div_euclid(64),
+        };
+        if biome_at(&identity, column) != BiomeId::Forest {
+            return contract_error("forest route waypoint is outside the forest biome");
+        }
+    }
+    validate_required_metadata(manifest)?;
     Ok(())
+}
+
+fn validate_required_metadata(manifest: &CuratedManifest) -> Result<(), CurationGenerateError> {
+    for kind in [
+        FeatureKind::Stratum,
+        FeatureKind::KarstCave,
+        FeatureKind::Aquifer,
+        FeatureKind::IronVein,
+    ] {
+        if !manifest.features.iter().any(|feature| feature.kind == kind) {
+            return contract_error("required Product One geology feature is missing");
+        }
+    }
+    for kind in [WaterKind::River, WaterKind::Lake] {
+        if !manifest.water_bodies.iter().any(|body| body.kind == kind) {
+            return contract_error("required Product One water body is missing");
+        }
+    }
+    for tag in [
+        RouteTag::Meadow,
+        RouteTag::Forest,
+        RouteTag::River,
+        RouteTag::Lake,
+        RouteTag::RuinStairBottom,
+        RouteTag::RuinStairTop,
+        RouteTag::CaveMouth,
+        RouteTag::Aquifer,
+        RouteTag::OreVein,
+        RouteTag::CaveFloor,
+        RouteTag::SignatureCarveHillside,
+    ] {
+        if !manifest
+            .route
+            .iter()
+            .any(|waypoint| waypoint.tags.contains(&tag))
+        {
+            return contract_error("required Product One traversal tag is missing");
+        }
+    }
+    Ok(())
+}
+
+fn raster_area_m2(identity: &WorldIdentity, biome: BiomeId) -> u32 {
+    let mut cells = 0_u32;
+    for x in (-500..500).step_by(BIOME_RASTER_EDGE_METERS as usize) {
+        for z in (-500..500).step_by(BIOME_RASTER_EDGE_METERS as usize) {
+            if biome_at(
+                identity,
+                ColumnCoord {
+                    x: x * VOXELS_PER_METER,
+                    z: z * VOXELS_PER_METER,
+                },
+            ) == biome
+            {
+                cells += 1;
+            }
+        }
+    }
+    cells * u32::try_from(BIOME_RASTER_EDGE_METERS * BIOME_RASTER_EDGE_METERS).unwrap()
+}
+
+fn product_one_features(config: &RegionConfig) -> Vec<FeatureInstance> {
+    let feature = |id, kind, min, max, host_material, depth_q8| FeatureInstance {
+        id,
+        kind,
+        bounds: AabbQ8::new(min, max).expect("fixed Product One feature bounds are valid"),
+        host_material,
+        depth_q8,
+        orientation_q16: [0, 0, 0, 65_536],
+        generator_key: config.seed,
+    };
+    vec![
+        feature(
+            1,
+            FeatureKind::Stratum,
+            WorldPointQ8::new(-128_000, -32_768, -128_000),
+            WorldPointQ8::new(128_000, 32_768, 128_000),
+            CUT_STONE,
+            0,
+        ),
+        feature(
+            2,
+            FeatureKind::KarstCave,
+            WorldPointQ8::new(-12_288, -12_288, -4_096),
+            WorldPointQ8::new(4_096, 16_384, 12_288),
+            CUT_STONE,
+            0,
+        ),
+        feature(
+            3,
+            FeatureKind::Aquifer,
+            WorldPointQ8::new(-20_480, -12_288, -20_480),
+            WorldPointQ8::new(20_480, -10_752, 20_480),
+            config.geology.aquifer_material,
+            -11_520,
+        ),
+        feature(
+            4,
+            FeatureKind::IronVein,
+            WorldPointQ8::new(-2_048, -12_288, -2_048),
+            WorldPointQ8::new(2_048, -6_144, 2_048),
+            CUT_STONE,
+            -9_216,
+        ),
+    ]
 }
 
 fn density_count(area_m2: u32, per_hectare: u16) -> u32 {
@@ -537,6 +700,35 @@ fn forest_route(identity: &WorldIdentity) -> Result<Vec<RouteWaypoint>, Curation
     ))
 }
 
+fn complete_traversal_route(
+    identity: &WorldIdentity,
+    mut route: Vec<RouteWaypoint>,
+) -> Vec<RouteWaypoint> {
+    let mut append = |x_meters, y_q8, z_meters, tags| {
+        route.push(RouteWaypoint {
+            order: u8::try_from(route.len()).expect("Product One route fits u8"),
+            point: WorldPointQ8::new(x_meters * Q8_PER_METER, y_q8, z_meters * Q8_PER_METER),
+            tags,
+        });
+    };
+    let surface = |x, z| surface_point(identity, x, z).y;
+    append(-480, surface(-480, -480), -480, vec![RouteTag::Meadow]);
+    append(-440, surface(-440, 0), 0, vec![RouteTag::River]);
+    append(-90, surface(-90, -90), -90, vec![RouteTag::Lake]);
+    append(0, surface(0, 0), 0, vec![RouteTag::RuinStairBottom]);
+    append(
+        0,
+        surface(0, 0) + 3 * Q8_PER_METER,
+        2,
+        vec![RouteTag::RuinStairTop],
+    );
+    append(24, surface(24, 0), 0, vec![RouteTag::CaveMouth]);
+    append(24, -11_520, 0, vec![RouteTag::Aquifer]);
+    append(0, -9_216, 0, vec![RouteTag::OreVein]);
+    append(0, -10_240, 0, vec![RouteTag::CaveFloor]);
+    route
+}
+
 fn surface_point(identity: &WorldIdentity, x_meters: i32, z_meters: i32) -> WorldPointQ8 {
     let column = ColumnCoord {
         x: x_meters * VOXELS_PER_METER,
@@ -640,7 +832,7 @@ mod tests {
         parameters_digest_from_bytes,
     };
 
-    use super::generate_manifest;
+    use super::{generate_manifest, validate_manifest_without_stamp};
 
     #[test]
     fn generation_is_byte_deterministic_and_uses_both_input_byte_streams() {
@@ -651,6 +843,82 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(!first.objects.is_empty());
+    }
+
+    #[test]
+    fn generated_manifest_preserves_product_one_geology_water_and_traversal_metadata() {
+        let region = include_bytes!("../../../../assets/config/product_one_region.ron");
+        let stamp = include_bytes!("../../../../assets/stamps/ruin_p1.ron");
+        let manifest = generate_manifest(region, stamp).unwrap();
+
+        for kind in [
+            crate::FeatureKind::Stratum,
+            crate::FeatureKind::KarstCave,
+            crate::FeatureKind::Aquifer,
+            crate::FeatureKind::IronVein,
+        ] {
+            assert!(manifest.features.iter().any(|feature| feature.kind == kind));
+        }
+        for kind in [crate::WaterKind::River, crate::WaterKind::Lake] {
+            assert!(manifest.water_bodies.iter().any(|water| water.kind == kind));
+        }
+        for tag in [
+            RouteTag::Meadow,
+            RouteTag::Forest,
+            RouteTag::River,
+            RouteTag::Lake,
+            RouteTag::RuinStairBottom,
+            RouteTag::RuinStairTop,
+            RouteTag::CaveMouth,
+            RouteTag::Aquifer,
+            RouteTag::OreVein,
+            RouteTag::CaveFloor,
+            RouteTag::SignatureCarveHillside,
+        ] {
+            assert!(
+                manifest
+                    .route
+                    .iter()
+                    .any(|waypoint| waypoint.tags.contains(&tag))
+            );
+        }
+    }
+
+    #[test]
+    fn validation_rejects_missing_required_geology_water_and_route_metadata() {
+        let region = include_bytes!("../../../../assets/config/product_one_region.ron");
+        let stamp = include_bytes!("../../../../assets/stamps/ruin_p1.ron");
+        let config: RegionConfig = ron::de::from_bytes(region).unwrap();
+        let manifest = generate_manifest(region, stamp).unwrap();
+
+        let mut no_cave = manifest.clone();
+        no_cave
+            .features
+            .retain(|feature| feature.kind != crate::FeatureKind::KarstCave);
+        assert!(validate_manifest_without_stamp(&no_cave, &config).is_err());
+
+        let mut no_river = manifest.clone();
+        no_river
+            .water_bodies
+            .retain(|water| water.kind != crate::WaterKind::River);
+        assert!(validate_manifest_without_stamp(&no_river, &config).is_err());
+
+        let mut no_cave_floor = manifest;
+        for waypoint in &mut no_cave_floor.route {
+            waypoint.tags.retain(|tag| *tag != RouteTag::CaveFloor);
+        }
+        assert!(validate_manifest_without_stamp(&no_cave_floor, &config).is_err());
+    }
+
+    #[test]
+    fn validation_measures_biome_raster_area_instead_of_accepting_declared_constants() {
+        let region = include_bytes!("../../../../assets/config/product_one_region.ron");
+        let stamp = include_bytes!("../../../../assets/stamps/ruin_p1.ron");
+        let manifest = generate_manifest(region, stamp).unwrap();
+        let mut config: RegionConfig = ron::de::from_bytes(region).unwrap();
+        config.biome.forest_min_area_m2 = 1_000_000;
+
+        assert!(validate_manifest_without_stamp(&manifest, &config).is_err());
     }
 
     #[test]

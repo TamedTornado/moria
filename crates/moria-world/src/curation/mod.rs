@@ -5,6 +5,8 @@ mod facade;
 #[cfg(feature = "curation")]
 mod generate;
 mod model;
+#[cfg(feature = "curation")]
+mod stress;
 
 #[cfg(feature = "curation")]
 pub use facade::{
@@ -15,3 +17,5 @@ pub use model::{
     ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi, SparseVoxelStamp,
     SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
 };
+#[cfg(feature = "curation")]
+pub use stress::CurationStressTarget;
