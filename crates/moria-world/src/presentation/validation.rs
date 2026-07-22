@@ -720,15 +720,17 @@ mod tests {
     }
 
     #[test]
-    fn basis_ktx2_contract_rejects_a_corrupt_encoded_slice() {
+    fn basis_ktx2_contract_rejects_a_corrupt_image_descriptor() {
         let source = include_bytes!("../../../../assets/materials/terrain_normal.ktx2");
-        let mut corrupt_slice = source.to_vec();
-        let level_zero_offset = u64::from_le_bytes(
-            corrupt_slice[80..88]
+        let mut corrupt_slice_descriptor = source.to_vec();
+        let supercompression_global_data_offset = u64::from_le_bytes(
+            corrupt_slice_descriptor[64..72]
                 .try_into()
-                .expect("KTX2 level index stores a byte offset"),
+                .expect("KTX2 header stores the global-data offset"),
         ) as usize;
-        corrupt_slice[level_zero_offset] ^= 0x80;
+        let first_slice_length_offset = supercompression_global_data_offset + 20 + 8;
+        corrupt_slice_descriptor[first_slice_length_offset..first_slice_length_offset + 4]
+            .copy_from_slice(&u32::MAX.to_le_bytes());
         let mut corrupt_codebook = source.to_vec();
         let supercompression_global_data_offset = u64::from_le_bytes(
             corrupt_codebook[64..72]
@@ -748,7 +750,7 @@ mod tests {
             true
         ));
         assert!(!valid_ktx2(
-            &corrupt_slice,
+            &corrupt_slice_descriptor,
             1024,
             1024,
             14,
@@ -771,12 +773,14 @@ mod tests {
     fn asset_validation_reports_a_corrupt_basis_payload_as_a_format_error() {
         let source = include_bytes!("../../../../assets/materials/terrain_normal.ktx2");
         let mut corrupt = source.to_vec();
-        let level_zero_offset = u64::from_le_bytes(
-            corrupt[80..88]
+        let supercompression_global_data_offset = u64::from_le_bytes(
+            corrupt[64..72]
                 .try_into()
-                .expect("KTX2 level index stores a byte offset"),
+                .expect("KTX2 header stores the global-data offset"),
         ) as usize;
-        corrupt[level_zero_offset] ^= 0x80;
+        let first_slice_length_offset = supercompression_global_data_offset + 20 + 8;
+        corrupt[first_slice_length_offset..first_slice_length_offset + 4]
+            .copy_from_slice(&u32::MAX.to_le_bytes());
 
         let root =
             std::env::temp_dir().join(format!("moria-world-corrupt-basis-{}", std::process::id()));
