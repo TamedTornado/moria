@@ -10,7 +10,7 @@ use crate::{
     validate_object_shape_disjointness, validate_region_config,
 };
 
-use super::ManifestError;
+use super::{ManifestError, PRODUCT_ONE_MAX_HORIZON_TREE_MEMBERS_PER_CELL};
 
 const FOREST_AREA_M2: u32 = 120_000;
 const ELIGIBLE_LAND_AREA_M2: u32 = 120_000;
@@ -132,8 +132,14 @@ fn validate_manifest(
     config: &RegionConfig,
 ) -> Result<(), CurationGenerateError> {
     validate_manifest_without_stamp(manifest, config)?;
-    let index = build_object_index(&manifest.objects, &ObjectIndexConfig::default())
-        .map_err(manifest_error)?;
+    let index = build_object_index(
+        &manifest.objects,
+        &ObjectIndexConfig::from_configs(
+            &config.objects,
+            PRODUCT_ONE_MAX_HORIZON_TREE_MEMBERS_PER_CELL,
+        ),
+    )
+    .map_err(manifest_error)?;
     validate_object_shape_disjointness(&index, &manifest.ruin, stamp).map_err(manifest_error)
 }
 
@@ -142,9 +148,6 @@ pub(super) fn validate_manifest_without_stamp(
     config: &RegionConfig,
 ) -> Result<(), CurationGenerateError> {
     manifest.validate().map_err(manifest_error)?;
-    let index = build_object_index(&manifest.objects, &ObjectIndexConfig::default())
-        .map_err(manifest_error)?;
-    let _ = index;
     validate_forest_contract(manifest, config)
 }
 

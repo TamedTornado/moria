@@ -9,7 +9,10 @@ use crate::{
     validate_region_config,
 };
 
-use super::generate::{generate_manifest, validate_manifest_without_stamp};
+use super::{
+    PRODUCT_ONE_MAX_HORIZON_TREE_MEMBERS_PER_CELL,
+    generate::{generate_manifest, validate_manifest_without_stamp},
+};
 
 /// A typed curation failure that does not expose implementation state.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -88,8 +91,14 @@ pub fn validate_manifest(
     }
     validate_manifest_without_stamp(manifest, config)
         .map_err(|error| CurationError::Manifest(error.to_string()))?;
-    let index = build_object_index(&manifest.objects, &ObjectIndexConfig::default())
-        .map_err(|error| CurationError::Manifest(error.to_string()))?;
+    let index = build_object_index(
+        &manifest.objects,
+        &ObjectIndexConfig::from_configs(
+            &config.objects,
+            PRODUCT_ONE_MAX_HORIZON_TREE_MEMBERS_PER_CELL,
+        ),
+    )
+    .map_err(|error| CurationError::Manifest(error.to_string()))?;
     Ok(CurationReport {
         placement_count: u32::try_from(manifest.objects.len())
             .map_err(|_| CurationError::Manifest("placement count exceeds u32".to_owned()))?,
