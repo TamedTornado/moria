@@ -3,41 +3,8 @@ name = "moria-world"
 version.workspace = true
 edition.workspace = true
 
-[[test]]
-name = "shaders_water_wgsl_placeholder"
-path = "tests/assets/shaders_water_wgsl_placeholder.rs"
-
-[[test]]
-name = "shaders_terrain_wgsl_placeholder"
-path = "tests/assets/shaders_terrain_wgsl_placeholder.rs"
-
-[[test]]
-name = "materials_terrain_orm_ktx2_placeholder"
-path = "tests/assets/materials_terrain_orm_ktx2_placeholder.rs"
-
-[[test]]
-name = "config_product_one_region_ron_placeholder"
-path = "tests/assets/config_product_one_region_ron_placeholder.rs"
-
-[[test]]
-name = "config_curated_manifest_ron_placeholder"
-path = "tests/assets/config_curated_manifest_ron_placeholder.rs"
-
-[[test]]
-name = "materials_terrain_albedo_ktx2_placeholder"
-path = "tests/assets/materials_terrain_albedo_ktx2_placeholder.rs"
-
-[[test]]
-name = "materials_terrain_normal_ktx2_placeholder"
-path = "tests/assets/materials_terrain_normal_ktx2_placeholder.rs"
-
 [features]
 curation = []
-
-[[test]]
-name = "curation_facade"
-path = "tests/curation_facade.rs"
-required-features = ["curation"]
 
 [dependencies]
 bevy = { workspace = true, features = ["basis-universal", "bevy_asset", "bevy_image", "bevy_render", "ktx2", "zstd_rust"] }
@@ -54,97 +21,17 @@ zstd.workspace = true
 [dev-dependencies]
 proptest = "1"
 
+# Keep the asset contract tests in one integration-test crate. Listing every
+# fixture as its own target forced Cargo to link the Bevy dependency graph once
+# per fixture in every agent worktree.
 [[test]]
-name = "props_boulder_glb_placeholder"
-path = "tests/assets/props_boulder_glb_placeholder.rs"
+name = "asset_placeholders"
+path = "tests/asset_placeholders.rs"
 
 [[test]]
-name = "props_stump_glb_placeholder"
-path = "tests/assets/props_stump_glb_placeholder.rs"
-
-[[test]]
-name = "vegetation_grass_cluster_glb_placeholder"
-path = "tests/assets/vegetation_grass_cluster_glb_placeholder.rs"
-
-[[test]]
-name = "vegetation_tree_horizon_cards_ktx2_placeholder"
-path = "tests/assets/vegetation_tree_horizon_cards_ktx2_placeholder.rs"
-
-[[test]]
-name = "vegetation_pine_far_glb_placeholder"
-path = "tests/assets/vegetation_pine_far_glb_placeholder.rs"
-
-[[test]]
-name = "vegetation_birch_mid_glb_placeholder"
-path = "tests/assets/vegetation_birch_mid_glb_placeholder.rs"
-
-[[test]]
-name = "vegetation_birch_near_glb_placeholder"
-path = "tests/assets/vegetation_birch_near_glb_placeholder.rs"
-
-[[test]]
-name = "vegetation_pine_mid_glb_placeholder"
-path = "tests/assets/vegetation_pine_mid_glb_placeholder.rs"
-
-[[test]]
-name = "vegetation_bush_far_glb_placeholder"
-path = "tests/assets/vegetation_bush_far_glb_placeholder.rs"
-
-[[test]]
-name = "vegetation_pine_near_glb_placeholder"
-path = "tests/assets/vegetation_pine_near_glb_placeholder.rs"
-
-[[test]]
-name = "vegetation_birch_far_glb_placeholder"
-path = "tests/assets/vegetation_birch_far_glb_placeholder.rs"
-
-[[test]]
-name = "manifests_asset_budgets_ron_placeholder"
-path = "tests/assets/manifests_asset_budgets_ron_placeholder.rs"
-
-[[test]]
-name = "shaders_vegetation_wgsl_placeholder"
-path = "tests/assets/shaders_vegetation_wgsl_placeholder.rs"
-
-[[test]]
-name = "shaders_raw_voxel_wgsl_placeholder"
-path = "tests/assets/shaders_raw_voxel_wgsl_placeholder.rs"
-
-[[test]]
-name = "manifests_asset_licenses_ron_placeholder"
-path = "tests/assets/manifests_asset_licenses_ron_placeholder.rs"
-
-[[test]]
-name = "props_rock_glb_placeholder"
-path = "tests/assets/props_rock_glb_placeholder.rs"
-
-[[test]]
-name = "player_explorer_glb_placeholder"
-path = "tests/assets/player_explorer_glb_placeholder.rs"
-
-[[test]]
-name = "materials_water_normal_ktx2_placeholder"
-path = "tests/assets/materials_water_normal_ktx2_placeholder.rs"
-
-[[test]]
-name = "vegetation_bush_near_glb_placeholder"
-path = "tests/assets/vegetation_bush_near_glb_placeholder.rs"
-
-[[test]]
-name = "stamps_ruin_p1_ron_placeholder"
-path = "tests/assets/stamps_ruin_p1_ron_placeholder.rs"
-
-[[test]]
-name = "materials_materials_ron_placeholder"
-path = "tests/assets/materials_materials_ron_placeholder.rs"
-
-[[test]]
-name = "config_presentation_ron_placeholder"
-path = "tests/assets/config_presentation_ron_placeholder.rs"
-
-[[test]]
-name = "config_input_ron_placeholder"
-path = "tests/assets/config_input_ron_placeholder.rs"
+name = "curation_facade"
+path = "tests/curation_facade.rs"
+required-features = ["curation"]
 
 [lints]
 workspace = true
