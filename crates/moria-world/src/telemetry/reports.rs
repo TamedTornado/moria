@@ -484,6 +484,16 @@ pub struct MutationWorkloadEvidence {
     pub changed_voxels: u64,
     pub changed_bricks: u32,
     pub committed_batches: u32,
+    /// Center of the edit exercised by this workload, in authoritative world coordinates.
+    pub target_center: WorldPointQ8,
+    /// Broad dependency-index candidates examined for the workload edit.
+    pub broad_candidates: u16,
+    /// Exact dependency IDs returned after candidate filtering.
+    pub exact_dependency_ids: u16,
+    /// Dependency bricks considered by dirty discovery for the workload edit.
+    pub dependency_bricks: u16,
+    /// Exact dependency predicates evaluated for the workload edit.
+    pub dependency_predicate_probes: u64,
     pub stage_timings_ms: BTreeMap<String, f64>,
     pub stage_counts: BTreeMap<String, u64>,
     pub barrier_expected_items: u32,
@@ -652,6 +662,22 @@ impl MutationFeasibilityReport {
         {
             return Err(ReportValidationError::Identity {
                 field: "trusted gate identity",
+            });
+        }
+        let catastrophic = self
+            .workloads
+            .get(2)
+            .ok_or(ReportValidationError::Missing {
+                field: "catastrophic workload target",
+            })?;
+        let target = &forest.worst_edit_target;
+        if catastrophic.target_center != target.center
+            || catastrophic.broad_candidates != target.broad_candidates
+            || catastrophic.exact_dependency_ids != target.exact_dependency_ids
+            || catastrophic.dependency_bricks != target.dependency_bricks
+        {
+            return Err(ReportValidationError::Inconsistent {
+                field: "catastrophic workload target",
             });
         }
         Ok(())
@@ -1092,6 +1118,18 @@ fn validate_workload(
         });
     }
     if value.role == MutationWorkloadRole::CatastrophicCarve {
+        if passed
+            && (value.broad_candidates == 0
+                || value.exact_dependency_ids == 0
+                || value.dependency_bricks == 0
+                || value.dependency_predicate_probes == 0
+                || value.stage_counts["dirty-discovery"] == 0
+                || value.stage_counts["dependency-eligibility"] == 0)
+        {
+            return Err(ReportValidationError::Missing {
+                field: "catastrophic dependency witness",
+            });
+        }
         if passed
             && (!value.horizon_partition_checked
                 || value.horizon_excluded_base_cards == 0

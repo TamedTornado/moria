@@ -205,6 +205,11 @@ fn workload(role: MutationWorkloadRole) -> MutationWorkloadEvidence {
         changed_voxels: 1,
         changed_bricks: 1,
         committed_batches: request_count,
+        target_center: WorldPointQ8::new(0, 0, 0),
+        broad_candidates: 1,
+        exact_dependency_ids: 1,
+        dependency_bricks: 1,
+        dependency_predicate_probes: 1,
         stage_timings_ms: STAGES
             .into_iter()
             .map(|stage| (stage.into(), 0.1))
@@ -692,6 +697,74 @@ fn mutation_report_requires_the_exact_forest_gate_identity() {
         mutation.validate_against_forest(&wrong_manifest, &trusted),
         Err(ReportValidationError::Identity { .. })
     ));
+}
+
+#[test]
+fn catastrophic_workload_must_match_the_forest_worst_edit_target() {
+    let forest = report();
+    let trusted = trusted_identity(&forest);
+    let mut mutation = mutation_report();
+    assert!(mutation.validate_against_forest(&forest, &trusted).is_ok());
+
+    mutation.workloads[2].target_center.x += 256;
+    assert_eq!(
+        mutation.validate_against_forest(&forest, &trusted),
+        Err(ReportValidationError::Inconsistent {
+            field: "catastrophic workload target"
+        })
+    );
+
+    mutation.workloads[2].target_center = forest.worst_edit_target.center;
+    mutation.workloads[2].broad_candidates = 2;
+    assert_eq!(
+        mutation.validate_against_forest(&forest, &trusted),
+        Err(ReportValidationError::Inconsistent {
+            field: "catastrophic workload target"
+        })
+    );
+}
+
+#[test]
+fn catastrophic_workload_requires_dependency_discovery_witnesses() {
+    let mut invalid = mutation_report();
+    invalid.workloads[2]
+        .stage_counts
+        .insert("dirty-discovery".into(), 0);
+    assert_eq!(
+        invalid.validate(),
+        Err(ReportValidationError::Missing {
+            field: "catastrophic dependency witness"
+        })
+    );
+
+    let mut invalid = mutation_report();
+    invalid.workloads[2]
+        .stage_counts
+        .insert("dependency-eligibility".into(), 0);
+    assert_eq!(
+        invalid.validate(),
+        Err(ReportValidationError::Missing {
+            field: "catastrophic dependency witness"
+        })
+    );
+
+    let mut invalid = mutation_report();
+    invalid.workloads[2].broad_candidates = 0;
+    assert_eq!(
+        invalid.validate(),
+        Err(ReportValidationError::Missing {
+            field: "catastrophic dependency witness"
+        })
+    );
+
+    let mut invalid = mutation_report();
+    invalid.workloads[2].dependency_predicate_probes = 0;
+    assert_eq!(
+        invalid.validate(),
+        Err(ReportValidationError::Missing {
+            field: "catastrophic dependency witness"
+        })
+    );
 }
 
 #[test]
