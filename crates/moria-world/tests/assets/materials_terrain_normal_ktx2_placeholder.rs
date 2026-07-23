@@ -8,8 +8,9 @@ use bevy::{
     prelude::App,
     render::render_resource::TextureFormat,
 };
+use moria_world::MoriaWorldPlugin;
 use moria_world::presentation::{
-    AssetId, AssetLoader, AssetMissingAction, BasisKtx2Loader, BasisKtx2Plugin, RuntimeAssetProfile,
+    AssetId, AssetLoader, AssetMissingAction, BasisKtx2Loader, RuntimeAssetProfile,
 };
 
 const KTX2_IDENTIFIER: [u8; 12] = [
@@ -190,7 +191,7 @@ fn terrain_normal_basis_payload_decodes_to_a_bevy_image() {
 }
 
 #[test]
-fn basis_ktx2_asset_server_preserves_declared_texture_color_spaces() {
+fn moria_world_plugin_loads_basis_ktx2_assets_with_declared_texture_color_spaces() {
     let mut app = App::new();
     app.add_plugins((
         TaskPoolPlugin::default(),
@@ -200,7 +201,7 @@ fn basis_ktx2_asset_server_preserves_declared_texture_color_spaces() {
         },
     ))
     .init_asset::<Image>()
-    .add_plugins(BasisKtx2Plugin);
+    .add_plugins(MoriaWorldPlugin);
 
     let asset_server = app.world().resource::<AssetServer>().clone();
     let normal: bevy::asset::Handle<Image> = asset_server.load("materials/terrain_normal.ktx2");
