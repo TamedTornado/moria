@@ -90,14 +90,22 @@ impl WorldRead<'_, '_> {
         let bounds = self.ready_bounds()?;
         validate_capsule(capsule, bounds, mask)?;
         let candidates = candidate_range(capsule, capsule, bounds)?;
-        if candidates.count() > u32::from(MAX_OVERLAP_CANDIDATE_TESTS) {
+        if candidates
+            .iter()
+            .filter(|voxel| voxel_in_bounds(*voxel, bounds))
+            .count()
+            > usize::from(MAX_OVERLAP_CANDIDATE_TESTS)
+        {
             return Err(QueryError::LimitExceeded(
                 QueryLimitKind::SweepCandidateWork,
             ));
         }
 
         let mut hits = Vec::with_capacity(usize::from(MAX_QUERY_HITS));
-        for voxel in candidates.iter() {
+        for voxel in candidates
+            .iter()
+            .filter(|voxel| voxel_in_bounds(*voxel, bounds))
+        {
             let sample = self.sample_voxel(voxel)?;
             if let Some(class) = matched_class(sample, mask)
                 && capsule_overlaps_voxel(capsule, voxel)
@@ -241,7 +249,9 @@ fn sweep_candidates(
     if displacement == Vec3Q8::new(0, 0, 0) {
         let mut candidates = CandidateBuffer::new();
         for voxel in candidate_range(capsule, capsule, bounds)?.iter() {
-            candidates.insert(voxel)?;
+            if voxel_in_bounds(voxel, bounds) {
+                candidates.insert(voxel)?;
+            }
         }
         return Ok(candidates);
     }
@@ -374,6 +384,7 @@ struct CandidateRange {
 }
 
 impl CandidateRange {
+    #[cfg(test)]
     fn count(self) -> u32 {
         let x = (self.max.x - self.min.x + 1) as u32;
         let y = (self.max.y - self.min.y + 1) as u32;
@@ -798,6 +809,37 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].voxel, coordinate);
         assert_eq!(hits[0].matched, MatchedQueryMask::Water);
+    }
+
+    #[test]
+    fn queries_tangent_to_minimum_region_faces_do_not_sample_out_of_bounds_voxels() {
+        let min = identity().bounds.min();
+        let capsules = [
+            CapsuleQ8::new(WorldPointQ8::new(min.x + 32, 0, 0), 32, 0),
+            CapsuleQ8::new(WorldPointQ8::new(0, min.y + 32, 0), 32, 0),
+            CapsuleQ8::new(WorldPointQ8::new(0, 0, min.z + 32), 32, 0),
+        ];
+
+        for capsule in capsules {
+            let mut app = App::new();
+            app.insert_resource(state([]));
+
+            let overlap = app
+                .world_mut()
+                .run_system_once(move |read: WorldRead| {
+                    read.overlap_capsule(capsule, QueryMask::SOLID)
+                })
+                .unwrap();
+            assert!(overlap.is_ok());
+
+            let sweep = app
+                .world_mut()
+                .run_system_once(move |read: WorldRead| {
+                    read.sweep_capsule(capsule, Vec3Q8::new(0, 0, 0), QueryMask::SOLID)
+                })
+                .unwrap();
+            assert!(sweep.is_ok());
+        }
     }
 
     #[test]
