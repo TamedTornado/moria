@@ -22,6 +22,7 @@ pub const MAX_QUERY_HITS: u16 = 512;
 const Q16_MAX: i64 = 65_535;
 const VOXEL_EDGE_Q8_I64: i64 = 64;
 const CANDIDATE_BUCKETS: usize = 16_384;
+const MAX_SWEEP_CONTACT_TESTS: u32 = 65_536;
 
 /// A signed Q8 displacement vector.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -136,12 +137,15 @@ impl WorldRead<'_, '_> {
         let mut impact = None;
         let mut hits = Vec::with_capacity(usize::from(MAX_QUERY_HITS));
         let mut result_count_exceeded = false;
+        let mut contact_tests = 0;
         for voxel in candidates.iter() {
             let sample = self.sample_voxel(voxel)?;
             let Some(class) = matched_class(sample, mask) else {
                 continue;
             };
-            let Some(fraction) = first_overlap_fraction(capsule, displacement, voxel) else {
+            let Some(fraction) =
+                first_overlap_fraction_bounded(capsule, displacement, voxel, &mut contact_tests)?
+            else {
                 continue;
             };
             match impact {
@@ -533,6 +537,7 @@ fn interval_distance(left_min: i64, left_max: i64, right_min: i64, right_max: i6
     }
 }
 
+#[cfg(test)]
 fn first_overlap_fraction(
     capsule: CapsuleQ8,
     displacement: Vec3Q8,
@@ -541,35 +546,165 @@ fn first_overlap_fraction(
     first_overlap_fraction_with_work(capsule, displacement, voxel).0
 }
 
+fn first_overlap_fraction_bounded(
+    capsule: CapsuleQ8,
+    displacement: Vec3Q8,
+    voxel: VoxelCoord,
+    checks: &mut u32,
+) -> Result<Option<i64>, QueryError> {
+    first_overlap_fraction_with_check_budget(capsule, displacement, voxel, checks)
+}
+
+#[cfg(test)]
 fn first_overlap_fraction_with_work(
     capsule: CapsuleQ8,
     displacement: Vec3Q8,
     voxel: VoxelCoord,
 ) -> (Option<i64>, u32) {
     let mut checks = 0_u32;
-    let overlaps = |fraction: i64, checks: &mut u32| {
+    let overlap =
+        first_overlap_fraction_with_check_budget(capsule, displacement, voxel, &mut checks)
+            .expect("a single contact search cannot exhaust the aggregate budget");
+    (overlap, checks)
+}
+
+fn first_overlap_fraction_with_check_budget(
+    capsule: CapsuleQ8,
+    displacement: Vec3Q8,
+    voxel: VoxelCoord,
+    checks: &mut u32,
+) -> Result<Option<i64>, QueryError> {
+    let overlaps = |fraction: i64, checks: &mut u32| -> Result<bool, QueryError> {
+        if *checks == MAX_SWEEP_CONTACT_TESTS {
+            return Err(QueryError::LimitExceeded(
+                QueryLimitKind::SweepCandidateWork,
+            ));
+        }
         *checks += 1;
-        capsule_overlaps_voxel(
+        Ok(capsule_overlaps_voxel(
             moved_capsule(capsule, displacement, fraction)
                 .expect("validated sweep cannot overflow"),
             voxel,
-        )
+        ))
     };
-    if overlaps(0, &mut checks) {
-        return (Some(0), checks);
+    if overlaps(0, checks)? {
+        return Ok(Some(0));
     }
 
-    // A moved capsule only changes when one of its Q8 center coordinates
-    // changes.  Inspecting those exact change fractions preserves quantized
-    // grazing contacts without scanning the 65,536-entry Q16 domain.
-    let mut fraction = 0;
+    let Some((mut fraction, last)) = capsule_contact_window(capsule, displacement, voxel) else {
+        return Ok(None);
+    };
+    if overlaps(fraction, checks)? {
+        return Ok(Some(fraction));
+    }
+
+    // A contact requires every center component to be inside the voxel's
+    // radius-expanded interval. Search only that exact interval and inspect
+    // the Q8 position changes within it, preserving quantized grazing
+    // contacts without scanning the full sweep displacement.
     while let Some(next) = next_position_change_fraction(displacement, fraction) {
-        if overlaps(next, &mut checks) {
-            return (Some(next), checks);
+        if next > last {
+            break;
+        }
+        if overlaps(next, checks)? {
+            return Ok(Some(next));
         }
         fraction = next;
     }
-    (None, checks)
+    Ok(None)
+}
+
+fn capsule_contact_window(
+    capsule: CapsuleQ8,
+    displacement: Vec3Q8,
+    voxel: VoxelCoord,
+) -> Option<(i64, i64)> {
+    let voxel_min = [
+        i64::from(voxel.x) * VOXEL_EDGE_Q8_I64,
+        i64::from(voxel.y) * VOXEL_EDGE_Q8_I64,
+        i64::from(voxel.z) * VOXEL_EDGE_Q8_I64,
+    ];
+    let radius = i64::from(capsule.radius_q8);
+    let vertical = radius + i64::from(capsule.half_segment_q8);
+    let extents = [radius, vertical, radius];
+    let origins = [
+        i64::from(capsule.center.x),
+        i64::from(capsule.center.y),
+        i64::from(capsule.center.z),
+    ];
+    let deltas = [
+        i64::from(displacement.x),
+        i64::from(displacement.y),
+        i64::from(displacement.z),
+    ];
+
+    let mut first = 0;
+    let mut last = Q16_MAX;
+    for axis in 0..3 {
+        let window = component_contact_window(
+            origins[axis],
+            deltas[axis],
+            voxel_min[axis] - extents[axis],
+            voxel_min[axis] + VOXEL_EDGE_Q8_I64 + extents[axis],
+        )?;
+        first = first.max(window.0);
+        last = last.min(window.1);
+    }
+    (first <= last).then_some((first, last))
+}
+
+fn component_contact_window(origin: i64, delta: i64, min: i64, max: i64) -> Option<(i64, i64)> {
+    let position = |fraction| origin + delta * fraction / Q16_MAX;
+    let start = position(0);
+    let end = position(Q16_MAX);
+    if delta == 0 {
+        return (min..=max).contains(&start).then_some((0, Q16_MAX));
+    }
+    if delta > 0 {
+        if end < min || start > max {
+            return None;
+        }
+        let first = if start >= min {
+            0
+        } else {
+            first_fraction_where(|fraction| position(fraction) >= min)
+        };
+        let last = if end <= max {
+            Q16_MAX
+        } else {
+            first_fraction_where(|fraction| position(fraction) > max) - 1
+        };
+        Some((first, last))
+    } else {
+        if end > max || start < min {
+            return None;
+        }
+        let first = if start <= max {
+            0
+        } else {
+            first_fraction_where(|fraction| position(fraction) <= max)
+        };
+        let last = if end >= min {
+            Q16_MAX
+        } else {
+            first_fraction_where(|fraction| position(fraction) < min) - 1
+        };
+        Some((first, last))
+    }
+}
+
+fn first_fraction_where(mut predicate: impl FnMut(i64) -> bool) -> i64 {
+    let mut first = 0;
+    let mut last = Q16_MAX;
+    while first < last {
+        let middle = first + (last - first) / 2;
+        if predicate(middle) {
+            last = middle;
+        } else {
+            first = middle + 1;
+        }
+    }
+    first
 }
 
 fn next_position_change_fraction(displacement: Vec3Q8, fraction: i64) -> Option<i64> {
@@ -995,6 +1130,20 @@ mod tests {
                     + displacement.z.unsigned_abs(),
             "intersection used {tests} overlap checks"
         );
+    }
+
+    #[test]
+    fn dense_camera_sweep_bounds_aggregate_intersection_work() {
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 400 * 64, 0), 46, 0);
+        let displacement = Vec3Q8::new(1_330, 1_330, 1_330);
+        let candidates = sweep_candidates(capsule, displacement, identity().bounds).unwrap();
+        let mut checks = 0;
+        let result = candidates.iter().try_for_each(|voxel| {
+            first_overlap_fraction_bounded(capsule, displacement, voxel, &mut checks).map(|_| ())
+        });
+
+        assert_eq!(result, Ok(()));
+        assert!(checks <= MAX_SWEEP_CONTACT_TESTS);
     }
 
     #[test]
