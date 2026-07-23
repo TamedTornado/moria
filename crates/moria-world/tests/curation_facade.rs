@@ -29,8 +29,17 @@ fn facade_validation_returns_a_deterministic_typed_report() {
     let (config, stamp) = inputs();
     let manifest = derive_manifest(config.seed, &config, &stamp).unwrap();
 
-    let first: Result<CurationReport, CurationError> = validate_manifest(&config, &manifest);
-    let second = validate_manifest(&config, &manifest);
+    let mut first: CurationReport = validate_manifest(&config, &manifest).unwrap();
+    let mut second = validate_manifest(&config, &manifest).unwrap();
 
-    assert_eq!(first.unwrap(), second.unwrap());
+    assert!(first.object_index_validation_us > 0);
+    assert!(first.object_index_build_us > 0);
+    assert!(second.object_index_validation_us > 0);
+    assert!(second.object_index_build_us > 0);
+
+    first.object_index_validation_us = 0;
+    first.object_index_build_us = 0;
+    second.object_index_validation_us = 0;
+    second.object_index_build_us = 0;
+    assert_eq!(first, second);
 }
