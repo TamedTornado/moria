@@ -495,18 +495,21 @@ fn valid_glb(
     {
         return false;
     }
-    let animation_names: BTreeSet<_> = value
-        .get("animations")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|animation| animation.get("name").and_then(serde_json::Value::as_str))
-        .collect();
-    if !clips
-        .iter()
-        .all(|clip| animation_names.contains(clip.as_str()))
-    {
-        return false;
+    if !clips.is_empty() {
+        let Some(animations) = value
+            .get("animations")
+            .and_then(serde_json::Value::as_array)
+        else {
+            return false;
+        };
+        if !clips.iter().all(|clip| {
+            animations.iter().any(|animation| {
+                animation.get("name").and_then(serde_json::Value::as_str) == Some(clip)
+                    && valid_animation(animation, &layout, value.get("nodes"))
+            })
+        }) {
+            return false;
+        }
     }
     if !min
         .iter()
@@ -551,6 +554,114 @@ fn valid_glb(
     asset_bounds.is_some_and(|(actual_minimum, actual_maximum)| {
         q8_bounds_match(actual_minimum, actual_maximum, min, max)
     })
+}
+
+fn valid_animation(
+    animation: &serde_json::Value,
+    layout: &GlbLayout<'_>,
+    nodes: Option<&serde_json::Value>,
+) -> bool {
+    let Some(nodes) = nodes.and_then(serde_json::Value::as_array) else {
+        return false;
+    };
+    let Some(samplers) = animation
+        .get("samplers")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return false;
+    };
+    let Some(channels) = animation
+        .get("channels")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return false;
+    };
+    if samplers.is_empty() || channels.is_empty() {
+        return false;
+    }
+
+    channels.iter().all(|channel| {
+        let Some(sampler) = channel
+            .get("sampler")
+            .and_then(value_index)
+            .and_then(|index| samplers.get(index))
+        else {
+            return false;
+        };
+        let Some(input) = sampler
+            .get("input")
+            .and_then(value_index)
+            .and_then(|index| layout.accessor(index))
+        else {
+            return false;
+        };
+        let Some(output) = sampler
+            .get("output")
+            .and_then(value_index)
+            .and_then(|index| layout.accessor(index))
+        else {
+            return false;
+        };
+        let interpolation = sampler
+            .get("interpolation")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("LINEAR");
+        let Some(expected_output_count) = (match interpolation {
+            "LINEAR" | "STEP" => Some(input.count),
+            "CUBICSPLINE" => input.count.checked_mul(3),
+            _ => None,
+        }) else {
+            return false;
+        };
+        if !input.is_f32_type("SCALAR")
+            || !finite_f32_accessor(input, layout.binary)
+            || !strictly_increasing_f32_accessor(input, layout.binary)
+            || output.component_type != 5126
+            || !finite_f32_accessor(output, layout.binary)
+        {
+            return false;
+        }
+        let Some(target) = channel.get("target").and_then(serde_json::Value::as_object) else {
+            return false;
+        };
+        let Some(node) = target.get("node").and_then(value_index) else {
+            return false;
+        };
+        let Some(path) = target.get("path").and_then(serde_json::Value::as_str) else {
+            return false;
+        };
+        nodes.get(node).is_some()
+            && match path {
+                "translation" | "scale" => {
+                    output.is_f32_type("VEC3") && output.count == expected_output_count
+                }
+                "rotation" => output.is_f32_type("VEC4") && output.count == expected_output_count,
+                "weights" => {
+                    output.is_f32_type("SCALAR")
+                        && output.count >= expected_output_count
+                        && output.count % expected_output_count == 0
+                }
+                _ => false,
+            }
+    })
+}
+
+fn strictly_increasing_f32_accessor(accessor: &GlbAccessor, binary: &[u8]) -> bool {
+    let mut previous = None;
+    for element in 0..usize::try_from(accessor.count).unwrap_or(usize::MAX) {
+        let Some(value) = element
+            .checked_mul(accessor.stride)
+            .and_then(|offset| offset.checked_add(accessor.offset))
+            .and_then(|offset| f32_at(binary, offset))
+        else {
+            return false;
+        };
+        if previous.is_some_and(|previous| previous >= value) {
+            return false;
+        }
+        previous = Some(value);
+    }
+    true
 }
 
 fn valid_primitive(
@@ -642,8 +753,23 @@ fn glb_document(bytes: &[u8]) -> Result<(serde_json::Value, &[u8]), ()> {
     }
     let binary_length = usize::try_from(le_u32(bytes, json_end)?).map_err(|_| ())?;
     let binary_end = binary_header.checked_add(binary_length).ok_or(())?;
-    if !binary_length.is_multiple_of(4) || binary_end != bytes.len() {
+    if !binary_length.is_multiple_of(4) || binary_end > bytes.len() {
         return Err(());
+    }
+    let mut chunk_offset = binary_end;
+    while chunk_offset < bytes.len() {
+        let chunk_header = chunk_offset.checked_add(8).ok_or(())?;
+        if chunk_header > bytes.len() {
+            return Err(());
+        }
+        let chunk_length = usize::try_from(le_u32(bytes, chunk_offset)?).map_err(|_| ())?;
+        if !chunk_length.is_multiple_of(4) {
+            return Err(());
+        }
+        chunk_offset = chunk_header.checked_add(chunk_length).ok_or(())?;
+        if chunk_offset > bytes.len() {
+            return Err(());
+        }
     }
     let document = serde_json::from_slice(bytes.get(20..json_end).ok_or(())?).map_err(|_| ())?;
     Ok((document, &bytes[binary_header..binary_end]))
@@ -905,8 +1031,8 @@ fn valid_node_hierarchy(nodes: &[serde_json::Value], scenes: &[serde_json::Value
         }
     }
 
-    let mut scene_roots = BTreeSet::new();
     for scene in scenes {
+        let mut scene_roots = BTreeSet::new();
         if let Some(roots) = scene.get("nodes") {
             let Some(roots) = roots.as_array() else {
                 return false;
@@ -1237,7 +1363,7 @@ mod glb_tests {
 
     use serde_json::Value;
 
-    use super::valid_glb;
+    use super::{GlbLayout, glb_document, valid_animation, valid_glb};
 
     #[test]
     fn glb_validation_rejects_a_truncated_binary_chunk() {
@@ -1255,6 +1381,14 @@ mod glb_tests {
     fn glb_validation_rejects_invalid_pine_layouts_and_geometry() {
         let fixture = pine_fixture();
         assert!(valid_pine(&fixture));
+
+        let shared_scene_root = mutate_pine(&fixture, |document, _| {
+            document["scenes"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({ "nodes": [0] }));
+        });
+        assert!(valid_pine(&shared_scene_root));
 
         let wrong_support_origin = mutate_pine(&fixture, |document, _| {
             document["asset"]["extras"]["origin"] = Value::from("base_center");
@@ -1403,6 +1537,55 @@ mod glb_tests {
             binary.resize(72_630, 0);
         });
         assert!(!valid_pine(&over_triangle_limit));
+    }
+
+    #[test]
+    fn glb_validation_rejects_named_clips_without_animation_data() {
+        let malformed_clip = mutate_pine(&pine_fixture(), |document, _| {
+            document["animations"] = serde_json::json!([{ "name": "Idle" }]);
+        });
+
+        assert!(!valid_glb(
+            &malformed_clip,
+            12_000,
+            &["PineNear".to_owned()],
+            &["Idle".to_owned()],
+            [-1_024, 0, -1_024],
+            [1_024, 4_608, 1_024],
+            [0, 0, 0],
+        ));
+    }
+
+    #[test]
+    fn explorer_animation_clips_have_valid_graphs_and_accessors() {
+        let explorer = fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/player/explorer.glb"
+        ))
+        .expect("explorer fixture exists");
+        let (document, binary) = glb_document(&explorer).expect("explorer GLB document");
+        let layout = GlbLayout::new(&document, binary).expect("explorer GLB layout");
+        let nodes = document.get("nodes");
+
+        assert!(
+            document["animations"]
+                .as_array()
+                .expect("explorer animations")
+                .iter()
+                .all(|animation| valid_animation(animation, &layout, nodes))
+        );
+    }
+
+    #[test]
+    fn glb_validation_ignores_aligned_unknown_chunks_after_binary() {
+        let mut extensible_glb = pine_fixture();
+        extensible_glb.extend_from_slice(&4_u32.to_le_bytes());
+        extensible_glb.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
+        extensible_glb.extend_from_slice(b"test");
+        let total_length = u32::try_from(extensible_glb.len()).unwrap();
+        extensible_glb[8..12].copy_from_slice(&total_length.to_le_bytes());
+
+        assert!(valid_pine(&extensible_glb));
     }
 
     fn valid_pine(bytes: &[u8]) -> bool {
