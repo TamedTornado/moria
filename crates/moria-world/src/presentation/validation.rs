@@ -479,6 +479,9 @@ fn valid_glb(
     let Some(layout) = GlbLayout::new(&value, binary) else {
         return false;
     };
+    if !valid_gltf_references(&value, &layout) {
+        return false;
+    }
     let Some(meshes) = value.get("meshes").and_then(serde_json::Value::as_array) else {
         return false;
     };
@@ -554,6 +557,168 @@ fn valid_glb(
     asset_bounds.is_some_and(|(actual_minimum, actual_maximum)| {
         q8_bounds_match(actual_minimum, actual_maximum, min, max)
     })
+}
+
+fn valid_gltf_references(document: &serde_json::Value, layout: &GlbLayout<'_>) -> bool {
+    let Some(meshes) = document.get("meshes").and_then(serde_json::Value::as_array) else {
+        return false;
+    };
+    let Some(materials) = document
+        .get("materials")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return false;
+    };
+    let textures = document
+        .get("textures")
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[] as &[serde_json::Value], Vec::as_slice);
+    let images = document
+        .get("images")
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[] as &[serde_json::Value], Vec::as_slice);
+    let samplers = document
+        .get("samplers")
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[] as &[serde_json::Value], Vec::as_slice);
+    let nodes = document
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[] as &[serde_json::Value], Vec::as_slice);
+    let skins = document
+        .get("skins")
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[] as &[serde_json::Value], Vec::as_slice);
+    let cameras = document
+        .get("cameras")
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[] as &[serde_json::Value], Vec::as_slice);
+
+    meshes.iter().all(|mesh| {
+        mesh.get("primitives")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|primitives| {
+                primitives
+                    .iter()
+                    .all(|primitive| valid_primitive_references(primitive, layout, materials))
+            })
+    }) && materials
+        .iter()
+        .all(|material| valid_material_references(material, textures))
+        && textures.iter().all(|texture| {
+            texture.is_object()
+                && texture.get("source").is_none_or(|source| {
+                    value_index(source).is_some_and(|index| index < images.len())
+                })
+                && texture.get("sampler").is_none_or(|sampler| {
+                    value_index(sampler).is_some_and(|index| index < samplers.len())
+                })
+        })
+        && images.iter().all(|image| {
+            image.is_object()
+                && image.get("bufferView").is_none_or(|view| {
+                    value_index(view).is_some_and(|index| index < layout.view_count())
+                })
+        })
+        && nodes.iter().all(|node| {
+            node.is_object()
+                && node
+                    .get("mesh")
+                    .is_none_or(|mesh| value_index(mesh).is_some_and(|index| index < meshes.len()))
+                && node
+                    .get("skin")
+                    .is_none_or(|skin| value_index(skin).is_some_and(|index| index < skins.len()))
+                && node.get("camera").is_none_or(|camera| {
+                    value_index(camera).is_some_and(|index| index < cameras.len())
+                })
+        })
+        && skins.iter().all(|skin| {
+            skin.is_object()
+                && skin.get("inverseBindMatrices").is_none_or(|accessor| {
+                    value_index(accessor).is_some_and(|index| layout.accessor(index).is_some())
+                })
+                && skin
+                    .get("skeleton")
+                    .is_none_or(|node| value_index(node).is_some_and(|index| index < nodes.len()))
+                && skin
+                    .get("joints")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|joints| {
+                        joints
+                            .iter()
+                            .all(|node| value_index(node).is_some_and(|index| index < nodes.len()))
+                    })
+        })
+        && document
+            .get("animations")
+            .and_then(serde_json::Value::as_array)
+            .is_none_or(|animations| {
+                animations
+                    .iter()
+                    .all(|animation| valid_animation(animation, layout, document.get("nodes")))
+            })
+}
+
+fn valid_primitive_references(
+    primitive: &serde_json::Value,
+    layout: &GlbLayout<'_>,
+    materials: &[serde_json::Value],
+) -> bool {
+    primitive.is_object()
+        && primitive
+            .get("attributes")
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|attributes| {
+                attributes.values().all(|accessor| {
+                    value_index(accessor).is_some_and(|index| layout.accessor(index).is_some())
+                })
+            })
+        && primitive.get("indices").is_none_or(|accessor| {
+            value_index(accessor).is_some_and(|index| layout.accessor(index).is_some())
+        })
+        && primitive.get("material").is_some_and(|material| {
+            value_index(material).is_some_and(|index| index < materials.len())
+        })
+        && primitive.get("targets").is_none_or(|targets| {
+            targets.as_array().is_some_and(|targets| {
+                targets.iter().all(|target| {
+                    target.as_object().is_some_and(|attributes| {
+                        attributes.values().all(|accessor| {
+                            value_index(accessor)
+                                .is_some_and(|index| layout.accessor(index).is_some())
+                        })
+                    })
+                })
+            })
+        })
+}
+
+fn valid_material_references(material: &serde_json::Value, textures: &[serde_json::Value]) -> bool {
+    material.is_object()
+        && ["normalTexture", "occlusionTexture", "emissiveTexture"]
+            .iter()
+            .all(|field| {
+                material
+                    .get(*field)
+                    .is_none_or(|texture| valid_texture_reference(texture, textures))
+            })
+        && material.get("pbrMetallicRoughness").is_none_or(|pbr| {
+            pbr.as_object().is_some_and(|pbr| {
+                ["baseColorTexture", "metallicRoughnessTexture"]
+                    .iter()
+                    .all(|field| {
+                        pbr.get(*field)
+                            .is_none_or(|texture| valid_texture_reference(texture, textures))
+                    })
+            })
+        })
+}
+
+fn valid_texture_reference(texture: &serde_json::Value, textures: &[serde_json::Value]) -> bool {
+    texture
+        .get("index")
+        .and_then(value_index)
+        .is_some_and(|index| index < textures.len())
 }
 
 fn valid_animation(
@@ -778,6 +943,7 @@ fn glb_document(bytes: &[u8]) -> Result<(serde_json::Value, &[u8]), ()> {
 struct GlbLayout<'a> {
     binary: &'a [u8],
     accessors: Vec<GlbAccessor>,
+    view_count: usize,
 }
 
 impl<'a> GlbLayout<'a> {
@@ -866,11 +1032,16 @@ impl<'a> GlbLayout<'a> {
         Some(Self {
             binary,
             accessors: parsed,
+            view_count: view_ranges.len(),
         })
     }
 
     fn accessor(&self, index: usize) -> Option<&GlbAccessor> {
         self.accessors.get(index)
+    }
+
+    fn view_count(&self) -> usize {
+        self.view_count
     }
 }
 
@@ -1518,6 +1689,17 @@ mod glb_tests {
                 .remove("TANGENT");
         });
         assert!(!valid_pine(&missing_normal_map_tangent));
+
+        let texture_without_a_declared_texture = mutate_pine(&fixture, |document, _| {
+            document["materials"][0]["normalTexture"] = serde_json::json!({ "index": 0 });
+        });
+        assert!(!valid_pine(&texture_without_a_declared_texture));
+
+        let invalid_morph_target_accessor = mutate_pine(&fixture, |document, _| {
+            document["meshes"][0]["primitives"][0]["targets"] =
+                serde_json::json!([{ "POSITION": 999 }]);
+        });
+        assert!(!valid_pine(&invalid_morph_target_accessor));
 
         let non_finite_position = mutate_pine(&fixture, |_, binary| {
             binary[..4].copy_from_slice(&f32::NAN.to_le_bytes());
