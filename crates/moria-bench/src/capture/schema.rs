@@ -315,8 +315,11 @@ impl BenchmarkReport {
         if let Some(value) = &self.assets {
             validate_asset_evidence(value, self.passed)?;
         }
-        if let (Some(machine), Some(resolution)) = (&self.machine, self.resolution) {
-            validate_machine(machine, resolution)?;
+        if let Some(machine) = &self.machine {
+            validate_machine_profile(machine)?;
+            if let Some(resolution) = self.resolution {
+                validate_machine_resolution(machine, resolution)?;
+            }
         }
         if let Some(value) = self.frame_rate {
             validate_frame_rate(value, self.passed)?;
@@ -937,23 +940,14 @@ fn validate_world(world: &WorldIdentity) -> Result<(), ReportValidationError> {
     Ok(())
 }
 
-fn validate_machine(
-    machine: &MachineProfile,
-    resolution: [u32; 2],
-) -> Result<(), ReportValidationError> {
+fn validate_machine_profile(machine: &MachineProfile) -> Result<(), ReportValidationError> {
     machine.validate_complete()?;
     match machine.wgpu_backend.as_str() {
         "metal" => {
             machine.validate_m4_acceptance()?;
-            if !matches!(resolution, [1920, 1080] | [2560, 1440]) {
-                return Err(ReportValidationError::Identity {
-                    field: "M4 resolution",
-                });
-            }
         }
         "vulkan" => {
-            if resolution != [2560, 1440]
-                || machine.os_name != "Linux"
+            if machine.os_name != "Linux"
                 || machine.memory_architecture != "discrete"
                 || machine.gpu_device_class != "discrete"
                 || !machine.gpu_adapter_name.contains("3060")
@@ -966,6 +960,23 @@ fn validate_machine(
         _ => return Err(ReportValidationError::Identity { field: "machine" }),
     }
     Ok(())
+}
+
+fn validate_machine_resolution(
+    machine: &MachineProfile,
+    resolution: [u32; 2],
+) -> Result<(), ReportValidationError> {
+    match machine.wgpu_backend.as_str() {
+        "metal" if !matches!(resolution, [1920, 1080] | [2560, 1440]) => {
+            Err(ReportValidationError::Identity {
+                field: "M4 resolution",
+            })
+        }
+        "vulkan" if resolution != [2560, 1440] => Err(ReportValidationError::Identity {
+            field: "Linux 3060 machine",
+        }),
+        _ => Ok(()),
+    }
 }
 
 fn blank(value: &str) -> bool {

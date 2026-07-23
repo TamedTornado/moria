@@ -12,24 +12,14 @@ const FOREST_SCHEMA: &str = "moria-product-one-forest-feasibility";
 const MUTATION_SCHEMA: &str = "moria-product-one-mutation-feasibility";
 const M4_ACCEPTANCE_LABEL: &str = "m4-mac-mini-32gb";
 const FOREST_MINIMUM_AREA_M2: u32 = 120_000;
-const MINIMUM_TREE_COUNT: u32 = FOREST_MINIMUM_AREA_M2 / 25;
-const MINIMUM_BUSH_COUNT: u32 = FOREST_MINIMUM_AREA_M2 * 450 / 10_000;
-const MINIMUM_BOULDER_COUNT: u32 = FOREST_MINIMUM_AREA_M2 * 24 / 10_000;
-const MINIMUM_STUMP_COUNT: u32 = FOREST_MINIMUM_AREA_M2 * 14 / 10_000;
-const MINIMUM_ROCK_COUNT: u32 = FOREST_MINIMUM_AREA_M2 * 90 / 10_000;
-const MINIMUM_BIRCH_COUNT: u32 = MINIMUM_TREE_COUNT * 55 / 100;
-const MINIMUM_PINE_COUNT: u32 = MINIMUM_TREE_COUNT * 45 / 100;
-const REQUIRED_FOREST_OBJECT_COUNTS: [(&str, u32); 7] = [
-    ("boulder", MINIMUM_BOULDER_COUNT),
-    ("bush", MINIMUM_BUSH_COUNT),
-    ("rock", MINIMUM_ROCK_COUNT),
-    ("ruin", 1),
-    ("stump", MINIMUM_STUMP_COUNT),
-    ("tree-a", MINIMUM_BIRCH_COUNT),
-    ("tree-b", MINIMUM_PINE_COUNT),
-];
-const REQUIRED_FOREST_SPECIES_COUNTS: [(&str, u32); 2] =
-    [("birch", MINIMUM_BIRCH_COUNT), ("pine", MINIMUM_PINE_COUNT)];
+const TREE_AREA_PER_TREE_M2: u32 = 25;
+const BUSHES_PER_HECTARE: u32 = 450;
+const BOULDERS_PER_HECTARE: u32 = 24;
+const STUMPS_PER_HECTARE: u32 = 14;
+const ROCKS_PER_HECTARE: u32 = 90;
+const HECTARE_M2: u32 = 10_000;
+const BIRCH_PERCENT: u32 = 55;
+const PINE_PERCENT: u32 = 45;
 const REQUIRED_CANOPY_RANGE_BINS: [&str; 4] =
     ["birch-lower", "birch-upper", "pine-lower", "pine-upper"];
 const MINIMUM_CANOPY_RANGE_BIN_COUNT: u32 = 16;
@@ -278,18 +268,19 @@ impl ForestFeasibilityReport {
             });
         }
         if self.passed {
-            if !matches_required_counts(
-                &self.required_object_counts,
-                &REQUIRED_FOREST_OBJECT_COUNTS,
-            ) || REQUIRED_FOREST_OBJECT_COUNTS
-                .iter()
-                .any(|(kind, required)| self.object_counts.get(*kind).unwrap_or(&0) < required)
+            let required_object_counts =
+                required_forest_object_counts(self.forest_area_m2, self.eligible_land_area_m2);
+            let required_species_counts = required_forest_species_counts(self.forest_area_m2);
+            if !matches_required_counts(&self.required_object_counts, &required_object_counts)
+                || required_object_counts
+                    .iter()
+                    .any(|(kind, required)| self.object_counts.get(*kind).unwrap_or(&0) < required)
             {
                 return Err(ReportValidationError::Inconsistent {
                     field: "forest object counts",
                 });
             }
-            if !matches_required_counts(&self.species_counts, &REQUIRED_FOREST_SPECIES_COUNTS)
+            if !matches_required_counts(&self.species_counts, &required_species_counts)
                 || self.species_counts.values().copied().sum::<u32>()
                     != self.object_counts.get("tree-a").unwrap_or(&0)
                         + self.object_counts.get("tree-b").unwrap_or(&0)
@@ -354,7 +345,12 @@ impl ForestFeasibilityReport {
                 field: "first_conflict",
             });
         }
-        validate_worst_target(&self.worst_edit_target, &self.world, self.passed)
+        validate_worst_target(
+            &self.worst_edit_target,
+            &self.object_index,
+            &self.world,
+            self.passed,
+        )
     }
 
     pub fn to_canonical_json(&self) -> Result<String, ReportValidationError> {
@@ -635,6 +631,57 @@ fn matches_required_counts(observed: &BTreeMap<String, u32>, required: &[(&str, 
             .all(|(name, count)| observed.get(*name) == Some(count))
 }
 
+fn required_forest_object_counts(
+    forest_area_m2: u32,
+    eligible_land_area_m2: u32,
+) -> [(&'static str, u32); 7] {
+    let tree_count = ceil_div(forest_area_m2, TREE_AREA_PER_TREE_M2);
+    let [birch_count, pine_count] = required_tree_species_counts(tree_count);
+    [
+        (
+            "boulder",
+            ceil_scaled(eligible_land_area_m2, BOULDERS_PER_HECTARE, HECTARE_M2),
+        ),
+        (
+            "bush",
+            ceil_scaled(forest_area_m2, BUSHES_PER_HECTARE, HECTARE_M2),
+        ),
+        (
+            "rock",
+            ceil_scaled(eligible_land_area_m2, ROCKS_PER_HECTARE, HECTARE_M2),
+        ),
+        ("ruin", 1),
+        (
+            "stump",
+            ceil_scaled(eligible_land_area_m2, STUMPS_PER_HECTARE, HECTARE_M2),
+        ),
+        ("tree-a", birch_count),
+        ("tree-b", pine_count),
+    ]
+}
+
+fn required_forest_species_counts(forest_area_m2: u32) -> [(&'static str, u32); 2] {
+    let [birch_count, pine_count] =
+        required_tree_species_counts(ceil_div(forest_area_m2, TREE_AREA_PER_TREE_M2));
+    [("birch", birch_count), ("pine", pine_count)]
+}
+
+fn required_tree_species_counts(tree_count: u32) -> [u32; 2] {
+    [
+        tree_count * BIRCH_PERCENT / 100,
+        tree_count * PINE_PERCENT / 100,
+    ]
+}
+
+fn ceil_scaled(value: u32, multiplier: u32, divisor: u32) -> u32 {
+    let product = u64::from(value) * u64::from(multiplier);
+    u32::try_from(product.div_ceil(u64::from(divisor))).expect("scaled count fits u32")
+}
+
+fn ceil_div(value: u32, divisor: u32) -> u32 {
+    value.div_ceil(divisor)
+}
+
 fn validate_object_index(
     value: &ObjectIndexEvidence,
     passed: bool,
@@ -704,6 +751,7 @@ fn validate_forest_object_index(
 
 fn validate_worst_target(
     target: &WorstEditTargetEvidence,
+    object_index: &ObjectIndexEvidence,
     world: &WorldIdentity,
     passed: bool,
 ) -> Result<(), ReportValidationError> {
@@ -723,6 +771,11 @@ fn validate_worst_target(
     {
         return Err(ReportValidationError::Missing {
             field: "worst_edit_target",
+        });
+    }
+    if passed && target.broad_candidates != object_index.max_edit_candidates {
+        return Err(ReportValidationError::Inconsistent {
+            field: "worst edit target",
         });
     }
     Ok(())

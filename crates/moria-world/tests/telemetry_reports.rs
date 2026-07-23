@@ -383,6 +383,47 @@ fn passing_forest_report_requires_complete_density_species_canopy_and_placement_
 }
 
 #[test]
+fn passing_forest_report_derives_density_minima_from_reported_areas() {
+    let mut invalid = report();
+    invalid.forest_area_m2 = 240_000;
+    invalid.eligible_land_area_m2 = 240_000;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "forest object counts"
+        })
+    ));
+
+    let mut valid = invalid;
+    valid.object_counts = BTreeMap::from([
+        ("boulder".into(), 576),
+        ("bush".into(), 10_800),
+        ("rock".into(), 2_160),
+        ("ruin".into(), 1),
+        ("stump".into(), 336),
+        ("tree-a".into(), 5_280),
+        ("tree-b".into(), 4_320),
+    ]);
+    valid.required_object_counts = valid.object_counts.clone();
+    valid.species_counts = BTreeMap::from([("birch".into(), 5_280), ("pine".into(), 4_320)]);
+    valid.object_index.placement_records = valid.object_counts.values().sum();
+    assert!(valid.validate().is_ok());
+}
+
+#[test]
+fn passing_forest_report_requires_worst_target_to_match_index_candidate_maximum() {
+    let mut invalid = report();
+    invalid.object_index.max_edit_candidates = 256;
+    invalid.worst_edit_target.broad_candidates = 1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "worst edit target"
+        })
+    ));
+}
+
+#[test]
 fn passing_colony_workload_requires_a_committed_batch_for_each_request() {
     let mut invalid = mutation_report();
     invalid.workloads[1].committed_batches = 1;

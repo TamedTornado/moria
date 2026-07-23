@@ -347,6 +347,20 @@ fn completed_report_rejects_wrong_product_and_machine_identities() {
 }
 
 #[test]
+fn failed_report_validates_a_present_machine_without_a_resolution() {
+    let mut invalid = report();
+    invalid.passed = false;
+    invalid.failure_reasons = vec!["resolution".into()];
+    invalid.resolution = None;
+    invalid.machine.as_mut().unwrap().driver = Some(String::new());
+    invalid.machine.as_mut().unwrap().driver_metadata_available = true;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Identity { field: "machine" })
+    ));
+}
+
+#[test]
 fn canonical_json_rejects_unknown_enum_literals_and_unsorted_vectors() {
     let json = report().to_canonical_json().unwrap();
     assert!(json.starts_with("{\"schema\":\"moria-product-one-benchmark\""));
