@@ -88,6 +88,38 @@ pub struct BuildProfile {
     pub rustc_version: String,
 }
 
+/// The immutable source identities approved for one feasibility-gate run.
+///
+/// The caller obtains this from the clean gate baseline before producing F1/F2;
+/// reports are not allowed to establish their own authority by agreeing with one
+/// another.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrustedGateIdentity {
+    pub git_commit: String,
+    pub parameters_digest: [u8; 32],
+    pub manifest_sha256: String,
+}
+
+impl TrustedGateIdentity {
+    fn validate(&self) -> Result<(), ReportValidationError> {
+        if !is_git_commit(&self.git_commit)
+            || self.parameters_digest.iter().all(|byte| *byte == 0)
+            || !is_sha256(&self.manifest_sha256)
+        {
+            return Err(ReportValidationError::Identity {
+                field: "trusted gate identity",
+            });
+        }
+        Ok(())
+    }
+
+    fn matches(&self, build: &BuildProfile, world: &WorldIdentity, manifest_sha256: &str) -> bool {
+        self.git_commit == build.git_commit
+            && self.parameters_digest == world.parameters_digest
+            && self.manifest_sha256 == manifest_sha256
+    }
+}
+
 impl BuildProfile {
     pub fn validate_complete(&self) -> Result<(), ReportValidationError> {
         if blank(&self.cargo_profile)
@@ -474,9 +506,11 @@ impl MutationFeasibilityReport {
             });
         }
         if self.resolution != [2560, 1440] || self.backend != "metal" {
-            return Err(ReportValidationError::Identity {
-                field: "mutation display",
-            });
+            validate_acceptance_requirement(
+                self.passed,
+                &self.failure_reasons,
+                "mutation display",
+            )?;
         }
         validate_world_identity(&self.world)?;
         finite_positive(self.cold_start_ms, "cold_start_ms")?;
@@ -545,9 +579,11 @@ impl MutationFeasibilityReport {
     pub fn validate_against_forest(
         &self,
         forest: &ForestFeasibilityReport,
+        trusted: &TrustedGateIdentity,
     ) -> Result<(), ReportValidationError> {
         self.validate()?;
         forest.validate()?;
+        trusted.validate()?;
         if !forest.passed
             || self.build != forest.build
             || self.world != forest.world
@@ -557,6 +593,13 @@ impl MutationFeasibilityReport {
         {
             return Err(ReportValidationError::Identity {
                 field: "forest feasibility gate",
+            });
+        }
+        if !trusted.matches(&forest.build, &forest.world, &forest.manifest_sha256)
+            || !trusted.matches(&self.build, &self.world, &self.manifest_sha256)
+        {
+            return Err(ReportValidationError::Identity {
+                field: "trusted gate identity",
             });
         }
         Ok(())
@@ -615,13 +658,34 @@ fn validate_header(
     if !sorted_unique_nonempty(header.failure_reasons) {
         return Err(ReportValidationError::FailureReasons);
     }
-    header.build.validate_release()?;
+    header.build.validate_complete()?;
     if !is_sha256(header.manifest_sha256) {
         return Err(ReportValidationError::Identity {
             field: "manifest_sha256",
         });
     }
-    header.machine.validate_m4_acceptance()
+    header.machine.validate_complete()?;
+    if header.build.cargo_profile != "release" {
+        validate_acceptance_requirement(header.passed, header.failure_reasons, "build")?;
+    }
+    if validate_m4_machine(header.machine).is_err() {
+        validate_acceptance_requirement(header.passed, header.failure_reasons, "M4 machine")?;
+    }
+    Ok(())
+}
+
+fn validate_acceptance_requirement(
+    passed: bool,
+    failure_reasons: &[String],
+    field: &'static str,
+) -> Result<(), ReportValidationError> {
+    if passed {
+        Err(ReportValidationError::Identity { field })
+    } else if failure_reasons.iter().any(|reason| reason == field) {
+        Ok(())
+    } else {
+        Err(ReportValidationError::FailureReasons)
+    }
 }
 
 fn validate_m4_machine(machine: &MachineProfile) -> Result<(), ReportValidationError> {

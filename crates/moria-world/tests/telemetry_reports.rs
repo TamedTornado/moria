@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use moria_world::telemetry::{
     BuildProfile, Distribution, ForestFeasibilityReport, MachineProfile, MutationFeasibilityReport,
     MutationWorkloadEvidence, MutationWorkloadRole, ObjectIndexEvidence, QueryCostEvidence,
-    ReportValidationError, WorstEditTargetEvidence,
+    ReportValidationError, TrustedGateIdentity, WorstEditTargetEvidence,
 };
 use moria_world::{WorldBounds, WorldIdentity, WorldPointQ8};
 
@@ -250,6 +250,14 @@ fn mutation_report() -> MutationFeasibilityReport {
         .map(workload)
         .collect(),
         query_costs: query_costs(),
+    }
+}
+
+fn trusted_identity(report: &ForestFeasibilityReport) -> TrustedGateIdentity {
+    TrustedGateIdentity {
+        git_commit: report.build.git_commit.clone(),
+        parameters_digest: report.world.parameters_digest,
+        manifest_sha256: report.manifest_sha256.clone(),
     }
 }
 
@@ -563,21 +571,74 @@ fn cold_query_samples_allow_any_p99_within_the_four_millisecond_maximum() {
 fn mutation_report_requires_the_exact_forest_gate_identity() {
     let forest = report();
     let mutation = mutation_report();
-    assert!(mutation.validate_against_forest(&forest).is_ok());
+    let trusted = trusted_identity(&forest);
+    assert!(mutation.validate_against_forest(&forest, &trusted).is_ok());
 
     let mut wrong_world = forest.clone();
     wrong_world.world.seed += 1;
     assert!(matches!(
-        mutation.validate_against_forest(&wrong_world),
+        mutation.validate_against_forest(&wrong_world, &trusted),
         Err(ReportValidationError::Identity { .. })
     ));
 
     let mut wrong_manifest = forest;
     wrong_manifest.manifest_sha256 = "e".repeat(64);
     assert!(matches!(
-        mutation.validate_against_forest(&wrong_manifest),
+        mutation.validate_against_forest(&wrong_manifest, &trusted),
         Err(ReportValidationError::Identity { .. })
     ));
+}
+
+#[test]
+fn mutation_report_rejects_a_mutually_consistent_stale_gate_identity() {
+    let trusted = trusted_identity(&report());
+    let mut forest = report();
+    forest.build.git_commit = "d".repeat(40);
+    forest.world.parameters_digest = [4; 32];
+    forest.manifest_sha256 = "e".repeat(64);
+
+    let mut mutation = mutation_report();
+    mutation.build = forest.build.clone();
+    mutation.world = forest.world;
+    mutation.manifest_sha256 = forest.manifest_sha256.clone();
+    mutation.forest_report_sha256 = forest.canonical_sha256().unwrap();
+
+    assert!(matches!(
+        mutation.validate_against_forest(&forest, &trusted),
+        Err(ReportValidationError::Identity {
+            field: "trusted gate identity"
+        })
+    ));
+}
+
+#[test]
+fn failed_environment_reports_serialize_only_with_matching_failure_reasons() {
+    let mut forest = report();
+    forest.passed = false;
+    forest.failure_reasons = vec!["M4 machine".into(), "build".into()];
+    forest.build.cargo_profile = "dev".into();
+    forest.machine.os_name = "Linux".into();
+    forest.machine.wgpu_backend = "vulkan".into();
+    assert!(forest.to_canonical_json().is_ok());
+
+    forest.failure_reasons = vec!["build".into()];
+    assert_eq!(
+        forest.validate(),
+        Err(ReportValidationError::FailureReasons)
+    );
+
+    let mut mutation = mutation_report();
+    mutation.passed = false;
+    mutation.failure_reasons = vec!["mutation display".into()];
+    mutation.resolution = [1920, 1080];
+    mutation.backend = "vulkan".into();
+    assert!(mutation.to_canonical_json().is_ok());
+
+    mutation.failure_reasons = vec!["runtime".into()];
+    assert_eq!(
+        mutation.validate(),
+        Err(ReportValidationError::FailureReasons)
+    );
 }
 
 #[test]
