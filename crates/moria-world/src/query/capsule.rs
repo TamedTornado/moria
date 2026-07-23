@@ -967,7 +967,7 @@ mod tests {
 
         for capsule in capsules {
             let mut app = App::new();
-            app.insert_resource(state([]));
+            install_ready_state(&mut app, state([]));
 
             let overlap = app
                 .world_mut()
@@ -1048,8 +1048,8 @@ mod tests {
     fn extreme_displacement_is_rejected_without_integer_overflow() {
         let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 400 * 64, 0), 32, 0);
         let mut app = App::new();
-        app.insert_resource(state([]))
-            .insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)))
+        install_ready_state(&mut app, state([]));
+        app.insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)))
             .add_systems(
                 Update,
                 move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
@@ -1111,8 +1111,8 @@ mod tests {
         assert!(candidates.iter().count() <= usize::from(MAX_SWEEP_CANDIDATE_TESTS));
 
         let mut app = App::new();
-        app.insert_resource(state([]))
-            .insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)));
+        install_ready_state(&mut app, state([]));
+        app.insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)));
         app.world_mut()
             .run_system_once(
                 move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
@@ -1164,8 +1164,11 @@ mod tests {
         let obstacle = VoxelCoord::new(-3, 400, 0);
         let capsule = CapsuleQ8::new(WorldPointQ8::new(0, 400 * 64, 0), 128, 0);
         let mut app = App::new();
-        app.insert_resource(state([(obstacle, Voxel::new(crate::GRANITE, 255, 0, 0))]))
-            .insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)))
+        install_ready_state(
+            &mut app,
+            state([(obstacle, Voxel::new(crate::GRANITE, 255, 0, 0))]),
+        );
+        app.insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)))
             .add_systems(
                 Update,
                 move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
@@ -1201,8 +1204,8 @@ mod tests {
         );
 
         let mut app = App::new();
-        app.insert_resource(state([]))
-            .insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)));
+        install_ready_state(&mut app, state([]));
+        app.insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)));
         app.world_mut()
             .run_system_once(
                 move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
@@ -1362,8 +1365,8 @@ mod tests {
         let capsule = CapsuleQ8::new(WorldPointQ8::new(32, y * 64 + 32, 3 * 64), 32, 0);
         let changes = obstacles.map(|voxel| (voxel, Voxel::new(crate::GRANITE, 255, 0, 0)));
         let mut app = App::new();
-        app.insert_resource(state(changes))
-            .insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)))
+        install_ready_state(&mut app, state(changes));
+        app.insert_resource(SweepQueryResult(Err(QueryError::InvalidInput)))
             .add_systems(
                 Update,
                 move |read: WorldRead, mut result: ResMut<SweepQueryResult>| {
