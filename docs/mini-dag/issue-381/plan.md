@@ -28,6 +28,14 @@ animation assets, or any change to PR #365.
   RON and its fixture, config validation, and config documentation. No runtime
   renderer, streaming, object-index, or other substrate-generic consumer reads
   them.
+- The authoritative region config mixes forest-only and retained settings in
+  the same structs. `BiomeConfig::meadow_min_area_m2`,
+  `ObjectGenConfig::{boulders_per_hectare,stumps_per_hectare,
+  rocks_per_hectare,max_anchor_slope_degrees}`, the boulder/stump/rock shape
+  ranges, and the grass/meadow rendering settings are not forest-only and must
+  remain. The species-specific birch/pine trunk ranges, the configured canopy
+  and bush ranges, and `route_clearance_m` are consumed only by the retired
+  curated forest pipeline.
 - `MutationWorkloadEvidence::{horizon_partition_checked,
   horizon_excluded_base_cards,horizon_derived_records}` occur only in the
   report schema and the F2 documentation. No producer, validator, or
@@ -57,14 +65,28 @@ animation assets, or any change to PR #365.
    generic generated-metadata and registered-object model.
 2. Delete the checked-in manifest and its runtime asset identity. Do not
    replace it with a different population or persistence format in this issue.
-3. Remove ecology requirements from configuration, but retain the generic
-   index dimensions/caps, edit-candidate and exact-affected-object caps,
-   dependency-brick cap, and retained-byte cap with their current values.
+3. Remove configuration field-by-field, not by deleting `BiomeConfig` or
+   reducing `ObjectGenConfig` to index limits. The exact retired region fields
+   are `forest_min_area_m2`, `forest_tree_spacing_m`,
+   `tree_species_mix_percent`, `bushes_per_hectare`, `route_clearance_m`,
+   `birch_trunk_radius_q8`, `birch_trunk_height_q8`,
+   `pine_trunk_radius_q8`, `pine_trunk_height_q8`, `canopy_radius_q8`, and
+   `bush_radius_q8`. Retain `BiomeConfig` with `meadow_min_area_m2`; retain the
+   boulder/stump/rock densities, `max_anchor_slope_degrees`, their four shape
+   ranges (`boulder_radius_q8`, `stump_radius_q8`, `stump_height_q8`, and
+   `rock_radius_q8`, each with its `min_q8`/`max_q8` members), and every
+   generic index/edit/dependency/retained-byte setting at its current value.
+   Retain `RangeQ8`, which those generic prop ranges still use. Also retain
+   `grass_normal_min_y`, `grass_near_density_per_m2`, and
+   `grass_middle_density_scale`: their meadow dressing use means they are not
+   authorized configuration deletions. Remove forest/understory *acceptance
+   language*, not these generic meadow controls.
 4. Retain `SpeciesId`, `ObjectKind::{TreeA, TreeB}`, and
    `VoxelObjectShape::Tree { canopy_radii_q8 }` as optional object/shape
    metadata. Their analytic sampling, bounds, ownership, and overlap tests are
    substrate-generic; this issue removes canopy/species *acceptance
-   requirements*, not the ability to use a tree-shaped bounded fixture.
+   requirements* and the forest generator's global shape-range knobs, not the
+   ability to use per-placement tree/canopy metadata in a bounded fixture.
 5. Remove tree-only Horizon membership from the immutable object index
    (`horizon_tree_ids` and its tree-member cap/evidence field), but preserve
    the generic streaming partition lifecycle. `HorizonCellKey` currently also
@@ -126,15 +148,89 @@ contract tests:
 - `retired_forest_schema_is_absent_from_executable_surfaces` recursively scans
   the exact roots `crates/moria-world/src`, `crates/moria-bench/src`,
   `crates/moria-demo/src`, `assets/config`, and `assets/manifests` for the
-  retired report/config field identifiers. Its allowlist is limited to the
-  `#[cfg(test)]` portion of `crates/moria-bench/src/cli.rs` that passes the old
-  option to assert rejection and this enforcement test's own string literals.
-  The production portion of `cli.rs` remains scanned. The identifiers include
-  `ForestFeasibilityReport`, `forest_report_sha256`,
-  `max_horizon_tree_members_per_cell`, `cluster_visibility_m`,
-  `horizon_object_cell_size_m`, `horizon_derived_lod_m`,
-  `horizon_partition_checked`, `horizon_excluded_base_cards`, and
-  `horizon_derived_records`.
+  exact retired report/config identifiers. Define the identifier sets
+  explicitly in the test so an implementation cannot broaden deletion:
+
+  - region config:
+    `forest_min_area_m2`, `forest_tree_spacing_m`,
+    `tree_species_mix_percent`, `bushes_per_hectare`, `route_clearance_m`,
+    `birch_trunk_radius_q8`, `birch_trunk_height_q8`,
+    `pine_trunk_radius_q8`, `pine_trunk_height_q8`, `canopy_radius_q8`, and
+    `bush_radius_q8`;
+  - presentation/benchmark config:
+    `cluster_visibility_m`, `horizon_object_cell_size_m`,
+    `horizon_derived_lod_m`, `max_horizon_tree_members_per_cell`,
+    `forest_object_validation_max_ms`, and
+    `forest_object_index_build_max_ms`;
+  - report/proof schema:
+    `FOREST_SCHEMA`, `moria-product-one-forest-feasibility`,
+    `ForestFeasibilityReport`, `WorstEditTargetEvidence`, `forest_area_m2`,
+    `species_counts`, `minimum_tree_spacing_q8`, `canopy_min_q8`,
+    `canopy_max_q8`, `canopy_range_bins`, `minimum_route_clearance_q8`,
+    `worst_edit_target`, `forest_report_sha256`,
+    `horizon_partition_checked`, `horizon_excluded_base_cards`, and
+    `horizon_derived_records`.
+
+  Its allowlist is limited to the `#[cfg(test)]` portion of
+  `crates/moria-bench/src/cli.rs` that passes the old option to assert rejection
+  and this enforcement test's own string literals. The production portion of
+  `cli.rs` remains scanned. Do not add `SpeciesId`, `canopy_radii_q8`,
+  `VoxelObjectShape::Tree`, `HorizonLifecycle`, or broad words such as
+  `species`, `canopy`, `tree`, or `Horizon` to the rejected identifier set.
+- `retained_meadow_and_generic_prop_config_is_unchanged` parses serialized
+  `RegionConfig::default()`, `PresentationConfig::default()`, and the two
+  checked-in RON files and asserts exact retained fields and values. It
+  requires `BiomeConfig`/`RegionConfig::biome` and
+  `meadow_min_area_m2 == 40_000`; boulder/stump/rock densities `24/14/90`;
+  `max_anchor_slope_degrees == 32`; the unchanged boulder radius `128..=461`,
+  stump radius `64..=141`, stump height `64..=192`, and rock radius
+  `38..=154`; `index_cell_size_m == 32`,
+  `max_index_cells_per_object == 16`,
+  `max_index_entries_per_cell == 1_024`,
+  `sample_index_cell_size_m == 4`,
+  `max_sample_cells_per_object == 16`,
+  `max_sample_entries_per_cell == 64`,
+  `max_edit_dependency_candidates == 256`,
+  `max_affected_objects_per_edit == 64`,
+  `max_dependency_bricks_per_object == 128`, and
+  `max_retained_index_bytes == 16_777_216`; and grass settings
+  `0.75/5.0/0.25`. It also asserts these fields still receive
+  their existing focused validation (positive/bounded as applicable). The
+  same test asserts the exact retired region/config identifiers above are
+  absent. This test is deliberately positive as well as negative: deleting
+  `BiomeConfig`, deleting the generic prop ranges/densities, deleting the
+  meadow grass controls, or reducing `ObjectGenConfig` to index limits fails.
+- `active_forest_correctness_requirements_are_dispositioned` scans paragraphs
+  in every `docs/tdd/**/*.md` and exactly these mixed specifications:
+  `issue-49`, `52`, `54`, `60`, `67`, `69`, `77`, `81`, `85`, `88`, `89`,
+  `93`, `99`, `105`, `107`, `124`, `131`, `133`, `134`, `139`, `143`, `228`,
+  `232`, `326`, `330`, `334`, `335`, `336`, `339`, `341`, `343`, `344`,
+  `347`, `351`, and `352`. It rejects the exact retired config/report
+  identifiers above and narrowly targeted normative combinations for:
+
+  - forest area/coverage (`forest area`, `forest coverage`, or `qualifying
+    forest` used as a required minimum/gate);
+  - birch/pine or tree `species mix`, `ratio`, `share`, `percentage`, or
+    `55/45` acceptance;
+  - tree/bush density or count formulas (`per hectare`, `tree_count`,
+    `bush_count`, density-derived required counts);
+  - required canopy ranges/distributions/bins (`lower-bin`, `upper-bin`,
+    per-species canopy minima/maxima, or 2–4 m as an acceptance envelope);
+  - forest understory as a required population;
+  - global/pairwise tree spacing, including the 5 m acceptance rule; and
+  - forest-route/corridor registered-object clearance, including the 3 m
+    acceptance rule.
+
+  An occurrence is allowed only in the exact plan/review/history paths below
+  or in a paragraph/status block that explicitly says the clause is
+  `Superseded by #380/#381 for current product work`; active TDD files and
+  mixed specs are evaluated paragraph-by-paragraph and are never whole-file
+  allowlisted. The matcher must be combination-based rather than rejecting
+  isolated vocabulary, so retained `SpeciesId`, generic per-placement
+  `canopy_radii_q8`/tree-shape sampling and overlap text, meadow dressing,
+  generic route metadata/traversal, and `HorizonLifecycle` state-machine text
+  remain legal. This test fails now on the normative clauses in active TDD and
+  mixed specs even if production structs have already been removed.
 - `retired_curation_and_curated_manifest_references_are_dispositioned` audits
   every occurrence of `moria-curate`, `crates/moria-curate`,
   `prove-forest`, `--forest-proof`, `curated_manifest`,
@@ -162,8 +258,9 @@ contract tests:
     labels and body mark that forest clause or entire node superseded;
   - disposition whole-file allowlist:
     `docs/recovery/pr-363-disposition.md`;
-  - enforcement-reference allowlists:
+  - exact plan/review/enforcement-reference allowlists:
     `docs/mini-dag/issue-381/plan.md`,
+    `docs/mini-dag/issue-381/plan-review.md`,
     `crates/moria-world/tests/forest_surface_removed.rs`, and the
     `#[cfg(test)]` module of `crates/moria-bench/src/cli.rs`.
 
@@ -173,8 +270,10 @@ contract tests:
   contain the retired package name, checked-in path/stable ID, generator,
   facade, or proof vocabulary. This makes every curated-manifest reference
   visible to the test without deleting the generic identity/order/overlap
-  model. This is not a scan for broad words such as “forest,” “tree,” or
-  “Horizon.”
+  model. The exact `plan-review.md` entry permits the configured review record
+  to quote retired terms as history; it does not allow its directory, active
+  TDD, or any test spec wholesale. This is not a scan for broad words such as
+  “forest,” “tree,” or “Horizon.”
 - `active_tracker_has_no_retired_curation_or_stale_inventory` parses
   `docs/issues.json` structurally. It asserts:
 
@@ -221,10 +320,19 @@ lack supersession markers; #66 is active; and the dependency edges remain.
 
 Extend existing focused tests before implementation:
 
-- In `crates/moria-world/tests/config_contract.rs`, assert that serialized
-  defaults and the checked-in RON omit the retired biome/species/density/
-  canopy/forest-timing fields, and that RON containing a retired field is
-  rejected by `deny_unknown_fields`. This fails while the fields are valid.
+- In `crates/moria-world/tests/config_contract.rs`, define the same exact
+  retired region/presentation/benchmark field arrays used by the repository
+  scan. Assert serialized defaults and checked-in RON omit each retired field,
+  and deserialize one-field injections for every retired identifier to prove
+  `deny_unknown_fields` rejects all of them. In the same Red change, replace
+  the species/birch-range validation cases with assertions that the retained
+  meadow minimum, boulder/stump/rock densities,
+  `max_anchor_slope_degrees`, each retained generic prop range, index/edit
+  caps, and grass/meadow settings still serialize at their current values and
+  reject their existing invalid boundary cases. Before implementation, the
+  omission/rejection half fails because all retired fields still exist; after
+  implementation, the positive half prevents deleting the entire biome block,
+  the generic prop settings, `RangeQ8`, or meadow dressing controls.
 - In `crates/moria-bench/src/cli.rs`, replace
   `requires_a_forest_proof_only_for_feasibility_mutation` with tests proving
   `feasibility-mutation` parses without a proof and rejects `--forest-proof` as
@@ -306,12 +414,22 @@ cargo test -p moria-bench --test query_probe
    - Delete the unused `generation/biome.rs` public forest classifier and its
      exports from `generation/mod.rs`/`lib.rs`; it currently serves only the
      forest curation surface and does not affect scalar terrain generation.
-   - Remove the `BiomeConfig` block and `RegionConfig::biome`.
-   - Reduce `ObjectGenConfig` to the existing generic spatial-index,
-     edit-attribution, dependency-brick, and retained-memory limits. Remove
-     global per-hectare counts, route clearance, birch/pine/bush/canopy ranges,
-     and their defaults/validators.
-   - Remove grass density/understory and all four tree-Horizon fields
+   - Keep `BiomeConfig` and `RegionConfig::biome`; remove only
+     `forest_min_area_m2`, `forest_tree_spacing_m`,
+     `tree_species_mix_percent`, and `bushes_per_hectare`, with their defaults
+     and validator branches. Preserve `meadow_min_area_m2` and its current
+     positive validation.
+   - Keep `ObjectGenConfig`, its generic prop population settings, and
+     `RangeQ8`. Remove only `route_clearance_m`,
+     `birch_trunk_radius_q8`, `birch_trunk_height_q8`,
+     `pine_trunk_radius_q8`, `pine_trunk_height_q8`, `canopy_radius_q8`, and
+     `bush_radius_q8`, with their defaults/validator branches. Preserve
+     `boulders_per_hectare`, `stumps_per_hectare`, `rocks_per_hectare`,
+     `max_anchor_slope_degrees`, `boulder_radius_q8`, `stump_radius_q8`,
+     `stump_height_q8`, `rock_radius_q8`, and every generic index,
+     edit-attribution, dependency-brick, and retained-memory limit and
+     validation unchanged.
+   - Remove the four tree-Horizon fields
      `cluster_visibility_m`, `horizon_object_cell_size_m`,
      `horizon_derived_lod_m`, and `max_horizon_tree_members_per_cell` from
      `RenderingConfig`. Remove their defaults and validators rather than
@@ -319,10 +437,15 @@ cargo test -p moria-bench --test query_probe
      substrate-generic consumer. Also remove
      `forest_object_validation_max_ms` /
      `forest_object_index_build_max_ms` from `BenchmarkConfig`.
+     Preserve `grass_normal_min_y`, `grass_near_density_per_m2`,
+     `grass_middle_density_scale`, `object_visibility_m`, and their current
+     defaults/validators; the issue removes forest/understory correctness
+     requirements, not reusable meadow-dressing controls.
    - Make the matching deletions in
      `assets/config/{product_one_region.ron,presentation.ron}`,
      `config_validation.rs`, `config_contract.rs`, and the two config asset
-     fixtures. Preserve fixed index cell sizes and all generic caps unchanged.
+     fixtures. Preserve the exact meadow/generic-prop fields and values pinned
+     by the Red tests, fixed index cell sizes, and all generic caps unchanged.
    - In `objects/index.rs`, remove `HORIZON_CELL_METERS`, the tree-only
      `horizon_counts` capacity check, `horizon_tree_ids`, `horizon_key`, and
      only the Horizon-membership assertions from their object-index contract
@@ -389,13 +512,19 @@ cargo test -p moria-bench --test query_probe
      benchmark commands.
    - In `docs/tdd/{overview,api,config,data-model,systems,rendering,assets,benchmarks,implementation-plan}.md`,
      delete ecology acceptance rules and forest-proof coupling. Preserve
-     generic object/index/overlap/ownership/accounting/evidence text. Mark the
-     old F1/F2 forest sequencing superseded by #380/#381 and explicitly defer
-     a replacement acceptance design. Remove all active `moria-curate` and
-     checked-in curated-manifest asset/path/stable-ID claims. The one retained
-     `CuratedManifest` type section in `data-model.md` must explicitly scope it
-     to generic in-memory generated metadata and state that it is not a
-     checked-in population or acceptance mechanism.
+     generic object/index/overlap/ownership/accounting/evidence text and the
+     retained meadow/generic-prop configuration. Mark the old F1/F2 forest
+     sequencing and every normative forest-area, species-ratio, tree/bush
+     density, canopy-bin/range, understory-population, global-tree-spacing, and
+     forest-route-clearance clause superseded by #380/#381 and explicitly
+     defer a replacement acceptance design. Remove all active `moria-curate`
+     and checked-in curated-manifest asset/path/stable-ID claims. The one
+     retained `CuratedManifest` type section in `data-model.md` must explicitly
+     scope it to generic in-memory generated metadata and state that it is not
+     a checked-in population or acceptance mechanism. Generic `SpeciesId`,
+     per-object tree/canopy shape metadata and overlap examples, and
+     `HorizonLifecycle` vocabulary remain; do not rewrite those as forest
+     correctness.
    - Add a prominent #380/#381 supersession note to active
      `docs/design-document.md` and `docs/engineering-evidence.md`, and remove
      current-evidence claims about the checked-in forest/proof. Historical
@@ -432,6 +561,11 @@ cargo test -p moria-bench --test query_probe
      `352` to remove forest vocabulary/coupling while retaining their
      substrate properties. A superseded spec remains a historical file; do
      not delete it or rewrite it into a replacement requirement.
+     The executable active-document test must enumerate this mixed-spec set
+     exactly and accept retired normative phrases only in the explicit
+     #380/#381 supersession block; adding `plan-review.md` to its exact
+     historical/review allowlist must not weaken checks on any active TDD or
+     mixed spec.
    - In `docs/issues.json`, first repair the retained inventory nodes:
      `M-001` must list the three remaining workspace packages and must not
      produce or require `moria-curate`; `M-003` must describe the exact
@@ -509,8 +643,12 @@ cargo test -p moria-bench --test query_probe
   `CuratedManifest` symbol allowlist has no forest/tool coupling; executable
   config/report sources contain no retired fields; the runtime/license/budget
   inventories are exactly 19/17; every active documentation/spec/tracker
-  occurrence is classified; and stale three-package/19-asset tracker
-  inventory cannot regress. Separately run the `moria-bench` CLI unit test
+  occurrence is classified; the exact retired forest correctness phrases are
+  absent or explicitly superseded in active TDD/mixed specs; all pinned
+  meadow/generic-prop config remains; and stale three-package/19-asset tracker
+  inventory cannot regress. `docs/mini-dag/issue-381/plan-review.md` is an
+  exact review-history exception only, never a prefix or active-document
+  exception. Separately run the `moria-bench` CLI unit test
   proving `feasibility-mutation` succeeds without a proof and any supplied
   `--forest-proof` is an unknown argument. Historical, supersession,
   disposition, plan, and negative-test references remain allowed only at the
@@ -580,8 +718,14 @@ verify them with read-only `gh ... --json` checks immediately before and after:
   either a narrow retained generic model reference, an explicit #380/#381
   supersession, auditable history/disposition, or a negative-test literal.
 - Active config, validators, reports, tests, assets, and docs do not require
-  forest area, species ratios, canopy bins/ranges, tree/bush/prop population
-  density, understory, global tree spacing, or forest-route clearance.
+  forest area, species ratios, canopy bins/ranges, forest tree/bush population
+  density, forest understory population, global tree spacing, or forest-route
+  clearance.
+- `BiomeConfig`, `RegionConfig::biome`, `meadow_min_area_m2`, boulder/stump/rock
+  densities, `max_anchor_slope_degrees`, boulder/stump/rock shape ranges,
+  generic object-index/edit/dependency/memory limits, and meadow grass
+  configuration retain their prior values and validation. Only the explicitly
+  enumerated forest/species/bush/canopy/route config fields are removed.
 - The three retired tree-Horizon rendering settings and three retired
   Horizon/base-card workload evidence fields are absent from executable/config
   schemas; no replacement aggregation was introduced.
