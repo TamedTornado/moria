@@ -207,9 +207,18 @@ fn workload(role: MutationWorkloadRole) -> MutationWorkloadEvidence {
             .into_iter()
             .map(|stage| (stage.into(), 0.1))
             .collect(),
-        stage_counts: STAGES.into_iter().map(|stage| (stage.into(), 1)).collect(),
-        barrier_expected_items: 1,
-        barrier_renderer_ready_items: 1,
+        stage_counts: STAGES
+            .into_iter()
+            .map(|stage| {
+                let count = match stage {
+                    "admission" | "schedule" | "commit" | "reconciliation" => request_count,
+                    _ => 1,
+                };
+                (stage.into(), u64::from(count))
+            })
+            .collect(),
+        barrier_expected_items: request_count,
+        barrier_renderer_ready_items: request_count,
         horizon_partition_checked: role == MutationWorkloadRole::CatastrophicCarve,
         horizon_excluded_base_cards: u16::from(role == MutationWorkloadRole::CatastrophicCarve),
         horizon_derived_records: u16::from(role == MutationWorkloadRole::CatastrophicCarve),
@@ -411,6 +420,44 @@ fn passing_forest_report_derives_density_minima_from_reported_areas() {
 }
 
 #[test]
+fn passing_forest_report_requires_the_rounded_total_tree_minimum() {
+    let mut valid = report();
+    valid.forest_area_m2 = 120_001;
+    valid.eligible_land_area_m2 = 120_001;
+    valid.object_counts = BTreeMap::from([
+        ("boulder".into(), 289),
+        ("bush".into(), 5_401),
+        ("rock".into(), 1_081),
+        ("ruin".into(), 1),
+        ("stump".into(), 169),
+        ("tree-a".into(), 2_641),
+        ("tree-b".into(), 2_160),
+    ]);
+    valid.required_object_counts = BTreeMap::from([
+        ("boulder".into(), 289),
+        ("bush".into(), 5_401),
+        ("rock".into(), 1_081),
+        ("ruin".into(), 1),
+        ("stump".into(), 169),
+        ("tree-a".into(), 2_640),
+        ("tree-b".into(), 2_160),
+    ]);
+    valid.species_counts = BTreeMap::from([("birch".into(), 2_641), ("pine".into(), 2_160)]);
+    valid.object_index.placement_records = valid.object_counts.values().sum();
+    assert!(valid.validate().is_ok());
+
+    valid.object_counts.insert("tree-a".into(), 2_640);
+    valid.species_counts.insert("birch".into(), 2_640);
+    valid.object_index.placement_records -= 1;
+    assert!(matches!(
+        valid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "forest tree count"
+        })
+    ));
+}
+
+#[test]
 fn passing_forest_report_requires_worst_target_to_match_index_candidate_maximum() {
     let mut invalid = report();
     invalid.object_index.max_edit_candidates = 256;
@@ -430,7 +477,23 @@ fn passing_colony_workload_requires_a_committed_batch_for_each_request() {
     assert!(matches!(
         invalid.validate(),
         Err(ReportValidationError::Inconsistent {
-            field: "workload reconciliation"
+            field: "workload trace"
+        })
+    ));
+}
+
+#[test]
+fn passing_colony_workload_requires_a_trace_for_every_request() {
+    let mut invalid = mutation_report();
+    for stage in ["admission", "schedule", "commit", "reconciliation"] {
+        invalid.workloads[1].stage_counts.insert(stage.into(), 1);
+    }
+    invalid.workloads[1].barrier_expected_items = 1;
+    invalid.workloads[1].barrier_renderer_ready_items = 1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "workload trace"
         })
     ));
 }
@@ -581,6 +644,58 @@ fn feasibility_failure_reports_serialize_measured_gate_violations() {
     catastrophic.horizon_derived_records = 0;
     let horizon_json = horizon_failure.to_canonical_json().unwrap();
     assert!(MutationFeasibilityReport::from_json(&horizon_json).is_ok());
+}
+
+#[test]
+fn failed_mutation_reports_require_reasons_for_unavailable_workload_evidence() {
+    let mut failed = mutation_report();
+    failed.passed = false;
+    failed.failure_reasons = vec!["mutation stage".into(), "workload measurement".into()];
+    for workload in &mut failed.workloads {
+        let unavailable = Distribution {
+            min: 0.0,
+            p50: 0.0,
+            p95: 0.0,
+            p99: 0.0,
+            max: 0.0,
+        };
+        workload.admission_ms = unavailable;
+        workload.first_commit_ms = unavailable;
+        workload.primary_ready_ms = unavailable;
+        workload.reconciliation_ms = unavailable;
+        workload.stage_timings_ms.clear();
+        workload.stage_counts.clear();
+        workload.changed_bricks_per_second = 0.0;
+        workload.maximum_runnable_wait_ms = 0.0;
+        workload.maximum_frame_ms = 0.0;
+        workload.changed_voxels = 0;
+        workload.changed_bricks = 0;
+        workload.committed_batches = 0;
+        workload.barrier_expected_items = 0;
+        workload.barrier_renderer_ready_items = 0;
+    }
+    assert!(matches!(
+        failed.validate(),
+        Err(ReportValidationError::Missing {
+            field: "admission_ms"
+        })
+    ));
+
+    failed.failure_reasons = vec![
+        "mutation stage".into(),
+        "workload distributions".into(),
+        "workload measurement".into(),
+    ];
+    let json = failed.to_canonical_json().unwrap();
+    assert!(MutationFeasibilityReport::from_json(&json).is_ok());
+
+    let mut zero_stage_counts = mutation_report();
+    zero_stage_counts.passed = false;
+    zero_stage_counts.failure_reasons = vec!["mutation stage count".into()];
+    zero_stage_counts.workloads[0]
+        .stage_counts
+        .insert("commit".into(), 0);
+    assert!(zero_stage_counts.to_canonical_json().is_ok());
 }
 
 #[test]

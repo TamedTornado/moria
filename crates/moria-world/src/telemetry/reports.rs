@@ -280,10 +280,28 @@ impl ForestFeasibilityReport {
                     field: "forest object counts",
                 });
             }
-            if !matches_required_counts(&self.species_counts, &required_species_counts)
-                || self.species_counts.values().copied().sum::<u32>()
-                    != self.object_counts.get("tree-a").unwrap_or(&0)
-                        + self.object_counts.get("tree-b").unwrap_or(&0)
+            if !matches_minimum_counts(&self.species_counts, &required_species_counts) {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "forest species counts",
+                });
+            }
+            let required_tree_count = ceil_div(self.forest_area_m2, TREE_AREA_PER_TREE_M2);
+            let observed_tree_count = ["tree-a", "tree-b"]
+                .into_iter()
+                .map(|kind| u64::from(*self.object_counts.get(kind).unwrap_or(&0)))
+                .sum::<u64>();
+            if observed_tree_count < u64::from(required_tree_count) {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "forest tree count",
+                });
+            }
+            if self
+                .species_counts
+                .values()
+                .copied()
+                .map(u64::from)
+                .sum::<u64>()
+                != observed_tree_count
             {
                 return Err(ReportValidationError::Inconsistent {
                     field: "forest species counts",
@@ -481,7 +499,7 @@ impl MutationFeasibilityReport {
                     field: "workload roles",
                 });
             }
-            validate_workload(workload, self.passed)?;
+            validate_workload(workload, self.passed, &self.failure_reasons)?;
         }
         if self.passed
             && ["seams", "bevy-install"].iter().any(|stage| {
@@ -631,6 +649,19 @@ fn matches_required_counts(observed: &BTreeMap<String, u32>, required: &[(&str, 
             .all(|(name, count)| observed.get(*name) == Some(count))
 }
 
+fn matches_minimum_counts(observed: &BTreeMap<String, u32>, required: &[(&str, u32)]) -> bool {
+    observed.len() == required.len()
+        && required.iter().all(|(name, count)| {
+            observed
+                .get(*name)
+                .is_some_and(|observed| observed >= count)
+        })
+}
+
+fn has_failure_reason(failure_reasons: &[String], reason: &str) -> bool {
+    failure_reasons.iter().any(|value| value == reason)
+}
+
 fn required_forest_object_counts(
     forest_area_m2: u32,
     eligible_land_area_m2: u32,
@@ -668,8 +699,10 @@ fn required_forest_species_counts(forest_area_m2: u32) -> [(&'static str, u32); 
 
 fn required_tree_species_counts(tree_count: u32) -> [u32; 2] {
     [
-        tree_count * BIRCH_PERCENT / 100,
-        tree_count * PINE_PERCENT / 100,
+        u32::try_from(u64::from(tree_count) * u64::from(BIRCH_PERCENT) / 100)
+            .expect("tree species count fits u32"),
+        u32::try_from(u64::from(tree_count) * u64::from(PINE_PERCENT) / 100)
+            .expect("tree species count fits u32"),
     ]
 }
 
@@ -784,13 +817,13 @@ fn validate_worst_target(
 fn validate_workload(
     value: &MutationWorkloadEvidence,
     passed: bool,
+    failure_reasons: &[String],
 ) -> Result<(), ReportValidationError> {
     let expected_request_count = match value.role {
         MutationWorkloadRole::InteractiveCarve | MutationWorkloadRole::CatastrophicCarve => 1,
         MutationWorkloadRole::ColonyVolume => 8,
     };
     if value.request_count != expected_request_count
-        || passed && value.committed_batches < value.request_count
         || value.first_committed_frame < value.submitted_frame
         || value.final_reconciled_frame < value.first_committed_frame
         || value.barrier_expected_items != value.barrier_renderer_ready_items
@@ -799,13 +832,17 @@ fn validate_workload(
             field: "workload reconciliation",
         });
     }
+    let unavailable_distributions =
+        !passed && has_failure_reason(failure_reasons, "workload distributions");
     for (name, distribution) in [
         ("admission_ms", value.admission_ms),
         ("first_commit_ms", value.first_commit_ms),
         ("primary_ready_ms", value.primary_ready_ms),
         ("reconciliation_ms", value.reconciliation_ms),
     ] {
-        validate_distribution(distribution, name)?;
+        if !(unavailable_distributions && distribution_unavailable(distribution)) {
+            validate_distribution(distribution, name)?;
+        }
     }
     for (stage, elapsed) in &value.stage_timings_ms {
         finite_nonnegative(*elapsed, "stage_timings_ms")?;
@@ -815,38 +852,63 @@ fn validate_workload(
             });
         }
     }
-    if value.stage_timings_ms.len() != REQUIRED_MUTATION_STAGES.len()
-        || value.stage_counts.len() != REQUIRED_MUTATION_STAGES.len()
-        || REQUIRED_MUTATION_STAGES.iter().any(|stage| {
-            !value.stage_timings_ms.contains_key(*stage) || !value.stage_counts.contains_key(*stage)
-        })
+    let unavailable_stages = !passed && has_failure_reason(failure_reasons, "mutation stage");
+    let empty_stage_evidence = value.stage_timings_ms.is_empty() && value.stage_counts.is_empty();
+    if !(unavailable_stages && empty_stage_evidence)
+        && (value.stage_timings_ms.len() != REQUIRED_MUTATION_STAGES.len()
+            || value.stage_counts.len() != REQUIRED_MUTATION_STAGES.len()
+            || REQUIRED_MUTATION_STAGES.iter().any(|stage| {
+                !value.stage_timings_ms.contains_key(*stage)
+                    || !value.stage_counts.contains_key(*stage)
+            }))
     {
         return Err(ReportValidationError::Missing {
             field: "mutation stage",
         });
     }
-    if NONEMPTY_MUTATION_STAGES
-        .iter()
-        .any(|stage| value.stage_counts[*stage] == 0)
+    if !(unavailable_stages && empty_stage_evidence)
+        && !(!passed && has_failure_reason(failure_reasons, "mutation stage count"))
+        && NONEMPTY_MUTATION_STAGES
+            .iter()
+            .any(|stage| value.stage_counts[*stage] == 0)
     {
         return Err(ReportValidationError::Missing {
             field: "mutation stage count",
         });
     }
+    let unavailable_measurement =
+        !passed && has_failure_reason(failure_reasons, "workload measurement");
     for (field, metric) in [
         ("changed_bricks_per_second", value.changed_bricks_per_second),
         ("maximum_runnable_wait_ms", value.maximum_runnable_wait_ms),
         ("maximum_frame_ms", value.maximum_frame_ms),
     ] {
-        finite_positive(metric, field)?;
+        if unavailable_measurement {
+            finite_nonnegative(metric, field)?;
+        } else {
+            finite_positive(metric, field)?;
+        }
     }
-    if value.changed_voxels == 0
-        || value.changed_bricks == 0
-        || value.committed_batches == 0
-        || value.barrier_expected_items == 0
+    if !unavailable_measurement
+        && (value.changed_voxels == 0
+            || value.changed_bricks == 0
+            || value.committed_batches == 0
+            || value.barrier_expected_items == 0)
     {
         return Err(ReportValidationError::Missing {
             field: "workload measurement",
+        });
+    }
+    if passed
+        && (value.committed_batches < value.request_count
+            || value.barrier_expected_items < value.committed_batches
+            || ["admission", "schedule", "reconciliation"]
+                .iter()
+                .any(|stage| value.stage_counts[*stage] < u64::from(value.request_count))
+            || value.stage_counts["commit"] < u64::from(value.committed_batches))
+    {
+        return Err(ReportValidationError::Inconsistent {
+            field: "workload trace",
         });
     }
     if passed
@@ -888,12 +950,14 @@ fn validate_workload(
                 field: "catastrophic Horizon evidence",
             });
         }
-        let dependency_ms = value.stage_timings_ms["dirty-discovery"]
-            + value.stage_timings_ms["dependency-eligibility"];
-        if passed && dependency_ms > 1.0 {
-            return Err(ReportValidationError::Limit {
-                field: "object dependency",
-            });
+        if passed {
+            let dependency_ms = value.stage_timings_ms["dirty-discovery"]
+                + value.stage_timings_ms["dependency-eligibility"];
+            if dependency_ms > 1.0 {
+                return Err(ReportValidationError::Limit {
+                    field: "object dependency",
+                });
+            }
         }
     }
     Ok(())
@@ -1031,6 +1095,12 @@ fn validate_distribution(
         return Err(ReportValidationError::Missing { field });
     }
     Ok(())
+}
+
+fn distribution_unavailable(value: Distribution) -> bool {
+    [value.min, value.p50, value.p95, value.p99, value.max]
+        .into_iter()
+        .all(|metric| metric == 0.0)
 }
 
 fn validate_named_counts<T>(values: &BTreeMap<String, T>) -> Result<(), ReportValidationError> {
