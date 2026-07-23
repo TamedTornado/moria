@@ -471,6 +471,45 @@ fn passing_forest_report_requires_worst_target_to_match_index_candidate_maximum(
 }
 
 #[test]
+fn passing_forest_report_requires_a_consistent_maximal_stress_target() {
+    let mut invalid = report();
+    invalid.worst_edit_target.exact_dependency_ids = 2;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "worst edit target"
+        })
+    ));
+
+    let mut invalid = report();
+    invalid.object_index.max_edit_affected_objects = 2;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "worst edit target"
+        })
+    ));
+
+    let mut invalid = report();
+    invalid.object_index.max_dependency_bricks = 2;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "worst edit target"
+        })
+    ));
+
+    let mut invalid = report();
+    invalid.worst_edit_target.tie_break_rank = 1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "worst edit target"
+        })
+    ));
+}
+
+#[test]
 fn passing_colony_workload_requires_a_committed_batch_for_each_request() {
     let mut invalid = mutation_report();
     invalid.workloads[1].committed_batches = 1;

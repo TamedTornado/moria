@@ -3,11 +3,12 @@ use std::collections::BTreeMap;
 use moria_bench::capture::schema::{
     ActiveBand, ActiveCounts, AssetEvidence, BaselineStatus, BenchmarkReport, CoverageEvidence,
     FrameRateMetrics, GraphicsMemoryEstimate, GraphicsMemoryEvidence, MutationLatencyMetrics,
-    QueueDepths, ResidentGraphicsMeasurement, RoundTripEvidence, SaveEvidence, ScenarioName,
-    StreamingEvidence,
+    MutationWorkloadLatency, QueueDepths, ResidentGraphicsMeasurement, RoundTripEvidence,
+    SaveEvidence, ScenarioName, StreamingEvidence,
 };
 use moria_world::telemetry::{
-    BuildProfile, Distribution, MachineProfile, ObjectIndexEvidence, ReportValidationError,
+    BuildProfile, Distribution, MachineProfile, MutationWorkloadRole, ObjectIndexEvidence,
+    ReportValidationError,
 };
 use moria_world::{WorldBounds, WorldIdentity, WorldPointQ8};
 
@@ -193,11 +194,26 @@ fn mutation_report() -> BenchmarkReport {
     };
     report.scenario = ScenarioName::CarveStorm;
     report.mutation_latency = Some(MutationLatencyMetrics {
-        sample_count: 3,
+        sample_count: 10,
         admission_ms: latency,
         accepted_to_first_commit_ms: latency,
         commit_to_primary_ready_ms: latency,
         accepted_to_reconciliation_ms: latency,
+        workloads: [
+            (MutationWorkloadRole::InteractiveCarve, 1),
+            (MutationWorkloadRole::ColonyVolume, 8),
+            (MutationWorkloadRole::CatastrophicCarve, 1),
+        ]
+        .into_iter()
+        .map(|(role, request_count)| MutationWorkloadLatency {
+            role,
+            request_count,
+            admission_ms: latency,
+            accepted_to_first_commit_ms: latency,
+            commit_to_primary_ready_ms: latency,
+            accepted_to_reconciliation_ms: latency,
+        })
+        .collect(),
         changed_bricks_per_second: 64.0,
         maximum_runnable_wait_ms: 10.0,
         representative_max_frame_ms: 10.0,
@@ -478,6 +494,7 @@ fn scenario_complete_and_null_rules_reject_impossible_evidence_states() {
             .filter(|reason| *reason != missing_reason)
             .cloned()
             .collect();
+        early_failure.failure_reasons.sort();
         assert!(matches!(
             early_failure.validate(),
             Err(ReportValidationError::Missing { field }) if field == missing_reason
@@ -485,6 +502,7 @@ fn scenario_complete_and_null_rules_reject_impossible_evidence_states() {
     }
 
     early_failure.failure_reasons = save_count_reasons.to_vec();
+    early_failure.failure_reasons.sort();
     assert!(early_failure.validate().is_ok());
 
     let mut mutation_failure = mutation_report();
@@ -506,6 +524,8 @@ fn scenario_complete_and_null_rules_reject_impossible_evidence_states() {
     ));
 
     mutation_failure.failure_reasons = save_count_reasons.to_vec();
+    mutation_failure.failure_reasons.push("round_trip".into());
+    mutation_failure.failure_reasons.sort();
     assert!(mutation_failure.validate().is_ok());
 }
 
@@ -576,6 +596,117 @@ fn passed_flag_cannot_hide_failed_acceptance_metrics() {
         invalid.validate(),
         Err(ReportValidationError::Limit {
             field: "mutation latency"
+        })
+    ));
+}
+
+#[test]
+fn mutation_latency_requires_all_ten_requests_and_role_specific_limits() {
+    let mut invalid = mutation_report();
+    let latency = invalid.mutation_latency.as_mut().unwrap();
+    latency.sample_count = 1;
+    latency.accepted_to_first_commit_ms.max = 200.0;
+    latency.accepted_to_reconciliation_ms.max = 20_000.0;
+
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Missing {
+            field: "mutation samples"
+        })
+    ));
+}
+
+#[test]
+fn mutation_latency_enforces_exact_role_latency_boundaries() {
+    let mut boundary = mutation_report();
+    let interactive = &mut boundary.mutation_latency.as_mut().unwrap().workloads[0];
+    interactive.accepted_to_first_commit_ms.max = 100.0;
+    interactive.accepted_to_reconciliation_ms.max = 1_000.0;
+    assert!(boundary.validate().is_ok());
+
+    let mut invalid = boundary;
+    invalid.mutation_latency.as_mut().unwrap().workloads[0]
+        .accepted_to_first_commit_ms
+        .max = 100.1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Limit {
+            field: "mutation workload latency"
+        })
+    ));
+
+    let mut invalid = mutation_report();
+    invalid.mutation_latency.as_mut().unwrap().workloads[2]
+        .accepted_to_first_commit_ms
+        .max = 100.1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Limit {
+            field: "mutation workload latency"
+        })
+    ));
+
+    let mut invalid = mutation_report();
+    invalid.mutation_latency.as_mut().unwrap().workloads[0]
+        .accepted_to_reconciliation_ms
+        .max = 1_000.1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Limit {
+            field: "mutation workload latency"
+        })
+    ));
+}
+
+#[test]
+fn mutation_workloads_use_the_cli_scenario_spelling() {
+    assert_eq!(
+        serde_json::to_string(&ScenarioName::CarveStorm).unwrap(),
+        "\"mutation-workloads\""
+    );
+}
+
+#[test]
+fn failed_mutation_save_cannot_claim_incomplete_or_unavailable_final_evidence() {
+    let mut incomplete_completed_save = mutation_report();
+    incomplete_completed_save.passed = false;
+    incomplete_completed_save.failure_reasons = vec![
+        "save.size_bytes".into(),
+        "save.changed_voxels".into(),
+        "save.changed_bricks".into(),
+        "round_trip".into(),
+    ];
+    incomplete_completed_save.failure_reasons.sort();
+    incomplete_completed_save.save.size_bytes = None;
+    incomplete_completed_save.save.changed_voxels = None;
+    incomplete_completed_save.save.changed_bricks = None;
+    incomplete_completed_save.save.round_trip = None;
+    assert!(matches!(
+        incomplete_completed_save.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "mutation save state"
+        })
+    ));
+
+    let mut incomplete_save = mutation_report();
+    incomplete_save.passed = false;
+    incomplete_save.failure_reasons = vec!["runtime-failure".into()];
+    incomplete_save.save.completed = false;
+    assert!(matches!(
+        incomplete_save.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "mutation save state"
+        })
+    ));
+
+    let mut unavailable_round_trip = mutation_report();
+    unavailable_round_trip.passed = false;
+    unavailable_round_trip.failure_reasons = vec!["runtime-failure".into()];
+    unavailable_round_trip.save.round_trip = None;
+    assert!(matches!(
+        unavailable_round_trip.validate(),
+        Err(ReportValidationError::Missing {
+            field: "round_trip"
         })
     ));
 }

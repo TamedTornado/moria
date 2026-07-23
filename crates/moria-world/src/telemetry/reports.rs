@@ -806,7 +806,14 @@ fn validate_worst_target(
             field: "worst_edit_target",
         });
     }
-    if passed && target.broad_candidates != object_index.max_edit_candidates {
+    if target.exact_dependency_ids > target.broad_candidates
+        || (passed
+            && (target.broad_candidates != object_index.max_edit_candidates
+                || target.exact_dependency_ids
+                    != u16::from(object_index.max_edit_affected_objects)
+                || target.dependency_bricks != object_index.max_dependency_bricks
+                || target.tie_break_rank != 0))
+    {
         return Err(ReportValidationError::Inconsistent {
             field: "worst edit target",
         });

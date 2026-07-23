@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 
 use moria_world::config::PRODUCT_ONE_SEED;
 use moria_world::telemetry::{
-    BuildProfile, Distribution, MachineProfile, ObjectIndexEvidence, ReportValidationError,
+    BuildProfile, Distribution, MachineProfile, MutationWorkloadRole, ObjectIndexEvidence,
+    ReportValidationError,
 };
 use moria_world::{WorldIdentity, WorldPointQ8};
 use serde::{Deserialize, Serialize};
@@ -37,6 +38,7 @@ const TOP_LEVEL_KEYS: [&str; 19] = [
 #[serde(rename_all = "kebab-case")]
 pub enum ScenarioName {
     Flythrough,
+    #[serde(rename = "mutation-workloads")]
     CarveStorm,
 }
 
@@ -153,9 +155,22 @@ pub struct MutationLatencyMetrics {
     pub accepted_to_first_commit_ms: Distribution,
     pub commit_to_primary_ready_ms: Distribution,
     pub accepted_to_reconciliation_ms: Distribution,
+    pub workloads: Vec<MutationWorkloadLatency>,
     pub changed_bricks_per_second: f64,
     pub maximum_runnable_wait_ms: f64,
     pub representative_max_frame_ms: f64,
+}
+
+/// Per-workload timing distributions retained alongside the pooled benchmark summary.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MutationWorkloadLatency {
+    pub role: MutationWorkloadRole,
+    pub request_count: u32,
+    pub admission_ms: Distribution,
+    pub accepted_to_first_commit_ms: Distribution,
+    pub commit_to_primary_ready_ms: Distribution,
+    pub accepted_to_reconciliation_ms: Distribution,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -466,8 +481,16 @@ fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidation
         validate_mutation_latency(value, report.passed)?;
     }
     let save = &report.save;
-    if save.completed && !save.attempted
-        || !save.completed && save.round_trip.is_some()
+    if save.completed
+        && (!save.attempted
+            || save.size_bytes.is_none()
+            || save.changed_voxels.is_none()
+            || save.changed_bricks.is_none())
+        || !save.completed
+            && (save.size_bytes.is_some()
+                || save.changed_voxels.is_some()
+                || save.changed_bricks.is_some()
+                || save.round_trip.is_some())
         || !save.attempted
             && (save.completed
                 || save.size_bytes.is_some()
@@ -492,6 +515,17 @@ fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidation
         });
     }
     validate_missing_save_counts(save, &report.failure_reasons)?;
+    if !report.passed
+        && save.round_trip.is_none()
+        && !report
+            .failure_reasons
+            .iter()
+            .any(|reason| reason == "round_trip")
+    {
+        return Err(ReportValidationError::Missing {
+            field: "round_trip",
+        });
+    }
     if let Some(round_trip) = save.round_trip
         && round_trip.passed
         && !(round_trip.delta_voxels_compared > 0
@@ -798,7 +832,7 @@ fn validate_mutation_latency(
     value: &MutationLatencyMetrics,
     passed: bool,
 ) -> Result<(), ReportValidationError> {
-    if value.sample_count == 0 {
+    if value.sample_count != 10 {
         return Err(ReportValidationError::Missing {
             field: "mutation samples",
         });
@@ -810,6 +844,53 @@ fn validate_mutation_latency(
         value.accepted_to_reconciliation_ms,
     ] {
         validate_distribution(distribution, "mutation distribution")?;
+    }
+    let expected_workloads = [
+        (MutationWorkloadRole::InteractiveCarve, 1),
+        (MutationWorkloadRole::ColonyVolume, 8),
+        (MutationWorkloadRole::CatastrophicCarve, 1),
+    ];
+    if value.workloads.len() != expected_workloads.len()
+        || value.workloads.iter().zip(expected_workloads).any(
+            |(workload, (role, request_count))| {
+                workload.role != role || workload.request_count != request_count
+            },
+        )
+    {
+        return Err(ReportValidationError::Inconsistent {
+            field: "mutation workload samples",
+        });
+    }
+    for workload in &value.workloads {
+        for distribution in [
+            workload.admission_ms,
+            workload.accepted_to_first_commit_ms,
+            workload.commit_to_primary_ready_ms,
+            workload.accepted_to_reconciliation_ms,
+        ] {
+            validate_distribution(distribution, "mutation workload distribution")?;
+        }
+        if passed
+            && (workload.admission_ms.max > 2.0
+                || workload.accepted_to_first_commit_ms.max
+                    > match workload.role {
+                        MutationWorkloadRole::InteractiveCarve
+                        | MutationWorkloadRole::CatastrophicCarve => 100.0,
+                        MutationWorkloadRole::ColonyVolume => 250.0,
+                    }
+                || workload.commit_to_primary_ready_ms.p95 > 250.0
+                || workload.commit_to_primary_ready_ms.max > 500.0
+                || workload.accepted_to_reconciliation_ms.max
+                    > match workload.role {
+                        MutationWorkloadRole::InteractiveCarve => 1_000.0,
+                        MutationWorkloadRole::ColonyVolume
+                        | MutationWorkloadRole::CatastrophicCarve => 30_000.0,
+                    })
+        {
+            return Err(ReportValidationError::Limit {
+                field: "mutation workload latency",
+            });
+        }
     }
     for (name, metric) in [
         ("changed_bricks_per_second", value.changed_bricks_per_second),
