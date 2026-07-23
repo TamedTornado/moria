@@ -33,6 +33,22 @@ fn columns_are_ordered_cover_the_full_vertical_bounds_and_have_bounded_runs() {
 }
 
 #[test]
+fn soil_runs_use_one_meter_of_topsoil_and_three_meters_of_subsoil() {
+    let column = evaluate_column(&identity(), ColumnCoord { x: 17, z: -23 });
+    let run_depth_voxels = |material| {
+        column
+            .runs
+            .iter()
+            .filter(|run| run.material == material)
+            .map(|run| i32::from(run.y_max_voxel_exclusive - run.y_min_voxel))
+            .sum::<i32>()
+    };
+
+    assert_eq!(run_depth_voxels(TOPSOIL), 4);
+    assert_eq!(run_depth_voxels(SUBSOIL), 12);
+}
+
+#[test]
 fn evaluation_is_independent_of_call_order() {
     let identity = identity();
     let coordinates = [

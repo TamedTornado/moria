@@ -10,10 +10,10 @@ pub const MAX_RAY_DISTANCE_Q8: u32 = 16_384;
 pub const MAX_RAY_VOXEL_VISITS: u16 = 448;
 
 const Q16_ONE: i64 = 65_536;
-const NORMALIZED_Q16_SQUARED: i64 = Q16_ONE * Q16_ONE;
+const NORMALIZED_Q16_SQUARED: i128 = Q16_ONE as i128 * Q16_ONE as i128;
 // Rounding each of the three components to Q16 can move the squared length by
 // roughly three Q16 units.  Keep the acceptance window integral and symmetric.
-const NORMALIZED_Q16_TOLERANCE: i64 = 3 * Q16_ONE;
+const NORMALIZED_Q16_TOLERANCE: i128 = 3 * Q16_ONE as i128;
 
 /// A normalized Q16 direction ray beginning at a Q8 world position.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -303,8 +303,8 @@ fn preflight_voxel_visits(
 }
 
 fn is_normalized_q16(direction: [i32; 3]) -> bool {
-    let length_squared = direction.into_iter().fold(0_i64, |sum, component| {
-        sum + i64::from(component) * i64::from(component)
+    let length_squared = direction.into_iter().fold(0_i128, |sum, component| {
+        sum + i128::from(component) * i128::from(component)
     });
     (length_squared - NORMALIZED_Q16_SQUARED).abs() <= NORMALIZED_Q16_TOLERANCE
 }

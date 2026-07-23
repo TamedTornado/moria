@@ -1,7 +1,8 @@
 use moria_world::{
-    AabbQ8, CuratedManifest, FeatureInstance, FeatureKind, ManifestError, ObjectId, ObjectKind,
-    ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi, SparseVoxelStamp,
-    StampRun, VoxelObjectShape, WaterBodyDef, WaterKind, WorldBounds, WorldIdentity, WorldPointQ8,
+    AabbQ8, CuratedManifest, CuratedRoute, FeatureInstance, FeatureKind, ManifestError, ObjectId,
+    ObjectKind, ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi,
+    SparseVoxelStamp, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind, WorldBounds,
+    WorldIdentity, WorldPointQ8,
 };
 
 fn bounds() -> WorldBounds {
@@ -78,11 +79,35 @@ fn manifest() -> CuratedManifest {
             stair_bottom: WorldPointQ8::new(0, 0, 0),
             stair_top: WorldPointQ8::new(0, 256, 0),
         },
-        route: vec![RouteWaypoint {
+        route: CuratedRoute::from([RouteWaypoint {
             order: 0,
             point: WorldPointQ8::new(0, 0, 0),
             tags: vec![RouteTag::Meadow, RouteTag::SignatureCarveHillside],
-        }],
+        }]),
+    }
+}
+
+fn stamp() -> SparseVoxelStamp {
+    SparseVoxelStamp {
+        key: "moria.stamps.ruin_p1".into(),
+        size_voxels: [2, 1, 1],
+        pivot_voxel: [0, 0, 0],
+        palette: vec![moria_world::AIR, moria_world::CUT_STONE],
+        runs: vec![
+            StampRun {
+                start_linear: 0,
+                len: 1,
+                palette_index: 0,
+                density: 0,
+            },
+            StampRun {
+                start_linear: 1,
+                len: 1,
+                palette_index: 1,
+                density: u8::MAX,
+            },
+        ],
+        tags: Default::default(),
     }
 }
 
@@ -139,30 +164,46 @@ fn manifest_validation_rejects_duplicate_route_tags_and_invalid_ruin_identity() 
 
 #[test]
 fn sparse_stamp_validation_enforces_canonical_non_overlapping_runs() {
-    let stamp = SparseVoxelStamp {
-        key: "moria.stamps.ruin_p1".into(),
-        size_voxels: [2, 1, 1],
-        pivot_voxel: [0, 0, 0],
-        palette: vec![moria_world::AIR, moria_world::CUT_STONE],
-        runs: vec![
-            StampRun {
-                start_linear: 0,
-                len: 1,
-                palette_index: 1,
-                density: 255,
-            },
-            StampRun {
-                start_linear: 0,
-                len: 1,
-                palette_index: 0,
-                density: 0,
-            },
-        ],
-        tags: Default::default(),
-    };
+    let mut stamp = stamp();
+    stamp.runs[1].start_linear = 0;
 
     assert_eq!(
         stamp.validate(),
         Err(ManifestError::StampRunsNotStrictlyAscending)
+    );
+}
+
+#[test]
+fn sparse_stamp_validation_rejects_noncanonical_material_truth() {
+    let mut unsupported_material = stamp();
+    unsupported_material.palette[1] = moria_world::GRANITE;
+    assert_eq!(
+        unsupported_material.validate(),
+        Err(ManifestError::StampPaletteContainsUnsupportedMaterial)
+    );
+
+    let mut invalid_air = stamp();
+    invalid_air.runs[0].density = 1;
+    assert_eq!(
+        invalid_air.validate(),
+        Err(ManifestError::StampRunDensityDoesNotMatchMaterial)
+    );
+
+    let mut invalid_cut_stone = stamp();
+    invalid_cut_stone.runs[1].density = u8::MAX - 1;
+    assert_eq!(
+        invalid_cut_stone.validate(),
+        Err(ManifestError::StampRunDensityDoesNotMatchMaterial)
+    );
+}
+
+#[test]
+fn sparse_stamp_validation_rejects_unaddressable_volume_without_overflowing() {
+    let mut unaddressable = stamp();
+    unaddressable.size_voxels = [u16::MAX; 3];
+
+    assert_eq!(
+        unaddressable.validate(),
+        Err(ManifestError::StampVolumeExceedsAddressSpace)
     );
 }

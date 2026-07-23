@@ -52,8 +52,10 @@ const MEANDER_SCALE_Q8: i32 = 72 * Q8_UNITS_PER_METER;
 const RELIEF_Q8: i32 = 34 * Q8_UNITS_PER_METER;
 /// Product One's configured one metre topsoil depth in Q8 units.
 const TOPSOIL_DEPTH_Q8: i32 = Q8_UNITS_PER_METER;
-/// Product One's configured three metre total soil depth in Q8 units.
+/// Product One's configured three metre subsoil depth in Q8 units.
 const SUBSOIL_DEPTH_Q8: i32 = 3 * Q8_UNITS_PER_METER;
+/// The complete soil profile: topsoil followed by subsoil.
+const SOIL_DEPTH_Q8: i32 = TOPSOIL_DEPTH_Q8 + SUBSOIL_DEPTH_Q8;
 const Q16_ONE: i64 = 65_536;
 
 /// Evaluates one full vertical column without retaining world state.
@@ -119,7 +121,7 @@ pub fn classify_brick(identity: &WorldIdentity, brick: BrickCoord) -> Procedural
         return ProceduralClass::Uniform(Voxel::new(AIR, 0, 0, 0));
     }
     let max_y_q8 = (min_y + BRICK_EDGE_VOXELS) * VOXEL_EDGE_Q8;
-    if max_y_q8 <= TYPICAL_SURFACE_Q8 - RELIEF_Q8 - SUBSOIL_DEPTH_Q8 {
+    if max_y_q8 <= TYPICAL_SURFACE_Q8 - RELIEF_Q8 - SOIL_DEPTH_Q8 {
         return ProceduralClass::Uniform(Voxel::new(GRANITE, u8::MAX, 0, 0));
     }
     let _ = identity;
@@ -148,7 +150,7 @@ fn terrain_voxel(surface_y_q8: i32, y: i32) -> Voxel {
     let depth_q8 = surface_y_q8 - voxel_top_q8;
     let material = if depth_q8 < TOPSOIL_DEPTH_Q8 {
         TOPSOIL
-    } else if depth_q8 < SUBSOIL_DEPTH_Q8 {
+    } else if depth_q8 < SOIL_DEPTH_Q8 {
         SUBSOIL
     } else {
         GRANITE

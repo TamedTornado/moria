@@ -34,3 +34,34 @@ fn facade_validation_returns_a_deterministic_typed_report() {
 
     assert_eq!(first.unwrap(), second.unwrap());
 }
+
+#[test]
+fn facade_derivation_enforces_the_supplied_region_index_limits() {
+    let (mut config, stamp) = inputs();
+    config.objects.max_retained_index_bytes = 1;
+
+    assert!(matches!(
+        derive_manifest(config.seed, &config, &stamp),
+        Err(CurationError::Manifest(message))
+            if message.contains("ObjectIndexRetainedBytesExceeded")
+                && message.contains("maximum: 1")
+    ));
+}
+
+#[test]
+fn facade_validation_enforces_the_supplied_region_index_limits() {
+    let (mut config, stamp) = inputs();
+    let manifest = derive_manifest(config.seed, &config, &stamp).unwrap();
+    config.objects.max_retained_index_bytes = 1;
+
+    let result = validate_manifest(&config, &manifest);
+    assert!(
+        matches!(
+            &result,
+            Err(CurationError::Manifest(message))
+                if message.contains("ObjectIndexRetainedBytesExceeded")
+                    && message.contains("maximum: 1")
+        ),
+        "{result:?}"
+    );
+}

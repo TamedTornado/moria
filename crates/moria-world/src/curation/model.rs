@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, error::Error, fmt};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{AabbQ8, MaterialId, VoxelCoord, WorldPointQ8};
+use crate::{AIR, AabbQ8, CUT_STONE, MaterialId, VoxelCoord, WorldPointQ8};
 
 pub const MAX_FEATURE_INSTANCES: usize = 16;
 pub const MAX_ROUTE_WAYPOINTS: usize = 64;
@@ -145,6 +145,11 @@ pub struct RouteWaypoint {
     pub tags: Vec<RouteTag>,
 }
 
+/// The ordered, canonically tagged traversal authored in a curated manifest.
+///
+/// This is distinct from the read-only [`crate::TraversalRoute`] snapshot API.
+pub type CuratedRoute = Vec<RouteWaypoint>;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StampRun {
@@ -175,7 +180,7 @@ pub struct CuratedManifest {
     pub water_bodies: Vec<WaterBodyDef>,
     pub objects: Vec<ObjectPlacement>,
     pub ruin: RuinPoi,
-    pub route: Vec<RouteWaypoint>,
+    pub route: CuratedRoute,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -203,9 +208,12 @@ pub enum ManifestError {
     ObjectPlacementMayNotUseSparseStamp,
     StampHasEmptyDimension,
     StampPivotOutOfBounds,
+    StampVolumeExceedsAddressSpace,
     StampPaletteIsEmpty,
+    StampPaletteContainsUnsupportedMaterial,
     StampRunHasZeroLength,
     StampRunPaletteIndexOutOfBounds,
+    StampRunDensityDoesNotMatchMaterial,
     StampRunExceedsVolume,
     StampRunsNotStrictlyAscending,
     StampTagOutOfBounds {
@@ -341,17 +349,25 @@ impl SparseVoxelStamp {
             .pivot_voxel
             .iter()
             .zip(self.size_voxels)
-            .any(|(&pivot, edge)| pivot < 0 || pivot >= edge as i16)
+            .any(|(&pivot, edge)| pivot < 0 || i32::from(pivot) >= i32::from(edge))
         {
             return Err(ManifestError::StampPivotOutOfBounds);
         }
         if self.palette.is_empty() {
             return Err(ManifestError::StampPaletteIsEmpty);
         }
+        if !self
+            .palette
+            .iter()
+            .all(|material| matches!(*material, AIR | CUT_STONE))
+        {
+            return Err(ManifestError::StampPaletteContainsUnsupportedMaterial);
+        }
         let volume = self
             .size_voxels
             .iter()
-            .fold(1_u32, |product, edge| product * u32::from(*edge));
+            .try_fold(1_u32, |product, edge| product.checked_mul(u32::from(*edge)))
+            .ok_or(ManifestError::StampVolumeExceedsAddressSpace)?;
         let mut previous_end = 0;
         for run in &self.runs {
             if run.len == 0 {
@@ -360,8 +376,16 @@ impl SparseVoxelStamp {
             if usize::from(run.palette_index) >= self.palette.len() {
                 return Err(ManifestError::StampRunPaletteIndexOutOfBounds);
             }
-            let end = run.start_linear.saturating_add(u32::from(run.len));
-            if end > volume || end < run.start_linear {
+            let material = self.palette[usize::from(run.palette_index)];
+            if (material == AIR && run.density != 0)
+                || (material == CUT_STONE && run.density != u8::MAX)
+            {
+                return Err(ManifestError::StampRunDensityDoesNotMatchMaterial);
+            }
+            let Some(end) = run.start_linear.checked_add(u32::from(run.len)) else {
+                return Err(ManifestError::StampRunExceedsVolume);
+            };
+            if end > volume {
                 return Err(ManifestError::StampRunExceedsVolume);
             }
             if run.start_linear < previous_end {

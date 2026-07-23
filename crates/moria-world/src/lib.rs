@@ -31,9 +31,9 @@ pub use config_validation::{
     validate_presentation_config, validate_region_config,
 };
 pub use curation::{
-    CuratedManifest, FeatureInstance, FeatureKind, ManifestError, ObjectId, ObjectKind,
-    ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi, SparseVoxelStamp,
-    SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
+    CuratedManifest, CuratedRoute, FeatureInstance, FeatureKind, ManifestError, ObjectId,
+    ObjectKind, ObjectPlacement, QuantizedTransform, RouteTag, RouteWaypoint, RuinPoi,
+    SparseVoxelStamp, SpeciesId, StampRun, VoxelObjectShape, WaterBodyDef, WaterKind,
 };
 #[cfg(feature = "curation")]
 pub use curation::{CurationError, CurationReport, derive_manifest, validate_manifest};
@@ -52,9 +52,10 @@ pub use mutation::{
 pub use objects::{
     DependencyGridCell, DependencyGridCellKey, HorizonCellKey, OBJECT_EXTRACTION_STENCIL,
     ObjectIndexConfig, ObjectIndexRecord, ObjectSpatialIndex, SampleGridCell, SampleGridCellKey,
-    VoxelOffset, build_object_index, dependency_contains, dependency_ids_at, horizon_tree_ids,
-    placement_ids_in, raw_shape_bounds, raw_shape_contains, sample_object_ids_at,
-    sample_object_shape, sample_sparse_stamp, validate_object_shape_disjointness,
+    VoxelOffset, build_object_index, dependency_contains, dependency_ids_at,
+    evaluate_base_voxel_with_objects, horizon_tree_ids, placement_ids_in, raw_shape_bounds,
+    raw_shape_contains, sample_object_ids_at, sample_object_shape, sample_sparse_stamp,
+    validate_object_shape_disjointness,
 };
 pub use query::{
     ActiveBand, CapsuleQ8, DiagnosticBrick, DiagnosticCell, DiagnosticDirtyFlags, DiagnosticFocus,
@@ -76,7 +77,7 @@ pub use streaming::{FocusPurpose, FocusSource, RemoveFocusSource, SetFocusSource
 pub use telemetry::{
     ActiveCounts, EditObservation, GraphicsMemoryEstimate, QueueDepths, WorldTelemetryRead,
 };
-pub use terrain::{SolidPresentationOwner, VoxelSource, solid_presentation_owner};
+pub use terrain::{BaseVoxel, SolidPresentationOwner, VoxelSource, solid_presentation_owner};
 
 /// Installs the reusable world feature set.
 ///
@@ -95,6 +96,10 @@ impl Plugin for MoriaWorldPlugin {
             .add_message::<EditRejected>()
             .add_systems(Update, streaming::apply_focus_messages)
             .add_systems(PostUpdate, telemetry::advance_frame_index);
+
+        if app.world().contains_resource::<bevy::asset::AssetServer>() {
+            app.add_plugins(presentation::BasisKtx2Plugin);
+        }
     }
 }
 
