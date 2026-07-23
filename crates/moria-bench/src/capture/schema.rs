@@ -538,11 +538,7 @@ fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidation
             || save.size_bytes.is_none()
             || save.changed_voxels.is_none()
             || save.changed_bricks.is_none())
-        || !save.completed
-            && (save.size_bytes.is_some()
-                || save.changed_voxels.is_some()
-                || save.changed_bricks.is_some()
-                || save.round_trip.is_some())
+        || !save.completed && (save.size_bytes.is_some() || save.round_trip.is_some())
         || !save.attempted
             && (save.completed
                 || save.size_bytes.is_some()

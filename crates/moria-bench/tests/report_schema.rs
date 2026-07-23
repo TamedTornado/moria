@@ -818,3 +818,15 @@ fn failed_mutation_save_cannot_claim_incomplete_or_unavailable_final_evidence() 
         })
     ));
 }
+
+#[test]
+fn failed_mutation_save_preserves_completed_workload_counts() {
+    let mut failed_save = mutation_report();
+    failed_save.passed = false;
+    failed_save.failure_reasons = vec!["round_trip".into(), "save.size_bytes".into()];
+    failed_save.save.completed = false;
+    failed_save.save.size_bytes = None;
+    failed_save.save.round_trip = None;
+
+    assert!(failed_save.validate().is_ok());
+}
