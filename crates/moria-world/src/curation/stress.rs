@@ -2,12 +2,15 @@ use std::collections::BTreeSet;
 
 use serde::Serialize;
 
-use crate::{AabbQ8, ObjectKind, ObjectSpatialIndex, VoxelCoord, WorldPointQ8};
+use crate::{
+    AabbQ8, BiomeId, ColumnCoord, ObjectKind, ObjectSpatialIndex, VoxelCoord, WorldIdentity,
+    WorldPointQ8, biome_at, evaluate_column,
+};
 
 const RADIUS_Q8: i32 = 3 * 256;
-const RADIUS_VOXELS: i32 = RADIUS_Q8 / 64;
 const CELL_Q8: i32 = 32 * 256;
 const BRICK_Q8: i32 = 16 * 64;
+const SURFACE_CELL_EDGE_VOXELS: i32 = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct CurationStressTarget {
@@ -20,23 +23,10 @@ pub struct CurationStressTarget {
 
 pub(super) fn select_radius_three_stress_target(
     index: &ObjectSpatialIndex<'_>,
+    identity: &WorldIdentity,
 ) -> Option<CurationStressTarget> {
-    let mut centers = index
-        .placements()
-        .iter()
-        .filter(|placement| matches!(placement.kind, ObjectKind::TreeA | ObjectKind::TreeB))
-        .map(|placement| {
-            VoxelCoord::new(
-                placement.anchor.x - RADIUS_VOXELS,
-                placement.anchor.y,
-                placement.anchor.z - RADIUS_VOXELS,
-            )
-        })
-        .collect::<Vec<_>>();
-    centers.sort_unstable();
-    centers.dedup();
-    centers
-        .into_iter()
+    surface_centers(identity)
+        .filter(|&center| eligible_surface_center(index, identity, center))
         .filter_map(|center| score(index, center))
         .max_by_key(|target| {
             (
@@ -49,9 +39,83 @@ pub(super) fn select_radius_three_stress_target(
         })
 }
 
+/// Enumerates every 4 m surface cell in canonical coordinate order.  The
+/// terrain/dressing pipeline owns anchors at this resolution, so a stress
+/// target must be one of these actual surface cells rather than an object
+/// anchor chosen as a proxy.
+fn surface_centers(identity: &WorldIdentity) -> impl Iterator<Item = VoxelCoord> + '_ {
+    let bounds = identity.bounds;
+    let min_x = bounds.min().x.div_euclid(64);
+    let max_x = (bounds.max_exclusive().x - 1).div_euclid(64);
+    let min_z = bounds.min().z.div_euclid(64);
+    let max_z = (bounds.max_exclusive().z - 1).div_euclid(64);
+    (min_x..=max_x)
+        .step_by(SURFACE_CELL_EDGE_VOXELS as usize)
+        .flat_map(move |x| {
+            (min_z..=max_z)
+                .step_by(SURFACE_CELL_EDGE_VOXELS as usize)
+                .map(move |z| {
+                    let y = evaluate_column(identity, ColumnCoord { x, z })
+                        .surface_y_q8
+                        .div_euclid(64);
+                    VoxelCoord::new(x, y, z)
+                })
+        })
+}
+
+fn eligible_surface_center(
+    index: &ObjectSpatialIndex<'_>,
+    identity: &WorldIdentity,
+    center: VoxelCoord,
+) -> bool {
+    if biome_at(
+        identity,
+        ColumnCoord {
+            x: center.x,
+            z: center.z,
+        },
+    ) != BiomeId::Forest
+    {
+        return false;
+    }
+    let Some(bounds) = edit_bounds(center) else {
+        return false;
+    };
+    let exact = exact_members(index, bounds);
+    exact.iter().any(|&member| {
+        let placement = &index.placements()[member as usize];
+        placement.kind != ObjectKind::Ruin
+            && placement.anchor.y == center.y
+            && anchor_in_bounds(placement.anchor, bounds)
+    })
+}
+
 fn score(index: &ObjectSpatialIndex<'_>, center: VoxelCoord) -> Option<CurationStressTarget> {
+    let bounds = edit_bounds(center)?;
+    let keys = keys(bounds);
+    let broad = index
+        .dependency_cells()
+        .iter()
+        .filter(|cell| keys.contains(&cell.key))
+        .flat_map(|cell| cell.members.iter().copied())
+        .collect::<BTreeSet<_>>();
+    let exact = exact_members(index, bounds);
+    Some(CurationStressTarget {
+        center,
+        broad_dependency_candidates: u16::try_from(broad.len()).unwrap_or(u16::MAX),
+        exact_dependency_ids: u16::try_from(exact.len()).unwrap_or(u16::MAX),
+        dependency_bricks: exact
+            .iter()
+            .copied()
+            .map(|member| bricks(index.records()[member as usize].dependency_bounds))
+            .fold(0, u16::saturating_add),
+        changed_bricks: bricks(bounds),
+    })
+}
+
+fn edit_bounds(center: VoxelCoord) -> Option<AabbQ8> {
     let point = WorldPointQ8::new(center.x * 64, center.y * 64, center.z * 64);
-    let bounds = AabbQ8::new(
+    AabbQ8::new(
         WorldPointQ8::new(
             point.x - RADIUS_Q8,
             point.y - RADIUS_Q8,
@@ -63,30 +127,27 @@ fn score(index: &ObjectSpatialIndex<'_>, center: VoxelCoord) -> Option<CurationS
             point.z + RADIUS_Q8 + 1,
         ),
     )
-    .ok()?;
-    let keys = keys(bounds);
-    let broad = index
+    .ok()
+}
+
+fn exact_members(index: &ObjectSpatialIndex<'_>, bounds: AabbQ8) -> Vec<u32> {
+    index
         .dependency_cells()
         .iter()
-        .filter(|cell| keys.contains(&cell.key))
+        .filter(|cell| keys(bounds).contains(&cell.key))
         .flat_map(|cell| cell.members.iter().copied())
-        .collect::<BTreeSet<_>>();
-    let exact = broad
-        .iter()
-        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .filter(|&member| overlap(index.records()[member as usize].dependency_bounds, bounds))
-        .collect::<Vec<_>>();
-    Some(CurationStressTarget {
-        center,
-        broad_dependency_candidates: u16::try_from(broad.len()).unwrap_or(u16::MAX),
-        exact_dependency_ids: u16::try_from(exact.len()).unwrap_or(u16::MAX),
-        dependency_bricks: exact
-            .into_iter()
-            .map(|member| bricks(index.records()[member as usize].dependency_bounds))
-            .max()
-            .unwrap_or(0),
-        changed_bricks: bricks(bounds),
-    })
+        .collect()
+}
+
+fn anchor_in_bounds(anchor: VoxelCoord, bounds: AabbQ8) -> bool {
+    bounds.contains(WorldPointQ8::new(
+        anchor.x * 64,
+        anchor.y * 64,
+        anchor.z * 64,
+    ))
 }
 
 fn keys(bounds: AabbQ8) -> BTreeSet<crate::DependencyGridCellKey> {
@@ -123,61 +184,62 @@ fn bricks(bounds: AabbQ8) -> u16 {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ObjectId, ObjectIndexConfig, ObjectPlacement, QuantizedTransform, SpeciesId,
-        VoxelObjectShape, build_object_index,
+        ObjectIndexConfig, RegionConfig, WorldBounds, WorldIdentity, WorldPointQ8,
+        build_object_index, derive_manifest,
     };
 
-    use super::select_radius_three_stress_target;
+    use super::{
+        eligible_surface_center, score, select_radius_three_stress_target, surface_centers,
+    };
 
     #[test]
-    fn score_ties_choose_the_lexicographically_smallest_surface_center() {
-        let tree = |id, x| ObjectPlacement {
-            id: ObjectId(id),
-            kind: crate::ObjectKind::TreeA,
-            transform_q: QuantizedTransform {
-                translation: crate::WorldPointQ8::new(x * 64, 0, 0),
-                yaw_quarter_turns: 0,
-                uniform_scale_q8: 256,
-            },
-            species: Some(SpeciesId(1)),
-            shape: VoxelObjectShape::Tree {
-                trunk_radius_q8: 64,
-                trunk_height_q8: 256,
-                canopy_radii_q8: [128; 3],
-            },
-            anchor: crate::VoxelCoord::new(x, 0, 0),
-        };
-        let placements = [tree(1, -400), tree(2, 400)];
-        let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
-        assert_eq!(
-            select_radius_three_stress_target(&index).unwrap().center,
-            crate::VoxelCoord::new(-412, 0, -12)
+    fn selects_the_maximum_from_the_complete_terrain_and_dressing_oracle() {
+        let config: RegionConfig = ron::de::from_bytes(include_bytes!(
+            "../../../../assets/config/product_one_region.ron"
+        ))
+        .unwrap();
+        let manifest = derive_manifest(
+            config.seed,
+            &config,
+            &ron::de::from_bytes(include_bytes!("../../../../assets/stamps/ruin_p1.ron")).unwrap(),
+        )
+        .unwrap();
+        let identity = WorldIdentity::new(
+            manifest.seed,
+            manifest.parameters_digest,
+            WorldBounds::new(
+                WorldPointQ8::new(
+                    i32::from(config.bounds.x_min_m) * 256,
+                    i32::from(config.bounds.y_min_m) * 256,
+                    i32::from(config.bounds.z_min_m) * 256,
+                ),
+                WorldPointQ8::new(
+                    i32::from(config.bounds.x_max_m) * 256,
+                    i32::from(config.bounds.y_max_m) * 256,
+                    i32::from(config.bounds.z_max_m) * 256,
+                ),
+            )
+            .unwrap(),
         );
-    }
+        let index = build_object_index(
+            &manifest.objects,
+            &ObjectIndexConfig::from_configs(&config.objects, 1_024),
+        )
+        .unwrap();
 
-    #[test]
-    fn considers_surface_centers_away_from_tree_anchors() {
-        let tree = |id, x| ObjectPlacement {
-            id: ObjectId(id),
-            kind: crate::ObjectKind::TreeA,
-            transform_q: QuantizedTransform {
-                translation: crate::WorldPointQ8::new(x * 64, 0, 0),
-                yaw_quarter_turns: 0,
-                uniform_scale_q8: 256,
-            },
-            species: Some(SpeciesId(1)),
-            shape: VoxelObjectShape::Tree {
-                trunk_radius_q8: 64,
-                trunk_height_q8: 256,
-                canopy_radii_q8: [128; 3],
-            },
-            anchor: crate::VoxelCoord::new(x, 0, 0),
-        };
-        let placements = [tree(1, 0), tree(2, 24)];
-        let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
+        let oracle = surface_centers(&identity)
+            .filter(|&center| eligible_surface_center(&index, &identity, center))
+            .filter_map(|center| score(&index, center))
+            .max_by_key(|target| {
+                (
+                    target.broad_dependency_candidates,
+                    target.exact_dependency_ids,
+                    target.dependency_bricks,
+                    target.changed_bricks,
+                    std::cmp::Reverse(target.center),
+                )
+            });
 
-        let target = select_radius_three_stress_target(&index).unwrap();
-        assert_ne!(target.center, placements[0].anchor);
-        assert_ne!(target.center, placements[1].anchor);
+        assert_eq!(select_radius_three_stress_target(&index, &identity), oracle);
     }
 }

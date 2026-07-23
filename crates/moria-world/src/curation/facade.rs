@@ -1,12 +1,12 @@
 //! Development-only pure manifest curation API.
 
-use std::{collections::BTreeMap, error::Error, fmt};
+use std::{collections::BTreeMap, error::Error, fmt, time::Instant};
 
 use serde::Serialize;
 
 use crate::{
-    CuratedManifest, ObjectIndexConfig, RegionConfig, SparseVoxelStamp, build_object_index,
-    validate_region_config,
+    CuratedManifest, ObjectIndexConfig, RegionConfig, SparseVoxelStamp, WorldBounds, WorldIdentity,
+    WorldPointQ8, build_object_index, validate_region_config,
 };
 
 use super::generate::{generate_manifest, validate_manifest_without_stamp};
@@ -46,6 +46,8 @@ impl Error for CurationError {}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CurationReport {
     pub placement_count: u32,
+    pub object_index_validation_us: u64,
+    pub object_index_build_us: u64,
     pub retained_index_bytes: u64,
     pub radius_three_target: CurationStressTarget,
     pub dependency_coordinate_allocation_bytes: u64,
@@ -104,6 +106,7 @@ pub fn validate_manifest(
     config: &RegionConfig,
     manifest: &CuratedManifest,
 ) -> Result<CurationReport, CurationError> {
+    let validation_started = Instant::now();
     validate_region_config(config)
         .map_err(|error| CurationError::InvalidRegionConfig(error.to_string()))?;
     if manifest.seed != config.seed {
@@ -114,14 +117,37 @@ pub fn validate_manifest(
     }
     validate_manifest_without_stamp(manifest, config)
         .map_err(|error| CurationError::Manifest(error.to_string()))?;
+    let index_build_started = Instant::now();
     let index = build_object_index(
         &manifest.objects,
         &ObjectIndexConfig::from_configs(&config.objects, 1_024),
     )
     .map_err(|error| CurationError::Manifest(error.to_string()))?;
-    let radius_three_target = select_radius_three_stress_target(&index).ok_or_else(|| {
-        CurationError::Manifest("manifest has no legal radius-3 m forest stress target".to_owned())
-    })?;
+    let object_index_build_us =
+        u64::try_from(index_build_started.elapsed().as_micros()).unwrap_or(u64::MAX);
+    let identity = WorldIdentity::new(
+        manifest.seed,
+        manifest.parameters_digest,
+        WorldBounds::new(
+            WorldPointQ8::new(
+                i32::from(config.bounds.x_min_m) * 256,
+                i32::from(config.bounds.y_min_m) * 256,
+                i32::from(config.bounds.z_min_m) * 256,
+            ),
+            WorldPointQ8::new(
+                i32::from(config.bounds.x_max_m) * 256,
+                i32::from(config.bounds.y_max_m) * 256,
+                i32::from(config.bounds.z_max_m) * 256,
+            ),
+        )
+        .expect("validated region bounds remain non-empty"),
+    );
+    let radius_three_target =
+        select_radius_three_stress_target(&index, &identity).ok_or_else(|| {
+            CurationError::Manifest(
+                "manifest has no legal radius-3 m forest stress target".to_owned(),
+            )
+        })?;
     if radius_three_target.broad_dependency_candidates
         > config.objects.max_edit_dependency_candidates
         || radius_three_target.exact_dependency_ids
@@ -135,6 +161,9 @@ pub fn validate_manifest(
     Ok(CurationReport {
         placement_count: u32::try_from(manifest.objects.len())
             .map_err(|_| CurationError::Manifest("placement count exceeds u32".to_owned()))?,
+        object_index_validation_us: u64::try_from(validation_started.elapsed().as_micros())
+            .unwrap_or(u64::MAX),
+        object_index_build_us,
         retained_index_bytes: index.retained_bytes(),
         radius_three_target,
         dependency_coordinate_allocation_bytes: index.dependency_coordinate_allocation_bytes(),

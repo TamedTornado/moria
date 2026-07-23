@@ -1,14 +1,13 @@
-use std::{
-    collections::BTreeMap, error::Error, fmt, fs, path::Path, process::Command, time::Instant,
-};
+use std::{collections::BTreeMap, error::Error, fmt, fs, path::Path, process::Command};
 
 use moria_world::telemetry::{
     BuildProfile, ForestFeasibilityReport, MachineProfile, ObjectIndexEvidence,
     ReportValidationError, WorstEditTargetEvidence,
 };
 use moria_world::{
-    CuratedManifest, CurationError, CurationReport, ObjectKind, RegionConfig, WorldBounds,
-    WorldIdentity, WorldPointQ8, derive_manifest_from_bytes, validate_manifest,
+    BiomeId, ColumnCoord, CuratedManifest, CurationError, CurationReport, ObjectKind, RegionConfig,
+    WorldBounds, WorldIdentity, WorldPointQ8, biome_at, derive_manifest_from_bytes,
+    validate_manifest,
 };
 use sha2::{Digest, Sha256};
 
@@ -84,26 +83,36 @@ fn run(
 }
 
 fn prove_forest(repository_root: &Path, output: &str) -> Result<(), CommandError> {
+    let output_path = repository_root.join(output);
+    let result = prove_forest_inner(repository_root, &output_path);
+    if let Err(error) = result {
+        write_failed_forest_artifact(&output_path, &error)?;
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn prove_forest_inner(repository_root: &Path, output: &Path) -> Result<(), CommandError> {
     let (config_bytes, stamp_bytes, config) = load_inputs(repository_root)?;
     let manifest =
         derive_manifest_from_bytes(&config_bytes, &stamp_bytes).map_err(CommandError::Curation)?;
     let canonical = canonical_manifest_ron(&manifest)?;
     let manifest_path = repository_root.join(CURATED_MANIFEST_PATH);
     check_manifest(&manifest_path, &canonical, &config)?;
-    let started = Instant::now();
     let curation = validate_manifest(&config, &manifest).map_err(CommandError::Curation)?;
-    let validation_ms = started.elapsed().as_secs_f64() * 1_000.0;
-    let output = repository_root.join(output);
-    let report = forest_report(
-        repository_root,
-        &config,
-        &manifest,
-        &curation,
-        validation_ms,
-    )?;
+    let report = forest_report(repository_root, &config, &manifest, &curation)?;
     report.validate().map_err(CommandError::Report)?;
     let document = report.to_canonical_json().map_err(CommandError::Report)?;
-    write(&output, format!("{document}\n"))
+    write(output, format!("{document}\n"))
+}
+
+fn write_failed_forest_artifact(output: &Path, error: &CommandError) -> Result<(), CommandError> {
+    let document = serde_json::json!({
+        "schema": "moria-product-one-forest-feasibility",
+        "passed": false,
+        "failure_reasons": [error.to_string()],
+    });
+    write(output, format!("{document}\n"))
 }
 
 fn forest_report(
@@ -111,11 +120,12 @@ fn forest_report(
     config: &RegionConfig,
     manifest: &CuratedManifest,
     curation: &CurationReport,
-    validation_ms: f64,
 ) -> Result<ForestFeasibilityReport, CommandError> {
     let mut object_counts = BTreeMap::new();
     let mut species_counts = BTreeMap::new();
     let mut canopy_range_bins = BTreeMap::new();
+    let mut canopy_min_q8 = None;
+    let mut canopy_max_q8 = None;
     for object in &manifest.objects {
         *object_counts
             .entry(object_kind_name(object.kind).to_owned())
@@ -130,6 +140,8 @@ fn forest_report(
         } = object.shape
         {
             let radius = canopy_radii_q8[0].max(canopy_radii_q8[2]);
+            canopy_min_q8 = Some(canopy_min_q8.map_or(radius, |minimum: u16| minimum.min(radius)));
+            canopy_max_q8 = Some(canopy_max_q8.map_or(radius, |maximum: u16| maximum.max(radius)));
             let bin = if radius <= 640 { "2m" } else { "4m" };
             *canopy_range_bins.entry(bin.to_owned()).or_insert(0) += 1;
         }
@@ -147,14 +159,43 @@ fn forest_report(
         ),
     )
     .expect("validated region bounds remain non-empty");
+    let forest_area_m2 =
+        measured_biome_area_m2(&manifest_identity(manifest, config), BiomeId::Forest);
+    let eligible_land_area_m2 =
+        measured_biome_area_m2(&manifest_identity(manifest, config), BiomeId::Meadow);
+    let required_object_counts =
+        required_object_counts(config, forest_area_m2, eligible_land_area_m2);
+    let mut failure_reasons = Vec::new();
+    if curation.radius_three_target.broad_dependency_candidates
+        > config.objects.max_edit_dependency_candidates
+    {
+        failure_reasons.push("edit dependency candidates exceed the configured limit".to_owned());
+    }
+    if curation.radius_three_target.exact_dependency_ids
+        > u16::from(config.objects.max_affected_objects_per_edit)
+    {
+        failure_reasons.push("affected object count exceeds the configured limit".to_owned());
+    }
+    if curation.radius_three_target.dependency_bricks
+        > config.objects.max_dependency_bricks_per_object
+    {
+        failure_reasons.push("dependency brick count exceeds the configured limit".to_owned());
+    }
+    for (kind, required) in &required_object_counts {
+        if object_counts.get(kind).unwrap_or(&0) < required {
+            failure_reasons.push(format!("missing required {kind} placements"));
+        }
+    }
+    failure_reasons.sort();
+    let passed = failure_reasons.is_empty();
     Ok(ForestFeasibilityReport {
         schema: "moria-product-one-forest-feasibility".to_owned(),
         timestamp_utc: command_output("date", ["-u", "+%Y-%m-%dT%H:%M:%SZ"])
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned()),
-        passed: true,
-        failure_reasons: Vec::new(),
+        passed,
+        failure_reasons,
         build: BuildProfile {
-            cargo_profile: "release".to_owned(),
+            cargo_profile: cargo_profile_name().to_owned(),
             git_commit: command_output(
                 "git",
                 [
@@ -171,21 +212,22 @@ fn forest_report(
         world: WorldIdentity::new(manifest.seed, manifest.parameters_digest, bounds),
         manifest_sha256: hex_sha256(canonical_manifest_ron(manifest)?.as_bytes()),
         machine: acceptance_machine_profile()?,
-        forest_area_m2: config.biome.forest_min_area_m2,
-        eligible_land_area_m2: config.biome.meadow_min_area_m2,
-        required_object_counts: object_counts.clone(),
+        forest_area_m2,
+        eligible_land_area_m2,
+        required_object_counts,
         object_counts,
         species_counts,
         minimum_tree_spacing_q8: u32::from(config.biome.forest_tree_spacing_m) * 256,
-        canopy_min_q8: config.objects.canopy_radius_q8.min_q8,
-        canopy_max_q8: config.objects.canopy_radius_q8.max_q8,
+        canopy_min_q8: canopy_min_q8.unwrap_or(0),
+        canopy_max_q8: canopy_max_q8.unwrap_or(0),
         canopy_range_bins,
         minimum_route_clearance_q8: u32::from(config.objects.route_clearance_m) * 256,
         overlap_conflicts: 0,
         first_conflict: None,
         object_index: ObjectIndexEvidence {
-            validation_ms: validation_ms.max(f64::MIN_POSITIVE),
-            build_ms: validation_ms.max(f64::MIN_POSITIVE),
+            validation_ms: (curation.object_index_validation_us as f64 / 1_000.0)
+                .max(f64::MIN_POSITIVE),
+            build_ms: (curation.object_index_build_us as f64 / 1_000.0).max(f64::MIN_POSITIVE),
             retained_bytes: curation.retained_index_bytes,
             retained_byte_categories: BTreeMap::from([(
                 "object-index".to_owned(),
@@ -217,6 +259,90 @@ fn forest_report(
             tie_break_rank: 0,
         },
     })
+}
+
+const fn cargo_profile_name() -> &'static str {
+    if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    }
+}
+
+fn manifest_identity(manifest: &CuratedManifest, config: &RegionConfig) -> WorldIdentity {
+    WorldIdentity::new(
+        manifest.seed,
+        manifest.parameters_digest,
+        WorldBounds::new(
+            WorldPointQ8::new(
+                i32::from(config.bounds.x_min_m) * 256,
+                i32::from(config.bounds.y_min_m) * 256,
+                i32::from(config.bounds.z_min_m) * 256,
+            ),
+            WorldPointQ8::new(
+                i32::from(config.bounds.x_max_m) * 256,
+                i32::from(config.bounds.y_max_m) * 256,
+                i32::from(config.bounds.z_max_m) * 256,
+            ),
+        )
+        .expect("validated region bounds remain non-empty"),
+    )
+}
+
+fn measured_biome_area_m2(identity: &WorldIdentity, biome: BiomeId) -> u32 {
+    let mut cells = 0_u32;
+    for x_m in (identity.bounds.min().x.div_euclid(256)
+        ..identity.bounds.max_exclusive().x.div_euclid(256))
+        .step_by(4)
+    {
+        for z_m in (identity.bounds.min().z.div_euclid(256)
+            ..identity.bounds.max_exclusive().z.div_euclid(256))
+            .step_by(4)
+        {
+            if biome_at(
+                identity,
+                ColumnCoord {
+                    x: x_m * 4,
+                    z: z_m * 4,
+                },
+            ) == biome
+            {
+                cells += 1;
+            }
+        }
+    }
+    cells * 16
+}
+
+fn required_object_counts(
+    config: &RegionConfig,
+    forest_area_m2: u32,
+    eligible_land_area_m2: u32,
+) -> BTreeMap<String, u32> {
+    let trees = forest_area_m2.div_ceil(25);
+    let birch = u32::from(config.biome.tree_species_mix_percent[0]) * trees / 100;
+    BTreeMap::from([
+        ("tree-a".to_owned(), birch),
+        ("tree-b".to_owned(), trees - birch),
+        (
+            "bush".to_owned(),
+            (forest_area_m2 * u32::from(config.biome.bushes_per_hectare)).div_ceil(10_000),
+        ),
+        (
+            "boulder".to_owned(),
+            (eligible_land_area_m2 * u32::from(config.objects.boulders_per_hectare))
+                .div_ceil(10_000),
+        ),
+        (
+            "stump".to_owned(),
+            (eligible_land_area_m2 * u32::from(config.objects.stumps_per_hectare)).div_ceil(10_000),
+        ),
+        (
+            "rock".to_owned(),
+            (eligible_land_area_m2 * u32::from(config.objects.rocks_per_hectare)).div_ceil(10_000),
+        ),
+        ("ruin".to_owned(), 1),
+    ])
 }
 
 fn object_kind_name(kind: ObjectKind) -> &'static str {
@@ -389,8 +515,6 @@ fn write(path: &Path, contents: String) -> Result<(), CommandError> {
 mod tests {
     use std::{fs, path::Path};
 
-    use moria_world::telemetry::ForestFeasibilityReport;
-
     use super::{CommandError, run};
 
     #[test]
@@ -408,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn prove_forest_writes_a_validated_feasibility_artifact() {
+    fn prove_forest_preserves_a_failed_feasibility_artifact() {
         let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let output = std::env::temp_dir().join(format!(
             "moria-curate-forest-proof-{}.json",
@@ -416,19 +540,22 @@ mod tests {
         ));
         let relative_output = output.to_str().unwrap().to_owned();
 
-        run(
-            [
-                "prove-forest".to_owned(),
-                "--output".to_owned(),
-                relative_output,
-            ],
-            &repository_root,
-        )
-        .unwrap();
+        assert!(
+            run(
+                [
+                    "prove-forest".to_owned(),
+                    "--output".to_owned(),
+                    relative_output,
+                ],
+                &repository_root,
+            )
+            .is_err()
+        );
 
-        let proof: ForestFeasibilityReport =
-            serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
-        proof.validate().unwrap();
+        let proof: serde_json::Value = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
+        assert_eq!(proof["schema"], "moria-product-one-forest-feasibility");
+        assert_eq!(proof["passed"], false);
+        assert!(!proof["failure_reasons"].as_array().unwrap().is_empty());
         fs::remove_file(output).unwrap();
     }
 }
