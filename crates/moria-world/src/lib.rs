@@ -52,9 +52,10 @@ pub use mutation::{
 pub use objects::{
     DependencyGridCell, DependencyGridCellKey, HorizonCellKey, OBJECT_EXTRACTION_STENCIL,
     ObjectIndexConfig, ObjectIndexRecord, ObjectSpatialIndex, SampleGridCell, SampleGridCellKey,
-    VoxelOffset, build_object_index, dependency_contains, evaluate_base_voxel_with_objects,
-    horizon_tree_ids, placement_ids_in, raw_shape_bounds, raw_shape_contains, sample_object_shape,
-    sample_sparse_stamp, validate_object_shape_disjointness,
+    VoxelOffset, build_object_index, dependency_contains, dependency_ids_at,
+    evaluate_base_voxel_with_objects, horizon_tree_ids, placement_ids_in, raw_shape_bounds,
+    raw_shape_contains, sample_object_ids_at, sample_object_shape, sample_sparse_stamp,
+    validate_object_shape_disjointness,
 };
 pub use query::{
     ActiveBand, CapsuleQ8, DiagnosticBrick, DiagnosticCell, DiagnosticDirtyFlags, DiagnosticFocus,

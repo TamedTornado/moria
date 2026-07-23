@@ -7,7 +7,7 @@ mod validation;
 pub use index::{
     DependencyGridCell, DependencyGridCellKey, HorizonCellKey, ObjectIndexConfig,
     ObjectIndexRecord, ObjectSpatialIndex, SampleGridCell, SampleGridCellKey, build_object_index,
-    horizon_tree_ids, placement_ids_in,
+    dependency_ids_at, horizon_tree_ids, placement_ids_in, sample_object_ids_at,
 };
 
 pub use shapes::{

@@ -7,12 +7,21 @@ use crate::{
     Q8_UNITS_PER_METER, VOXEL_EDGE_Q8, VoxelCoord, WorldPointQ8,
 };
 
-use super::{OBJECT_EXTRACTION_STENCIL, raw_shape_bounds};
+use super::{OBJECT_EXTRACTION_STENCIL, dependency_contains, raw_shape_bounds, raw_shape_contains};
 
 const ALLOCATOR_BYTES: u64 = 16;
 const DEPENDENCY_CELL_METERS: i32 = 32;
 const SAMPLE_CELL_METERS: i32 = 4;
 const HORIZON_CELL_METERS: i32 = 64;
+const SUPPORTED_EDIT_RADIUS_VOXELS: i32 = 3 * Q8_UNITS_PER_METER / VOXEL_EDGE_Q8;
+const REGION_XZ_MIN_VOXEL: i32 = -2_000;
+const REGION_XZ_MAX_VOXEL_EXCLUSIVE: i32 = 2_000;
+const REGION_Y_MIN_VOXEL: i32 = -512;
+const REGION_Y_MAX_VOXEL_EXCLUSIVE: i32 = 512;
+const REGION_XZ_MIN_Q8: i32 = -500 * Q8_UNITS_PER_METER;
+const REGION_XZ_MAX_Q8_EXCLUSIVE: i32 = 500 * Q8_UNITS_PER_METER;
+const REGION_Y_MIN_Q8: i32 = -128 * Q8_UNITS_PER_METER;
+const REGION_Y_MAX_Q8_EXCLUSIVE: i32 = 128 * Q8_UNITS_PER_METER;
 
 /// One horizontal 32 m dependency-table key.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -47,6 +56,13 @@ impl HorizonCellKey {
 pub struct ObjectIndexRecord {
     pub raw_bounds: AabbQ8,
     pub dependency_bounds: AabbQ8,
+}
+
+/// Inclusive legal edit-center range that can reach an object's dependency box.
+#[derive(Clone, Copy, Debug)]
+struct EditCenterBounds {
+    min: VoxelCoord,
+    max: VoxelCoord,
 }
 
 /// A sorted dependency-grid member list containing manifest indices.
@@ -251,8 +267,12 @@ pub fn build_object_index<'a>(
         sample_cells.capacity(),
         &dependency_cells,
         &sample_cells,
-    );
-    validate_edit_caps(&dependency_cells, config)?;
+    )
+    .ok_or(ManifestError::ObjectIndexRetainedBytesExceeded {
+        actual: u64::MAX,
+        maximum: config.max_retained_bytes,
+    })?;
+    validate_edit_caps(&dependency_cells, &records, placements, config)?;
     if retained_bytes > u64::from(config.max_retained_bytes) {
         return Err(ManifestError::ObjectIndexRetainedBytesExceeded {
             actual: retained_bytes,
@@ -270,6 +290,8 @@ pub fn build_object_index<'a>(
 
 fn validate_edit_caps(
     cells: &[DependencyGridCell],
+    records: &[ObjectIndexRecord],
+    placements: &[ObjectPlacement],
     config: &ObjectIndexConfig,
 ) -> Result<(), ManifestError> {
     let mut starts = BTreeMap::<DependencyGridCellKey, ()>::new();
@@ -309,13 +331,325 @@ fn validate_edit_caps(
             });
         }
         if actual > u16::from(config.max_affected_objects_per_edit) {
-            return Err(ManifestError::ObjectEditAffectedExceeded {
-                actual,
-                maximum: config.max_affected_objects_per_edit,
-            });
+            let affected = max_affected_objects_for_edit(
+                &members,
+                records,
+                placements,
+                config.max_affected_objects_per_edit,
+            );
+            if affected > u16::from(config.max_affected_objects_per_edit) {
+                return Err(ManifestError::ObjectEditAffectedExceeded {
+                    actual: affected,
+                    maximum: config.max_affected_objects_per_edit,
+                });
+            }
         }
     }
     Ok(())
+}
+
+fn max_affected_objects_for_edit(
+    members: &[u32],
+    records: &[ObjectIndexRecord],
+    placements: &[ObjectPlacement],
+    maximum: u8,
+) -> u16 {
+    let dependencies = members
+        .iter()
+        .filter_map(|&member| {
+            let position = usize::try_from(member).ok()?;
+            let record = records.get(position)?;
+            let centers = edit_center_bounds(record.dependency_bounds)?;
+            let dependencies = dependency_voxel_bounds(record.dependency_bounds);
+            Some((centers, dependencies))
+        })
+        .collect::<Vec<_>>();
+
+    if dependencies.is_empty() {
+        return 0;
+    }
+    let mut observed_maximum = 0_u16;
+    let exceeded =
+        visit_broad_edit_overlaps_exceeding(&dependencies, u16::from(maximum), |broad_overlap| {
+            let center_bounds = broad_overlap.bounds;
+            for x in center_bounds.min.x..=center_bounds.max.x {
+                for y in center_bounds.min.y..=center_bounds.max.y {
+                    for z in center_bounds.min.z..=center_bounds.max.z {
+                        let center = VoxelCoord::new(x, y, z);
+                        let candidates = broad_overlap
+                            .members
+                            .iter()
+                            .filter(|&&index| {
+                                edit_sphere_can_reach_dependency_bounds(
+                                    dependencies[index].1,
+                                    center,
+                                )
+                            })
+                            .count();
+                        if candidates <= usize::from(maximum) {
+                            observed_maximum =
+                                observed_maximum.max(u16::try_from(candidates).unwrap_or(u16::MAX));
+                            continue;
+                        }
+                        let affected = u16::try_from(
+                            broad_overlap
+                                .members
+                                .iter()
+                                .filter(|&&index| {
+                                    edit_sphere_can_reach_dependency_bounds(
+                                        dependencies[index].1,
+                                        center,
+                                    ) && {
+                                        let member = members[index];
+                                        let position = usize::try_from(member).ok();
+                                        position
+                                            .and_then(|position| placements.get(position))
+                                            .is_some_and(|placement| {
+                                                edit_sphere_hits_dependency(placement, center)
+                                            })
+                                    }
+                                })
+                                .count(),
+                        )
+                        .unwrap_or(u16::MAX);
+                        if affected > u16::from(maximum) {
+                            observed_maximum = affected;
+                            return true;
+                        }
+                        observed_maximum = observed_maximum.max(affected);
+                    }
+                }
+            }
+            false
+        });
+    if exceeded {
+        return observed_maximum;
+    }
+
+    // An exact dependency hit is necessarily contained in an object's
+    // expanded dependency box. The sweep therefore proves that no legal edit
+    // center can exceed the exact cap, without walking the (possibly
+    // region-height) union of the boxes.
+    observed_maximum
+}
+
+struct BroadEditOverlap {
+    bounds: EditCenterBounds,
+    members: Vec<usize>,
+}
+
+/// Visits every event-local box intersection containing more than `maximum_allowed` candidates.
+///
+/// The sweep visits only candidate-box boundaries.  It deliberately avoids
+/// materializing the potentially region-sized union of all candidate boxes.
+/// Returning `true` from `visit` stops the sweep.
+fn visit_broad_edit_overlaps_exceeding(
+    dependencies: &[(EditCenterBounds, EditCenterBounds)],
+    maximum_allowed: u16,
+    mut visit: impl FnMut(BroadEditOverlap) -> bool,
+) -> bool {
+    let maximum_allowed = usize::from(maximum_allowed);
+    let mut x_active = vec![false; dependencies.len()];
+    for events in axis_slab_events(dependencies, |bounds| bounds.min.x, |bounds| bounds.max.x) {
+        for (_, index, starts) in events {
+            x_active[index] = starts;
+        }
+        let x_members = active_indices(&x_active);
+        if x_members.len() <= maximum_allowed {
+            continue;
+        }
+
+        let mut y_active = vec![false; dependencies.len()];
+        for events in axis_slab_events_for(
+            dependencies,
+            &x_members,
+            |bounds| bounds.min.y,
+            |bounds| bounds.max.y,
+        ) {
+            for (_, index, starts) in events {
+                y_active[index] = starts;
+            }
+            let y_members = active_indices(&y_active);
+            if y_members.len() <= maximum_allowed {
+                continue;
+            }
+
+            let mut z_active = vec![false; dependencies.len()];
+            for events in axis_slab_events_for(
+                dependencies,
+                &y_members,
+                |bounds| bounds.min.z,
+                |bounds| bounds.max.z,
+            ) {
+                for (_, index, starts) in events {
+                    z_active[index] = starts;
+                }
+                let members = active_indices(&z_active);
+                if members.len() <= maximum_allowed {
+                    continue;
+                }
+                let bounds = members
+                    .iter()
+                    .fold(dependencies[members[0]].0, |bounds, &index| {
+                        intersect_edit_center_bounds(bounds, dependencies[index].0)
+                    });
+                if visit(BroadEditOverlap { bounds, members }) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Returns one group of simultaneous start/end events for every nonempty slab.
+///
+/// An end occurs at `max + 1`, so the active members after a group are exactly
+/// the boxes covering the integer-coordinate slab beginning at that point.
+fn axis_slab_events(
+    dependencies: &[(EditCenterBounds, EditCenterBounds)],
+    min: impl Fn(EditCenterBounds) -> i32,
+    max: impl Fn(EditCenterBounds) -> i32,
+) -> Vec<Vec<(i32, usize, bool)>> {
+    axis_slab_events_for(
+        dependencies,
+        &(0..dependencies.len()).collect::<Vec<_>>(),
+        min,
+        max,
+    )
+}
+
+fn axis_slab_events_for(
+    dependencies: &[(EditCenterBounds, EditCenterBounds)],
+    members: &[usize],
+    min: impl Fn(EditCenterBounds) -> i32,
+    max: impl Fn(EditCenterBounds) -> i32,
+) -> Vec<Vec<(i32, usize, bool)>> {
+    let mut events = members
+        .iter()
+        .flat_map(|&index| {
+            let bounds = dependencies[index].0;
+            [(min(bounds), index, true), (max(bounds) + 1, index, false)]
+        })
+        .collect::<Vec<_>>();
+    events.sort_unstable_by_key(|&(coordinate, index, starts)| (coordinate, index, starts));
+    events
+        .chunk_by(|left, right| left.0 == right.0)
+        .map(<[_]>::to_vec)
+        .collect()
+}
+
+fn active_indices(active: &[bool]) -> Vec<usize> {
+    active
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &is_active)| is_active.then_some(index))
+        .collect()
+}
+
+fn intersect_edit_center_bounds(
+    left: EditCenterBounds,
+    right: EditCenterBounds,
+) -> EditCenterBounds {
+    EditCenterBounds {
+        min: VoxelCoord::new(
+            left.min.x.max(right.min.x),
+            left.min.y.max(right.min.y),
+            left.min.z.max(right.min.z),
+        ),
+        max: VoxelCoord::new(
+            left.max.x.min(right.max.x),
+            left.max.y.min(right.max.y),
+            left.max.z.min(right.max.z),
+        ),
+    }
+}
+
+fn edit_center_bounds(bounds: AabbQ8) -> Option<EditCenterBounds> {
+    let min = VoxelCoord::new(
+        (bounds.min.x.div_euclid(VOXEL_EDGE_Q8) - SUPPORTED_EDIT_RADIUS_VOXELS)
+            .clamp(REGION_XZ_MIN_VOXEL, REGION_XZ_MAX_VOXEL_EXCLUSIVE - 1),
+        (bounds.min.y.div_euclid(VOXEL_EDGE_Q8) - SUPPORTED_EDIT_RADIUS_VOXELS)
+            .clamp(REGION_Y_MIN_VOXEL, REGION_Y_MAX_VOXEL_EXCLUSIVE - 1),
+        (bounds.min.z.div_euclid(VOXEL_EDGE_Q8) - SUPPORTED_EDIT_RADIUS_VOXELS)
+            .clamp(REGION_XZ_MIN_VOXEL, REGION_XZ_MAX_VOXEL_EXCLUSIVE - 1),
+    );
+    let max = VoxelCoord::new(
+        ((bounds.max_exclusive.x - 1).div_euclid(VOXEL_EDGE_Q8) + SUPPORTED_EDIT_RADIUS_VOXELS)
+            .clamp(REGION_XZ_MIN_VOXEL, REGION_XZ_MAX_VOXEL_EXCLUSIVE - 1),
+        ((bounds.max_exclusive.y - 1).div_euclid(VOXEL_EDGE_Q8) + SUPPORTED_EDIT_RADIUS_VOXELS)
+            .clamp(REGION_Y_MIN_VOXEL, REGION_Y_MAX_VOXEL_EXCLUSIVE - 1),
+        ((bounds.max_exclusive.z - 1).div_euclid(VOXEL_EDGE_Q8) + SUPPORTED_EDIT_RADIUS_VOXELS)
+            .clamp(REGION_XZ_MIN_VOXEL, REGION_XZ_MAX_VOXEL_EXCLUSIVE - 1),
+    );
+    (min.x <= max.x && min.y <= max.y && min.z <= max.z).then_some(EditCenterBounds { min, max })
+}
+
+fn dependency_voxel_bounds(bounds: AabbQ8) -> EditCenterBounds {
+    EditCenterBounds {
+        min: VoxelCoord::new(
+            bounds.min.x.div_euclid(VOXEL_EDGE_Q8),
+            bounds.min.y.div_euclid(VOXEL_EDGE_Q8),
+            bounds.min.z.div_euclid(VOXEL_EDGE_Q8),
+        ),
+        max: VoxelCoord::new(
+            (bounds.max_exclusive.x - 1).div_euclid(VOXEL_EDGE_Q8),
+            (bounds.max_exclusive.y - 1).div_euclid(VOXEL_EDGE_Q8),
+            (bounds.max_exclusive.z - 1).div_euclid(VOXEL_EDGE_Q8),
+        ),
+    }
+}
+
+fn edit_sphere_can_reach_dependency_bounds(
+    dependency: EditCenterBounds,
+    center: VoxelCoord,
+) -> bool {
+    let separation = |left_min: i32, left_max: i32, right_min: i32, right_max: i32| {
+        if left_max < right_min {
+            i64::from(right_min - left_max)
+        } else if right_max < left_min {
+            i64::from(left_min - right_max)
+        } else {
+            0
+        }
+    };
+    let x = separation(dependency.min.x, dependency.max.x, center.x, center.x);
+    let y = separation(dependency.min.y, dependency.max.y, center.y, center.y);
+    let z = separation(dependency.min.z, dependency.max.z, center.z, center.z);
+    let radius = i64::from(SUPPORTED_EDIT_RADIUS_VOXELS);
+    x * x + y * y + z * z <= radius * radius
+}
+
+fn edit_sphere_hits_dependency(placement: &ObjectPlacement, center: VoxelCoord) -> bool {
+    if dependency_contains(placement, center) {
+        return true;
+    }
+    let radius = SUPPORTED_EDIT_RADIUS_VOXELS;
+    for x_offset in -radius..=radius {
+        for y_offset in -radius..=radius {
+            for z_offset in -radius..=radius {
+                if (x_offset, y_offset, z_offset) == (0, 0, 0)
+                    || x_offset * x_offset + y_offset * y_offset + z_offset * z_offset
+                        > radius * radius
+                {
+                    continue;
+                }
+                let Some(x) = center.x.checked_add(x_offset) else {
+                    continue;
+                };
+                let Some(y) = center.y.checked_add(y_offset) else {
+                    continue;
+                };
+                let Some(z) = center.z.checked_add(z_offset) else {
+                    continue;
+                };
+                if dependency_contains(placement, VoxelCoord::new(x, y, z)) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Returns active placements whose raw bounds overlap `bounds`, sorted by ID.
@@ -330,7 +664,69 @@ pub fn placement_ids_in(index: &ObjectSpatialIndex<'_>, bounds: AabbQ8) -> Vec<O
             members.extend_from_slice(&index.dependency_cells[cell_index].members);
         }
     }
-    ids_from_members(index, members, |record| overlaps(record.raw_bounds, bounds))
+    ids_from_members(index, members, |_, record| {
+        overlaps(record.raw_bounds, bounds)
+    })
+}
+
+/// Returns the sorted analytic object IDs solid at one voxel coordinate.
+#[must_use]
+pub fn sample_object_ids_at(
+    index: &ObjectSpatialIndex<'_>,
+    coordinate: VoxelCoord,
+) -> Vec<ObjectId> {
+    if !coordinate.is_in_region() {
+        return Vec::new();
+    }
+    let Some(key) = sample_key_for(coordinate) else {
+        return Vec::new();
+    };
+    let Ok(cell_index) = index
+        .sample_cells
+        .binary_search_by_key(&key, |cell| cell.key)
+    else {
+        return Vec::new();
+    };
+    ids_from_members(
+        index,
+        index.sample_cells[cell_index].members.clone(),
+        |position, record| {
+            voxel_in_bounds(coordinate, record.raw_bounds)
+                && raw_shape_contains(&index.placements[position], coordinate)
+        },
+    )
+}
+
+/// Returns the sorted object IDs whose lazy extraction dependency contains a voxel.
+#[must_use]
+pub fn dependency_ids_at(index: &ObjectSpatialIndex<'_>, coordinate: VoxelCoord) -> Vec<ObjectId> {
+    if !coordinate.is_in_region() {
+        return Vec::new();
+    }
+    let Some(key) = dependency_key_for(coordinate) else {
+        return Vec::new();
+    };
+    let Ok(cell_index) = index
+        .dependency_cells
+        .binary_search_by_key(&key, |cell| cell.key)
+    else {
+        return Vec::new();
+    };
+    let mut ids = index.dependency_cells[cell_index]
+        .members
+        .iter()
+        .filter_map(|&member| {
+            let position = usize::try_from(member).ok()?;
+            let record = index.records.get(position)?;
+            let placement = index.placements.get(position)?;
+            (voxel_in_bounds(coordinate, record.dependency_bounds)
+                && dependency_contains(placement, coordinate))
+            .then_some(placement.id)
+        })
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
 }
 
 /// Returns the exact sorted tree-anchor membership of an aligned Horizon cell.
@@ -364,7 +760,7 @@ pub fn horizon_tree_ids(index: &ObjectSpatialIndex<'_>, key: HorizonCellKey) -> 
 fn ids_from_members(
     index: &ObjectSpatialIndex<'_>,
     mut members: Vec<u32>,
-    predicate: impl Fn(ObjectIndexRecord) -> bool,
+    predicate: impl Fn(usize, ObjectIndexRecord) -> bool,
 ) -> Vec<ObjectId> {
     members.sort_unstable();
     members.dedup();
@@ -372,36 +768,120 @@ fn ids_from_members(
         .into_iter()
         .filter_map(|member| {
             let position = usize::try_from(member).ok()?;
-            predicate(index.records[position]).then_some(index.placements[position].id)
+            predicate(position, index.records[position]).then_some(index.placements[position].id)
         })
         .collect::<Vec<_>>();
     ids.sort_unstable();
+    ids.dedup();
     ids
 }
 
 fn expand_dependency_bounds(bounds: AabbQ8) -> Option<AabbQ8> {
-    let halo = OBJECT_EXTRACTION_STENCIL
-        .iter()
-        .map(|offset| i32::from(offset.x).unsigned_abs())
-        .max()?;
-    let halo_q8 = i32::try_from(halo).ok()?.checked_mul(VOXEL_EDGE_Q8)?;
-    AabbQ8::new(
+    let min_offset =
+        |axis: fn(&super::VoxelOffset) -> i8| OBJECT_EXTRACTION_STENCIL.iter().map(axis).min();
+    let max_offset =
+        |axis: fn(&super::VoxelOffset) -> i8| OBJECT_EXTRACTION_STENCIL.iter().map(axis).max();
+    let offset_q8 = |offset: i8| i32::from(offset).checked_mul(VOXEL_EDGE_Q8);
+    let expanded = AabbQ8::new(
         WorldPointQ8::new(
-            bounds.min.x.checked_sub(halo_q8)?,
-            bounds.min.y.checked_sub(halo_q8)?,
-            bounds.min.z.checked_sub(halo_q8)?,
+            bounds
+                .min
+                .x
+                .checked_add(offset_q8(min_offset(|offset| offset.x)?)?)?,
+            bounds
+                .min
+                .y
+                .checked_add(offset_q8(min_offset(|offset| offset.y)?)?)?,
+            bounds
+                .min
+                .z
+                .checked_add(offset_q8(min_offset(|offset| offset.z)?)?)?,
         ),
         WorldPointQ8::new(
-            bounds.max_exclusive.x.checked_add(halo_q8)?,
-            bounds.max_exclusive.y.checked_add(halo_q8)?,
-            bounds.max_exclusive.z.checked_add(halo_q8)?,
+            bounds
+                .max_exclusive
+                .x
+                .checked_add(offset_q8(max_offset(|offset| offset.x)?)?)?,
+            bounds
+                .max_exclusive
+                .y
+                .checked_add(offset_q8(max_offset(|offset| offset.y)?)?)?,
+            bounds
+                .max_exclusive
+                .z
+                .checked_add(offset_q8(max_offset(|offset| offset.z)?)?)?,
+        ),
+    )
+    .ok()?;
+    AabbQ8::new(
+        WorldPointQ8::new(
+            expanded.min.x.max(REGION_XZ_MIN_Q8),
+            expanded.min.y.max(REGION_Y_MIN_Q8),
+            expanded.min.z.max(REGION_XZ_MIN_Q8),
+        ),
+        WorldPointQ8::new(
+            expanded.max_exclusive.x.min(REGION_XZ_MAX_Q8_EXCLUSIVE),
+            expanded.max_exclusive.y.min(REGION_Y_MAX_Q8_EXCLUSIVE),
+            expanded.max_exclusive.z.min(REGION_XZ_MAX_Q8_EXCLUSIVE),
         ),
     )
     .ok()
 }
 
+fn dependency_key_for(coordinate: VoxelCoord) -> Option<DependencyGridCellKey> {
+    let edge_q8 = DEPENDENCY_CELL_METERS.checked_mul(Q8_UNITS_PER_METER)?;
+    Some(DependencyGridCellKey {
+        x: i16::try_from(
+            coordinate
+                .x
+                .checked_mul(VOXEL_EDGE_Q8)?
+                .checked_sub(REGION_XZ_MIN_Q8)?
+                .div_euclid(edge_q8),
+        )
+        .ok()?,
+        z: i16::try_from(
+            coordinate
+                .z
+                .checked_mul(VOXEL_EDGE_Q8)?
+                .checked_sub(REGION_XZ_MIN_Q8)?
+                .div_euclid(edge_q8),
+        )
+        .ok()?,
+    })
+}
+
+fn sample_key_for(coordinate: VoxelCoord) -> Option<SampleGridCellKey> {
+    let edge_q8 = SAMPLE_CELL_METERS.checked_mul(Q8_UNITS_PER_METER)?;
+    Some(SampleGridCellKey {
+        x: i16::try_from(coordinate.x.checked_mul(VOXEL_EDGE_Q8)?.div_euclid(edge_q8)).ok()?,
+        z: i16::try_from(coordinate.z.checked_mul(VOXEL_EDGE_Q8)?.div_euclid(edge_q8)).ok()?,
+    })
+}
+
+fn voxel_in_bounds(coordinate: VoxelCoord, bounds: AabbQ8) -> bool {
+    let Some(x) = coordinate.x.checked_mul(VOXEL_EDGE_Q8) else {
+        return false;
+    };
+    let Some(y) = coordinate.y.checked_mul(VOXEL_EDGE_Q8) else {
+        return false;
+    };
+    let Some(z) = coordinate.z.checked_mul(VOXEL_EDGE_Q8) else {
+        return false;
+    };
+    x < bounds.max_exclusive.x
+        && x.checked_add(VOXEL_EDGE_Q8)
+            .is_some_and(|max| max > bounds.min.x)
+        && y < bounds.max_exclusive.y
+        && y.checked_add(VOXEL_EDGE_Q8)
+            .is_some_and(|max| max > bounds.min.y)
+        && z < bounds.max_exclusive.z
+        && z.checked_add(VOXEL_EDGE_Q8)
+            .is_some_and(|max| max > bounds.min.z)
+}
+
 fn dependency_keys_for(bounds: AabbQ8) -> Vec<DependencyGridCellKey> {
-    horizontal_range(bounds, DEPENDENCY_CELL_METERS)
+    horizontal_range(bounds, DEPENDENCY_CELL_METERS, REGION_XZ_MIN_Q8)
+        .into_iter()
         .flat_map(|(x, z)| {
             i16::try_from(x)
                 .ok()
@@ -412,7 +892,8 @@ fn dependency_keys_for(bounds: AabbQ8) -> Vec<DependencyGridCellKey> {
 }
 
 fn sample_keys_for(bounds: AabbQ8) -> Vec<SampleGridCellKey> {
-    horizontal_range(bounds, SAMPLE_CELL_METERS)
+    horizontal_range(bounds, SAMPLE_CELL_METERS, 0)
+        .into_iter()
         .flat_map(|(x, z)| {
             i16::try_from(x)
                 .ok()
@@ -422,13 +903,24 @@ fn sample_keys_for(bounds: AabbQ8) -> Vec<SampleGridCellKey> {
         .collect()
 }
 
-fn horizontal_range(bounds: AabbQ8, meters: i32) -> impl Iterator<Item = (i32, i32)> {
-    let edge = meters * Q8_UNITS_PER_METER;
-    let min_x = bounds.min.x.div_euclid(edge);
-    let max_x = (bounds.max_exclusive.x - 1).div_euclid(edge);
-    let min_z = bounds.min.z.div_euclid(edge);
-    let max_z = (bounds.max_exclusive.z - 1).div_euclid(edge);
-    (min_x..=max_x).flat_map(move |x| (min_z..=max_z).map(move |z| (x, z)))
+fn horizontal_range(bounds: AabbQ8, meters: i32, origin_q8: i32) -> Vec<(i32, i32)> {
+    let edge = i64::from(meters) * i64::from(Q8_UNITS_PER_METER);
+    let min_x = i64::from(bounds.min.x).max(i64::from(REGION_XZ_MIN_Q8));
+    let max_x = i64::from(bounds.max_exclusive.x).min(i64::from(REGION_XZ_MAX_Q8_EXCLUSIVE));
+    let min_z = i64::from(bounds.min.z).max(i64::from(REGION_XZ_MIN_Q8));
+    let max_z = i64::from(bounds.max_exclusive.z).min(i64::from(REGION_XZ_MAX_Q8_EXCLUSIVE));
+    if min_x >= max_x || min_z >= max_z {
+        return Vec::new();
+    }
+    let origin_q8 = i64::from(origin_q8);
+    let min_x = (min_x - origin_q8).div_euclid(edge);
+    let max_x = (max_x - 1 - origin_q8).div_euclid(edge);
+    let min_z = (min_z - origin_q8).div_euclid(edge);
+    let max_z = (max_z - 1 - origin_q8).div_euclid(edge);
+    (min_x..=max_x)
+        .flat_map(move |x| (min_z..=max_z).map(move |z| (x, z)))
+        .filter_map(|(x, z)| i32::try_from(x).ok().zip(i32::try_from(z).ok()))
+        .collect()
 }
 
 fn brick_count(bounds: AabbQ8) -> u16 {
@@ -461,24 +953,26 @@ fn retained_bytes(
     sample_cell_capacity: usize,
     dependencies: &[DependencyGridCell],
     samples: &[SampleGridCell],
-) -> u64 {
-    let members = dependencies
+) -> Option<u64> {
+    let dependency_members = dependencies
         .iter()
         .map(|cell| cell.members.capacity())
-        .sum::<usize>()
-        + samples
-            .iter()
-            .map(|cell| cell.members.capacity())
-            .sum::<usize>();
-    u64::try_from(
-        record_capacity * size_of::<ObjectIndexRecord>()
-            + dependency_cell_capacity * size_of::<DependencyGridCell>()
-            + sample_cell_capacity * size_of::<SampleGridCell>()
-            + members * size_of::<u32>(),
-    )
-    .expect("index byte count fits u64")
-        + ALLOCATOR_BYTES
-            * (2 + u64::try_from(dependencies.len() + samples.len()).expect("cell count fits u64"))
+        .try_fold(0_usize, usize::checked_add)?;
+    let sample_members = samples
+        .iter()
+        .map(|cell| cell.members.capacity())
+        .try_fold(0_usize, usize::checked_add)?;
+    let member_capacity = dependency_members.checked_add(sample_members)?;
+    let stored_bytes = record_capacity
+        .checked_mul(size_of::<ObjectIndexRecord>())?
+        .checked_add(dependency_cell_capacity.checked_mul(size_of::<DependencyGridCell>())?)?
+        .checked_add(sample_cell_capacity.checked_mul(size_of::<SampleGridCell>())?)?
+        .checked_add(member_capacity.checked_mul(size_of::<u32>())?)?;
+    let occupied_cells = dependencies.len().checked_add(samples.len())?;
+    let allocation_count = u64::try_from(occupied_cells).ok()?.checked_add(2)?;
+    u64::try_from(stored_bytes)
+        .ok()?
+        .checked_add(ALLOCATOR_BYTES.checked_mul(allocation_count)?)
 }
 
 fn overlaps(left: AabbQ8, right: AabbQ8) -> bool {
@@ -491,13 +985,26 @@ fn overlaps(left: AabbQ8, right: AabbQ8) -> bool {
 }
 
 fn horizon_key(anchor: VoxelCoord) -> HorizonCellKey {
+    let edge_voxels = HORIZON_CELL_METERS * Q8_UNITS_PER_METER / VOXEL_EDGE_Q8;
     HorizonCellKey {
-        x: i16::try_from(anchor.x.div_euclid(256)).unwrap_or(if anchor.x < 0 {
+        x: i16::try_from(
+            anchor
+                .x
+                .saturating_sub(REGION_XZ_MIN_VOXEL)
+                .div_euclid(edge_voxels),
+        )
+        .unwrap_or(if anchor.x < REGION_XZ_MIN_VOXEL {
             i16::MIN
         } else {
             i16::MAX
         }),
-        z: i16::try_from(anchor.z.div_euclid(256)).unwrap_or(if anchor.z < 0 {
+        z: i16::try_from(
+            anchor
+                .z
+                .saturating_sub(REGION_XZ_MIN_VOXEL)
+                .div_euclid(edge_voxels),
+        )
+        .unwrap_or(if anchor.z < REGION_XZ_MIN_VOXEL {
             i16::MIN
         } else {
             i16::MAX
@@ -507,8 +1014,8 @@ fn horizon_key(anchor: VoxelCoord) -> HorizonCellKey {
 
 fn cell_bounds(key: HorizonCellKey, meters: i32) -> AabbQ8 {
     let edge = meters * Q8_UNITS_PER_METER;
-    let min_x = i32::from(key.x) * edge;
-    let min_z = i32::from(key.z) * edge;
+    let min_x = REGION_XZ_MIN_Q8 + i32::from(key.x) * edge;
+    let min_z = REGION_XZ_MIN_Q8 + i32::from(key.z) * edge;
     AabbQ8::new(
         WorldPointQ8::new(min_x, i32::MIN / 2, min_z),
         WorldPointQ8::new(min_x + edge, i32::MAX / 2, min_z + edge),

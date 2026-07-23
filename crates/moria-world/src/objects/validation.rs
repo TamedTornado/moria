@@ -28,7 +28,9 @@ pub fn validate_object_shape_disjointness(
     let mut ordered = pairs.into_iter().collect::<Vec<_>>();
     ordered.sort_unstable_by_key(|&(left, right)| {
         let placements = index.placements();
-        (placements[left as usize].id, placements[right as usize].id)
+        let left_id = placements[left as usize].id;
+        let right_id = placements[right as usize].id;
+        (left_id.min(right_id), left_id.max(right_id))
     });
     for (left, right) in ordered {
         let left_index = left as usize;
