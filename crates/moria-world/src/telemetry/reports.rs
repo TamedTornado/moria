@@ -441,7 +441,7 @@ impl ForestFeasibilityReport {
             serde_json::from_str(json).map_err(|_| ReportValidationError::Serialization)?;
         let value: serde_json::Value =
             serde_json::from_str(json).map_err(|_| ReportValidationError::Serialization)?;
-        if !json_object_has_keys(&value, &["first_conflict"])
+        if !json_object_has_keys(&value, &["build", "first_conflict"])
             || !json_nested_object_has_keys(&value, "machine", &["driver"])
         {
             return Err(ReportValidationError::Missing { field: "JSON key" });
@@ -609,7 +609,9 @@ impl MutationFeasibilityReport {
             serde_json::from_str(json).map_err(|_| ReportValidationError::Serialization)?;
         let value: serde_json::Value =
             serde_json::from_str(json).map_err(|_| ReportValidationError::Serialization)?;
-        if !json_nested_object_has_keys(&value, "machine", &["driver"]) {
+        if !json_object_has_keys(&value, &["cold_start_ms", "query_costs"])
+            || !json_nested_object_has_keys(&value, "machine", &["driver"])
+        {
             return Err(ReportValidationError::Missing { field: "JSON key" });
         }
         report.validate()?;

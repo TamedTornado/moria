@@ -897,6 +897,47 @@ fn mutation_input_failure_preserves_unavailable_runtime_evidence() {
 }
 
 #[test]
+fn feasibility_json_parsers_reject_missing_unavailable_evidence_keys() {
+    let mut forest = report();
+    forest.passed = false;
+    forest.failure_reasons = vec!["build".into()];
+    forest.build = None;
+    let mut forest_json: serde_json::Value =
+        serde_json::from_str(&forest.to_canonical_json().unwrap()).unwrap();
+    forest_json.as_object_mut().unwrap().remove("build");
+    assert!(
+        ForestFeasibilityReport::from_json(&serde_json::to_string(&forest_json).unwrap()).is_err()
+    );
+
+    let mut mutation = mutation_report();
+    mutation.passed = false;
+    mutation.failure_reasons = vec!["cold_start_ms".into(), "query costs".into()];
+    mutation.cold_start_ms = None;
+    mutation.query_costs = None;
+    let mutation_json = mutation.to_canonical_json().unwrap();
+
+    let mut missing_cold_start: serde_json::Value = serde_json::from_str(&mutation_json).unwrap();
+    missing_cold_start
+        .as_object_mut()
+        .unwrap()
+        .remove("cold_start_ms");
+    assert!(
+        MutationFeasibilityReport::from_json(&serde_json::to_string(&missing_cold_start).unwrap())
+            .is_err()
+    );
+
+    let mut missing_query_costs: serde_json::Value = serde_json::from_str(&mutation_json).unwrap();
+    missing_query_costs
+        .as_object_mut()
+        .unwrap()
+        .remove("query_costs");
+    assert!(
+        MutationFeasibilityReport::from_json(&serde_json::to_string(&missing_query_costs).unwrap())
+            .is_err()
+    );
+}
+
+#[test]
 fn failed_mutation_report_preserves_partial_missing_stage_trace() {
     let mut failed = mutation_report();
     failed.passed = false;
