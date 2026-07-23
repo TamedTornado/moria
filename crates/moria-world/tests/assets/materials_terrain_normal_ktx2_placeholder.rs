@@ -1,8 +1,15 @@
 use std::{fs, path::PathBuf};
 
 use basisu::{DecodeFlags, TargetFormat, Transcoder};
+use bevy::{
+    app::TaskPoolPlugin,
+    asset::{AssetApp, AssetPlugin, AssetServer, Assets},
+    image::Image,
+    prelude::App,
+    render::render_resource::TextureFormat,
+};
 use moria_world::presentation::{
-    AssetId, AssetLoader, AssetMissingAction, BasisKtx2Loader, RuntimeAssetProfile,
+    AssetId, AssetLoader, AssetMissingAction, BasisKtx2Loader, BasisKtx2Plugin, RuntimeAssetProfile,
 };
 
 const KTX2_IDENTIFIER: [u8; 12] = [
@@ -183,6 +190,63 @@ fn terrain_normal_basis_payload_decodes_to_a_bevy_image() {
 }
 
 #[test]
+fn basis_ktx2_asset_server_preserves_declared_texture_color_spaces() {
+    let mut app = App::new();
+    app.add_plugins((
+        TaskPoolPlugin::default(),
+        AssetPlugin {
+            file_path: asset_directory().to_string_lossy().into_owned(),
+            ..Default::default()
+        },
+    ))
+    .init_asset::<Image>()
+    .add_plugins(BasisKtx2Plugin);
+
+    let asset_server = app.world().resource::<AssetServer>().clone();
+    let normal: bevy::asset::Handle<Image> = asset_server.load("materials/terrain_normal.ktx2");
+    let horizon_cards: bevy::asset::Handle<Image> =
+        asset_server.load("vegetation/tree_horizon_cards.ktx2");
+
+    for _ in 0..10_000 {
+        app.update();
+        if asset_server.load_state(&normal).is_loaded()
+            && asset_server.load_state(&horizon_cards).is_loaded()
+        {
+            break;
+        }
+    }
+
+    assert!(
+        asset_server.load_state(&normal).is_loaded(),
+        "normal load state: {:?}",
+        asset_server.load_state(&normal)
+    );
+    assert!(
+        asset_server.load_state(&horizon_cards).is_loaded(),
+        "horizon card load state: {:?}",
+        asset_server.load_state(&horizon_cards)
+    );
+
+    let images = app.world().resource::<Assets<Image>>();
+    assert_eq!(
+        images
+            .get(&normal)
+            .expect("the normal image is available after loading")
+            .texture_descriptor
+            .format,
+        TextureFormat::Rgba8Unorm
+    );
+    assert_eq!(
+        images
+            .get(&horizon_cards)
+            .expect("the horizon-card image is available after loading")
+            .texture_descriptor
+            .format,
+        TextureFormat::Rgba8UnormSrgb
+    );
+}
+
+#[test]
 fn terrain_normal_placeholder_uses_the_immutable_shared_loader_path_and_fallback() {
     let loader = AssetLoader::new();
     let declaration = loader
@@ -208,9 +272,11 @@ fn terrain_normal_placeholder_uses_the_immutable_shared_loader_path_and_fallback
 }
 
 fn asset_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("assets/materials/terrain_normal.ktx2")
+    asset_directory().join("materials/terrain_normal.ktx2")
+}
+
+fn asset_directory() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets")
 }
 
 fn read_u32_le(bytes: &[u8], offset: usize) -> u32 {

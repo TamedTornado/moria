@@ -18,6 +18,7 @@ use bevy::{
         TextureViewDimension,
     },
 };
+use ktx2::{Reader as Ktx2Reader, TransferFunction};
 
 /// Registers [`BasisKtx2Loader`] with a Bevy asset server.
 pub struct BasisKtx2Plugin;
@@ -28,13 +29,20 @@ impl Plugin for BasisKtx2Plugin {
     }
 }
 
-/// Transcodes portable BasisLZ KTX2 textures into Bevy's linear RGBA images.
+/// Transcodes portable BasisLZ KTX2 textures into Bevy RGBA images.
 #[derive(Default, TypePath)]
 pub struct BasisKtx2Loader;
 
 impl BasisKtx2Loader {
     /// Decodes every mip and array layer into the data layout Bevy uploads.
     pub fn decode(bytes: &[u8]) -> Result<Image, BasisKtx2Error> {
+        let texture_format = match Ktx2Reader::new(bytes)
+            .map_err(BasisKtx2Error::invalid_container)?
+            .transfer_function()
+        {
+            Some(TransferFunction::SRGB) => TextureFormat::Rgba8UnormSrgb,
+            _ => TextureFormat::Rgba8Unorm,
+        };
         let texture = Transcoder::new(bytes).map_err(BasisKtx2Error::invalid_payload)?;
         let (width, height) = texture.base_dimensions();
         let layer_count = texture.layer_count().max(1);
@@ -57,7 +65,7 @@ impl BasisKtx2Loader {
                 depth_or_array_layers: layer_count,
             },
             TextureDimension::D2,
-            TextureFormat::Rgba8Unorm,
+            texture_format,
             RenderAssetUsages::default(),
         );
         image.data = Some(data);
@@ -102,6 +110,10 @@ impl AssetLoader for BasisKtx2Loader {
 pub struct BasisKtx2Error(String);
 
 impl BasisKtx2Error {
+    fn invalid_container(error: ktx2::ParseError) -> Self {
+        Self(format!("invalid KTX2 container: {error:?}"))
+    }
+
     fn invalid_payload(error: basisu::Error) -> Self {
         Self(format!("invalid Basis KTX2 payload: {error:?}"))
     }
