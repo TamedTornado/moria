@@ -1,6 +1,6 @@
 //! Canonical, fixed-point curated-manifest generation.
 
-use std::{error::Error, fmt};
+use std::{collections::BTreeMap, error::Error, fmt};
 
 use crate::{
     AabbQ8, BiomeId, CUT_STONE, ColumnCoord, CuratedManifest, FeatureInstance, FeatureKind,
@@ -194,12 +194,17 @@ pub fn generate_manifest(
                         -128_000,
                     ),
                     WorldPointQ8::new(
-                        -112_640,
+                        -110_080,
                         i32::from(config.terrain.typical_surface_m) * 256,
-                        0,
+                        -128_000,
                     ),
                     WorldPointQ8::new(
                         -110_080,
+                        i32::from(config.terrain.typical_surface_m) * 256,
+                        128_000,
+                    ),
+                    WorldPointQ8::new(
+                        -115_200,
                         i32::from(config.terrain.typical_surface_m) * 256,
                         128_000,
                     ),
@@ -435,6 +440,7 @@ fn validate_forest_contract(
         }
     }
     validate_required_metadata(manifest)?;
+    validate_traversal_contract(config, manifest)?;
     Ok(())
 }
 
@@ -476,6 +482,105 @@ fn validate_required_metadata(manifest: &CuratedManifest) -> Result<(), Curation
         }
     }
     Ok(())
+}
+
+fn validate_traversal_contract(
+    config: &RegionConfig,
+    manifest: &CuratedManifest,
+) -> Result<(), CurationGenerateError> {
+    for (kind, tag) in [
+        (WaterKind::River, RouteTag::River),
+        (WaterKind::Lake, RouteTag::Lake),
+    ] {
+        let water = manifest
+            .water_bodies
+            .iter()
+            .find(|water| water.kind == kind)
+            .ok_or_else(|| {
+                CurationGenerateError::Contract("required water body is missing".to_owned())
+            })?;
+        if polygon_twice_area(&water.footprint) == 0 {
+            return contract_error("water footprint has no usable area");
+        }
+        let crossing = manifest
+            .route
+            .iter()
+            .find(|waypoint| waypoint.tags.contains(&tag))
+            .ok_or_else(|| {
+                CurationGenerateError::Contract("required water crossing is missing".to_owned())
+            })?;
+        if !footprint_contains(&water.footprint, crossing.point) {
+            return contract_error("water route tag does not cross its footprint");
+        }
+    }
+    for (tag, kind) in [
+        (RouteTag::CaveMouth, FeatureKind::KarstCave),
+        (RouteTag::Aquifer, FeatureKind::Aquifer),
+        (RouteTag::OreVein, FeatureKind::IronVein),
+        (RouteTag::CaveFloor, FeatureKind::KarstCave),
+    ] {
+        let waypoint = manifest
+            .route
+            .iter()
+            .find(|waypoint| waypoint.tags.contains(&tag))
+            .ok_or_else(|| {
+                CurationGenerateError::Contract("required feature crossing is missing".to_owned())
+            })?;
+        if !manifest
+            .features
+            .iter()
+            .any(|feature| feature.kind == kind && feature.bounds.contains(waypoint.point))
+        {
+            return contract_error("route tag does not intersect its required feature");
+        }
+    }
+    let maximum_segment_q8 = 32 * Q8_PER_METER;
+    for segment in manifest.route.windows(2) {
+        let dx = i128::from(segment[1].point.x - segment[0].point.x);
+        let dy = i128::from(segment[1].point.y - segment[0].point.y);
+        let dz = i128::from(segment[1].point.z - segment[0].point.z);
+        let distance_squared = dx * dx + dy * dy + dz * dz;
+        if distance_squared > i128::from(maximum_segment_q8).pow(2) {
+            return contract_error("route has a non-continuous capsule segment");
+        }
+        let horizontal_squared = dx * dx + dz * dz;
+        if horizontal_squared * 49 < dy * dy * 100 {
+            return contract_error("route segment exceeds the configured walkable slope");
+        }
+    }
+    let _ = config;
+    Ok(())
+}
+
+fn polygon_twice_area(points: &[WorldPointQ8]) -> i64 {
+    points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .take(points.len())
+        .map(|(left, right)| {
+            i64::from(left.x) * i64::from(right.z) - i64::from(left.z) * i64::from(right.x)
+        })
+        .sum()
+}
+
+fn footprint_contains(points: &[WorldPointQ8], point: WorldPointQ8) -> bool {
+    points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .take(points.len())
+        .fold(false, |inside, (left, right)| {
+            let crosses = (left.z > point.z) != (right.z > point.z);
+            let left_side = i64::from(point.x - left.x) * i64::from(right.z - left.z);
+            let right_side = i64::from(right.x - left.x) * i64::from(point.z - left.z);
+            if crosses
+                && ((right.z > left.z && left_side < right_side)
+                    || (right.z < left.z && left_side > right_side))
+            {
+                !inside
+            } else {
+                inside
+            }
+        })
 }
 
 fn raster_area_m2(identity: &WorldIdentity, biome: BiomeId) -> u32 {
@@ -595,8 +700,63 @@ fn append_bushes(
     next_id: &mut u64,
     count: u32,
 ) -> Result<(), CurationGenerateError> {
+    const BUSH_CLEARANCE_Q8: i32 = 2 * Q8_PER_METER + Q8_PER_METER / 4;
+    let mut occupied_cells = objects
+        .iter()
+        .filter(|placement| matches!(placement.kind, ObjectKind::TreeA | ObjectKind::TreeB))
+        .fold(
+            BTreeMap::<(i32, i32), Vec<WorldPointQ8>>::new(),
+            |mut cells, placement| {
+                let point = placement.transform_q.translation;
+                cells
+                    .entry((
+                        point.x.div_euclid(BUSH_CLEARANCE_Q8),
+                        point.z.div_euclid(BUSH_CLEARANCE_Q8),
+                    ))
+                    .or_default()
+                    .push(point);
+                cells
+            },
+        );
     for _ in 0..count {
-        let point = cursor.next(BiomeId::Forest)?;
+        let point = loop {
+            let point = cursor.next(BiomeId::Forest)?;
+            let cell_x = point.x.div_euclid(BUSH_CLEARANCE_Q8);
+            let cell_z = point.z.div_euclid(BUSH_CLEARANCE_Q8);
+            let clear = (cell_x - 1..=cell_x + 1).all(|x| {
+                (cell_z - 1..=cell_z + 1).all(|z| {
+                    occupied_cells.get(&(x, z)).is_none_or(|trees| {
+                        trees.iter().all(|tree| {
+                            horizontal_point_distance_at_least(point, *tree, BUSH_CLEARANCE_Q8)
+                        })
+                    })
+                })
+            }) && [-3 * Q8_PER_METER, 0, 3 * Q8_PER_METER].into_iter().all(
+                |x_offset| {
+                    [-3 * Q8_PER_METER, 0, 3 * Q8_PER_METER]
+                        .into_iter()
+                        .all(|z_offset| {
+                            biome_at(
+                                &cursor.identity,
+                                ColumnCoord {
+                                    x: (point.x + x_offset).div_euclid(64),
+                                    z: (point.z + z_offset).div_euclid(64),
+                                },
+                            ) == BiomeId::Forest
+                        })
+                },
+            );
+            if clear {
+                break point;
+            }
+        };
+        occupied_cells
+            .entry((
+                point.x.div_euclid(BUSH_CLEARANCE_Q8),
+                point.z.div_euclid(BUSH_CLEARANCE_Q8),
+            ))
+            .or_default()
+            .push(point);
         objects.push(placement(*next_id, point, ObjectKind::Bush));
         *next_id += 1;
     }
@@ -685,7 +845,7 @@ fn ruin(identity: &WorldIdentity) -> RuinPoi {
             anchor: VoxelCoord::new(0, point.y.div_euclid(64), 0),
         },
         stair_bottom: point,
-        stair_top: WorldPointQ8::new(0, point.y + 3 * Q8_PER_METER, 512),
+        stair_top: WorldPointQ8::new(0, point.y + 3 * Q8_PER_METER, 6 * Q8_PER_METER),
     }
 }
 
@@ -752,29 +912,122 @@ fn complete_traversal_route(
     identity: &WorldIdentity,
     mut route: Vec<RouteWaypoint>,
 ) -> Vec<RouteWaypoint> {
-    let mut append = |x_meters, y_q8, z_meters, tags| {
-        route.push(RouteWaypoint {
-            order: u8::try_from(route.len()).expect("Product One route fits u8"),
-            point: WorldPointQ8::new(x_meters * Q8_PER_METER, y_q8, z_meters * Q8_PER_METER),
-            tags,
-        });
-    };
-    let surface = |x, z| surface_point(identity, x, z).y;
-    append(-480, surface(-480, -480), -480, vec![RouteTag::Meadow]);
-    append(-440, surface(-440, 0), 0, vec![RouteTag::River]);
-    append(-90, surface(-90, -90), -90, vec![RouteTag::Lake]);
-    append(0, surface(0, 0), 0, vec![RouteTag::RuinStairBottom]);
-    append(
-        0,
-        surface(0, 0) + 3 * Q8_PER_METER,
-        2,
+    append_surface_leg(identity, &mut route, -480, -480, vec![RouteTag::Meadow]);
+    append_surface_leg(identity, &mut route, -440, 0, vec![RouteTag::River]);
+    append_surface_leg(identity, &mut route, -90, -90, vec![RouteTag::Lake]);
+    append_surface_leg(identity, &mut route, 0, 0, vec![RouteTag::RuinStairBottom]);
+    append_route_leg(
+        &mut route,
+        WorldPointQ8::new(
+            0,
+            surface_point(identity, 0, 0).y + 3 * Q8_PER_METER,
+            6 * Q8_PER_METER,
+        ),
         vec![RouteTag::RuinStairTop],
     );
-    append(24, surface(24, 0), 0, vec![RouteTag::CaveMouth]);
-    append(24, -11_520, 0, vec![RouteTag::Aquifer]);
-    append(0, -9_216, 0, vec![RouteTag::OreVein]);
-    append(0, -10_240, 0, vec![RouteTag::CaveFloor]);
+    append_surface_leg(identity, &mut route, 0, 0, vec![RouteTag::CaveMouth]);
+    append_route_leg(
+        &mut route,
+        WorldPointQ8::new(-48 * Q8_PER_METER, 20 * Q8_PER_METER, 48 * Q8_PER_METER),
+        Vec::new(),
+    );
+    append_route_leg(
+        &mut route,
+        WorldPointQ8::new(16 * Q8_PER_METER, -20 * Q8_PER_METER, -16 * Q8_PER_METER),
+        Vec::new(),
+    );
+    append_route_leg(
+        &mut route,
+        WorldPointQ8::new(-48 * Q8_PER_METER, -45 * Q8_PER_METER, 48 * Q8_PER_METER),
+        vec![RouteTag::Aquifer],
+    );
+    append_route_leg(
+        &mut route,
+        WorldPointQ8::new(0, -36 * Q8_PER_METER, 0),
+        vec![RouteTag::OreVein],
+    );
+    append_route_leg(
+        &mut route,
+        WorldPointQ8::new(0, -40 * Q8_PER_METER, 16 * Q8_PER_METER),
+        vec![RouteTag::CaveFloor],
+    );
     route
+}
+
+fn append_surface_leg(
+    identity: &WorldIdentity,
+    route: &mut Vec<RouteWaypoint>,
+    x_meters: i32,
+    z_meters: i32,
+    tags: Vec<RouteTag>,
+) {
+    let target = surface_point(identity, x_meters, z_meters);
+    let start = route.last().expect("forest route has a final point").point;
+    let steps = route_segment_steps(start, target);
+    for step in 1..=steps {
+        let x = interpolate_route_component(start.x, target.x, step, steps);
+        let z = interpolate_route_component(start.z, target.z, step, steps);
+        let point = surface_point_q8(identity, x, z);
+        route.push(RouteWaypoint {
+            order: u8::try_from(route.len()).expect("Product One route fits u8"),
+            point,
+            tags: if step == steps {
+                tags.clone()
+            } else {
+                Vec::new()
+            },
+        });
+    }
+}
+
+fn append_route_leg(route: &mut Vec<RouteWaypoint>, target: WorldPointQ8, tags: Vec<RouteTag>) {
+    let start = route.last().expect("route has a final point").point;
+    let steps = route_segment_steps(start, target);
+    for step in 1..=steps {
+        route.push(RouteWaypoint {
+            order: u8::try_from(route.len()).expect("Product One route fits u8"),
+            point: WorldPointQ8::new(
+                interpolate_route_component(start.x, target.x, step, steps),
+                interpolate_route_component(start.y, target.y, step, steps),
+                interpolate_route_component(start.z, target.z, step, steps),
+            ),
+            tags: if step == steps {
+                tags.clone()
+            } else {
+                Vec::new()
+            },
+        });
+    }
+}
+
+fn interpolate_route_component(start: i32, end: i32, step: u32, steps: u32) -> i32 {
+    let difference = i64::from(end - start);
+    i32::try_from(i64::from(start) + difference * i64::from(step) / i64::from(steps))
+        .expect("Product One route coordinate fits i32")
+}
+
+fn route_segment_steps(start: WorldPointQ8, end: WorldPointQ8) -> u32 {
+    let dx = i128::from(end.x - start.x);
+    let dy = i128::from(end.y - start.y);
+    let dz = i128::from(end.z - start.z);
+    let length = integer_sqrt(dx * dx + dy * dy + dz * dz);
+    u32::try_from((length + i128::from(32 * Q8_PER_METER) - 1) / i128::from(32 * Q8_PER_METER))
+        .expect("Product One route segment fits u32")
+        .max(1)
+}
+
+fn integer_sqrt(value: i128) -> i128 {
+    let mut low = 0_i128;
+    let mut high = value + 1;
+    while low + 1 < high {
+        let middle = low + (high - low) / 2;
+        if middle * middle <= value {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    low
 }
 
 fn surface_point(identity: &WorldIdentity, x_meters: i32, z_meters: i32) -> WorldPointQ8 {
@@ -794,6 +1047,7 @@ fn ceil_div(value: u32, divisor: u32) -> u32 {
 }
 
 struct CandidateCursor {
+    x_start_q8: i32,
     x_q8: i32,
     z_q8: i32,
     identity: WorldIdentity,
@@ -821,11 +1075,11 @@ impl PlacementPattern {
         row_stagger_q8: PLACEMENT_ROW_STAGGER_Q8,
     };
     const UNDERSTORY: Self = Self {
-        x_offset_q8: 0,
-        z_offset_q8: 0,
-        column_spacing_q8: 1_024,
-        row_spacing_q8: 896,
-        row_stagger_q8: 512,
+        x_offset_q8: 512,
+        z_offset_q8: 256,
+        column_spacing_q8: 768,
+        row_spacing_q8: 640,
+        row_stagger_q8: 384,
     };
 }
 
@@ -845,6 +1099,7 @@ impl CandidateCursor {
         pattern: PlacementPattern,
     ) -> Self {
         Self {
+            x_start_q8: -500 * Q8_PER_METER + pattern.x_offset_q8,
             x_q8: -500 * Q8_PER_METER + pattern.x_offset_q8,
             z_q8: -500 * Q8_PER_METER + pattern.z_offset_q8,
             identity,
@@ -872,7 +1127,7 @@ impl CandidateCursor {
             let point = surface_point_q8(&self.identity, self.x_q8 + row_offset, self.z_q8);
             self.x_q8 += self.column_spacing_q8;
             if self.x_q8 >= 500 * Q8_PER_METER {
-                self.x_q8 = -500 * Q8_PER_METER;
+                self.x_q8 = self.x_start_q8;
                 self.z_q8 += self.row_spacing_q8;
             }
             let outside_ruin = point.x.abs() >= 2_560 || point.z.abs() >= 2_560;
@@ -1006,6 +1261,103 @@ mod tests {
     }
 
     #[test]
+    fn generated_route_crosses_usable_water_and_connects_its_feature_samples() {
+        let region = include_bytes!("../../../../assets/config/product_one_region.ron");
+        let stamp = include_bytes!("../../../../assets/stamps/ruin_p1.ron");
+        let config: RegionConfig = ron::de::from_bytes(region).unwrap();
+        let manifest = generate_manifest(region, stamp).unwrap();
+
+        for kind in [crate::WaterKind::River, crate::WaterKind::Lake] {
+            let water = manifest
+                .water_bodies
+                .iter()
+                .find(|water| water.kind == kind)
+                .unwrap();
+            assert_ne!(polygon_twice_area(water.footprint.as_slice()), 0);
+            let tag = if kind == crate::WaterKind::River {
+                RouteTag::River
+            } else {
+                RouteTag::Lake
+            };
+            let crossing = manifest
+                .route
+                .iter()
+                .find(|waypoint| waypoint.tags.contains(&tag))
+                .unwrap();
+            assert!(footprint_contains(
+                water.footprint.as_slice(),
+                crossing.point
+            ));
+        }
+
+        for (tag, kind) in [
+            (RouteTag::CaveMouth, crate::FeatureKind::KarstCave),
+            (RouteTag::Aquifer, crate::FeatureKind::Aquifer),
+            (RouteTag::OreVein, crate::FeatureKind::IronVein),
+            (RouteTag::CaveFloor, crate::FeatureKind::KarstCave),
+        ] {
+            let waypoint = manifest
+                .route
+                .iter()
+                .find(|waypoint| waypoint.tags.contains(&tag))
+                .unwrap();
+            assert!(
+                manifest
+                    .features
+                    .iter()
+                    .any(|feature| feature.kind == kind && feature.bounds.contains(waypoint.point))
+            );
+        }
+
+        let max_segment_q8 = 32 * 256_i64;
+        assert!(manifest.route.windows(2).all(|segment| {
+            let delta_x = i64::from(segment[1].point.x - segment[0].point.x);
+            let delta_y = i64::from(segment[1].point.y - segment[0].point.y);
+            let delta_z = i64::from(segment[1].point.z - segment[0].point.z);
+            delta_x * delta_x + delta_y * delta_y + delta_z * delta_z
+                <= max_segment_q8 * max_segment_q8
+        }));
+        assert!(manifest.route.windows(2).all(|segment| {
+            let horizontal_squared = i128::from(segment[1].point.x - segment[0].point.x).pow(2)
+                + i128::from(segment[1].point.z - segment[0].point.z).pow(2);
+            let vertical = i128::from((segment[1].point.y - segment[0].point.y).abs());
+            horizontal_squared * 49 >= vertical * vertical * 100
+        }));
+        assert_eq!(config.cave.max_route_slope_degrees, 35);
+    }
+
+    fn polygon_twice_area(points: &[WorldPointQ8]) -> i64 {
+        points
+            .iter()
+            .zip(points.iter().cycle().skip(1))
+            .take(points.len())
+            .map(|(left, right)| {
+                i64::from(left.x) * i64::from(right.z) - i64::from(left.z) * i64::from(right.x)
+            })
+            .sum()
+    }
+
+    fn footprint_contains(points: &[WorldPointQ8], point: WorldPointQ8) -> bool {
+        points
+            .iter()
+            .zip(points.iter().cycle().skip(1))
+            .take(points.len())
+            .fold(false, |inside, (left, right)| {
+                let crosses = (left.z > point.z) != (right.z > point.z);
+                let left_side = i64::from(point.x - left.x) * i64::from(right.z - left.z);
+                let right_side = i64::from(right.x - left.x) * i64::from(point.z - left.z);
+                if crosses
+                    && ((right.z > left.z && left_side < right_side)
+                        || (right.z < left.z && left_side > right_side))
+                {
+                    !inside
+                } else {
+                    inside
+                }
+            })
+    }
+
+    #[test]
     fn validation_rejects_missing_required_geology_water_and_route_metadata() {
         let region = include_bytes!("../../../../assets/config/product_one_region.ron");
         let stamp = include_bytes!("../../../../assets/stamps/ruin_p1.ron");
@@ -1023,6 +1375,19 @@ mod tests {
             .water_bodies
             .retain(|water| water.kind != crate::WaterKind::River);
         assert!(validate_manifest_without_stamp(&no_river, &config).is_err());
+
+        let mut degenerate_river = manifest.clone();
+        let river = degenerate_river
+            .water_bodies
+            .iter_mut()
+            .find(|water| water.kind == crate::WaterKind::River)
+            .unwrap();
+        river.footprint = vec![
+            WorldPointQ8::new(-115_200, river.surface_y_q8, -128_000),
+            WorldPointQ8::new(-112_640, river.surface_y_q8, 0),
+            WorldPointQ8::new(-110_080, river.surface_y_q8, 128_000),
+        ];
+        assert!(validate_manifest_without_stamp(&degenerate_river, &config).is_err());
 
         let mut no_cave_floor = manifest;
         for waypoint in &mut no_cave_floor.route {

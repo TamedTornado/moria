@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 
 use crate::{
-    AabbQ8, BiomeId, ColumnCoord, ObjectKind, ObjectSpatialIndex, VoxelCoord, WorldIdentity,
-    WorldPointQ8, biome_at, evaluate_column,
+    AIR, AabbQ8, BiomeId, ColumnCoord, ObjectKind, ObjectSpatialIndex, TOPSOIL, VoxelCoord,
+    WorldIdentity, WorldPointQ8, biome_at, evaluate_base_voxel, evaluate_column,
 };
 
 const RADIUS_Q8: i32 = 3 * 256;
@@ -55,8 +55,7 @@ fn surface_centers(identity: &WorldIdentity) -> impl Iterator<Item = VoxelCoord>
             (min_z..=max_z)
                 .step_by(SURFACE_CELL_EDGE_VOXELS as usize)
                 .map(move |z| {
-                    let y = evaluate_column(identity, ColumnCoord { x, z })
-                        .surface_y_q8
+                    let y = (evaluate_column(identity, ColumnCoord { x, z }).surface_y_q8 - 1)
                         .div_euclid(64);
                     VoxelCoord::new(x, y, z)
                 })
@@ -91,37 +90,33 @@ fn eligible_surface_center(
 /// center is a valid dressing anchor only at that upward-facing surface; an
 /// object anchor is unrelated to dressing ownership and cannot stand in for it.
 fn eligible_dressing_anchor(identity: &WorldIdentity, center: VoxelCoord) -> bool {
-    evaluate_column(
+    let surface = evaluate_column(
         identity,
         ColumnCoord {
             x: center.x,
             z: center.z,
         },
-    )
-    .surface_y_q8
-    .div_euclid(64)
-        == center.y
+    );
+    surface.surface_y_q8 > center.y * 64
+        && surface.surface_y_q8 <= (center.y + 1) * 64
+        && evaluate_base_voxel(identity, center).material == TOPSOIL
+        && evaluate_base_voxel(identity, VoxelCoord::new(center.x, center.y + 1, center.z)).material
+            == AIR
 }
 
 fn score(index: &ObjectSpatialIndex<'_>, center: VoxelCoord) -> Option<CurationStressTarget> {
     let bounds = edit_bounds(center)?;
-    let keys = keys(bounds);
-    let broad = index
-        .dependency_cells()
-        .iter()
-        .filter(|cell| keys.contains(&cell.key))
-        .flat_map(|cell| cell.members.iter().copied())
-        .collect::<BTreeSet<_>>();
     let exact = exact_members(index, bounds);
     Some(CurationStressTarget {
         center,
-        broad_dependency_candidates: u16::try_from(broad.len()).unwrap_or(u16::MAX),
+        broad_dependency_candidates: u16::try_from(exact.len()).unwrap_or(u16::MAX),
         exact_dependency_ids: u16::try_from(exact.len()).unwrap_or(u16::MAX),
         dependency_bricks: exact
             .iter()
             .copied()
             .map(|member| bricks(index.records()[member as usize].dependency_bounds))
-            .fold(0, u16::saturating_add),
+            .max()
+            .unwrap_or(0),
         changed_bricks: changed_sphere_bricks(center),
     })
 }
@@ -210,8 +205,8 @@ fn changed_sphere_bricks(center: VoxelCoord) -> u16 {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ObjectIndexConfig, RegionConfig, WorldBounds, WorldIdentity, WorldPointQ8,
-        build_object_index, derive_manifest,
+        AIR, ObjectIndexConfig, RegionConfig, TOPSOIL, VoxelCoord, WorldBounds, WorldIdentity,
+        WorldPointQ8, build_object_index, derive_manifest, evaluate_base_voxel,
     };
 
     use super::{
@@ -267,5 +262,18 @@ mod tests {
             });
 
         assert_eq!(select_radius_three_stress_target(&index, &identity), oracle);
+        let target = select_radius_three_stress_target(&index, &identity).unwrap();
+        assert_eq!(
+            evaluate_base_voxel(&identity, target.center).material,
+            TOPSOIL
+        );
+        assert_eq!(
+            evaluate_base_voxel(
+                &identity,
+                VoxelCoord::new(target.center.x, target.center.y + 1, target.center.z),
+            )
+            .material,
+            AIR
+        );
     }
 }

@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::{
     CuratedManifest, ObjectIndexConfig, RegionConfig, SparseVoxelStamp, WorldBounds, WorldIdentity,
-    WorldPointQ8, build_object_index, validate_region_config,
+    WorldPointQ8, build_object_index, validate_object_shape_disjointness, validate_region_config,
 };
 
 use super::generate::{generate_manifest, validate_manifest_without_stamp};
@@ -106,6 +106,26 @@ pub fn validate_manifest(
     config: &RegionConfig,
     manifest: &CuratedManifest,
 ) -> Result<CurationReport, CurationError> {
+    validate_manifest_inner(config, manifest, None)
+}
+
+/// Validates a manifest and its authored ruin stamp as one measured phase.
+pub fn validate_manifest_with_stamp(
+    config: &RegionConfig,
+    manifest: &CuratedManifest,
+    stamp: &SparseVoxelStamp,
+) -> Result<CurationReport, CurationError> {
+    stamp
+        .validate()
+        .map_err(|error| CurationError::InvalidRuinStamp(error.to_string()))?;
+    validate_manifest_inner(config, manifest, Some(stamp))
+}
+
+fn validate_manifest_inner(
+    config: &RegionConfig,
+    manifest: &CuratedManifest,
+    stamp: Option<&SparseVoxelStamp>,
+) -> Result<CurationReport, CurationError> {
     let validation_started = Instant::now();
     validate_region_config(config)
         .map_err(|error| CurationError::InvalidRegionConfig(error.to_string()))?;
@@ -125,6 +145,10 @@ pub fn validate_manifest(
     .map_err(|error| CurationError::Manifest(error.to_string()))?;
     let object_index_build_us =
         u64::try_from(index_build_started.elapsed().as_micros()).unwrap_or(u64::MAX);
+    if let Some(stamp) = stamp {
+        validate_object_shape_disjointness(&index, &manifest.ruin, stamp)
+            .map_err(|error| CurationError::Manifest(error.to_string()))?;
+    }
     let identity = WorldIdentity::new(
         manifest.seed,
         manifest.parameters_digest,

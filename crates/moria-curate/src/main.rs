@@ -7,7 +7,7 @@ use moria_world::telemetry::{
 use moria_world::{
     BiomeId, ColumnCoord, CuratedManifest, CurationError, CurationReport, ObjectKind, RegionConfig,
     RouteTag, SparseVoxelStamp, VoxelObjectShape, WorldBounds, WorldIdentity, WorldPointQ8,
-    biome_at, derive_manifest, validate_manifest,
+    biome_at, derive_manifest, validate_manifest_with_stamp,
 };
 use sha2::{Digest, Sha256};
 
@@ -78,7 +78,7 @@ fn run(
     if command == "generate" {
         return write(&manifest_path, canonical);
     }
-    check_manifest(&manifest_path, &canonical, &config)
+    check_manifest(&manifest_path, &canonical, &config, &stamp)
 }
 
 fn prove_forest(repository_root: &Path, output: &str) -> Result<(), CommandError> {
@@ -96,8 +96,9 @@ fn prove_forest_inner(repository_root: &Path, output: &Path) -> Result<(), Comma
     let manifest = derive_manifest(config.seed, &config, &stamp).map_err(CommandError::Curation)?;
     let canonical = canonical_manifest_ron(&manifest)?;
     let manifest_path = repository_root.join(CURATED_MANIFEST_PATH);
-    check_manifest(&manifest_path, &canonical, &config)?;
-    let curation = validate_manifest(&config, &manifest).map_err(CommandError::Curation)?;
+    check_manifest(&manifest_path, &canonical, &config, &stamp)?;
+    let curation =
+        validate_manifest_with_stamp(&config, &manifest, &stamp).map_err(CommandError::Curation)?;
     let mut report = forest_report(repository_root, &config, &manifest, &curation)?;
     if let Err(error) = report.validate() {
         report.passed = false;
@@ -614,6 +615,7 @@ fn check_manifest(
     manifest_path: &Path,
     canonical: &str,
     config: &RegionConfig,
+    stamp: &SparseVoxelStamp,
 ) -> Result<(), CommandError> {
     let source = fs::read_to_string(manifest_path).map_err(|error| CommandError::Read {
         path: manifest_path.display().to_string(),
@@ -629,7 +631,7 @@ fn check_manifest(
             path: manifest_path.display().to_string(),
             error: error.to_string(),
         })?;
-    validate_manifest(config, &manifest).map_err(CommandError::Curation)?;
+    validate_manifest_with_stamp(config, &manifest, stamp).map_err(CommandError::Curation)?;
     Ok(())
 }
 

@@ -34,6 +34,15 @@ fn tree(id: u64, x_voxels: i32, z_voxels: i32) -> ObjectPlacement {
     placement
 }
 
+fn bush(id: u64, x_voxels: i32, z_voxels: i32) -> ObjectPlacement {
+    let mut placement = boulder(id, x_voxels, z_voxels);
+    placement.kind = ObjectKind::Bush;
+    placement.shape = VoxelObjectShape::Bush {
+        radii_q8: [128, 128, 128],
+    };
+    placement
+}
+
 #[test]
 fn object_index_queries_are_sorted_deduplicated_and_horizon_filtered() {
     let placements = vec![boulder(2, 1, 1), boulder(7, 130, 1), boulder(11, 3, 1)];
@@ -123,6 +132,19 @@ fn broad_edit_candidates_are_not_mistaken_for_exact_affected_objects() {
     let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
 
     assert_eq!(index.placements().len(), 70);
+}
+
+#[test]
+fn registered_bushes_participate_in_dependency_queries() {
+    let placements = vec![bush(5, 1, 1)];
+    let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
+    let bounds = moria_world::AabbQ8::new(
+        WorldPointQ8::new(-256, -256, -256),
+        WorldPointQ8::new(64 * 8, 64 * 8, 64 * 8),
+    )
+    .unwrap();
+
+    assert_eq!(placement_ids_in(&index, bounds), vec![ObjectId(5)]);
 }
 
 #[test]

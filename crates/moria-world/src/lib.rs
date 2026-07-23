@@ -38,6 +38,7 @@ pub use curation::{
 #[cfg(feature = "curation")]
 pub use curation::{
     CurationError, CurationReport, CurationStressTarget, derive_manifest, validate_manifest,
+    validate_manifest_with_stamp,
 };
 pub use generation::{
     AabbQ8, BiomeId, ColumnRun, ColumnSample, ProceduralClass, RunKind, WorldBounds, WorldIdentity,

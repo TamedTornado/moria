@@ -183,14 +183,7 @@ pub fn build_object_index<'a>(
                 maximum: config.max_dependency_bricks_per_object,
             });
         }
-        // Bushes are regenerated understory dressing: they retain a sample
-        // record for validation, but do not own registered-object dependency
-        // work during a terrain edit.
-        let dependency_keys = if placement.kind == ObjectKind::Bush {
-            Vec::new()
-        } else {
-            dependency_keys_for(dependency_bounds)
-        };
+        let dependency_keys = dependency_keys_for(dependency_bounds);
         enforce_cell_count(
             placement.id,
             dependency_keys.len(),
@@ -312,12 +305,6 @@ fn validate_edit_caps(
         members.sort_unstable();
         members.dedup();
         let actual = u16::try_from(members.len()).unwrap_or(u16::MAX);
-        if actual > config.max_edit_dependency_candidates {
-            return Err(ManifestError::ObjectEditCandidatesExceeded {
-                actual,
-                maximum: config.max_edit_dependency_candidates,
-            });
-        }
         if actual > u16::from(config.max_affected_objects_per_edit) {
             let affected = *exact_overlap_cache
                 .entry(members.clone())
