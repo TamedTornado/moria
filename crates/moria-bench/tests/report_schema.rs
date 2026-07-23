@@ -5,6 +5,7 @@ use moria_bench::capture::schema::{
     FrameRateMetrics, GraphicsMemoryEstimate, GraphicsMemoryEvidence, MutationLatencyMetrics,
     MutationWorkloadLatency, QueueDepths, ResidentGraphicsMeasurement, RoundTripEvidence,
     SaveEvidence, ScenarioName, StreamingEvidence, TrustedCaptureIdentity,
+    TrustedEstimateSubstitutionApproval,
 };
 use moria_world::telemetry::{
     BuildProfile, Distribution, MachineProfile, MutationWorkloadRole, ObjectIndexEvidence,
@@ -383,6 +384,59 @@ fn graphics_memory_rejects_a_self_asserted_product_approval_id() {
         invalid.validate(),
         Err(ReportValidationError::Identity {
             field: "estimate_substitution_approval_id"
+        })
+    ));
+}
+
+#[test]
+fn graphics_memory_accepts_only_a_trusted_ledger_below_target_substitution() {
+    let mut approved = report();
+    let graphics = approved.graphics_memory.as_mut().unwrap();
+    graphics.resident_measurement = None;
+    graphics.product_target_proven = false;
+    graphics.estimate_substitution_approval_id = Some("PRODUCT-42".into());
+    let trusted = TrustedEstimateSubstitutionApproval {
+        approval_id: "PRODUCT-42".into(),
+    };
+
+    assert!(
+        approved
+            .validate_against_trusted_estimate_substitution_approval(&trusted)
+            .is_ok()
+    );
+    assert!(
+        !approved
+            .graphics_memory
+            .as_ref()
+            .unwrap()
+            .product_target_proven
+    );
+
+    let mut wrong_approval = approved.clone();
+    wrong_approval
+        .graphics_memory
+        .as_mut()
+        .unwrap()
+        .estimate_substitution_approval_id = Some("PRODUCT-43".into());
+    assert!(matches!(
+        wrong_approval.validate_against_trusted_estimate_substitution_approval(&trusted),
+        Err(ReportValidationError::Identity {
+            field: "estimate_substitution_approval_id"
+        })
+    ));
+
+    let mut above_target = approved;
+    let ledger = &mut above_target
+        .graphics_memory
+        .as_mut()
+        .unwrap()
+        .application_ledger;
+    ledger.peak_bytes = 2_097_152_000;
+    ledger.categories = BTreeMap::from([("buffers".into(), 2_097_152_000)]);
+    assert!(matches!(
+        above_target.validate_against_trusted_estimate_substitution_approval(&trusted),
+        Err(ReportValidationError::Limit {
+            field: "application_ledger"
         })
     ));
 }

@@ -242,6 +242,26 @@ impl TrustedCaptureIdentity {
     }
 }
 
+/// A Product approval record obtained from the approval ledger, not from the report itself.
+///
+/// The caller is responsible for loading this record from its independently controlled source.
+/// Its ID must match the report before an estimate may substitute for resident evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrustedEstimateSubstitutionApproval {
+    pub approval_id: String,
+}
+
+impl TrustedEstimateSubstitutionApproval {
+    fn validate(&self) -> Result<(), ReportValidationError> {
+        if blank(&self.approval_id) {
+            return Err(ReportValidationError::Identity {
+                field: "estimate_substitution_approval_id",
+            });
+        }
+        Ok(())
+    }
+}
+
 /// `Option` fields are always serialized: `null` records unavailable runtime evidence.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -301,6 +321,13 @@ impl BenchmarkReport {
     }
 
     pub fn validate(&self) -> Result<(), ReportValidationError> {
+        self.validate_with_estimate_substitution_approval(None)
+    }
+
+    fn validate_with_estimate_substitution_approval(
+        &self,
+        trusted_approval: Option<&TrustedEstimateSubstitutionApproval>,
+    ) -> Result<(), ReportValidationError> {
         if self.schema != SCHEMA {
             return Err(ReportValidationError::Schema);
         }
@@ -379,7 +406,7 @@ impl BenchmarkReport {
             }
         }
         if let Some(value) = &self.graphics_memory {
-            validate_graphics_memory(value, self.passed, &self.failure_reasons)?;
+            validate_graphics_memory(value, self.passed, &self.failure_reasons, trusted_approval)?;
         }
         if let Some(value) = &self.coverage {
             validate_coverage(value, self.scenario, self.passed)?;
@@ -457,6 +484,17 @@ impl BenchmarkReport {
             });
         }
         Ok(())
+    }
+
+    /// Validates an estimate substitution against a Product approval loaded separately from the
+    /// benchmark report. The approved ledger remains a proxy, so this never permits
+    /// `product_target_proven` to become true.
+    pub fn validate_against_trusted_estimate_substitution_approval(
+        &self,
+        trusted_approval: &TrustedEstimateSubstitutionApproval,
+    ) -> Result<(), ReportValidationError> {
+        trusted_approval.validate()?;
+        self.validate_with_estimate_substitution_approval(Some(trusted_approval))
     }
 }
 
@@ -692,6 +730,7 @@ fn validate_graphics_memory(
     value: &GraphicsMemoryEvidence,
     passed: bool,
     reasons: &[String],
+    trusted_approval: Option<&TrustedEstimateSubstitutionApproval>,
 ) -> Result<(), ReportValidationError> {
     if value.application_ledger.peak_bytes == 0
         || value.application_ledger.end_bytes == 0
@@ -767,18 +806,38 @@ fn validate_graphics_memory(
             field: "product_target_proven",
         });
     }
-    if value.estimate_substitution_approval_id.is_some() {
-        return Err(ReportValidationError::Identity {
-            field: "estimate_substitution_approval_id",
-        });
-    }
-    if passed && !value.product_target_proven {
+    let estimate_substitution_approved = match (
+        value.estimate_substitution_approval_id.as_deref(),
+        trusted_approval,
+    ) {
+        (None, None) => false,
+        (Some(approval_id), Some(trusted)) if approval_id == trusted.approval_id => {
+            if value.application_ledger.peak_bytes >= GRAPHICS_MEMORY_TARGET_BYTES {
+                return Err(ReportValidationError::Limit {
+                    field: "application_ledger",
+                });
+            }
+            if value.product_target_proven {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "product_target_proven",
+                });
+            }
+            true
+        }
+        _ => {
+            return Err(ReportValidationError::Identity {
+                field: "estimate_substitution_approval_id",
+            });
+        }
+    };
+    if passed && !value.product_target_proven && !estimate_substitution_approved {
         return Err(ReportValidationError::Inconsistent {
             field: "resident graphics memory",
         });
     }
     if !passed
         && !value.product_target_proven
+        && !estimate_substitution_approved
         && !reasons
             .iter()
             .any(|reason| reason == "resident_graphics_memory_unproven")

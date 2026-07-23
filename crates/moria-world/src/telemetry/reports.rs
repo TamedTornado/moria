@@ -383,6 +383,12 @@ impl ForestFeasibilityReport {
                 || self.canopy_range_bins["birch-upper"] > self.species_counts["birch"]
                 || self.canopy_range_bins["pine-lower"] > self.species_counts["pine"]
                 || self.canopy_range_bins["pine-upper"] > self.species_counts["pine"]
+                || u64::from(self.canopy_range_bins["birch-lower"])
+                    + u64::from(self.canopy_range_bins["birch-upper"])
+                    > u64::from(self.species_counts["birch"])
+                || u64::from(self.canopy_range_bins["pine-lower"])
+                    + u64::from(self.canopy_range_bins["pine-upper"])
+                    > u64::from(self.species_counts["pine"])
             {
                 return Err(ReportValidationError::Inconsistent {
                     field: "canopy range bins",

@@ -460,6 +460,18 @@ fn passing_forest_report_requires_object_species_and_canopy_evidence_to_agree() 
             field: "canopy range bins"
         })
     ));
+
+    let mut invalid = report();
+    invalid
+        .canopy_range_bins
+        .insert("birch-lower".into(), 2_624);
+    invalid.canopy_range_bins.insert("birch-upper".into(), 17);
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "canopy range bins"
+        })
+    ));
 }
 
 #[test]
