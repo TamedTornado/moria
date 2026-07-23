@@ -68,17 +68,15 @@ animation assets, or any change to PR #365.
 
 ## Red/Green TDD path
 
-### Red: independent test-author handoff
+### Red: failing removal contracts
 
-The Red suite must be authored by a separate adversarial test agent/session,
-not by the implementation agent. That test author receives this plan and the
-current `master` behavior, writes only the tests and test-fixture expectation
-changes below, runs them against the unmodified product code, and records the
-expected failures. The test-only handoff must be reviewed/frozen before the
-implementation agent starts Green. The implementation agent may delete
-retired forest-only tests as specified below, but may not weaken or rewrite the
-new removal/preservation expectations; a genuinely incorrect Red expectation
-goes back to the independent test author for revision.
+Use ordinary Red/Green TDD within the existing implementation node. Before
+editing production code or deleting retired forest-only tests, add the
+repository-level removal tests and focused fixture/schema expectation changes
+below, run them against the current product code, and record the expected
+failures. Then make the minimum Green changes in the following section. Keep
+the new removal and preservation expectations intact unless repository
+evidence shows an expectation itself is incorrect.
 
 Add `crates/moria-world/tests/forest_surface_removed.rs` with repository-level
 contract tests:
@@ -119,9 +117,8 @@ Extend existing focused tests before implementation:
   inventory exactly and move the shared-handle regression in
   `asset_validation.rs` from `BirchNear` to retained `Boulder`/`Rock` handles.
 - Record the existing `streaming/lifecycle.rs` `HorizonLifecycle` tests as
-  green preservation characterizations. They are not forest-membership tests
-  and the implementation agent must keep them intact; only the key import may
-  change during the Green relocation.
+  green preservation characterizations. They are not forest-membership tests;
+  keep them intact, changing only the key import during the Green relocation.
 
 Do not weaken the already-green generic characterizations. Run these before
 the removal and record their green baseline:
@@ -185,9 +182,9 @@ cargo test -p moria-bench --test query_probe
 
    - Remove `ForestFeasibilityReport`, `WorstEditTargetEvidence`,
      `FOREST_SCHEMA`, forest validators, and exports from
-     `telemetry/{reports.rs,mod.rs}`. Retain the independent test author's
-     mutation-report cases in `tests/telemetry_reports.rs`; do not delete the
-     test target with the forest fixture.
+     `telemetry/{reports.rs,mod.rs}`. Retain the new mutation-report cases in
+     `tests/telemetry_reports.rs`; do not delete the test target with the
+     forest fixture.
    - Remove `forest_report_sha256` and only its validator from
      `MutationFeasibilityReport`. Keep build/world/manifest digests,
      `MachineProfile`, `passed == failure_reasons.is_empty()`, sorted reasons,
