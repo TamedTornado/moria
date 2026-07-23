@@ -492,6 +492,8 @@ fn passing_forest_report_requires_worst_target_to_match_index_candidate_maximum(
 #[test]
 fn passing_forest_report_requires_a_consistent_maximal_stress_target() {
     let mut invalid = report();
+    invalid.object_index.max_edit_candidates = 2;
+    invalid.worst_edit_target.broad_candidates = 2;
     invalid.worst_edit_target.exact_dependency_ids = 2;
     assert!(matches!(
         invalid.validate(),
@@ -501,7 +503,9 @@ fn passing_forest_report_requires_a_consistent_maximal_stress_target() {
     ));
 
     let mut valid = report();
+    valid.object_index.max_edit_candidates = 2;
     valid.object_index.max_edit_affected_objects = 2;
+    valid.worst_edit_target.broad_candidates = 2;
     assert!(valid.validate().is_ok());
 
     let mut valid = report();
@@ -514,6 +518,18 @@ fn passing_forest_report_requires_a_consistent_maximal_stress_target() {
         invalid.validate(),
         Err(ReportValidationError::Inconsistent {
             field: "worst edit target"
+        })
+    ));
+}
+
+#[test]
+fn passing_forest_report_requires_affected_object_maximum_to_fit_candidates() {
+    let mut invalid = report();
+    invalid.object_index.max_edit_affected_objects = 2;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "object index edit maxima"
         })
     ));
 }

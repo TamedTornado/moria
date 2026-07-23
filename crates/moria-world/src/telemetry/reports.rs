@@ -875,6 +875,11 @@ fn validate_forest_object_index(
             field: "object index measurement",
         });
     }
+    if u16::from(value.max_edit_affected_objects) > value.max_edit_candidates {
+        return Err(ReportValidationError::Inconsistent {
+            field: "object index edit maxima",
+        });
+    }
     Ok(())
 }
 
@@ -903,6 +908,7 @@ fn validate_worst_target(
         });
     }
     if target.exact_dependency_ids > target.broad_candidates
+        || target.exact_dependency_ids > u16::from(object_index.max_edit_affected_objects)
         || (passed
             && (target.broad_candidates != object_index.max_edit_candidates
                 || target.tie_break_rank != 0))
