@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
+use std::fs;
 
+use moria_bench::capture::output::write_report_atomic_with_trusted_estimate_substitution_approval;
 use moria_bench::capture::schema::{
     ActiveBand, ActiveCounts, AssetEvidence, BaselineStatus, BenchmarkReport, CoverageEvidence,
     FrameRateMetrics, GraphicsMemoryEstimate, GraphicsMemoryEvidence, MutationLatencyMetrics,
@@ -439,6 +441,36 @@ fn graphics_memory_accepts_only_a_trusted_ledger_below_target_substitution() {
             field: "application_ledger"
         })
     ));
+}
+
+#[test]
+fn approved_estimate_substitution_round_trips_with_trusted_evidence() {
+    let mut approved = report();
+    let graphics = approved.graphics_memory.as_mut().unwrap();
+    graphics.resident_measurement = None;
+    graphics.product_target_proven = false;
+    graphics.estimate_substitution_approval_id = Some("PRODUCT-42".into());
+    let approval = TrustedEstimateSubstitutionApproval {
+        approval_id: "PRODUCT-42".into(),
+    };
+    let capture = trusted_capture_identity(&approved);
+    let output = std::env::temp_dir().join(format!(
+        "moria-bench-approved-substitution-{}-report.json",
+        std::process::id()
+    ));
+
+    write_report_atomic_with_trusted_estimate_substitution_approval(&output, &approved, &approval)
+        .unwrap();
+    let loaded = BenchmarkReport::from_json_with_trusted_estimate_substitution_approval(
+        &fs::read_to_string(&output).unwrap(),
+        &approval,
+    )
+    .unwrap();
+    loaded
+        .validate_against_trusted_capture_with_estimate_substitution_approval(&capture, &approval)
+        .unwrap();
+
+    fs::remove_file(output).unwrap();
 }
 
 #[test]

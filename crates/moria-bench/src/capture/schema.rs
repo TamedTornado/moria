@@ -426,7 +426,34 @@ impl BenchmarkReport {
         serde_json::to_string(self).map_err(|_| ReportValidationError::Serialization)
     }
 
+    /// Serializes a report whose graphics-memory estimate is approved by a separately trusted
+    /// Product ledger record.
+    pub fn to_canonical_json_with_trusted_estimate_substitution_approval(
+        &self,
+        trusted_approval: &TrustedEstimateSubstitutionApproval,
+    ) -> Result<String, ReportValidationError> {
+        self.validate_against_trusted_estimate_substitution_approval(trusted_approval)?;
+        serde_json::to_string(self).map_err(|_| ReportValidationError::Serialization)
+    }
+
     pub fn from_json(json: &str) -> Result<Self, ReportValidationError> {
+        let report = Self::deserialize_json(json)?;
+        report.validate()?;
+        Ok(report)
+    }
+
+    /// Parses a report whose graphics-memory estimate is approved by a separately trusted
+    /// Product ledger record.
+    pub fn from_json_with_trusted_estimate_substitution_approval(
+        json: &str,
+        trusted_approval: &TrustedEstimateSubstitutionApproval,
+    ) -> Result<Self, ReportValidationError> {
+        let report = Self::deserialize_json(json)?;
+        report.validate_against_trusted_estimate_substitution_approval(trusted_approval)?;
+        Ok(report)
+    }
+
+    fn deserialize_json(json: &str) -> Result<Self, ReportValidationError> {
         let report: Self =
             serde_json::from_str(json).map_err(|_| ReportValidationError::Serialization)?;
         let value: serde_json::Value =
@@ -461,7 +488,6 @@ impl BenchmarkReport {
         {
             return Err(ReportValidationError::Missing { field: "JSON key" });
         }
-        report.validate()?;
         Ok(report)
     }
 
@@ -470,7 +496,28 @@ impl BenchmarkReport {
         &self,
         trusted: &TrustedCaptureIdentity,
     ) -> Result<(), ReportValidationError> {
-        self.validate()?;
+        self.validate_against_trusted_evidence(trusted, None)
+    }
+
+    /// Verifies a complete report against its separately captured identity and an independently
+    /// approved graphics-memory estimate substitution.
+    pub fn validate_against_trusted_capture_with_estimate_substitution_approval(
+        &self,
+        trusted: &TrustedCaptureIdentity,
+        trusted_approval: &TrustedEstimateSubstitutionApproval,
+    ) -> Result<(), ReportValidationError> {
+        self.validate_against_trusted_evidence(trusted, Some(trusted_approval))
+    }
+
+    fn validate_against_trusted_evidence(
+        &self,
+        trusted: &TrustedCaptureIdentity,
+        trusted_approval: Option<&TrustedEstimateSubstitutionApproval>,
+    ) -> Result<(), ReportValidationError> {
+        if let Some(trusted_approval) = trusted_approval {
+            trusted_approval.validate()?;
+        }
+        self.validate_with_estimate_substitution_approval(trusted_approval)?;
         trusted.validate()?;
         let (Some(build), Some(world), Some(assets)) = (&self.build, &self.world, &self.assets)
         else {

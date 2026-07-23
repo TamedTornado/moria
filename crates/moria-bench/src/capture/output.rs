@@ -2,7 +2,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
-use super::schema::BenchmarkReport;
+use super::schema::{BenchmarkReport, TrustedEstimateSubstitutionApproval};
 use crate::cli::sibling_temp_path;
 use moria_world::telemetry::ReportValidationError;
 
@@ -15,6 +15,19 @@ pub enum OutputError {
 pub fn write_report_atomic(path: &Path, report: &BenchmarkReport) -> Result<(), OutputError> {
     let json = report
         .to_canonical_json()
+        .map_err(OutputError::Validation)?;
+    write_json_atomically(path, &json)
+}
+
+/// Writes a report whose graphics-memory estimate is approved by a separately trusted Product
+/// ledger record.
+pub fn write_report_atomic_with_trusted_estimate_substitution_approval(
+    path: &Path,
+    report: &BenchmarkReport,
+    trusted_approval: &TrustedEstimateSubstitutionApproval,
+) -> Result<(), OutputError> {
+    let json = report
+        .to_canonical_json_with_trusted_estimate_substitution_approval(trusted_approval)
         .map_err(OutputError::Validation)?;
     write_json_atomically(path, &json)
 }
