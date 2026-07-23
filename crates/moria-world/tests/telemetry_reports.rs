@@ -20,7 +20,7 @@ fn identity() -> WorldIdentity {
 }
 
 fn report() -> ForestFeasibilityReport {
-    ForestFeasibilityReport {
+    let mut report = ForestFeasibilityReport {
         schema: "moria-product-one-forest-feasibility".into(),
         timestamp_utc: "2026-07-17T00:00:00Z".into(),
         passed: true,
@@ -33,7 +33,7 @@ fn report() -> ForestFeasibilityReport {
         world: identity(),
         manifest_sha256: "b".repeat(64),
         machine: MachineProfile {
-            profile_id_sha256: "c".repeat(64),
+            profile_id_sha256: String::new(),
             os_name: "macOS".into(),
             os_version: "15".into(),
             architecture: "aarch64".into(),
@@ -106,7 +106,9 @@ fn report() -> ForestFeasibilityReport {
             dependency_bricks: 1,
             tie_break_rank: 0,
         },
-    }
+    };
+    report.machine.profile_id_sha256 = report.machine.stable_profile_id_sha256();
+    report
 }
 
 fn distribution() -> Distribution {
@@ -555,6 +557,63 @@ fn passing_colony_workload_requires_a_trace_for_every_request() {
 }
 
 #[test]
+fn failed_workload_allows_a_renderer_barrier_shortfall_only_when_reported() {
+    let mut failed = mutation_report();
+    failed.passed = false;
+    failed.failure_reasons = vec!["workload reconciliation".into()];
+    failed.workloads[1].barrier_renderer_ready_items -= 1;
+    assert!(failed.to_canonical_json().is_ok());
+
+    failed.failure_reasons.clear();
+    assert_eq!(
+        failed.validate(),
+        Err(ReportValidationError::PassedFlagMismatch)
+    );
+
+    failed.failure_reasons = vec!["workload measurement".into()];
+    assert!(matches!(
+        failed.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "workload reconciliation"
+        })
+    ));
+}
+
+#[test]
+fn machine_profile_id_binds_every_identity_field() {
+    let baseline = report().machine;
+    assert!(baseline.validate_complete().is_ok());
+
+    let mutations: &[fn(&mut MachineProfile)] = &[
+        |value| value.os_name.push('x'),
+        |value| value.os_version.push('x'),
+        |value| value.architecture.push('x'),
+        |value| value.cpu_model.push('x'),
+        |value| value.logical_cores += 1,
+        |value| value.total_physical_memory_bytes += 1,
+        |value| value.gpu_adapter_name.push('x'),
+        |value| value.gpu_vendor += 1,
+        |value| value.gpu_device += 1,
+        |value| value.gpu_device_class = "discrete".into(),
+        |value| value.wgpu_backend = "vulkan".into(),
+        |value| value.driver = Some("driver".into()),
+        |value| value.driver_metadata_available = true,
+        |value| value.memory_architecture = "discrete".into(),
+        |value| value.acceptance_label.push('x'),
+    ];
+    for mutate in mutations {
+        let mut invalid = baseline.clone();
+        mutate(&mut invalid);
+        let updated_profile_id = invalid.stable_profile_id_sha256();
+        assert_ne!(updated_profile_id, baseline.profile_id_sha256);
+        assert_eq!(
+            invalid.validate_complete(),
+            Err(ReportValidationError::Identity { field: "machine" })
+        );
+    }
+}
+
+#[test]
 fn cold_query_samples_allow_any_p99_within_the_four_millisecond_maximum() {
     let mut valid = mutation_report();
     let cold = valid
@@ -619,6 +678,7 @@ fn failed_environment_reports_serialize_only_with_matching_failure_reasons() {
     forest.build.cargo_profile = "dev".into();
     forest.machine.os_name = "Linux".into();
     forest.machine.wgpu_backend = "vulkan".into();
+    forest.machine.profile_id_sha256 = forest.machine.stable_profile_id_sha256();
     assert!(forest.to_canonical_json().is_ok());
 
     forest.failure_reasons = vec!["build".into()];

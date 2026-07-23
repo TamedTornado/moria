@@ -162,6 +162,32 @@ pub struct MachineProfile {
 }
 
 impl MachineProfile {
+    /// Computes the SHA-256 of the stable, normalized machine identity payload.
+    ///
+    /// The payload deliberately excludes `profile_id_sha256` itself and includes
+    /// every reported OS, hardware, driver, backend, and acceptance field.
+    pub fn stable_profile_id_sha256(&self) -> String {
+        let identity = serde_json::json!({
+            "schema": "moria-machine-profile-v1",
+            "os_name": self.os_name.trim(),
+            "os_version": self.os_version.trim(),
+            "architecture": self.architecture.trim().to_ascii_lowercase(),
+            "cpu_model": self.cpu_model.trim(),
+            "logical_cores": self.logical_cores,
+            "total_physical_memory_bytes": self.total_physical_memory_bytes,
+            "gpu_adapter_name": self.gpu_adapter_name.trim(),
+            "gpu_vendor": self.gpu_vendor,
+            "gpu_device": self.gpu_device,
+            "gpu_device_class": self.gpu_device_class.trim().to_ascii_lowercase(),
+            "wgpu_backend": self.wgpu_backend.trim().to_ascii_lowercase(),
+            "driver": self.driver.as_deref().map(str::trim),
+            "driver_metadata_available": self.driver_metadata_available,
+            "memory_architecture": self.memory_architecture.trim().to_ascii_lowercase(),
+            "acceptance_label": self.acceptance_label.trim().to_ascii_lowercase(),
+        });
+        format!("{:x}", Sha256::digest(identity.to_string().as_bytes()))
+    }
+
     pub fn validate_complete(&self) -> Result<(), ReportValidationError> {
         let required = [
             &self.os_name,
@@ -178,6 +204,7 @@ impl MachineProfile {
             || self.logical_cores == 0
             || self.total_physical_memory_bytes == 0
             || !is_sha256(&self.profile_id_sha256)
+            || self.profile_id_sha256 != self.stable_profile_id_sha256()
             || self.driver_metadata_available != self.driver.is_some()
             || self.driver.as_ref().is_some_and(|driver| blank(driver))
             || !matches!(self.memory_architecture.as_str(), "unified" | "discrete")
@@ -899,10 +926,16 @@ fn validate_workload(
         MutationWorkloadRole::InteractiveCarve | MutationWorkloadRole::CatastrophicCarve => 1,
         MutationWorkloadRole::ColonyVolume => 8,
     };
+    let reconciliation_shortfall =
+        value.barrier_renderer_ready_items < value.barrier_expected_items;
     if value.request_count != expected_request_count
         || value.first_committed_frame < value.submitted_frame
         || value.final_reconciled_frame < value.first_committed_frame
-        || value.barrier_expected_items != value.barrier_renderer_ready_items
+        || value.barrier_renderer_ready_items > value.barrier_expected_items
+        || (passed && reconciliation_shortfall)
+        || (!passed
+            && reconciliation_shortfall
+            && !has_failure_reason(failure_reasons, "workload reconciliation"))
     {
         return Err(ReportValidationError::Inconsistent {
             field: "workload reconciliation",

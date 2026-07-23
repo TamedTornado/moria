@@ -719,25 +719,18 @@ fn validate_graphics_memory(
             field: "product_target_proven",
         });
     }
-    if value
-        .estimate_substitution_approval_id
-        .as_deref()
-        .is_some_and(blank)
-    {
+    if value.estimate_substitution_approval_id.is_some() {
         return Err(ReportValidationError::Identity {
             field: "estimate_substitution_approval_id",
         });
     }
-    let approved_estimate = value.estimate_substitution_approval_id.is_some()
-        && value.application_ledger.peak_bytes < GRAPHICS_MEMORY_TARGET_BYTES;
-    if passed && !value.product_target_proven && !approved_estimate {
+    if passed && !value.product_target_proven {
         return Err(ReportValidationError::Inconsistent {
             field: "resident graphics memory",
         });
     }
     if !passed
         && !value.product_target_proven
-        && !approved_estimate
         && !reasons
             .iter()
             .any(|reason| reason == "resident_graphics_memory_unproven")

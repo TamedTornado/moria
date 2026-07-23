@@ -35,8 +35,8 @@ fn distribution() -> Distribution {
 }
 
 fn machine() -> MachineProfile {
-    MachineProfile {
-        profile_id_sha256: "c".repeat(64),
+    let mut machine = MachineProfile {
+        profile_id_sha256: String::new(),
         os_name: "macOS".into(),
         os_version: "15".into(),
         architecture: "aarch64".into(),
@@ -52,7 +52,9 @@ fn machine() -> MachineProfile {
         driver_metadata_available: false,
         memory_architecture: "unified".into(),
         acceptance_label: "m4-mac-mini-32gb".into(),
-    }
+    };
+    machine.profile_id_sha256 = machine.stable_profile_id_sha256();
+    machine
 }
 
 fn object_index() -> ObjectIndexEvidence {
@@ -110,9 +112,16 @@ fn report() -> BenchmarkReport {
                 categories: BTreeMap::from([("buffers".into(), 1024)]),
                 untracked_driver_overhead: true,
             },
-            resident_measurement: None,
-            product_target_proven: false,
-            estimate_substitution_approval_id: Some("PRODUCT-42".into()),
+            resident_measurement: Some(ResidentGraphicsMeasurement {
+                provider: "reviewed resident-memory harness".into(),
+                scope: "game process resident graphics allocations".into(),
+                sampling_interval_ms: 1,
+                peak_bytes: 1024,
+                artifact_sha256: "d".repeat(64),
+                artifact_path: "resident-graphics.json".into(),
+            }),
+            product_target_proven: true,
+            estimate_substitution_approval_id: None,
         }),
         mutation_latency: None,
         save: SaveEvidence {
@@ -283,6 +292,8 @@ fn completed_report_rejects_fabricated_zero_measurements() {
 fn application_ledger_cannot_stand_in_for_resident_evidence() {
     let mut invalid = report();
     let graphics = invalid.graphics_memory.as_mut().unwrap();
+    graphics.resident_measurement = None;
+    graphics.product_target_proven = false;
     graphics.estimate_substitution_approval_id = None;
     assert!(matches!(
         invalid.validate(),
@@ -291,6 +302,7 @@ fn application_ledger_cannot_stand_in_for_resident_evidence() {
 
     let mut invalid = report();
     let graphics = invalid.graphics_memory.as_mut().unwrap();
+    graphics.resident_measurement = None;
     graphics.product_target_proven = true;
     graphics.estimate_substitution_approval_id = None;
     assert!(matches!(
@@ -333,6 +345,22 @@ fn application_ledger_cannot_stand_in_for_resident_evidence() {
         invalid.validate(),
         Err(ReportValidationError::Identity {
             field: "resident_measurement"
+        })
+    ));
+}
+
+#[test]
+fn graphics_memory_rejects_a_self_asserted_product_approval_id() {
+    let mut invalid = report();
+    let graphics = invalid.graphics_memory.as_mut().unwrap();
+    graphics.resident_measurement = None;
+    graphics.product_target_proven = false;
+    graphics.estimate_substitution_approval_id = Some("PRODUCT-42".into());
+
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Identity {
+            field: "estimate_substitution_approval_id"
         })
     ));
 }
