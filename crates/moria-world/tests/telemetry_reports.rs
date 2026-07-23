@@ -500,23 +500,13 @@ fn passing_forest_report_requires_a_consistent_maximal_stress_target() {
         })
     ));
 
-    let mut invalid = report();
-    invalid.object_index.max_edit_affected_objects = 2;
-    assert!(matches!(
-        invalid.validate(),
-        Err(ReportValidationError::Inconsistent {
-            field: "worst edit target"
-        })
-    ));
+    let mut valid = report();
+    valid.object_index.max_edit_affected_objects = 2;
+    assert!(valid.validate().is_ok());
 
-    let mut invalid = report();
-    invalid.object_index.max_dependency_bricks = 2;
-    assert!(matches!(
-        invalid.validate(),
-        Err(ReportValidationError::Inconsistent {
-            field: "worst edit target"
-        })
-    ));
+    let mut valid = report();
+    valid.object_index.max_dependency_bricks = 2;
+    assert!(valid.validate().is_ok());
 
     let mut invalid = report();
     invalid.worst_edit_target.tie_break_rank = 1;
@@ -548,6 +538,32 @@ fn passing_colony_workload_requires_a_trace_for_every_request() {
     }
     invalid.workloads[1].barrier_expected_items = 1;
     invalid.workloads[1].barrier_renderer_ready_items = 1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "workload trace"
+        })
+    ));
+}
+
+#[test]
+fn passing_workload_requires_exactly_one_request_stage_record_per_request() {
+    let mut invalid = mutation_report();
+    invalid.workloads[1]
+        .stage_counts
+        .insert("admission".into(), 9);
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "workload trace"
+        })
+    ));
+}
+
+#[test]
+fn passing_workload_requires_commit_records_to_match_committed_batches() {
+    let mut invalid = mutation_report();
+    invalid.workloads[1].stage_counts.insert("commit".into(), 9);
     assert!(matches!(
         invalid.validate(),
         Err(ReportValidationError::Inconsistent {

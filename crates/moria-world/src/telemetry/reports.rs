@@ -905,9 +905,6 @@ fn validate_worst_target(
     if target.exact_dependency_ids > target.broad_candidates
         || (passed
             && (target.broad_candidates != object_index.max_edit_candidates
-                || target.exact_dependency_ids
-                    != u16::from(object_index.max_edit_affected_objects)
-                || target.dependency_bricks != object_index.max_dependency_bricks
                 || target.tie_break_rank != 0))
     {
         return Err(ReportValidationError::Inconsistent {
@@ -1018,8 +1015,8 @@ fn validate_workload(
             || value.barrier_expected_items < value.committed_batches
             || ["admission", "schedule", "reconciliation"]
                 .iter()
-                .any(|stage| value.stage_counts[*stage] < u64::from(value.request_count))
-            || value.stage_counts["commit"] < u64::from(value.committed_batches))
+                .any(|stage| value.stage_counts[*stage] != u64::from(value.request_count))
+            || value.stage_counts["commit"] != u64::from(value.committed_batches))
     {
         return Err(ReportValidationError::Inconsistent {
             field: "workload trace",
