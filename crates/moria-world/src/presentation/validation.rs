@@ -508,7 +508,7 @@ fn valid_glb(
         if !clips.iter().all(|clip| {
             animations.iter().any(|animation| {
                 animation.get("name").and_then(serde_json::Value::as_str) == Some(clip)
-                    && valid_animation(animation, &layout, value.get("nodes"))
+                    && valid_animation(animation, &layout, value.get("nodes"), value.get("meshes"))
             })
         }) {
             return false;
@@ -642,9 +642,14 @@ fn valid_gltf_references(document: &serde_json::Value, layout: &GlbLayout<'_>) -
             .get("animations")
             .and_then(serde_json::Value::as_array)
             .is_none_or(|animations| {
-                animations
-                    .iter()
-                    .all(|animation| valid_animation(animation, layout, document.get("nodes")))
+                animations.iter().all(|animation| {
+                    valid_animation(
+                        animation,
+                        layout,
+                        document.get("nodes"),
+                        document.get("meshes"),
+                    )
+                })
             })
 }
 
@@ -668,7 +673,7 @@ fn valid_skin_references(
                 .and_then(|index| layout.accessor(index))
                 .is_some_and(|accessor| {
                     accessor.is_f32_type("MAT4")
-                        && accessor.count >= joints.len() as u32
+                        && accessor.count == joints.len() as u32
                         && finite_f32_accessor(accessor, layout.binary)
                 })
         })
@@ -939,8 +944,12 @@ fn valid_animation(
     animation: &serde_json::Value,
     layout: &GlbLayout<'_>,
     nodes: Option<&serde_json::Value>,
+    meshes: Option<&serde_json::Value>,
 ) -> bool {
     let Some(nodes) = nodes.and_then(serde_json::Value::as_array) else {
+        return false;
+    };
+    let Some(meshes) = meshes.and_then(serde_json::Value::as_array) else {
         return false;
     };
     let Some(samplers) = animation
@@ -1014,13 +1023,40 @@ fn valid_animation(
                     output.is_animation_output_type("VEC4") && output.count == expected_output_count
                 }
                 "weights" => {
-                    output.is_animation_output_type("SCALAR")
-                        && output.count >= expected_output_count
-                        && output.count % expected_output_count == 0
+                    mesh_morph_target_count(&nodes[node], meshes).is_some_and(|target_count| {
+                        output.is_animation_output_type("SCALAR")
+                            && target_count
+                                .checked_mul(expected_output_count)
+                                .is_some_and(|count| output.count == count)
+                    })
                 }
                 _ => false,
             }
     })
+}
+
+fn mesh_morph_target_count(node: &serde_json::Value, meshes: &[serde_json::Value]) -> Option<u32> {
+    let mesh = node
+        .get("mesh")
+        .and_then(value_index)
+        .and_then(|index| meshes.get(index))?;
+    let primitives = mesh.get("primitives")?.as_array()?;
+    let count = primitives
+        .first()?
+        .get("targets")?
+        .as_array()
+        .filter(|targets| !targets.is_empty())?
+        .len();
+    primitives
+        .iter()
+        .all(|primitive| {
+            primitive
+                .get("targets")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|targets| targets.len() == count)
+        })
+        .then_some(())?;
+    u32::try_from(count).ok()
 }
 
 fn valid_animation_sampler(sampler: &serde_json::Value, layout: &GlbLayout<'_>) -> bool {
@@ -1366,6 +1402,12 @@ fn valid_support_centered_scenes(document: &serde_json::Value, mesh_count: usize
     let Some(nodes) = document.get("nodes").and_then(serde_json::Value::as_array) else {
         return false;
     };
+    let Some(scenes) = document.get("scenes").and_then(serde_json::Value::as_array) else {
+        return false;
+    };
+    if !valid_node_hierarchy(nodes, scenes) {
+        return false;
+    }
     let joint_nodes = document
         .get("skins")
         .and_then(serde_json::Value::as_array)
@@ -1377,16 +1419,12 @@ fn valid_support_centered_scenes(document: &serde_json::Value, mesh_count: usize
         .collect::<BTreeSet<_>>();
     if nodes.is_empty()
         || !nodes.iter().enumerate().all(|(index, node)| {
-            joint_nodes.contains(&index) && node.get("mesh").is_none()
+            (joint_nodes.contains(&index)
+                && node.get("mesh").is_none()
+                && !node_has_mesh_descendant(nodes, index))
                 || identity_node_transform(node)
         })
     {
-        return false;
-    }
-    let Some(scenes) = document.get("scenes").and_then(serde_json::Value::as_array) else {
-        return false;
-    };
-    if !valid_node_hierarchy(nodes, scenes) {
         return false;
     }
     let Some(scene) = document
@@ -1421,6 +1459,19 @@ fn valid_support_centered_scenes(document: &serde_json::Value, mesh_count: usize
     }
     reachable_meshes.len() == mesh_count
         && valid_active_scene_skins(nodes, document, &visited_nodes)
+}
+
+fn node_has_mesh_descendant(nodes: &[serde_json::Value], node_index: usize) -> bool {
+    nodes[node_index]
+        .get("children")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|children| {
+            children.iter().filter_map(value_index).any(|child| {
+                nodes.get(child).is_some_and(|node| {
+                    node.get("mesh").is_some() || node_has_mesh_descendant(nodes, child)
+                })
+            })
+        })
 }
 
 fn valid_active_scene_skins(
@@ -2085,7 +2136,12 @@ mod glb_tests {
                 .as_array()
                 .expect("explorer animations")
                 .iter()
-                .all(|animation| valid_animation(animation, &layout, nodes))
+                .all(|animation| valid_animation(
+                    animation,
+                    &layout,
+                    nodes,
+                    document.get("meshes")
+                ))
         );
     }
 
@@ -2141,7 +2197,8 @@ mod glb_tests {
         assert!(valid_animation(
             &document["animations"][0],
             &layout,
-            document.get("nodes")
+            document.get("nodes"),
+            document.get("meshes"),
         ));
     }
 
@@ -2151,6 +2208,19 @@ mod glb_tests {
         let (document, binary) = glb_document(&explorer).expect("explorer GLB document");
         let layout = GlbLayout::new(&document, binary).expect("explorer GLB layout");
         assert!(valid_gltf_references(&document, &layout));
+
+        let translated_joint_ancestor = mutate_explorer(&explorer, |document, _| {
+            document["nodes"][0]["translation"] = serde_json::json!([1.0, 0.0, 0.0]);
+        });
+        let (document, _) =
+            glb_document(&translated_joint_ancestor).expect("mutated explorer GLB document");
+        assert!(
+            !valid_support_centered_scenes(
+                &document,
+                document["meshes"].as_array().expect("meshes").len()
+            ),
+            "joint ancestors of rendered meshes must preserve support-centered bounds"
+        );
 
         for (field, accessor) in [
             ("inverseBindMatrices", 3),
@@ -2243,7 +2313,10 @@ mod glb_tests {
             document["skins"][0]["inverseBindMatrices"] =
                 Value::from(append_identity_bind_matrices(document, binary, 2));
         });
-        assert_valid_gltf_references(&extra_bind_matrix, "skins permit extra bind matrices");
+        assert_invalid_gltf_references(
+            &extra_bind_matrix,
+            "skins require exactly one bind matrix per joint",
+        );
 
         let duplicate_joint = mutate_explorer(&explorer, |document, binary| {
             document["skins"][0]["joints"] = serde_json::json!([0, 0]);
@@ -2306,7 +2379,12 @@ mod glb_tests {
             .as_array()
             .expect("explorer animations")[0];
 
-        assert!(valid_animation(animation, &layout, document.get("nodes")));
+        assert!(valid_animation(
+            animation,
+            &layout,
+            document.get("nodes"),
+            document.get("meshes"),
+        ));
         assert!(valid_gltf_references(&document, &layout));
 
         for sampler in [
@@ -2321,7 +2399,12 @@ mod glb_tests {
                 .push(sampler);
 
             assert!(
-                !valid_animation(&malformed["animations"][0], &layout, malformed.get("nodes")),
+                !valid_animation(
+                    &malformed["animations"][0],
+                    &layout,
+                    malformed.get("nodes"),
+                    malformed.get("meshes"),
+                ),
                 "all declared samplers require in-range input and output accessors"
             );
             assert!(
@@ -2329,6 +2412,60 @@ mod glb_tests {
                 "unreferenced animation samplers must still be validated"
             );
         }
+    }
+
+    #[test]
+    fn glb_validation_rejects_invalid_morph_weight_animation_targets_and_counts() {
+        let explorer = explorer_fixture();
+
+        let no_morph_targets = mutate_explorer(&explorer, |document, binary| {
+            let output = append_f32_scalar_animation_output(document, binary, 2);
+            document["animations"] = serde_json::json!([{
+                "samplers": [{ "input": 8, "output": output }],
+                "channels": [{
+                    "sampler": 0,
+                    "target": { "node": 1, "path": "weights" },
+                }],
+            }]);
+        });
+        assert_invalid_gltf_references(
+            &no_morph_targets,
+            "weight animation targets must instantiate morph targets",
+        );
+
+        let wrong_morph_target_count = mutate_explorer(&explorer, |document, binary| {
+            document["meshes"][0]["primitives"][0]["targets"] =
+                serde_json::json!([{ "POSITION": 0 }, { "POSITION": 0 }]);
+            let output = append_f32_scalar_animation_output(document, binary, 2);
+            document["animations"] = serde_json::json!([{
+                "samplers": [{ "input": 8, "output": output }],
+                "channels": [{
+                    "sampler": 0,
+                    "target": { "node": 1, "path": "weights" },
+                }],
+            }]);
+        });
+        assert_invalid_gltf_references(
+            &wrong_morph_target_count,
+            "weight animation output must have one scalar per morph target and keyframe",
+        );
+
+        let exact_morph_target_count = mutate_explorer(&explorer, |document, binary| {
+            document["meshes"][0]["primitives"][0]["targets"] =
+                serde_json::json!([{ "POSITION": 0 }, { "POSITION": 0 }]);
+            let output = append_f32_scalar_animation_output(document, binary, 4);
+            document["animations"] = serde_json::json!([{
+                "samplers": [{ "input": 8, "output": output }],
+                "channels": [{
+                    "sampler": 0,
+                    "target": { "node": 1, "path": "weights" },
+                }],
+            }]);
+        });
+        assert_valid_gltf_references(
+            &exact_morph_target_count,
+            "weight animation output accepts its exact morph target count",
+        );
     }
 
     #[test]
@@ -2375,7 +2512,12 @@ mod glb_tests {
                 .push(malformed_sampler);
 
             assert!(
-                !valid_animation(&malformed["animations"][0], &layout, malformed.get("nodes")),
+                !valid_animation(
+                    &malformed["animations"][0],
+                    &layout,
+                    malformed.get("nodes"),
+                    malformed.get("meshes"),
+                ),
                 "unreferenced samplers must validate their {field}"
             );
         }
@@ -2398,7 +2540,8 @@ mod glb_tests {
                 !valid_animation(
                     &malformed["animations"][0],
                     &malformed_layout,
-                    malformed.get("nodes")
+                    malformed.get("nodes"),
+                    malformed.get("meshes"),
                 ),
                 "unreferenced sampler {field} must reject non-finite data"
             );
@@ -2523,6 +2666,35 @@ mod glb_tests {
         value: [u8; 4],
     ) -> usize {
         append_normalized_u8_weights(document, binary, count, value)
+    }
+
+    fn append_f32_scalar_animation_output(
+        document: &mut Value,
+        binary: &mut Vec<u8>,
+        count: usize,
+    ) -> usize {
+        let offset = binary.len();
+        for _ in 0..count {
+            binary.extend_from_slice(&0.0_f32.to_le_bytes());
+        }
+        document["buffers"][0]["byteLength"] = Value::from(binary.len());
+        let views = document["bufferViews"]
+            .as_array_mut()
+            .expect("buffer views");
+        views.push(serde_json::json!({
+            "buffer": 0,
+            "byteOffset": offset,
+            "byteLength": count * 4,
+        }));
+        let view_index = views.len() - 1;
+        let accessors = document["accessors"].as_array_mut().expect("accessors");
+        accessors.push(serde_json::json!({
+            "bufferView": view_index,
+            "componentType": 5126,
+            "count": count,
+            "type": "SCALAR",
+        }));
+        accessors.len() - 1
     }
 
     fn assert_valid_gltf_references(bytes: &[u8], message: &str) {
