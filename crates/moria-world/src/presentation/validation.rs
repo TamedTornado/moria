@@ -703,7 +703,10 @@ fn valid_skeleton_root(
         }
     }
     joints.iter().copied().all(|joint| {
-        std::iter::successors(Some(joint), |&node| parents[node]).any(|node| node == skeleton)
+        let mut ancestors = BTreeSet::new();
+        std::iter::successors(Some(joint), |&node| parents[node])
+            .take_while(|node| ancestors.insert(*node))
+            .any(|node| node == skeleton)
     })
 }
 
@@ -1007,9 +1010,11 @@ fn valid_animation(
                 "translation" | "scale" => {
                     output.is_f32_type("VEC3") && output.count == expected_output_count
                 }
-                "rotation" => output.is_f32_type("VEC4") && output.count == expected_output_count,
+                "rotation" => {
+                    output.is_animation_output_type("VEC4") && output.count == expected_output_count
+                }
                 "weights" => {
-                    output.is_f32_type("SCALAR")
+                    output.is_animation_output_type("SCALAR")
                         && output.count >= expected_output_count
                         && output.count % expected_output_count == 0
                 }
@@ -1039,8 +1044,9 @@ fn valid_animation_sampler(sampler: &serde_json::Value, layout: &GlbLayout<'_>) 
         && input.is_f32_type("SCALAR")
         && finite_f32_accessor(input, layout.binary)
         && strictly_increasing_f32_accessor(input, layout.binary)
-        && output.component_type == 5126
-        && finite_f32_accessor(output, layout.binary)
+        && (output.component_type != 5126 || finite_f32_accessor(output, layout.binary))
+        && (output.component_type == 5126
+            || (output.normalized && matches!(output.component_type, 5120..=5123)))
 }
 
 fn animation_interpolation(sampler: &serde_json::Value) -> Option<&str> {
@@ -1322,6 +1328,12 @@ impl GlbAccessor {
             && (self.component_type == 5126
                 || (self.normalized && matches!(self.component_type, 5121 | 5123)))
     }
+
+    fn is_animation_output_type(&self, expected_type: &str) -> bool {
+        self.accessor_type == expected_type
+            && (self.component_type == 5126
+                || (self.normalized && matches!(self.component_type, 5120..=5123)))
+    }
 }
 
 fn finite_f32_accessor(accessor: &GlbAccessor, binary: &[u8]) -> bool {
@@ -1408,6 +1420,38 @@ fn valid_support_centered_scenes(document: &serde_json::Value, mesh_count: usize
         }
     }
     reachable_meshes.len() == mesh_count
+        && valid_active_scene_skins(nodes, document, &visited_nodes)
+}
+
+fn valid_active_scene_skins(
+    nodes: &[serde_json::Value],
+    document: &serde_json::Value,
+    visited_nodes: &BTreeSet<usize>,
+) -> bool {
+    let skins = document
+        .get("skins")
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[] as &[serde_json::Value], Vec::as_slice);
+    visited_nodes.iter().copied().all(|node_index| {
+        let Some(skin_index) = nodes[node_index].get("skin").and_then(value_index) else {
+            return true;
+        };
+        let Some(skin) = skins.get(skin_index) else {
+            return false;
+        };
+        skin.get("joints")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|joints| {
+                joints
+                    .iter()
+                    .map(value_index)
+                    .collect::<Option<Vec<_>>>()
+                    .is_some_and(|joints| joints.iter().all(|joint| visited_nodes.contains(joint)))
+            })
+            && skin.get("skeleton").is_none_or(|skeleton| {
+                value_index(skeleton).is_some_and(|node| visited_nodes.contains(&node))
+            })
+    })
 }
 
 fn visit_active_scene_node(
@@ -1810,7 +1854,7 @@ mod glb_tests {
 
     use super::{
         GlbLayout, glb_document, valid_animation, valid_glb, valid_gltf_references,
-        valid_support_centered_scenes,
+        valid_skeleton_root, valid_support_centered_scenes,
     };
 
     #[test]
@@ -2046,6 +2090,62 @@ mod glb_tests {
     }
 
     #[test]
+    fn skeleton_roots_reject_joint_cycles_without_the_requested_root() {
+        let nodes = serde_json::json!([
+            { "children": [1] },
+            { "children": [0] },
+            {},
+        ]);
+
+        assert!(
+            !valid_skeleton_root(&Value::from(2), &[0], nodes.as_array().expect("nodes")),
+            "a skeleton root outside a cyclic joint ancestry is invalid"
+        );
+    }
+
+    #[test]
+    fn support_centered_scenes_require_skinned_nodes_and_joints_in_the_active_scene() {
+        let malformed = mutate_explorer(&explorer_fixture(), |document, _| {
+            document["nodes"][0]
+                .as_object_mut()
+                .expect("skeleton root")
+                .remove("children");
+            document["scenes"][0]["nodes"] = serde_json::json!([1]);
+        });
+        let (document, _) = glb_document(&malformed).expect("malformed explorer GLB document");
+
+        assert!(
+            !valid_support_centered_scenes(
+                &document,
+                document["meshes"].as_array().expect("meshes").len()
+            ),
+            "an in-scene skin must keep its joints and skeleton in the active scene"
+        );
+    }
+
+    #[test]
+    fn animation_rotation_accepts_normalized_integer_outputs() {
+        let animation = mutate_explorer(&explorer_fixture(), |document, binary| {
+            let output = append_normalized_u8_animation_output(document, binary, 2, [0, 0, 0, 255]);
+            document["animations"] = serde_json::json!([{
+                "samplers": [{ "input": 8, "output": output }],
+                "channels": [{
+                    "sampler": 0,
+                    "target": { "node": 0, "path": "rotation" },
+                }],
+            }]);
+        });
+        let (document, binary) = glb_document(&animation).expect("mutated explorer");
+        let layout = GlbLayout::new(&document, binary).expect("valid mutated layout");
+
+        assert!(valid_animation(
+            &document["animations"][0],
+            &layout,
+            document.get("nodes")
+        ));
+    }
+
+    #[test]
     fn glb_validation_enforces_skin_accessor_semantics_and_joint_rest_poses() {
         let explorer = explorer_fixture();
         let (document, binary) = glb_document(&explorer).expect("explorer GLB document");
@@ -2107,7 +2207,7 @@ mod glb_tests {
                 .push(serde_json::json!({
                     "translation": [0.0, 0.5, 0.0],
                 }));
-            document["nodes"][0]["children"] = serde_json::json!([2]);
+            document["nodes"][0]["children"] = serde_json::json!([1, 2]);
             document["skins"][0]["joints"] = serde_json::json!([0, 2]);
             document["skins"][0]["inverseBindMatrices"] =
                 Value::from(append_identity_bind_matrices(document, binary, 2));
@@ -2414,6 +2514,15 @@ mod glb_tests {
             "type": "VEC4",
         }));
         accessors.len() - 1
+    }
+
+    fn append_normalized_u8_animation_output(
+        document: &mut Value,
+        binary: &mut Vec<u8>,
+        count: u32,
+        value: [u8; 4],
+    ) -> usize {
+        append_normalized_u8_weights(document, binary, count, value)
     }
 
     fn assert_valid_gltf_references(bytes: &[u8], message: &str) {
