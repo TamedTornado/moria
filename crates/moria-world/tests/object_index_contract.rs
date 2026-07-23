@@ -135,6 +135,39 @@ fn broad_edit_candidates_are_not_mistaken_for_exact_affected_objects() {
 }
 
 #[test]
+fn broad_edit_candidates_cannot_exceed_the_configured_cap() {
+    // These placements all land in the same 32 m dependency cell, so a
+    // radius-three edit collects every one as a broad candidate. At one-voxel
+    // spacing, any actual edit only overlaps a small local subset.
+    let placements = (0..257)
+        .map(|index| {
+            boulder(
+                u64::try_from(index + 1).unwrap(),
+                (index % 17) * 4,
+                (index / 17) * 4,
+            )
+        })
+        .collect::<Vec<_>>();
+    let config = ObjectIndexConfig {
+        max_edit_dependency_candidates: 256,
+        max_affected_objects_per_edit: 64,
+        ..ObjectIndexConfig::default()
+    };
+
+    let error = build_object_index(&placements, &config).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ManifestError::ObjectEditCandidatesExceeded {
+                actual: 257,
+                maximum: 256,
+            }
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn registered_bushes_participate_in_dependency_queries() {
     let placements = vec![bush(5, 1, 1)];
     let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();

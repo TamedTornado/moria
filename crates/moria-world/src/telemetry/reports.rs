@@ -424,6 +424,7 @@ fn validate_m4_machine(machine: &MachineProfile) -> Result<(), ReportValidationE
         return Err(ReportValidationError::Identity { field: "machine" });
     }
     if machine.acceptance_label != M4_ACCEPTANCE_LABEL
+        || machine.cpu_model != "Apple M4"
         || machine.wgpu_backend != "metal"
         || machine.memory_architecture != "unified"
         || machine.total_physical_memory_bytes < 32 * 1024 * 1024 * 1024

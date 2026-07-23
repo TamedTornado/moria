@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, error::Error, fmt, fs, path::Path, process::Command};
+use std::{
+    collections::BTreeMap, error::Error, fmt, fs, fs::OpenOptions, io::Write, path::Path,
+    process::Command,
+};
 
 use moria_world::telemetry::{
     BuildProfile, ForestFeasibilityReport, MachineProfile, ObjectIndexEvidence,
@@ -83,6 +86,12 @@ fn run(
 
 fn prove_forest(repository_root: &Path, output: &str) -> Result<(), CommandError> {
     let output_path = repository_root.join(output);
+    if output_path.exists() {
+        return Err(CommandError::Write {
+            path: output_path.display().to_string(),
+            error: "refusing to overwrite an existing feasibility artifact".to_owned(),
+        });
+    }
     let result = prove_forest_inner(repository_root, &output_path);
     if let Err(error) = result {
         write_failed_forest_artifact(&output_path, &error)?;
@@ -96,20 +105,26 @@ fn prove_forest_inner(repository_root: &Path, output: &Path) -> Result<(), Comma
     let manifest = derive_manifest(config.seed, &config, &stamp).map_err(CommandError::Curation)?;
     let canonical = canonical_manifest_ron(&manifest)?;
     let manifest_path = repository_root.join(CURATED_MANIFEST_PATH);
-    check_manifest(&manifest_path, &canonical, &config, &stamp)?;
     let curation =
         validate_manifest_with_stamp(&config, &manifest, &stamp).map_err(CommandError::Curation)?;
     let mut report = forest_report(repository_root, &config, &manifest, &curation)?;
+    if let Err(error) = check_manifest(&manifest_path, &canonical, &config, &stamp) {
+        report.passed = false;
+        report.failure_reasons = vec![error.to_string()];
+        let document = report.to_canonical_json().map_err(CommandError::Report)?;
+        write_artifact(output, format!("{document}\n"))?;
+        return Err(error);
+    }
     if let Err(error) = report.validate() {
         report.passed = false;
         report.failure_reasons = vec![error.to_string()];
         let document =
             serde_json::to_string(&report).map_err(|_| CommandError::Report(error.clone()))?;
-        write(output, format!("{document}\n"))?;
+        write_artifact(output, format!("{document}\n"))?;
         return Err(CommandError::Report(error));
     }
     let document = report.to_canonical_json().map_err(CommandError::Report)?;
-    write(output, format!("{document}\n"))
+    write_artifact(output, format!("{document}\n"))
 }
 
 fn write_failed_forest_artifact(output: &Path, error: &CommandError) -> Result<(), CommandError> {
@@ -121,7 +136,47 @@ fn write_failed_forest_artifact(output: &Path, error: &CommandError) -> Result<(
         "passed": false,
         "failure_reasons": [error.to_string()],
     });
-    write(output, format!("{document}\n"))
+    write_artifact(output, format!("{document}\n"))
+}
+
+fn write_artifact(path: &Path, contents: String) -> Result<(), CommandError> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|error| CommandError::Write {
+        path: parent.display().to_string(),
+        error: error.to_string(),
+    })?;
+    let temporary = parent.join(format!(
+        ".{}-{}-{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("forest-proof"),
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_nanos())
+    ));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|error| CommandError::Write {
+            path: temporary.display().to_string(),
+            error: error.to_string(),
+        })?;
+    file.write_all(contents.as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|error| CommandError::Write {
+            path: temporary.display().to_string(),
+            error: error.to_string(),
+        })?;
+    fs::hard_link(&temporary, path).map_err(|error| CommandError::Write {
+        path: path.display().to_string(),
+        error: error.to_string(),
+    })?;
+    fs::remove_file(temporary).map_err(|error| CommandError::Write {
+        path: path.display().to_string(),
+        error: error.to_string(),
+    })
 }
 
 fn forest_report(
@@ -538,6 +593,8 @@ fn acceptance_machine_profile() -> Result<MachineProfile, CommandError> {
         .map_err(|_| CommandError::Report(ReportValidationError::Identity { field: "machine" }))?;
     let cpu_model = command_output("sysctl", ["-n", "machdep.cpu.brand_string"])
         .map_err(|_| CommandError::Report(ReportValidationError::Identity { field: "machine" }))?;
+    let model = command_output("sysctl", ["-n", "hw.model"])
+        .map_err(|_| CommandError::Report(ReportValidationError::Identity { field: "machine" }))?;
     let logical_cores = command_output("sysctl", ["-n", "hw.logicalcpu"])
         .ok()
         .and_then(|value| value.parse().ok())
@@ -550,10 +607,27 @@ fn acceptance_machine_profile() -> Result<MachineProfile, CommandError> {
         .ok_or(CommandError::Report(ReportValidationError::Identity {
             field: "machine",
         }))?;
+    let display_profile = command_output("system_profiler", ["SPDisplaysDataType", "-json"])
+        .map_err(|_| CommandError::Report(ReportValidationError::Identity { field: "gpu" }))?;
+    let (
+        gpu_adapter_name,
+        gpu_vendor,
+        gpu_device,
+        gpu_device_class,
+        wgpu_backend,
+        memory_architecture,
+    ) = display_profile_fields(&display_profile)?;
+    if model != "Mac16,10" || cpu_model != "Apple M4" {
+        return Err(CommandError::Report(ReportValidationError::Identity {
+            field: "M4 machine",
+        }));
+    }
     Ok(MachineProfile {
         profile_id_sha256: hex_sha256(
-            format!("macOS|{os_version}|{cpu_model}|{logical_cores}|{total_physical_memory_bytes}")
-                .as_bytes(),
+            format!(
+                "macOS|{os_version}|{model}|{cpu_model}|{logical_cores}|{total_physical_memory_bytes}|{gpu_adapter_name}|{gpu_vendor}|{gpu_device}|{gpu_device_class}|{wgpu_backend}|{memory_architecture}"
+            )
+            .as_bytes(),
         ),
         os_name: "macOS".to_owned(),
         os_version,
@@ -561,16 +635,77 @@ fn acceptance_machine_profile() -> Result<MachineProfile, CommandError> {
         cpu_model: cpu_model.clone(),
         logical_cores,
         total_physical_memory_bytes,
-        gpu_adapter_name: cpu_model,
-        gpu_vendor: 0,
-        gpu_device: 0,
-        gpu_device_class: "integrated".to_owned(),
-        wgpu_backend: "metal".to_owned(),
+        gpu_adapter_name,
+        gpu_vendor,
+        gpu_device,
+        gpu_device_class,
+        wgpu_backend,
         driver: None,
         driver_metadata_available: false,
-        memory_architecture: "unified".to_owned(),
+        memory_architecture,
         acceptance_label: "m4-mac-mini-32gb".to_owned(),
     })
+}
+
+#[cfg(not(test))]
+fn display_profile_fields(
+    document: &str,
+) -> Result<(String, u32, u32, String, String, String), CommandError> {
+    let displays: serde_json::Value = serde_json::from_str(document)
+        .map_err(|_| CommandError::Report(ReportValidationError::Identity { field: "gpu" }))?;
+    let display = displays
+        .get("SPDisplaysDataType")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|entries| entries.first())
+        .ok_or(CommandError::Report(ReportValidationError::Identity {
+            field: "gpu",
+        }))?;
+    let adapter = display
+        .get("sppci_model")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or(CommandError::Report(ReportValidationError::Identity {
+            field: "gpu",
+        }))?
+        .to_owned();
+    let vendor = display
+        .get("spdisplays_vendor")
+        .and_then(serde_json::Value::as_str)
+        .and_then(hex_identifier)
+        .ok_or(CommandError::Report(ReportValidationError::Identity {
+            field: "gpu",
+        }))?;
+    let device = display
+        .get("spdisplays_device-id")
+        .and_then(serde_json::Value::as_str)
+        .and_then(hex_identifier)
+        .ok_or(CommandError::Report(ReportValidationError::Identity {
+            field: "gpu",
+        }))?;
+    let backend = display
+        .get("spdisplays_metal")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| value.contains("Metal"))
+        .map(|_| "metal".to_owned())
+        .ok_or(CommandError::Report(ReportValidationError::Identity {
+            field: "gpu",
+        }))?;
+    Ok((
+        adapter,
+        vendor,
+        device,
+        "integrated".to_owned(),
+        backend,
+        "unified".to_owned(),
+    ))
+}
+
+#[cfg(not(test))]
+fn hex_identifier(value: &str) -> Option<u32> {
+    let digits = value
+        .split_whitespace()
+        .find_map(|piece| piece.strip_prefix("0x"))?;
+    u32::from_str_radix(digits, 16).ok()
 }
 
 fn load_inputs(repository_root: &Path) -> Result<(RegionConfig, SparseVoxelStamp), CommandError> {
@@ -654,7 +789,7 @@ mod tests {
 
     use moria_world::telemetry::ForestFeasibilityReport;
 
-    use super::{CommandError, run};
+    use super::{CommandError, run, write_artifact};
 
     #[test]
     fn check_validates_the_checked_in_manifest() {
@@ -697,6 +832,19 @@ mod tests {
         assert_eq!(proof.object_counts.get("ruin"), Some(&1));
         assert_eq!(proof.required_object_counts.get("ruin"), Some(&1));
         proof.validate().unwrap();
+        fs::remove_file(output).unwrap();
+    }
+
+    #[test]
+    fn feasibility_artifacts_do_not_overwrite_preserved_failures() {
+        let output = std::env::temp_dir().join(format!(
+            "moria-curate-preserved-failure-{}.json",
+            std::process::id()
+        ));
+        fs::write(&output, b"preserved failure\n").unwrap();
+
+        assert!(write_artifact(&output, "replacement\n".to_owned()).is_err());
+        assert_eq!(fs::read(&output).unwrap(), b"preserved failure\n");
         fs::remove_file(output).unwrap();
     }
 }

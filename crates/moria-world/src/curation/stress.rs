@@ -106,10 +106,11 @@ fn eligible_dressing_anchor(identity: &WorldIdentity, center: VoxelCoord) -> boo
 
 fn score(index: &ObjectSpatialIndex<'_>, center: VoxelCoord) -> Option<CurationStressTarget> {
     let bounds = edit_bounds(center)?;
+    let broad = broad_members(index, bounds);
     let exact = exact_members(index, bounds);
     Some(CurationStressTarget {
         center,
-        broad_dependency_candidates: u16::try_from(exact.len()).unwrap_or(u16::MAX),
+        broad_dependency_candidates: u16::try_from(broad.len()).unwrap_or(u16::MAX),
         exact_dependency_ids: u16::try_from(exact.len()).unwrap_or(u16::MAX),
         dependency_bricks: exact
             .iter()
@@ -139,6 +140,13 @@ fn edit_bounds(center: VoxelCoord) -> Option<AabbQ8> {
 }
 
 fn exact_members(index: &ObjectSpatialIndex<'_>, bounds: AabbQ8) -> Vec<u32> {
+    broad_members(index, bounds)
+        .into_iter()
+        .filter(|&member| overlap(index.records()[member as usize].dependency_bounds, bounds))
+        .collect()
+}
+
+fn broad_members(index: &ObjectSpatialIndex<'_>, bounds: AabbQ8) -> Vec<u32> {
     index
         .dependency_cells()
         .iter()
@@ -146,7 +154,6 @@ fn exact_members(index: &ObjectSpatialIndex<'_>, bounds: AabbQ8) -> Vec<u32> {
         .flat_map(|cell| cell.members.iter().copied())
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .filter(|&member| overlap(index.records()[member as usize].dependency_bounds, bounds))
         .collect()
 }
 
@@ -205,7 +212,8 @@ fn changed_sphere_bricks(center: VoxelCoord) -> u16 {
 #[cfg(test)]
 mod tests {
     use crate::{
-        AIR, ObjectIndexConfig, RegionConfig, TOPSOIL, VoxelCoord, WorldBounds, WorldIdentity,
+        AIR, ObjectId, ObjectIndexConfig, ObjectKind, ObjectPlacement, QuantizedTransform,
+        RegionConfig, TOPSOIL, VoxelCoord, VoxelObjectShape, WorldBounds, WorldIdentity,
         WorldPointQ8, build_object_index, derive_manifest, evaluate_base_voxel,
     };
 
@@ -275,5 +283,39 @@ mod tests {
             .material,
             AIR
         );
+    }
+
+    #[test]
+    fn score_counts_broad_candidates_before_exact_aabb_filtering() {
+        let placements = (0..257)
+            .map(|index| ObjectPlacement {
+                id: ObjectId(u64::try_from(index + 1).unwrap()),
+                kind: ObjectKind::Boulder,
+                transform_q: QuantizedTransform {
+                    translation: WorldPointQ8::new((index % 17) * 4 * 64, 0, (index / 17) * 4 * 64),
+                    yaw_quarter_turns: 0,
+                    uniform_scale_q8: 256,
+                },
+                species: None,
+                shape: VoxelObjectShape::Boulder {
+                    radii_q8: [128, 128, 128],
+                    perturbation_key: u64::try_from(index).unwrap(),
+                },
+                anchor: VoxelCoord::new((index % 17) * 4, 0, (index / 17) * 4),
+            })
+            .collect::<Vec<_>>();
+        let index = build_object_index(
+            &placements,
+            &ObjectIndexConfig {
+                max_edit_dependency_candidates: 1_024,
+                ..ObjectIndexConfig::default()
+            },
+        )
+        .unwrap();
+
+        let target = score(&index, VoxelCoord::new(0, 0, 0)).unwrap();
+
+        assert_eq!(target.broad_dependency_candidates, 257);
+        assert!(target.exact_dependency_ids <= 64);
     }
 }

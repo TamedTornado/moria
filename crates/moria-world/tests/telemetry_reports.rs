@@ -88,6 +88,14 @@ fn report() -> ForestFeasibilityReport {
 }
 
 #[test]
+fn passing_forest_reports_require_the_designated_m4_machine() {
+    let mut evidence = report();
+    evidence.machine.cpu_model = "Apple M3".to_owned();
+
+    assert!(evidence.validate().is_err());
+}
+
+#[test]
 fn forest_report_rejects_inconsistent_pass_flags_and_non_finite_metrics() {
     let mut invalid = report();
     invalid.failure_reasons.push("missing-stage".into());

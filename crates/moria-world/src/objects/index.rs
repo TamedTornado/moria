@@ -305,6 +305,12 @@ fn validate_edit_caps(
         members.sort_unstable();
         members.dedup();
         let actual = u16::try_from(members.len()).unwrap_or(u16::MAX);
+        if actual > config.max_edit_dependency_candidates {
+            return Err(ManifestError::ObjectEditCandidatesExceeded {
+                actual,
+                maximum: config.max_edit_dependency_candidates,
+            });
+        }
         if actual > u16::from(config.max_affected_objects_per_edit) {
             let affected = *exact_overlap_cache
                 .entry(members.clone())
