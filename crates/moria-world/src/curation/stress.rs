@@ -81,13 +81,26 @@ fn eligible_surface_center(
     let Some(bounds) = edit_bounds(center) else {
         return false;
     };
-    let exact = exact_members(index, bounds);
-    exact.iter().any(|&member| {
-        let placement = &index.placements()[member as usize];
-        placement.kind != ObjectKind::Ruin
-            && placement.anchor.y == center.y
-            && anchor_in_bounds(placement.anchor, bounds)
-    })
+    exact_members(index, bounds)
+        .iter()
+        .any(|&member| index.placements()[member as usize].kind != ObjectKind::Ruin)
+        && eligible_dressing_anchor(identity, center)
+}
+
+/// The terrain evaluator owns the immutable topsoil surface. A surface-cell
+/// center is a valid dressing anchor only at that upward-facing surface; an
+/// object anchor is unrelated to dressing ownership and cannot stand in for it.
+fn eligible_dressing_anchor(identity: &WorldIdentity, center: VoxelCoord) -> bool {
+    evaluate_column(
+        identity,
+        ColumnCoord {
+            x: center.x,
+            z: center.z,
+        },
+    )
+    .surface_y_q8
+    .div_euclid(64)
+        == center.y
 }
 
 fn score(index: &ObjectSpatialIndex<'_>, center: VoxelCoord) -> Option<CurationStressTarget> {
@@ -109,7 +122,7 @@ fn score(index: &ObjectSpatialIndex<'_>, center: VoxelCoord) -> Option<CurationS
             .copied()
             .map(|member| bricks(index.records()[member as usize].dependency_bounds))
             .fold(0, u16::saturating_add),
-        changed_bricks: bricks(bounds),
+        changed_bricks: changed_sphere_bricks(center),
     })
 }
 
@@ -142,14 +155,6 @@ fn exact_members(index: &ObjectSpatialIndex<'_>, bounds: AabbQ8) -> Vec<u32> {
         .collect()
 }
 
-fn anchor_in_bounds(anchor: VoxelCoord, bounds: AabbQ8) -> bool {
-    bounds.contains(WorldPointQ8::new(
-        anchor.x * 64,
-        anchor.y * 64,
-        anchor.z * 64,
-    ))
-}
-
 fn keys(bounds: AabbQ8) -> BTreeSet<crate::DependencyGridCellKey> {
     let min_x = bounds.min.x.div_euclid(CELL_Q8);
     let max_x = (bounds.max_exclusive.x - 1).div_euclid(CELL_Q8);
@@ -179,6 +184,27 @@ fn bricks(bounds: AabbQ8) -> u16 {
             * i64::from(extent(bounds.min.z, bounds.max_exclusive.z)),
     )
     .unwrap_or(u16::MAX)
+}
+
+/// Counts only bricks containing voxels changed by the radius-three sphere,
+/// rather than every brick touched by its enclosing AABB.
+fn changed_sphere_bricks(center: VoxelCoord) -> u16 {
+    let radius_voxels = RADIUS_Q8.div_euclid(64);
+    let radius_squared = i64::from(RADIUS_Q8).pow(2);
+    let mut changed = BTreeSet::new();
+    for x in center.x - radius_voxels..=center.x + radius_voxels {
+        for y in center.y - radius_voxels..=center.y + radius_voxels {
+            for z in center.z - radius_voxels..=center.z + radius_voxels {
+                let dx = i64::from((x - center.x) * 64);
+                let dy = i64::from((y - center.y) * 64);
+                let dz = i64::from((z - center.z) * 64);
+                if dx * dx + dy * dy + dz * dz <= radius_squared {
+                    changed.insert((x.div_euclid(16), y.div_euclid(16), z.div_euclid(16)));
+                }
+            }
+        }
+    }
+    u16::try_from(changed.len()).unwrap_or(u16::MAX)
 }
 
 #[cfg(test)]

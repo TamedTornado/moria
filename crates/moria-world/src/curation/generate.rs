@@ -82,6 +82,12 @@ pub fn generate_manifest(
     let mut forest_cursor = CandidateCursor::new(identity, route_start, route_end);
     let mut witness_cursor = CandidateCursor::new(identity, route_start, route_end);
     let mut land_cursor = CandidateCursor::new(identity, route_start, route_end);
+    let mut bush_cursor = CandidateCursor::with_pattern(
+        identity,
+        route_start,
+        route_end,
+        PlacementPattern::UNDERSTORY,
+    );
     let mut next_id = 1_u64;
     let tree_count = ceil_div(forest_area_m2, 25);
     let birch_count = u32::from(config.biome.tree_species_mix_percent[0]) * tree_count / 100;
@@ -127,15 +133,14 @@ pub fn generate_manifest(
     }
     debug_assert_eq!(birch_count + pine_count, tree_count);
 
-    append_kind(
+    append_bushes(
         &mut objects,
-        &mut land_cursor,
+        &mut bush_cursor,
         &mut next_id,
         ceil_div(
             forest_area_m2 * u32::from(config.biome.bushes_per_hectare),
             10_000,
         ),
-        ObjectKind::Bush,
     )?;
     append_kind(
         &mut objects,
@@ -146,6 +151,7 @@ pub fn generate_manifest(
             10_000,
         ),
         ObjectKind::Boulder,
+        BiomeId::Meadow,
     )?;
     append_kind(
         &mut objects,
@@ -156,6 +162,7 @@ pub fn generate_manifest(
             10_000,
         ),
         ObjectKind::Stump,
+        BiomeId::Meadow,
     )?;
     append_kind(
         &mut objects,
@@ -166,6 +173,7 @@ pub fn generate_manifest(
             10_000,
         ),
         ObjectKind::Rock,
+        BiomeId::Meadow,
     )?;
 
     let ruin = ruin(&identity);
@@ -348,7 +356,10 @@ fn validate_forest_contract(
             x: placement.transform_q.translation.x.div_euclid(64),
             z: placement.transform_q.translation.z.div_euclid(64),
         };
-        let required_biome = if matches!(placement.kind, ObjectKind::TreeA | ObjectKind::TreeB) {
+        let required_biome = if matches!(
+            placement.kind,
+            ObjectKind::TreeA | ObjectKind::TreeB | ObjectKind::Bush
+        ) {
             BiomeId::Forest
         } else {
             BiomeId::Meadow
@@ -569,9 +580,24 @@ fn append_kind(
     next_id: &mut u64,
     count: u32,
     kind: ObjectKind,
+    biome: BiomeId,
 ) -> Result<(), CurationGenerateError> {
     for _ in 0..count {
-        objects.push(placement(*next_id, cursor.next(BiomeId::Meadow)?, kind));
+        objects.push(placement(*next_id, cursor.next(biome)?, kind));
+        *next_id += 1;
+    }
+    Ok(())
+}
+
+fn append_bushes(
+    objects: &mut Vec<ObjectPlacement>,
+    cursor: &mut CandidateCursor,
+    next_id: &mut u64,
+    count: u32,
+) -> Result<(), CurationGenerateError> {
+    for _ in 0..count {
+        let point = cursor.next(BiomeId::Forest)?;
+        objects.push(placement(*next_id, point, ObjectKind::Bush));
         *next_id += 1;
     }
     Ok(())
@@ -773,6 +799,34 @@ struct CandidateCursor {
     identity: WorldIdentity,
     route_start: WorldPointQ8,
     route_end: WorldPointQ8,
+    column_spacing_q8: i32,
+    row_spacing_q8: i32,
+    row_stagger_q8: i32,
+}
+
+struct PlacementPattern {
+    x_offset_q8: i32,
+    z_offset_q8: i32,
+    column_spacing_q8: i32,
+    row_spacing_q8: i32,
+    row_stagger_q8: i32,
+}
+
+impl PlacementPattern {
+    const DEFAULT: Self = Self {
+        x_offset_q8: 0,
+        z_offset_q8: 0,
+        column_spacing_q8: PLACEMENT_COLUMN_SPACING_Q8,
+        row_spacing_q8: PLACEMENT_ROW_SPACING_Q8,
+        row_stagger_q8: PLACEMENT_ROW_STAGGER_Q8,
+    };
+    const UNDERSTORY: Self = Self {
+        x_offset_q8: 0,
+        z_offset_q8: 0,
+        column_spacing_q8: 1_024,
+        row_spacing_q8: 896,
+        row_stagger_q8: 512,
+    };
 }
 
 impl CandidateCursor {
@@ -781,12 +835,24 @@ impl CandidateCursor {
         route_start: WorldPointQ8,
         route_end: WorldPointQ8,
     ) -> Self {
+        Self::with_pattern(identity, route_start, route_end, PlacementPattern::DEFAULT)
+    }
+
+    const fn with_pattern(
+        identity: WorldIdentity,
+        route_start: WorldPointQ8,
+        route_end: WorldPointQ8,
+        pattern: PlacementPattern,
+    ) -> Self {
         Self {
-            x_q8: -500 * Q8_PER_METER,
-            z_q8: -500 * Q8_PER_METER,
+            x_q8: -500 * Q8_PER_METER + pattern.x_offset_q8,
+            z_q8: -500 * Q8_PER_METER + pattern.z_offset_q8,
             identity,
             route_start,
             route_end,
+            column_spacing_q8: pattern.column_spacing_q8,
+            row_spacing_q8: pattern.row_spacing_q8,
+            row_stagger_q8: pattern.row_stagger_q8,
         }
     }
 
@@ -798,16 +864,16 @@ impl CandidateCursor {
                 ));
             }
             let row_offset =
-                if (self.z_q8 + 500 * Q8_PER_METER).div_euclid(PLACEMENT_ROW_SPACING_Q8) % 2 == 0 {
+                if (self.z_q8 + 500 * Q8_PER_METER).div_euclid(self.row_spacing_q8) % 2 == 0 {
                     0
                 } else {
-                    PLACEMENT_ROW_STAGGER_Q8
+                    self.row_stagger_q8
                 };
             let point = surface_point_q8(&self.identity, self.x_q8 + row_offset, self.z_q8);
-            self.x_q8 += PLACEMENT_COLUMN_SPACING_Q8;
+            self.x_q8 += self.column_spacing_q8;
             if self.x_q8 >= 500 * Q8_PER_METER {
                 self.x_q8 = -500 * Q8_PER_METER;
-                self.z_q8 += PLACEMENT_ROW_SPACING_Q8;
+                self.z_q8 += self.row_spacing_q8;
             }
             let outside_ruin = point.x.abs() >= 2_560 || point.z.abs() >= 2_560;
             let outside_route = point_segment_distance_at_least(
@@ -1019,6 +1085,21 @@ mod tests {
         assert!(
             count_kind(ObjectKind::Bush)
                 >= super::density_count(forest_area_m2, config.biome.bushes_per_hectare)
+        );
+        assert!(
+            manifest
+                .objects
+                .iter()
+                .filter(|placement| placement.kind == ObjectKind::Bush)
+                .all(|placement| {
+                    biome_at(
+                        &identity,
+                        ColumnCoord {
+                            x: placement.transform_q.translation.x.div_euclid(64),
+                            z: placement.transform_q.translation.z.div_euclid(64),
+                        },
+                    ) == BiomeId::Forest
+                })
         );
         assert!(
             count_kind(ObjectKind::Boulder)

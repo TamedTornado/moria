@@ -183,7 +183,14 @@ pub fn build_object_index<'a>(
                 maximum: config.max_dependency_bricks_per_object,
             });
         }
-        let dependency_keys = dependency_keys_for(dependency_bounds);
+        // Bushes are regenerated understory dressing: they retain a sample
+        // record for validation, but do not own registered-object dependency
+        // work during a terrain edit.
+        let dependency_keys = if placement.kind == ObjectKind::Bush {
+            Vec::new()
+        } else {
+            dependency_keys_for(dependency_bounds)
+        };
         enforce_cell_count(
             placement.id,
             dependency_keys.len(),

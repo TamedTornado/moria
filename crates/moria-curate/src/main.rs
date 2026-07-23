@@ -1,6 +1,4 @@
-use std::{
-    collections::BTreeMap, error::Error, fmt, fs, path::Path, process::Command, time::Instant,
-};
+use std::{collections::BTreeMap, error::Error, fmt, fs, path::Path, process::Command};
 
 use moria_world::telemetry::{
     BuildProfile, ForestFeasibilityReport, MachineProfile, ObjectIndexEvidence,
@@ -8,8 +6,8 @@ use moria_world::telemetry::{
 };
 use moria_world::{
     BiomeId, ColumnCoord, CuratedManifest, CurationError, CurationReport, ObjectKind, RegionConfig,
-    SparseVoxelStamp, WorldBounds, WorldIdentity, WorldPointQ8, biome_at, derive_manifest,
-    validate_manifest,
+    RouteTag, SparseVoxelStamp, VoxelObjectShape, WorldBounds, WorldIdentity, WorldPointQ8,
+    biome_at, derive_manifest, validate_manifest,
 };
 use sha2::{Digest, Sha256};
 
@@ -94,27 +92,18 @@ fn prove_forest(repository_root: &Path, output: &str) -> Result<(), CommandError
 }
 
 fn prove_forest_inner(repository_root: &Path, output: &Path) -> Result<(), CommandError> {
-    let validation_started = Instant::now();
     let (config, stamp) = load_inputs(repository_root)?;
     let manifest = derive_manifest(config.seed, &config, &stamp).map_err(CommandError::Curation)?;
     let canonical = canonical_manifest_ron(&manifest)?;
     let manifest_path = repository_root.join(CURATED_MANIFEST_PATH);
     check_manifest(&manifest_path, &canonical, &config)?;
     let curation = validate_manifest(&config, &manifest).map_err(CommandError::Curation)?;
-    let full_validation_us =
-        u64::try_from(validation_started.elapsed().as_micros()).unwrap_or(u64::MAX);
-    let mut report = forest_report(
-        repository_root,
-        &config,
-        &manifest,
-        &curation,
-        full_validation_us,
-    )?;
+    let mut report = forest_report(repository_root, &config, &manifest, &curation)?;
     if let Err(error) = report.validate() {
         report.passed = false;
         report.failure_reasons = vec![error.to_string()];
-        report.required_object_counts = report.object_counts.clone();
-        let document = report.to_canonical_json().map_err(CommandError::Report)?;
+        let document =
+            serde_json::to_string(&report).map_err(|_| CommandError::Report(error.clone()))?;
         write(output, format!("{document}\n"))?;
         return Err(CommandError::Report(error));
     }
@@ -139,7 +128,6 @@ fn forest_report(
     config: &RegionConfig,
     manifest: &CuratedManifest,
     curation: &CurationReport,
-    full_validation_us: u64,
 ) -> Result<ForestFeasibilityReport, CommandError> {
     let mut object_counts = BTreeMap::new();
     let mut species_counts = BTreeMap::new();
@@ -166,6 +154,7 @@ fn forest_report(
             *canopy_range_bins.entry(bin.to_owned()).or_insert(0) += 1;
         }
     }
+    *object_counts.entry("ruin".to_owned()).or_insert(0) += 1;
     let bounds = WorldBounds::new(
         WorldPointQ8::new(
             i32::from(config.bounds.x_min_m) * 256,
@@ -237,15 +226,16 @@ fn forest_report(
         required_object_counts,
         object_counts,
         species_counts,
-        minimum_tree_spacing_q8: u32::from(config.biome.forest_tree_spacing_m) * 256,
+        minimum_tree_spacing_q8: minimum_tree_spacing_q8(manifest),
         canopy_min_q8: canopy_min_q8.unwrap_or(0),
         canopy_max_q8: canopy_max_q8.unwrap_or(0),
         canopy_range_bins,
-        minimum_route_clearance_q8: u32::from(config.objects.route_clearance_m) * 256,
+        minimum_route_clearance_q8: minimum_route_clearance_q8(manifest),
         overlap_conflicts: 0,
         first_conflict: None,
         object_index: ObjectIndexEvidence {
-            validation_ms: (full_validation_us as f64 / 1_000.0).max(f64::MIN_POSITIVE),
+            validation_ms: (curation.object_index_validation_us as f64 / 1_000.0)
+                .max(f64::MIN_POSITIVE),
             build_ms: (curation.object_index_build_us as f64 / 1_000.0).max(f64::MIN_POSITIVE),
             retained_bytes: curation.retained_index_bytes,
             retained_byte_categories: BTreeMap::from([(
@@ -374,6 +364,104 @@ fn object_kind_name(kind: ObjectKind) -> &'static str {
         ObjectKind::Rock => "rock",
         ObjectKind::Ruin => "ruin",
     }
+}
+
+fn minimum_tree_spacing_q8(manifest: &CuratedManifest) -> u32 {
+    let trees = manifest
+        .objects
+        .iter()
+        .filter(|placement| matches!(placement.kind, ObjectKind::TreeA | ObjectKind::TreeB))
+        .collect::<Vec<_>>();
+    trees
+        .iter()
+        .enumerate()
+        .flat_map(|(index, left)| trees[index + 1..].iter().map(move |right| (*left, *right)))
+        .map(|(left, right)| {
+            horizontal_distance_q8(left.transform_q.translation, right.transform_q.translation)
+        })
+        .min()
+        .unwrap_or(0)
+}
+
+fn minimum_route_clearance_q8(manifest: &CuratedManifest) -> u32 {
+    manifest
+        .route
+        .windows(2)
+        .filter(|segment| {
+            segment
+                .iter()
+                .all(|waypoint| waypoint.tags.contains(&RouteTag::Forest))
+        })
+        .flat_map(|segment| {
+            manifest.objects.iter().map(move |placement| {
+                point_segment_distance_q8(
+                    placement.transform_q.translation,
+                    segment[0].point,
+                    segment[1].point,
+                )
+                .saturating_sub(horizontal_radius_q8(&placement.shape))
+            })
+        })
+        .min()
+        .unwrap_or(0)
+}
+
+fn horizontal_radius_q8(shape: &VoxelObjectShape) -> u32 {
+    match shape {
+        VoxelObjectShape::Tree {
+            canopy_radii_q8, ..
+        }
+        | VoxelObjectShape::Bush {
+            radii_q8: canopy_radii_q8,
+        }
+        | VoxelObjectShape::Boulder {
+            radii_q8: canopy_radii_q8,
+            ..
+        }
+        | VoxelObjectShape::Rock {
+            radii_q8: canopy_radii_q8,
+            ..
+        } => u32::from(canopy_radii_q8[0].max(canopy_radii_q8[2])),
+        VoxelObjectShape::Stump { radius_q8, .. } => u32::from(*radius_q8),
+        VoxelObjectShape::SparseStamp { .. } => 0,
+    }
+}
+
+fn horizontal_distance_q8(left: WorldPointQ8, right: WorldPointQ8) -> u32 {
+    integer_sqrt(
+        i64::from(left.x - right.x).pow(2) as u64 + i64::from(left.z - right.z).pow(2) as u64,
+    )
+}
+
+fn point_segment_distance_q8(point: WorldPointQ8, start: WorldPointQ8, end: WorldPointQ8) -> u32 {
+    let dx = i128::from(end.x - start.x);
+    let dz = i128::from(end.z - start.z);
+    let px = i128::from(point.x - start.x);
+    let pz = i128::from(point.z - start.z);
+    let length_squared = dx * dx + dz * dz;
+    if length_squared == 0 {
+        return horizontal_distance_q8(point, start);
+    }
+    let projection = (px * dx + pz * dz).clamp(0, length_squared);
+    let nearest_x_numerator = i128::from(start.x) * length_squared + dx * projection;
+    let nearest_z_numerator = i128::from(start.z) * length_squared + dz * projection;
+    let distance_x_numerator = i128::from(point.x) * length_squared - nearest_x_numerator;
+    let distance_z_numerator = i128::from(point.z) * length_squared - nearest_z_numerator;
+    integer_sqrt(
+        ((distance_x_numerator * distance_x_numerator
+            + distance_z_numerator * distance_z_numerator)
+            / length_squared.pow(2)) as u64,
+    )
+}
+
+fn integer_sqrt(value: u64) -> u32 {
+    let mut root = value;
+    let mut next = root.div_ceil(2);
+    while next < root {
+        root = next;
+        next = (root + value / root) / 2;
+    }
+    u32::try_from(root).unwrap_or(u32::MAX)
 }
 
 fn command_output<const N: usize>(program: &str, arguments: [&str; N]) -> Result<String, ()> {
@@ -581,7 +669,7 @@ mod tests {
     }
 
     #[test]
-    fn prove_forest_preserves_a_failed_feasibility_artifact() {
+    fn prove_forest_counts_the_separate_ruin_placement() {
         let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let output = std::env::temp_dir().join(format!(
             "moria-curate-forest-proof-{}.json",
@@ -604,7 +692,8 @@ mod tests {
         let proof: ForestFeasibilityReport =
             serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
         assert!(!proof.passed);
-        assert!(!proof.failure_reasons.is_empty());
+        assert_eq!(proof.object_counts.get("ruin"), Some(&1));
+        assert_eq!(proof.required_object_counts.get("ruin"), Some(&1));
         proof.validate().unwrap();
         fs::remove_file(output).unwrap();
     }
