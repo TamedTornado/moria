@@ -448,47 +448,46 @@ fn visit_broad_edit_overlaps_exceeding(
     maximum_allowed: u16,
     mut visit: impl FnMut(BroadEditOverlap) -> bool,
 ) -> bool {
-    let mut x_witnesses = dependencies
-        .iter()
-        .map(|(centers, _)| centers.min.x)
-        .collect::<Vec<_>>();
-    x_witnesses.sort_unstable();
-    x_witnesses.dedup();
+    let maximum_allowed = usize::from(maximum_allowed);
+    let mut x_active = vec![false; dependencies.len()];
+    for events in axis_slab_events(dependencies, |bounds| bounds.min.x, |bounds| bounds.max.x) {
+        for (_, index, starts) in events {
+            x_active[index] = starts;
+        }
+        let x_members = active_indices(&x_active);
+        if x_members.len() <= maximum_allowed {
+            continue;
+        }
 
-    for x in x_witnesses {
-        let active = dependencies
-            .iter()
-            .enumerate()
-            .filter(|(_, (centers, _))| centers.min.x <= x && x <= centers.max.x)
-            .collect::<Vec<_>>();
-        let mut y_witnesses = active
-            .iter()
-            .map(|(_, (centers, _))| centers.min.y)
-            .collect::<Vec<_>>();
-        y_witnesses.sort_unstable();
-        y_witnesses.dedup();
-        for y in y_witnesses {
-            let active_y = active
-                .iter()
-                .filter(|(_, (centers, _))| centers.min.y <= y && y <= centers.max.y)
-                .copied()
-                .collect::<Vec<_>>();
-            let mut z_events = active_y
-                .iter()
-                .flat_map(|(_, (centers, _))| [(centers.min.z, 1_i16), (centers.max.z + 1, -1_i16)])
-                .collect::<Vec<_>>();
-            z_events.sort_unstable_by_key(|&(z, delta)| (z, -delta));
-            let mut overlap = 0_i16;
-            for (z, delta) in z_events {
-                overlap += delta;
-                if overlap <= i16::try_from(maximum_allowed).unwrap_or(i16::MAX) {
+        let mut y_active = vec![false; dependencies.len()];
+        for events in axis_slab_events_for(
+            dependencies,
+            &x_members,
+            |bounds| bounds.min.y,
+            |bounds| bounds.max.y,
+        ) {
+            for (_, index, starts) in events {
+                y_active[index] = starts;
+            }
+            let y_members = active_indices(&y_active);
+            if y_members.len() <= maximum_allowed {
+                continue;
+            }
+
+            let mut z_active = vec![false; dependencies.len()];
+            for events in axis_slab_events_for(
+                dependencies,
+                &y_members,
+                |bounds| bounds.min.z,
+                |bounds| bounds.max.z,
+            ) {
+                for (_, index, starts) in events {
+                    z_active[index] = starts;
+                }
+                let members = active_indices(&z_active);
+                if members.len() <= maximum_allowed {
                     continue;
                 }
-                let members = active_y
-                    .iter()
-                    .filter(|(_, (centers, _))| centers.min.z <= z && z <= centers.max.z)
-                    .map(|(index, _)| *index)
-                    .collect::<Vec<_>>();
                 let bounds = members
                     .iter()
                     .fold(dependencies[members[0]].0, |bounds, &index| {
@@ -501,6 +500,51 @@ fn visit_broad_edit_overlaps_exceeding(
         }
     }
     false
+}
+
+/// Returns one group of simultaneous start/end events for every nonempty slab.
+///
+/// An end occurs at `max + 1`, so the active members after a group are exactly
+/// the boxes covering the integer-coordinate slab beginning at that point.
+fn axis_slab_events(
+    dependencies: &[(EditCenterBounds, EditCenterBounds)],
+    min: impl Fn(EditCenterBounds) -> i32,
+    max: impl Fn(EditCenterBounds) -> i32,
+) -> Vec<Vec<(i32, usize, bool)>> {
+    axis_slab_events_for(
+        dependencies,
+        &(0..dependencies.len()).collect::<Vec<_>>(),
+        min,
+        max,
+    )
+}
+
+fn axis_slab_events_for(
+    dependencies: &[(EditCenterBounds, EditCenterBounds)],
+    members: &[usize],
+    min: impl Fn(EditCenterBounds) -> i32,
+    max: impl Fn(EditCenterBounds) -> i32,
+) -> Vec<Vec<(i32, usize, bool)>> {
+    let mut events = members
+        .iter()
+        .flat_map(|&index| {
+            let bounds = dependencies[index].0;
+            [(min(bounds), index, true), (max(bounds) + 1, index, false)]
+        })
+        .collect::<Vec<_>>();
+    events.sort_unstable_by_key(|&(coordinate, index, starts)| (coordinate, index, starts));
+    events
+        .chunk_by(|left, right| left.0 == right.0)
+        .map(<[_]>::to_vec)
+        .collect()
+}
+
+fn active_indices(active: &[bool]) -> Vec<usize> {
+    active
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &is_active)| is_active.then_some(index))
+        .collect()
 }
 
 fn intersect_edit_center_bounds(

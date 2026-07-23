@@ -27,6 +27,21 @@ fn boulder_at(id: u64, x_voxels: i32, y_voxels: i32, z_voxels: i32) -> ObjectPla
     }
 }
 
+fn boulder_with_radii_at(
+    id: u64,
+    x_voxels: i32,
+    y_voxels: i32,
+    z_voxels: i32,
+    radii_q8: [u16; 3],
+) -> ObjectPlacement {
+    let mut placement = boulder_at(id, x_voxels, y_voxels, z_voxels);
+    placement.shape = VoxelObjectShape::Boulder {
+        radii_q8,
+        perturbation_key: id,
+    };
+    placement
+}
+
 fn tree(id: u64, x_voxels: i32, z_voxels: i32) -> ObjectPlacement {
     let mut placement = boulder(id, x_voxels, z_voxels);
     placement.kind = ObjectKind::TreeA;
@@ -306,6 +321,43 @@ fn edit_affected_cap_checks_every_broad_overlap_region() {
         boulder(3, 35, 0),
         boulder(4, 45, 0),
     ];
+    let config = ObjectIndexConfig {
+        max_affected_objects_per_edit: 1,
+        ..Default::default()
+    };
+
+    assert!(matches!(
+        build_object_index(&placements, &config),
+        Err(ManifestError::ObjectEditAffectedExceeded { maximum: 1, .. })
+    ));
+}
+
+#[test]
+fn edit_affected_cap_checks_slabs_exposed_after_an_x_or_y_end() {
+    // The first boulder overlaps the second only below y = -24. Once it ends,
+    // a legal center at (16, 0, 0) reaches the second and third boulders.
+    // The broad sweep must visit the slab exposed by that end event.
+    let placements = [
+        boulder_with_radii_at(1, 0, -30, 0, [128, 128, 256]),
+        boulder(2, 25, 0),
+        boulder(3, 32, 0),
+    ];
+    let config = ObjectIndexConfig {
+        max_affected_objects_per_edit: 1,
+        ..Default::default()
+    };
+
+    assert!(matches!(
+        build_object_index(&placements, &config),
+        Err(ManifestError::ObjectEditAffectedExceeded { maximum: 1, .. })
+    ));
+}
+
+#[test]
+fn edit_affected_cap_aggregates_coincident_z_end_events() {
+    // All three broad boxes end at the same Z event. Processing those end
+    // events one at a time leaves a transient overlap with no active members.
+    let placements = [boulder(1, 0, -30), boulder(2, 25, 0), boulder(3, 32, 0)];
     let config = ObjectIndexConfig {
         max_affected_objects_per_edit: 1,
         ..Default::default()
