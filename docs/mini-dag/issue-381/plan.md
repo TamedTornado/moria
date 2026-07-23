@@ -13,6 +13,14 @@ animation assets, or any change to PR #365.
   population.
 - `moria-curate` exists only to generate/check that population and emit
   `prove-forest`; its feature-gated facade builds the same forest.
+- The retired surface is referenced more broadly than the two proof flags:
+  `moria-curate` is also present in the workspace/Cargo lockfile, contributor
+  commands, active TDD, test specs, and tracker inventory; the curated-manifest
+  path/stable ID/type vocabulary is present in runtime asset declarations,
+  source/tests, active TDD, five test specs, and tracker nodes. `M-001` still
+  claims four workspace packages and `M-003` still claims 30 runtime assets,
+  although this removal leaves three packages and 19 declared runtime assets
+  (17 content entries plus the two registry manifests).
 - `moria-bench` requires `--forest-proof` for `feasibility-mutation`, and
   `MutationFeasibilityReport` stores `forest_report_sha256`.
 - `RenderingConfig::{cluster_visibility_m,horizon_object_cell_size_m,
@@ -97,18 +105,24 @@ evidence shows an expectation itself is incorrect.
 Add `crates/moria-world/tests/forest_surface_removed.rs` with repository-level
 contract tests:
 
-- `checked_in_forest_population_and_command_invocations_are_absent` asserts
+- `retired_curation_package_manifest_asset_and_commands_are_absent` asserts
   that `assets/config/curated_manifest.ron` and `crates/moria-curate/` do not
-  exist; inspects the root workspace member list to prove the package is gone;
-  and scans the exact ordinary command surfaces `README.md`, `AGENTS.md`,
-  `.cargo/config.toml`, root `Cargo.toml`, and every `crates/*/Cargo.toml` for
-  an invocation of `prove-forest` or `--forest-proof`. It also scans the
-  non-test prefix of `crates/moria-bench/src/cli.rs` and all other
-  `crates/*/src/**/*.rs` for production CLI acceptance branches. Do not assert
-  that these tokens are absent from repository history, supersession prose,
-  disposition records, or the enforcement tests.
-  The focused `moria-bench` parser tests below are the executable proof that
-  the old option is rejected rather than merely undocumented.
+  exist; also asserts that `curation/{facade.rs,generate.rs}`,
+  `tests/curation_facade.rs`, and the curated-manifest asset fixture are gone
+  while `curation/model.rs` remains. Assert that the root workspace contains
+  exactly the three retained packages. Scan `Cargo.toml`, `Cargo.lock`,
+  `.cargo/**`, `README.md`,
+  `AGENTS.md`, every `crates/*/Cargo.toml`, and all executable/test Rust under
+  `crates/**` (excluding this enforcement file and the old-option rejection
+  literals in the `moria-bench` `#[cfg(test)]` module). The scan must reject
+  every active occurrence of `moria-curate`/`crates/moria-curate`, not merely
+  `prove-forest`; it must also reject `prove-forest`, `--forest-proof`, the
+  `curation` Cargo feature/test target, `config/curated_manifest.ron`,
+  `moria.config.curated_manifest`, and `AssetId::CuratedManifest`. This catches
+  stale `generate`/`check` package references, lockfile entries, facade tests,
+  and runtime asset identity as well as ordinary command invocations. The
+  focused `moria-bench` parser tests below prove the old option is rejected
+  rather than merely undocumented.
 - `retired_forest_schema_is_absent_from_executable_surfaces` recursively scans
   the exact roots `crates/moria-world/src`, `crates/moria-bench/src`,
   `crates/moria-demo/src`, `assets/config`, and `assets/manifests` for the
@@ -121,22 +135,31 @@ contract tests:
   `horizon_object_cell_size_m`, `horizon_derived_lod_m`,
   `horizon_partition_checked`, `horizon_excluded_base_cards`, and
   `horizon_derived_records`.
-- `retired_command_references_are_dispositioned` audits only the two retired
-  CLI spellings across `docs/**/*.md`, `docs/issues.json`, and
-  `test-specs/**/*.md`. Allowed references are explicit and executable:
+- `retired_curation_and_curated_manifest_references_are_dispositioned` audits
+  every occurrence of `moria-curate`, `crates/moria-curate`,
+  `prove-forest`, `--forest-proof`, `curated_manifest`,
+  `curated-manifest`, `curated manifest`, and `CuratedManifest` across
+  `docs/**/*.md`, `docs/issues.json`, and `test-specs/**/*.md`; it reports
+  every unclassified path/line or JSON node. Allowed references are explicit
+  and executable:
 
   - historical whole-file/prefix allowlists:
     `docs/interview-record.md`, `docs/issue-review.md`,
     `docs/tdd-review.md`, `docs/pm-runs/**`, and `docs/seeds/**`;
   - supersession references: a `docs/tdd/**`,
     `docs/design-document.md`, or `docs/engineering-evidence.md` Markdown
-    paragraph containing the token must also contain `superseded` and #380 or
-    #381; the wholly retired asset specs
+    paragraph containing any token must also contain `superseded` and #380 or
+    #381; no command, asset path/stable ID, or checked-in global-manifest claim
+    may remain normative. The wholly retired asset specs
     `test-specs/issue-{210..219}.md` may retain their bodies only with the
     required status line, while every other mixed spec must mark the
-    containing command clause superseded;
+    containing command/manifest clause superseded. The generic model section
+    in `docs/tdd/data-model.md` and `issue-336` are the only retained active
+    exceptions: they may name the in-memory `CuratedManifest` model only after
+    explicitly saying that the type is generic generated metadata and is not
+    the deleted checked-in asset or an acceptance gate;
     `docs/issues.json` references are allowed only inside nodes whose parsed
-    labels/status mark that forest clause or node superseded;
+    labels and body mark that forest clause or entire node superseded;
   - disposition whole-file allowlist:
     `docs/recovery/pr-363-disposition.md`;
   - enforcement-reference allowlists:
@@ -144,14 +167,35 @@ contract tests:
     `crates/moria-world/tests/forest_surface_removed.rs`, and the
     `#[cfg(test)]` module of `crates/moria-bench/src/cli.rs`.
 
-  Any unclassified reference fails with its path and line/JSON node. This is
-  not a scan for words such as “forest,” “tree,” or “Horizon”; it checks that
-  retired command spellings cannot remain as ordinary invocations or active
-  clauses while preserving auditable history and negative tests.
-- `active_tracker_supersedes_the_forest_gate` parses `docs/issues.json`, asserts
-  that `M-044` has the `superseded` label and a #380/#381 disposition, and
-  asserts that `M-081` and `V-26` are superseded and that no non-superseded
-  node depends on `M-044`, `M-081`, or `V-26`.
+  The test also uses a narrow source allowlist for the retained generic
+  `CuratedManifest` symbol: `curation/model.rs`, its `curation/mod.rs` and
+  `lib.rs` re-exports, and `curation_model_contract.rs`. Those files may not
+  contain the retired package name, checked-in path/stable ID, generator,
+  facade, or proof vocabulary. This makes every curated-manifest reference
+  visible to the test without deleting the generic identity/order/overlap
+  model. This is not a scan for broad words such as “forest,” “tree,” or
+  “Horizon.”
+- `active_tracker_has_no_retired_curation_or_stale_inventory` parses
+  `docs/issues.json` structurally. It asserts:
+
+  - every node containing the retired package/command/path/stable-ID/type
+    vocabulary is either explicitly superseded by #380/#381 or has that
+    clause removed/reworded as generic metadata;
+  - retired manifest/forest asset scaffolds `M-017`–`M-027`, curator/gate
+    nodes `M-042`–`M-044` and `M-081`, acquisition nodes
+    `M-129`–`M-139`, wire-in nodes `M-161`–`M-171`, and `V-26` are
+    superseded, while mixed verification/integration nodes no longer list
+    their removed products;
+  - `M-001` names exactly the three retained workspace packages and no
+    four-package/curator claim; `M-003`'s inventory cardinality equals the
+    executable `ASSET_COUNT` (19), not 30, and its body does not promise
+    immutable retired paths; registry content counts agree at 17;
+  - no non-superseded node produces a deleted package/path/asset, depends on a
+    superseded forest/curator/asset node, or retains `M-044`, `M-081`, `V-26`,
+    `M-129`, or `M-161` in `depends_on`, body “Depends on,” “Inputs,”
+    “Produces,” or acceptance inventory; and
+  - every parsed `depends_on` array remains synchronized with the body
+    dependency/input clauses after repair.
 - `active_tree_asset_and_horizon_specs_are_dispositioned` reads the exact
   `test-specs/issue-{210..219}.md` set and requires the #380/#381 supersession
   status in every file. For the mixed spec list in Green step 5, any retained
@@ -164,11 +208,16 @@ contract tests:
 - `active_runtime_inventory_has_no_forest_contract_assets` asserts the runtime
   asset paths exclude the curated manifest, birch/pine/bush/grass population
   assets, and tree Horizon cards while retained prop paths remain declared.
+  It asserts the exact resulting `ASSET_COUNT == 19`, exact retained path set,
+  and 17-entry license/budget content inventories so stale cardinalities cannot
+  survive in code, fixtures, or registries.
 
-These tests fail on the current tree because the manifest/crate/commands and
-retired schema fields and asset declarations exist, active documents still
-invoke the commands, active asset/Horizon specs lack supersession markers, #66
-is active, and the dependency edges remain.
+These tests fail on the current tree because the manifest/crate/lockfile,
+generate/check/proof references, curated-manifest runtime identity, retired
+schema fields, and asset declarations exist; active documents/specs/tracker
+nodes still treat the curator and checked-in manifest as current; `M-001` and
+`M-003` advertise stale package/asset cardinalities; active asset/Horizon specs
+lack supersession markers; #66 is active; and the dependency edges remain.
 
 Extend existing focused tests before implementation:
 
@@ -317,8 +366,9 @@ cargo test -p moria-bench --test query_probe
 
    - Remove `AssetId` variants/declarations for `CuratedManifest`, all
      birch/pine LODs, bush LODs, `GrassCluster`, and `TreeHorizonCards`; update
-     `ASSET_COUNT`, validation inventory counts, declaration tests, and
-     `WorldRenderAssets` tests.
+     `ASSET_COUNT` from 30 to the exact 19 retained declarations, update
+     `CONTENT_ASSET_COUNT` from 28 to the exact 17 retained license/budget
+     entries, and update declaration tests and `WorldRenderAssets` tests.
    - Remove those retired paths and checksums from
      `assets/manifests/{asset_licenses.ron,asset_budgets.ron}` and update their
      placeholder contract fixtures; keep all retained asset license/budget
@@ -341,7 +391,11 @@ cargo test -p moria-bench --test query_probe
      delete ecology acceptance rules and forest-proof coupling. Preserve
      generic object/index/overlap/ownership/accounting/evidence text. Mark the
      old F1/F2 forest sequencing superseded by #380/#381 and explicitly defer
-     a replacement acceptance design.
+     a replacement acceptance design. Remove all active `moria-curate` and
+     checked-in curated-manifest asset/path/stable-ID claims. The one retained
+     `CuratedManifest` type section in `data-model.md` must explicitly scope it
+     to generic in-memory generated metadata and state that it is not a
+     checked-in population or acceptance mechanism.
    - Add a prominent #380/#381 supersession note to active
      `docs/design-document.md` and `docs/engineering-evidence.md`, and remove
      current-evidence claims about the checked-in forest/proof. Historical
@@ -354,10 +408,12 @@ cargo test -p moria-bench --test query_probe
      `test-specs/issue-{210..219}.md`; none remains an active asset contract.
      Also mark the forest-specific portions of `issue-60`, `124`, `139`, `143`,
      `228`, `326`, `330`, `344`, and `347` superseded. Where any of those
-     files, plus `issue-107`, `issue-334`, and `issue-339`, mix generic and
-     forest requirements, retain the generic determinism, facade boundary,
-     overlap, shared-handle, identity, config, or report validation clause and
-     mark only the forest/F1 clause superseded.
+     files, plus `issue-107`, `issue-334`, `issue-336`, and `issue-339`, mix
+     generic and forest requirements, retain the generic determinism, overlap,
+     shared-handle, identity, config, metadata-ordering, or report validation
+     clause and mark only the curator/checked-in-manifest/forest/F1 clause
+     superseded. In `issue-336`, explicitly distinguish the retained in-memory
+     generic metadata model from the deleted checked-in curated-manifest asset.
    - Mark the tree-membership, tree-card aggregation, base-card,
      derived/tombstone, and tree-Horizon evidence clauses superseded in
      `issue-54`, `67`, `77`, `85`, `88`, `89`, `93`, `99`, `105`, `131`,
@@ -376,25 +432,42 @@ cargo test -p moria-bench --test query_probe
      `352` to remove forest vocabulary/coupling while retaining their
      substrate properties. A superseded spec remains a historical file; do
      not delete it or rewrite it into a replacement requirement.
-   - In `docs/issues.json`, label and annotate obsolete forest-only nodes,
-     including `M-017`, `M-042`, `M-043`, `M-044`, `M-081`, `M-099`, `M-100`,
-     `M-129`, species/understory/card acquisition `M-130`–`M-139`,
-     `M-161`, and their wire-in nodes `M-162`–`M-171`, as superseded by
-     #380/#381. Also supersede `V-26`, whose only subject is `M-081`. Clear
+   - In `docs/issues.json`, first repair the retained inventory nodes:
+     `M-001` must list the three remaining workspace packages and must not
+     produce or require `moria-curate`; `M-003` must describe the exact
+     19-declaration runtime inventory/17 content entries instead of 30 and
+     must not claim removed stable paths are immutable. Reword `M-006` from a
+     curated-manifest product contract to the retained generic identity,
+     feature/water/route/object/stamp metadata contracts. Remove the
+     curated-manifest/curator/removed-asset bullets from mixed historical
+     verification nodes `V-3`, `V-4`, `V-9`, and `V-10` while preserving
+     their unrelated verified work.
+   - Label and annotate obsolete forest/curator/global-manifest nodes,
+     including manifest and vegetation/card scaffolds `M-017`–`M-027`,
+     `M-042`, `M-043`, `M-044`, `M-081`, `M-099`, `M-100`, generated-manifest
+     and species/understory/card acquisition `M-129`–`M-139`, and their
+     wire-in nodes `M-161`–`M-171`, as superseded by #380/#381. Also
+     supersede `V-26`, whose only subject is `M-081`. Clear
      active `depends_on` data from the superseded gate/verification/asset
      nodes; historical predecessors may be named only in their supersession
      prose. Mixed nodes such as `M-086`, `M-119`, and `M-180` must retain their
-     generic clauses but mark forest clauses superseded/needs-replan; do not
-     invent replacement deliverables.
-   - Repair every local incoming gate edge, not only the direct-ID list:
+     generic clauses but remove/reword curated-manifest and forest clauses as
+     superseded/needs-replan; do not invent replacement deliverables.
+   - Repair every local incoming retired-surface edge, not only the direct gate
+     list: remove `M-017`–`M-027` from retained loader/audit nodes `M-038` and
+     `M-119`, remove `M-018`–`M-027` from mixed `V-3`, and remove `M-017` from
+     mixed `V-4`; remove `M-042` from `M-071`, `M-086`, and `V-9`, and remove
+     `M-043` from `V-10`;
      remove `M-044` from `M-071`, `M-077`, `M-081`, `M-180`, and `V-11`;
      remove `M-081` from `M-082`, `M-083`, `M-084`, `M-085`, `M-091`, `M-099`,
      `M-100`, `M-101`, `M-107`, and `M-180`; and remove superseded `V-26` from
      `M-082`, `M-084`, `M-085`, `M-091`, and `M-101`. `M-081`, `M-099`,
      `M-100`, and `V-26` remain superseded rather than becoming runnable.
-     Remove obsolete `M-129` ordering edges from retained license/budget nodes
-     `M-148`–`M-151`, and remove `M-161`–`M-171` from mixed final audit
-     `M-180`.
+     Remove `M-099`/`M-100` from mixed route/verification nodes
+     `M-110`, `V-34`, and `V-35`; mark only the affected clauses
+     needs-replan. Remove obsolete `M-129`–`M-139` ordering edges from retained
+     license/budget nodes `M-148`–`M-151`, and remove `M-161`–`M-171` from
+     mixed final audit `M-180`.
      Keep each `depends_on` array and body “Depends on”/“Inputs” sections
      synchronized.
 
@@ -429,16 +502,20 @@ cargo test -p moria-bench --test query_probe
 - Run the executable negative scan with
   `cargo test -p moria-world --test forest_surface_removed`. Its fixed path
   inventory and allowlists are part of the test and must not be replaced by
-  `rg` over the whole repository. It proves the deleted file/package/workspace
-  member stay absent, ordinary contributor/build surfaces contain no old
-  invocation, executable/config sources contain no retired schema fields, the
-  runtime asset inventory is reduced, and active tracker nodes are
-  dispositioned. Separately run the `moria-bench` CLI unit test proving
-  `feasibility-mutation` succeeds without a proof and any supplied
+  an ad hoc `rg` over only the two proof flags. It proves the deleted
+  file/package/workspace member and lockfile entry stay absent; all active
+  `moria-curate` generate/check/proof references and curated-manifest runtime
+  path/stable-ID references are absent; the narrow retained generic
+  `CuratedManifest` symbol allowlist has no forest/tool coupling; executable
+  config/report sources contain no retired fields; the runtime/license/budget
+  inventories are exactly 19/17; every active documentation/spec/tracker
+  occurrence is classified; and stale three-package/19-asset tracker
+  inventory cannot regress. Separately run the `moria-bench` CLI unit test
+  proving `feasibility-mutation` succeeds without a proof and any supplied
   `--forest-proof` is an unknown argument. Historical, supersession,
   disposition, plan, and negative-test references remain allowed only at the
   exact paths listed in the Red test; their tokens are not evidence that a
-  command can still be invoked.
+  command, asset, or gate is still active.
 - Re-run the generic characterization tests above, then:
 
 ```sh
@@ -497,7 +574,11 @@ verify them with read-only `gh ... --json` checks immediately before and after:
 ## Acceptance criteria
 
 - `assets/config/curated_manifest.ron`, the `moria-curate` forest pipeline,
-  `prove-forest`, and `--forest-proof` are absent from active product paths.
+  its Cargo feature/lockfile/runtime asset identity, `prove-forest`, and
+  `--forest-proof` are absent from active product paths. Every remaining
+  repository occurrence of the package or curated-manifest vocabulary is
+  either a narrow retained generic model reference, an explicit #380/#381
+  supersession, auditable history/disposition, or a negative-test literal.
 - Active config, validators, reports, tests, assets, and docs do not require
   forest area, species ratios, canopy bins/ranges, tree/bush/prop population
   density, understory, global tree spacing, or forest-route clearance.
@@ -524,7 +605,10 @@ verify them with read-only `gh ... --json` checks immediately before and after:
   first human-review path remains transitively blocked by them.
 - Open forest-only asset acquisition/wire-in issues and their curated-manifest
   counterparts are superseded; retained license/budget work and the mixed final
-  audit no longer depend on those retired nodes.
+  audit no longer depend on those retired nodes. The active tracker describes
+  exactly three workspace packages, 19 runtime declarations, and 17 registry
+  content entries, with no stale produces/inputs/acceptance inventory for the
+  removed curator or global manifest.
 - PR #363 remains closed/unmerged with a complete disposition; #344 is closed
   as superseded after that record; PR #365 is byte-for-byte and
   tracker-state unchanged.
@@ -539,6 +623,10 @@ verify them with read-only `gh ... --json` checks immediately before and after:
 - False DAG repair: removing only the JSON dependency array, only manifest-ID
   references, or only direct dependents leaves body metadata, numeric live
   footers, and the #112 verification hop blocking the operator graph.
+- False surface scan: checking only `prove-forest`/`--forest-proof` misses
+  `generate`/`check`, Cargo.lock/package/feature entries, the curated-manifest
+  asset path/stable ID, active specs, and stale tracker package/asset
+  cardinalities.
 - Accidental architecture: replacing the deleted manifest/proof in this issue
   violates the completion boundary.
 - Recovery contamination: do not cherry-pick PR #363; its branch includes
