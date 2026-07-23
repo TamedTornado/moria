@@ -130,6 +130,48 @@ mod tests {
     }
 
     #[test]
+    fn resident_non_edit_replacements_materialize_before_meshing() {
+        let brick = BrickCoord::new(125, 32, 125).unwrap();
+
+        for purpose in [
+            ChunkPurpose::Visual,
+            ChunkPurpose::Collision,
+            ChunkPurpose::Traversal,
+        ] {
+            let mut lifecycle = ChunkLifecycle::default();
+            install_chunk(&mut lifecycle, brick, StreamLod::Near, 4);
+            let replacement = lifecycle.request(brick, StreamLod::Near, 5, purpose);
+
+            assert!(!lifecycle.start_meshing(brick, replacement, 5, StreamLod::Near, purpose));
+            assert!(lifecycle.start_materializing(brick, replacement, purpose));
+            assert!(lifecycle.start_meshing(brick, replacement, 5, StreamLod::Near, purpose));
+        }
+    }
+
+    #[test]
+    fn focus_removal_edit_pin_race_prevents_eviction_after_eviction_begins() {
+        let brick = BrickCoord::new(125, 32, 125).unwrap();
+        let mut lifecycle = ChunkLifecycle::default();
+        install_chunk(&mut lifecycle, brick, StreamLod::Near, 4);
+
+        assert!(lifecycle.begin_evict(brick));
+        lifecycle.pin(brick);
+        assert!(!lifecycle.finish_evict(brick));
+
+        let edit = lifecycle.request(brick, StreamLod::Near, 5, ChunkPurpose::CommittedEdit);
+        assert_eq!(lifecycle.resident_band(brick), Some(ActiveBand::Near));
+        assert!(lifecycle.start_materializing(brick, edit, ChunkPurpose::CommittedEdit));
+        assert!(lifecycle.start_meshing(
+            brick,
+            edit,
+            5,
+            StreamLod::Near,
+            ChunkPurpose::CommittedEdit,
+        ));
+        assert!(lifecycle.install(brick, edit, 5, StreamLod::Near, ChunkPurpose::CommittedEdit,));
+    }
+
+    #[test]
     fn pins_applied_before_request_prevent_chunk_and_horizon_eviction() {
         let brick = BrickCoord::new(125, 32, 125).unwrap();
         let cell = HorizonCellKey::new(0, 0);
@@ -371,11 +413,13 @@ impl ChunkLifecycle {
                 revision: resident_revision,
                 lod: resident_lod,
                 ..
-            }) if resident_lod == lod => ChunkPhase::Resident {
-                revision: resident_revision,
-                lod: resident_lod,
-                meshing_token: Some(token),
-            },
+            }) if resident_lod == lod && purpose == ChunkPurpose::CommittedEdit => {
+                ChunkPhase::Resident {
+                    revision: resident_revision,
+                    lod: resident_lod,
+                    meshing_token: Some(token),
+                }
+            }
             _ => ChunkPhase::Requested { token },
         };
         self.entries.insert(
