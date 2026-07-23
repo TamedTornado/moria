@@ -656,23 +656,55 @@ fn valid_skin_references(
     let Some(joints) = skin.get("joints").and_then(serde_json::Value::as_array) else {
         return false;
     };
+    let Some(joints) = joints.iter().map(value_index).collect::<Option<Vec<_>>>() else {
+        return false;
+    };
     skin.is_object()
         && !joints.is_empty()
+        && joints.iter().all(|&joint| joint < nodes.len())
+        && joints.iter().collect::<BTreeSet<_>>().len() == joints.len()
         && skin.get("inverseBindMatrices").is_none_or(|accessor| {
             value_index(accessor)
                 .and_then(|index| layout.accessor(index))
                 .is_some_and(|accessor| {
                     accessor.is_f32_type("MAT4")
-                        && accessor.count == joints.len() as u32
+                        && accessor.count >= joints.len() as u32
                         && finite_f32_accessor(accessor, layout.binary)
                 })
         })
         && skin
             .get("skeleton")
-            .is_none_or(|node| value_index(node).is_some_and(|index| index < nodes.len()))
-        && joints
-            .iter()
-            .all(|node| value_index(node).is_some_and(|index| index < nodes.len()))
+            .is_none_or(|node| valid_skeleton_root(node, &joints, nodes))
+}
+
+fn valid_skeleton_root(
+    skeleton: &serde_json::Value,
+    joints: &[usize],
+    nodes: &[serde_json::Value],
+) -> bool {
+    let Some(skeleton) = value_index(skeleton).filter(|&index| index < nodes.len()) else {
+        return false;
+    };
+    let mut parents = vec![None; nodes.len()];
+    for (parent, node) in nodes.iter().enumerate() {
+        let Some(children) = node.get("children") else {
+            continue;
+        };
+        let Some(children) = children.as_array() else {
+            return false;
+        };
+        for child in children {
+            let Some(child) = value_index(child).filter(|&index| index < nodes.len()) else {
+                return false;
+            };
+            if parents[child].replace(parent).is_some() {
+                return false;
+            }
+        }
+    }
+    joints.iter().copied().all(|joint| {
+        std::iter::successors(Some(joint), |&node| parents[node]).any(|node| node == skeleton)
+    })
 }
 
 fn valid_skinned_node(
@@ -693,7 +725,7 @@ fn valid_skinned_node(
         .and_then(value_index)
         .and_then(|index| meshes.get(index))
     else {
-        return node.get("mesh").is_none();
+        return false;
     };
     let Some(joints) = skin.get("joints").and_then(serde_json::Value::as_array) else {
         return false;
@@ -725,26 +757,93 @@ fn valid_skinned_primitive(
     else {
         return false;
     };
-    let Some(joints) = attributes
-        .get("JOINTS_0")
-        .and_then(value_index)
-        .and_then(|index| layout.accessor(index))
+    let Some(Some((joints_0, weights_0))) =
+        skin_attribute_pair(attributes, "JOINTS_0", "WEIGHTS_0", layout)
     else {
         return false;
     };
-    let Some(weights) = attributes
-        .get("WEIGHTS_0")
-        .and_then(value_index)
-        .and_then(|index| layout.accessor(index))
-    else {
+    let joints_1 = skin_attribute_pair(attributes, "JOINTS_1", "WEIGHTS_1", layout);
+    let Some(joints_1) = joints_1 else {
         return false;
     };
+    let weight_sets =
+        std::iter::once(weights_0).chain(joints_1.iter().map(|(_, weights)| *weights));
+    valid_joint_weight_set(joints_0, weights_0, position, layout, joint_count)
+        && joints_1.is_none_or(|(joints, weights)| {
+            valid_joint_weight_set(joints, weights, position, layout, joint_count)
+        })
+        && valid_weight_sum(weight_sets, layout.binary, position.count)
+}
+
+fn skin_attribute_pair<'a>(
+    attributes: &serde_json::Map<String, serde_json::Value>,
+    joints_name: &str,
+    weights_name: &str,
+    layout: &'a GlbLayout<'_>,
+) -> Option<Option<(&'a GlbAccessor, &'a GlbAccessor)>> {
+    match (attributes.get(joints_name), attributes.get(weights_name)) {
+        (None, None) => Some(None),
+        (Some(joints), Some(weights)) => Some(Some((
+            layout.accessor(value_index(joints)?)?,
+            layout.accessor(value_index(weights)?)?,
+        ))),
+        _ => None,
+    }
+}
+
+fn valid_joint_weight_set(
+    joints: &GlbAccessor,
+    weights: &GlbAccessor,
+    position: &GlbAccessor,
+    layout: &GlbLayout<'_>,
+    joint_count: u32,
+) -> bool {
     joints.is_joint_type()
         && weights.is_weight_type()
         && joints.count == position.count
         && weights.count == position.count
-        && (!weights.is_f32_type("VEC4") || finite_f32_accessor(weights, layout.binary))
         && joint_indices_in_range(joints, layout.binary, joint_count)
+}
+
+fn valid_weight_sum<'a>(
+    weight_sets: impl Iterator<Item = &'a GlbAccessor>,
+    binary: &[u8],
+    vertex_count: u32,
+) -> bool {
+    let weight_sets = weight_sets.collect::<Vec<_>>();
+    (0..usize::try_from(vertex_count).unwrap_or(usize::MAX)).all(|element| {
+        let Some(sum) = weight_sets.iter().try_fold(0.0_f32, |sum, accessor| {
+            (0..4).try_fold(sum, |sum, component| {
+                let value = weight_component(accessor, binary, element, component)?;
+                (value.is_finite() && value >= 0.0).then_some(sum + value)
+            })
+        }) else {
+            return false;
+        };
+        (sum - 1.0).abs() <= 0.0001
+    })
+}
+
+fn weight_component(
+    accessor: &GlbAccessor,
+    binary: &[u8],
+    element: usize,
+    component: usize,
+) -> Option<f32> {
+    let offset = element
+        .checked_mul(accessor.stride)?
+        .checked_add(accessor.offset)?
+        .checked_add(component * component_size(accessor.component_type)?)?;
+    match accessor.component_type {
+        5121 => Some(f32::from(*binary.get(offset)?) / f32::from(u8::MAX)),
+        5123 => Some(
+            f32::from(u16::from_le_bytes(
+                binary.get(offset..offset + 2)?.try_into().ok()?,
+            )) / f32::from(u16::MAX),
+        ),
+        5126 => f32_at(binary, offset),
+        _ => None,
+    }
 }
 
 fn joint_indices_in_range(accessor: &GlbAccessor, binary: &[u8], joint_count: u32) -> bool {
@@ -2026,6 +2125,75 @@ mod glb_tests {
     }
 
     #[test]
+    fn glb_validation_enforces_skin_node_hierarchy_and_weight_set_semantics() {
+        let explorer = explorer_fixture();
+        let (document, binary) = glb_document(&explorer).expect("explorer GLB document");
+        let layout = GlbLayout::new(&document, binary).expect("explorer GLB layout");
+        assert!(valid_gltf_references(&document, &layout));
+
+        let no_mesh = mutate_explorer(&explorer, |document, _| {
+            document["nodes"][1]
+                .as_object_mut()
+                .expect("node")
+                .remove("mesh");
+        });
+        assert_invalid_gltf_references(&no_mesh, "skinned nodes require meshes");
+
+        let extra_bind_matrix = mutate_explorer(&explorer, |document, binary| {
+            document["skins"][0]["inverseBindMatrices"] =
+                Value::from(append_identity_bind_matrices(document, binary, 2));
+        });
+        assert_valid_gltf_references(&extra_bind_matrix, "skins permit extra bind matrices");
+
+        let duplicate_joint = mutate_explorer(&explorer, |document, binary| {
+            document["skins"][0]["joints"] = serde_json::json!([0, 0]);
+            document["skins"][0]["inverseBindMatrices"] =
+                Value::from(append_identity_bind_matrices(document, binary, 2));
+        });
+        assert_invalid_gltf_references(&duplicate_joint, "skin joints must be unique");
+
+        let unrelated_skeleton = mutate_explorer(&explorer, |document, _| {
+            document["nodes"]
+                .as_array_mut()
+                .expect("nodes")
+                .push(serde_json::json!({}));
+            document["skins"][0]["skeleton"] = Value::from(2);
+        });
+        assert_invalid_gltf_references(
+            &unrelated_skeleton,
+            "the skeleton node must be a common joint ancestor",
+        );
+
+        for field in ["JOINTS_1", "WEIGHTS_1"] {
+            let unmatched_set = mutate_explorer(&explorer, |document, _| {
+                document["meshes"][0]["primitives"][0]["attributes"][field] =
+                    Value::from(if field == "JOINTS_1" { 4 } else { 5 });
+            });
+            assert_invalid_gltf_references(
+                &unmatched_set,
+                "{field} requires its matching skin attribute",
+            );
+        }
+
+        let negative_weights = mutate_explorer(&explorer, |_, binary| {
+            binary[layout.accessor(5).expect("weights accessor").offset..][..4]
+                .copy_from_slice(&(-0.25_f32).to_le_bytes());
+        });
+        assert_invalid_gltf_references(&negative_weights, "weights must not be negative");
+
+        let invalid_quantized_weight_sum = mutate_explorer(&explorer, |document, binary| {
+            let count = layout.accessor(5).expect("weights accessor").count;
+            let accessor = append_normalized_u8_weights(document, binary, count, [128, 128, 0, 0]);
+            document["meshes"][0]["primitives"][0]["attributes"]["WEIGHTS_0"] =
+                Value::from(accessor);
+        });
+        assert_invalid_gltf_references(
+            &invalid_quantized_weight_sum,
+            "normalized integer weights must sum to one",
+        );
+    }
+
+    #[test]
     fn glb_validation_rejects_unreferenced_animation_samplers_without_accessors() {
         let explorer = fs::read(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -2215,6 +2383,49 @@ mod glb_tests {
             "type": "MAT4",
         }));
         accessors.len() - 1
+    }
+
+    fn append_normalized_u8_weights(
+        document: &mut Value,
+        binary: &mut Vec<u8>,
+        count: u32,
+        weights: [u8; 4],
+    ) -> usize {
+        let offset = binary.len();
+        for _ in 0..count {
+            binary.extend_from_slice(&weights);
+        }
+        document["buffers"][0]["byteLength"] = Value::from(binary.len());
+        let views = document["bufferViews"]
+            .as_array_mut()
+            .expect("buffer views");
+        views.push(serde_json::json!({
+            "buffer": 0,
+            "byteOffset": offset,
+            "byteLength": usize::try_from(count).expect("weight count") * 4,
+        }));
+        let view_index = views.len() - 1;
+        let accessors = document["accessors"].as_array_mut().expect("accessors");
+        accessors.push(serde_json::json!({
+            "bufferView": view_index,
+            "componentType": 5121,
+            "normalized": true,
+            "count": count,
+            "type": "VEC4",
+        }));
+        accessors.len() - 1
+    }
+
+    fn assert_valid_gltf_references(bytes: &[u8], message: &str) {
+        let (document, binary) = glb_document(bytes).expect("mutated explorer");
+        let layout = GlbLayout::new(&document, binary).expect("valid mutated layout");
+        assert!(valid_gltf_references(&document, &layout), "{message}");
+    }
+
+    fn assert_invalid_gltf_references(bytes: &[u8], message: &str) {
+        let (document, binary) = glb_document(bytes).expect("mutated explorer");
+        let layout = GlbLayout::new(&document, binary).expect("valid mutated layout");
+        assert!(!valid_gltf_references(&document, &layout), "{message}");
     }
 
     fn mutate_pine(mutate_from: &[u8], mutate: impl FnOnce(&mut Value, &mut Vec<u8>)) -> Vec<u8> {
