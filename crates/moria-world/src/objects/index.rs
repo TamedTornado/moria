@@ -368,58 +368,68 @@ fn max_affected_objects_for_edit(
     if dependencies.is_empty() {
         return 0;
     }
-    let Some(broad_overlap) = broad_edit_overlap_exceeding(&dependencies, u16::from(maximum))
-    else {
-        // An exact dependency hit is necessarily contained in this object's
-        // expanded dependency box.  The sweep therefore proves that no legal
-        // edit center can exceed the exact cap, without walking the (possibly
-        // region-height) union of the boxes.
-        return u16::from(maximum);
-    };
-    let center_bounds = broad_overlap.bounds;
     let mut observed_maximum = 0_u16;
-    for x in center_bounds.min.x..=center_bounds.max.x {
-        for y in center_bounds.min.y..=center_bounds.max.y {
-            for z in center_bounds.min.z..=center_bounds.max.z {
-                let center = VoxelCoord::new(x, y, z);
-                let candidates = broad_overlap
-                    .members
-                    .iter()
-                    .filter(|&&index| {
-                        edit_sphere_can_reach_dependency_bounds(dependencies[index].1, center)
-                    })
-                    .count();
-                if candidates <= usize::from(maximum) {
-                    observed_maximum =
-                        observed_maximum.max(u16::try_from(candidates).unwrap_or(u16::MAX));
-                    continue;
+    let exceeded =
+        visit_broad_edit_overlaps_exceeding(&dependencies, u16::from(maximum), |broad_overlap| {
+            let center_bounds = broad_overlap.bounds;
+            for x in center_bounds.min.x..=center_bounds.max.x {
+                for y in center_bounds.min.y..=center_bounds.max.y {
+                    for z in center_bounds.min.z..=center_bounds.max.z {
+                        let center = VoxelCoord::new(x, y, z);
+                        let candidates = broad_overlap
+                            .members
+                            .iter()
+                            .filter(|&&index| {
+                                edit_sphere_can_reach_dependency_bounds(
+                                    dependencies[index].1,
+                                    center,
+                                )
+                            })
+                            .count();
+                        if candidates <= usize::from(maximum) {
+                            observed_maximum =
+                                observed_maximum.max(u16::try_from(candidates).unwrap_or(u16::MAX));
+                            continue;
+                        }
+                        let affected = u16::try_from(
+                            broad_overlap
+                                .members
+                                .iter()
+                                .filter(|&&index| {
+                                    edit_sphere_can_reach_dependency_bounds(
+                                        dependencies[index].1,
+                                        center,
+                                    ) && {
+                                        let member = members[index];
+                                        let position = usize::try_from(member).ok();
+                                        position
+                                            .and_then(|position| placements.get(position))
+                                            .is_some_and(|placement| {
+                                                edit_sphere_hits_dependency(placement, center)
+                                            })
+                                    }
+                                })
+                                .count(),
+                        )
+                        .unwrap_or(u16::MAX);
+                        if affected > u16::from(maximum) {
+                            observed_maximum = affected;
+                            return true;
+                        }
+                        observed_maximum = observed_maximum.max(affected);
+                    }
                 }
-                let affected = u16::try_from(
-                    broad_overlap
-                        .members
-                        .iter()
-                        .filter(|&&index| {
-                            edit_sphere_can_reach_dependency_bounds(dependencies[index].1, center)
-                                && {
-                                    let member = members[index];
-                                    let position = usize::try_from(member).ok();
-                                    position
-                                        .and_then(|position| placements.get(position))
-                                        .is_some_and(|placement| {
-                                            edit_sphere_hits_dependency(placement, center)
-                                        })
-                                }
-                        })
-                        .count(),
-                )
-                .unwrap_or(u16::MAX);
-                if affected > u16::from(maximum) {
-                    return affected;
-                }
-                observed_maximum = observed_maximum.max(affected);
             }
-        }
+            false
+        });
+    if exceeded {
+        return observed_maximum;
     }
+
+    // An exact dependency hit is necessarily contained in an object's
+    // expanded dependency box. The sweep therefore proves that no legal edit
+    // center can exceed the exact cap, without walking the (possibly
+    // region-height) union of the boxes.
     observed_maximum
 }
 
@@ -428,14 +438,16 @@ struct BroadEditOverlap {
     members: Vec<usize>,
 }
 
-/// Returns one event-local box intersection containing more than `maximum_allowed` candidates.
+/// Visits every event-local box intersection containing more than `maximum_allowed` candidates.
 ///
 /// The sweep visits only candidate-box boundaries.  It deliberately avoids
 /// materializing the potentially region-sized union of all candidate boxes.
-fn broad_edit_overlap_exceeding(
+/// Returning `true` from `visit` stops the sweep.
+fn visit_broad_edit_overlaps_exceeding(
     dependencies: &[(EditCenterBounds, EditCenterBounds)],
     maximum_allowed: u16,
-) -> Option<BroadEditOverlap> {
+    mut visit: impl FnMut(BroadEditOverlap) -> bool,
+) -> bool {
     let mut x_witnesses = dependencies
         .iter()
         .map(|(centers, _)| centers.min.x)
@@ -482,11 +494,13 @@ fn broad_edit_overlap_exceeding(
                     .fold(dependencies[members[0]].0, |bounds, &index| {
                         intersect_edit_center_bounds(bounds, dependencies[index].0)
                     });
-                return Some(BroadEditOverlap { bounds, members });
+                if visit(BroadEditOverlap { bounds, members }) {
+                    return true;
+                }
             }
         }
     }
-    None
+    false
 }
 
 fn intersect_edit_center_bounds(

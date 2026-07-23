@@ -296,6 +296,28 @@ fn edit_affected_cap_excludes_diagonally_separated_dependencies() {
 }
 
 #[test]
+fn edit_affected_cap_checks_every_broad_overlap_region() {
+    // The first broad overlap is diagonal-only and has no exact radius-3 m
+    // witness. A later, disjoint broad overlap has an edit center that reaches
+    // both dependency sets, so it must still reject the manifest.
+    let placements = [
+        boulder(1, 0, 0),
+        boulder(2, 30, 30),
+        boulder(3, 35, 0),
+        boulder(4, 45, 0),
+    ];
+    let config = ObjectIndexConfig {
+        max_affected_objects_per_edit: 1,
+        ..Default::default()
+    };
+
+    assert!(matches!(
+        build_object_index(&placements, &config),
+        Err(ManifestError::ObjectEditAffectedExceeded { maximum: 1, .. })
+    ));
+}
+
+#[test]
 fn edit_affected_cap_excludes_vertically_separated_dependencies() {
     let vertical = [boulder_at(1, 0, -100, 0), boulder_at(2, 0, 100, 0)];
     let config = ObjectIndexConfig {
