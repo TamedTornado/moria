@@ -120,7 +120,6 @@ pub fn validate_manifest(
         > config.objects.max_edit_dependency_candidates
         || radius_three_target.exact_dependency_ids
             > u16::from(config.objects.max_affected_objects_per_edit)
-        || radius_three_target.dependency_bricks > config.objects.max_dependency_bricks_per_object
         || index.dependency_coordinate_allocation_bytes() != 0
     {
         return Err(CurationError::Manifest(

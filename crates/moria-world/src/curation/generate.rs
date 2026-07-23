@@ -14,7 +14,11 @@ use crate::{
 use super::ManifestError;
 
 const BIOME_RASTER_EDGE_METERS: i32 = 4;
-const PLACEMENT_SPACING_METERS: i32 = 8;
+const PLACEMENT_COLUMN_SPACING_Q8: i32 = 1_408;
+const PLACEMENT_ROW_SPACING_Q8: i32 = 1_101;
+const PLACEMENT_ROW_STAGGER_Q8: i32 = 704;
+const LARGE_CANOPY_CLEARANCE_Q8: i32 = 6 * Q8_PER_METER;
+const LARGE_CANOPY_WITNESS_SPACING_Q8: i32 = 8 * Q8_PER_METER;
 const FOREST_ROUTE_OBJECT_EXCLUSION_METERS: i32 = 12;
 const CANOPY_RANGE_WITNESSES_PER_SPECIES: u32 = 16;
 const Q8_PER_METER: i32 = 256;
@@ -57,6 +61,14 @@ pub fn generate_manifest(
 
     let parameters_digest = parameters_digest_from_bytes(region_config_bytes, ruin_stamp_bytes);
     let identity = world_identity(&config, parameters_digest)?;
+    let forest_area_m2 = raster_area_m2(&identity, BiomeId::Forest);
+    let meadow_area_m2 = raster_area_m2(&identity, BiomeId::Meadow);
+    if forest_area_m2 < config.biome.forest_min_area_m2 {
+        return contract_error("forest eligible area is below the configured minimum");
+    }
+    if meadow_area_m2 < config.biome.meadow_min_area_m2 {
+        return contract_error("eligible land area is below the configured minimum");
+    }
     let forest_route = forest_route(&identity)?;
     let route_start = forest_route
         .first()
@@ -68,22 +80,50 @@ pub fn generate_manifest(
         .point;
     let route = complete_traversal_route(&identity, forest_route);
     let mut forest_cursor = CandidateCursor::new(identity, route_start, route_end);
+    let mut witness_cursor = CandidateCursor::new(identity, route_start, route_end);
     let mut land_cursor = CandidateCursor::new(identity, route_start, route_end);
     let mut next_id = 1_u64;
-    let tree_count = ceil_div(config.biome.forest_min_area_m2, 25);
+    let tree_count = ceil_div(forest_area_m2, 25);
     let birch_count = u32::from(config.biome.tree_species_mix_percent[0]) * tree_count / 100;
     let pine_count = tree_count - birch_count;
     let mut objects = Vec::with_capacity(usize::try_from(tree_count).unwrap_or(0));
-    for index in 0..tree_count {
-        let birch = index < birch_count;
-        let species_index = if birch { index } else { index - birch_count };
-        objects.push(tree(
-            next_id,
-            forest_cursor.next(BiomeId::Forest)?,
-            birch,
-            species_index,
-        ));
-        next_id += 1;
+    let mut large_canopy_points =
+        Vec::with_capacity(usize::try_from(CANOPY_RANGE_WITNESSES_PER_SPECIES * 2).unwrap_or(0));
+    for _ in 0..CANOPY_RANGE_WITNESSES_PER_SPECIES * 2 {
+        large_canopy_points.push(witness_cursor.next_away_from(
+            BiomeId::Forest,
+            &large_canopy_points,
+            LARGE_CANOPY_WITNESS_SPACING_Q8,
+        )?);
+    }
+    for birch in [true, false] {
+        let count = if birch { birch_count } else { pine_count };
+        let witness_start = if birch {
+            0
+        } else {
+            usize::try_from(CANOPY_RANGE_WITNESSES_PER_SPECIES).unwrap()
+        };
+        for witness in large_canopy_points
+            .iter()
+            .skip(witness_start)
+            .take(usize::try_from(CANOPY_RANGE_WITNESSES_PER_SPECIES).unwrap())
+        {
+            objects.push(tree(next_id, *witness, birch, true));
+            next_id += 1;
+        }
+        for _ in CANOPY_RANGE_WITNESSES_PER_SPECIES..count {
+            objects.push(tree(
+                next_id,
+                forest_cursor.next_away_from(
+                    BiomeId::Forest,
+                    &large_canopy_points,
+                    LARGE_CANOPY_CLEARANCE_Q8,
+                )?,
+                birch,
+                false,
+            ));
+            next_id += 1;
+        }
     }
     debug_assert_eq!(birch_count + pine_count, tree_count);
 
@@ -92,7 +132,7 @@ pub fn generate_manifest(
         &mut land_cursor,
         &mut next_id,
         ceil_div(
-            config.biome.forest_min_area_m2 * u32::from(config.biome.bushes_per_hectare),
+            forest_area_m2 * u32::from(config.biome.bushes_per_hectare),
             10_000,
         ),
         ObjectKind::Bush,
@@ -102,7 +142,7 @@ pub fn generate_manifest(
         &mut land_cursor,
         &mut next_id,
         ceil_div(
-            config.biome.meadow_min_area_m2 * u32::from(config.objects.boulders_per_hectare),
+            meadow_area_m2 * u32::from(config.objects.boulders_per_hectare),
             10_000,
         ),
         ObjectKind::Boulder,
@@ -112,7 +152,7 @@ pub fn generate_manifest(
         &mut land_cursor,
         &mut next_id,
         ceil_div(
-            config.biome.meadow_min_area_m2 * u32::from(config.objects.stumps_per_hectare),
+            meadow_area_m2 * u32::from(config.objects.stumps_per_hectare),
             10_000,
         ),
         ObjectKind::Stump,
@@ -122,7 +162,7 @@ pub fn generate_manifest(
         &mut land_cursor,
         &mut next_id,
         ceil_div(
-            config.biome.meadow_min_area_m2 * u32::from(config.objects.rocks_per_hectare),
+            meadow_area_m2 * u32::from(config.objects.rocks_per_hectare),
             10_000,
         ),
         ObjectKind::Rock,
@@ -226,23 +266,11 @@ fn validate_forest_contract(
         return contract_error("eligible land area is below the configured minimum");
     }
 
-    let required_trees = ceil_div(config.biome.forest_min_area_m2, 25);
-    let required_bushes = ceil_div(
-        config.biome.forest_min_area_m2 * u32::from(config.biome.bushes_per_hectare),
-        10_000,
-    );
-    let required_boulders = density_count(
-        config.biome.meadow_min_area_m2,
-        config.objects.boulders_per_hectare,
-    );
-    let required_stumps = density_count(
-        config.biome.meadow_min_area_m2,
-        config.objects.stumps_per_hectare,
-    );
-    let required_rocks = density_count(
-        config.biome.meadow_min_area_m2,
-        config.objects.rocks_per_hectare,
-    );
+    let required_trees = ceil_div(forest_area_m2, 25);
+    let required_bushes = density_count(forest_area_m2, config.biome.bushes_per_hectare);
+    let required_boulders = density_count(meadow_area_m2, config.objects.boulders_per_hectare);
+    let required_stumps = density_count(meadow_area_m2, config.objects.stumps_per_hectare);
+    let required_rocks = density_count(meadow_area_m2, config.objects.rocks_per_hectare);
     let count_kind = |kind| {
         u32::try_from(
             manifest
@@ -549,14 +577,8 @@ fn append_kind(
     Ok(())
 }
 
-fn tree(id: u64, point: WorldPointQ8, birch: bool, species_index: u32) -> ObjectPlacement {
-    let canopy = if species_index < CANOPY_RANGE_WITNESSES_PER_SPECIES {
-        512
-    } else if species_index < CANOPY_RANGE_WITNESSES_PER_SPECIES * 2 {
-        1_024
-    } else {
-        768
-    };
+fn tree(id: u64, point: WorldPointQ8, birch: bool, large_canopy: bool) -> ObjectPlacement {
+    let canopy = if large_canopy { 896 } else { 512 };
     ObjectPlacement {
         kind: if birch {
             ObjectKind::TreeA
@@ -730,15 +752,15 @@ fn complete_traversal_route(
 }
 
 fn surface_point(identity: &WorldIdentity, x_meters: i32, z_meters: i32) -> WorldPointQ8 {
+    surface_point_q8(identity, x_meters * Q8_PER_METER, z_meters * Q8_PER_METER)
+}
+
+fn surface_point_q8(identity: &WorldIdentity, x_q8: i32, z_q8: i32) -> WorldPointQ8 {
     let column = ColumnCoord {
-        x: x_meters * VOXELS_PER_METER,
-        z: z_meters * VOXELS_PER_METER,
+        x: x_q8.div_euclid(64),
+        z: z_q8.div_euclid(64),
     };
-    WorldPointQ8::new(
-        x_meters * Q8_PER_METER,
-        evaluate_column(identity, column).surface_y_q8,
-        z_meters * Q8_PER_METER,
-    )
+    WorldPointQ8::new(x_q8, evaluate_column(identity, column).surface_y_q8, z_q8)
 }
 
 fn ceil_div(value: u32, divisor: u32) -> u32 {
@@ -746,8 +768,8 @@ fn ceil_div(value: u32, divisor: u32) -> u32 {
 }
 
 struct CandidateCursor {
-    x: i32,
-    z: i32,
+    x_q8: i32,
+    z_q8: i32,
     identity: WorldIdentity,
     route_start: WorldPointQ8,
     route_end: WorldPointQ8,
@@ -760,8 +782,8 @@ impl CandidateCursor {
         route_end: WorldPointQ8,
     ) -> Self {
         Self {
-            x: -490,
-            z: -490,
+            x_q8: -500 * Q8_PER_METER,
+            z_q8: -500 * Q8_PER_METER,
             identity,
             route_start,
             route_end,
@@ -770,16 +792,22 @@ impl CandidateCursor {
 
     fn next(&mut self, required_biome: BiomeId) -> Result<WorldPointQ8, CurationGenerateError> {
         loop {
-            if self.z > 490 {
+            if self.z_q8 >= 500 * Q8_PER_METER {
                 return Err(CurationGenerateError::Contract(
                     "candidate grid cannot satisfy required placement counts".to_owned(),
                 ));
             }
-            let point = surface_point(&self.identity, self.x, self.z);
-            self.x += PLACEMENT_SPACING_METERS;
-            if self.x > 490 {
-                self.x = -490;
-                self.z += PLACEMENT_SPACING_METERS;
+            let row_offset =
+                if (self.z_q8 + 500 * Q8_PER_METER).div_euclid(PLACEMENT_ROW_SPACING_Q8) % 2 == 0 {
+                    0
+                } else {
+                    PLACEMENT_ROW_STAGGER_Q8
+                };
+            let point = surface_point_q8(&self.identity, self.x_q8 + row_offset, self.z_q8);
+            self.x_q8 += PLACEMENT_COLUMN_SPACING_Q8;
+            if self.x_q8 >= 500 * Q8_PER_METER {
+                self.x_q8 = -500 * Q8_PER_METER;
+                self.z_q8 += PLACEMENT_ROW_SPACING_Q8;
             }
             let outside_ruin = point.x.abs() >= 2_560 || point.z.abs() >= 2_560;
             let outside_route = point_segment_distance_at_least(
@@ -797,6 +825,33 @@ impl CandidateCursor {
             }
         }
     }
+
+    fn next_away_from(
+        &mut self,
+        required_biome: BiomeId,
+        exclusions: &[WorldPointQ8],
+        minimum_distance_q8: i32,
+    ) -> Result<WorldPointQ8, CurationGenerateError> {
+        loop {
+            let point = self.next(required_biome)?;
+            if exclusions.iter().all(|excluded| {
+                horizontal_point_distance_at_least(point, *excluded, minimum_distance_q8)
+            }) {
+                return Ok(point);
+            }
+        }
+    }
+}
+
+fn horizontal_point_distance_at_least(
+    left: WorldPointQ8,
+    right: WorldPointQ8,
+    minimum_distance_q8: i32,
+) -> bool {
+    let delta_x = i64::from(left.x - right.x);
+    let delta_z = i64::from(left.z - right.z);
+    let minimum_distance = i64::from(minimum_distance_q8);
+    delta_x * delta_x + delta_z * delta_z >= minimum_distance * minimum_distance
 }
 
 fn point_segment_distance_at_least(
@@ -919,6 +974,64 @@ mod tests {
         config.biome.forest_min_area_m2 = 1_000_000;
 
         assert!(validate_manifest_without_stamp(&manifest, &config).is_err());
+    }
+
+    #[test]
+    fn generated_object_populations_follow_measured_biome_area() {
+        let region = include_bytes!("../../../../assets/config/product_one_region.ron");
+        let stamp = include_bytes!("../../../../assets/stamps/ruin_p1.ron");
+        let config: RegionConfig = ron::de::from_bytes(region).unwrap();
+        let identity = WorldIdentity::new(
+            config.seed,
+            parameters_digest_from_bytes(region, stamp),
+            WorldBounds::new(
+                WorldPointQ8::new(
+                    i32::from(config.bounds.x_min_m) * 256,
+                    i32::from(config.bounds.y_min_m) * 256,
+                    i32::from(config.bounds.z_min_m) * 256,
+                ),
+                WorldPointQ8::new(
+                    i32::from(config.bounds.x_max_m) * 256,
+                    i32::from(config.bounds.y_max_m) * 256,
+                    i32::from(config.bounds.z_max_m) * 256,
+                ),
+            )
+            .unwrap(),
+        );
+        let forest_area_m2 = super::raster_area_m2(&identity, BiomeId::Forest);
+        let meadow_area_m2 = super::raster_area_m2(&identity, BiomeId::Meadow);
+        let manifest = generate_manifest(region, stamp).unwrap();
+        let count_kind = |kind| {
+            u32::try_from(
+                manifest
+                    .objects
+                    .iter()
+                    .filter(|placement| placement.kind == kind)
+                    .count(),
+            )
+            .unwrap()
+        };
+
+        assert!(
+            count_kind(ObjectKind::TreeA) + count_kind(ObjectKind::TreeB)
+                >= super::ceil_div(forest_area_m2, 25)
+        );
+        assert!(
+            count_kind(ObjectKind::Bush)
+                >= super::density_count(forest_area_m2, config.biome.bushes_per_hectare)
+        );
+        assert!(
+            count_kind(ObjectKind::Boulder)
+                >= super::density_count(meadow_area_m2, config.objects.boulders_per_hectare)
+        );
+        assert!(
+            count_kind(ObjectKind::Stump)
+                >= super::density_count(meadow_area_m2, config.objects.stumps_per_hectare)
+        );
+        assert!(
+            count_kind(ObjectKind::Rock)
+                >= super::density_count(meadow_area_m2, config.objects.rocks_per_hectare)
+        );
     }
 
     #[test]
