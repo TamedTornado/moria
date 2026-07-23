@@ -744,6 +744,12 @@ fn valid_animation(
     if samplers.is_empty() || channels.is_empty() {
         return false;
     }
+    if !samplers
+        .iter()
+        .all(|sampler| valid_animation_sampler_references(sampler, layout))
+    {
+        return false;
+    }
 
     channels.iter().all(|channel| {
         let Some(sampler) = channel
@@ -809,6 +815,16 @@ fn valid_animation(
                 _ => false,
             }
     })
+}
+
+fn valid_animation_sampler_references(sampler: &serde_json::Value, layout: &GlbLayout<'_>) -> bool {
+    sampler.is_object()
+        && ["input", "output"].iter().all(|field| {
+            sampler
+                .get(*field)
+                .and_then(value_index)
+                .is_some_and(|index| layout.accessor(index).is_some())
+        })
 }
 
 fn strictly_increasing_f32_accessor(accessor: &GlbAccessor, binary: &[u8]) -> bool {
@@ -1534,7 +1550,7 @@ mod glb_tests {
 
     use serde_json::Value;
 
-    use super::{GlbLayout, glb_document, valid_animation, valid_glb};
+    use super::{GlbLayout, glb_document, valid_animation, valid_glb, valid_gltf_references};
 
     #[test]
     fn glb_validation_rejects_a_truncated_binary_chunk() {
@@ -1756,6 +1772,44 @@ mod glb_tests {
                 .iter()
                 .all(|animation| valid_animation(animation, &layout, nodes))
         );
+    }
+
+    #[test]
+    fn glb_validation_rejects_unreferenced_animation_samplers_without_accessors() {
+        let explorer = fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/player/explorer.glb"
+        ))
+        .expect("explorer fixture exists");
+        let (document, binary) = glb_document(&explorer).expect("explorer GLB document");
+        let layout = GlbLayout::new(&document, binary).expect("explorer GLB layout");
+        let animation = &document["animations"]
+            .as_array()
+            .expect("explorer animations")[0];
+
+        assert!(valid_animation(animation, &layout, document.get("nodes")));
+        assert!(valid_gltf_references(&document, &layout));
+
+        for sampler in [
+            serde_json::json!({ "input": 999, "output": 1 }),
+            serde_json::json!({ "input": 0, "output": 999 }),
+            serde_json::json!({ "input": 0 }),
+        ] {
+            let mut malformed = document.clone();
+            malformed["animations"][0]["samplers"]
+                .as_array_mut()
+                .expect("animation samplers")
+                .push(sampler);
+
+            assert!(
+                !valid_animation(&malformed["animations"][0], &layout, malformed.get("nodes")),
+                "all declared samplers require in-range input and output accessors"
+            );
+            assert!(
+                !valid_gltf_references(&malformed, &layout),
+                "unreferenced animation samplers must still be validated"
+            );
+        }
     }
 
     #[test]
