@@ -323,6 +323,44 @@ fn edit_affected_cap_handles_maximum_candidate_count() {
 }
 
 #[test]
+fn edit_affected_cap_skips_region_volume_for_spread_candidates() {
+    // All placements are members of the same horizontal edit broad phase, but
+    // their centers span the entire legal vertical range.  No radius-3 m edit
+    // can reach more than the exact cap, so index construction must establish
+    // that from the bounded candidate geometry rather than scan the union AABB.
+    let placements = (0..256)
+        .map(|index| {
+            boulder_at(
+                u64::try_from(index + 1).expect("nonnegative test index"),
+                (index % 16) * 4,
+                -512 + index * 4,
+                (index / 16) * 4,
+            )
+        })
+        .collect::<Vec<_>>();
+    let config = ObjectIndexConfig {
+        max_edit_dependency_candidates: 256,
+        max_affected_objects_per_edit: 64,
+        ..Default::default()
+    };
+
+    assert!(build_object_index(&placements, &config).is_ok());
+}
+
+#[test]
+fn placement_query_outside_region_does_not_overflow_grid_math() {
+    let placements = [boulder(1, 0, 0)];
+    let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
+    let bounds = moria_world::AabbQ8::new(
+        WorldPointQ8::new(i32::MAX - 8, 0, i32::MAX - 8),
+        WorldPointQ8::new(i32::MAX, 1, i32::MAX),
+    )
+    .unwrap();
+
+    assert!(placement_ids_in(&index, bounds).is_empty());
+}
+
+#[test]
 fn horizon_members_and_overlap_witnesses_are_stable() {
     let placements = vec![tree(9, 1, 1), tree(3, 2, 2), boulder(15, 40, 40)];
     let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();

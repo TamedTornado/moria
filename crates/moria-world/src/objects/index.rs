@@ -368,6 +368,14 @@ fn max_affected_objects_for_edit(
     let Some(first) = dependencies.first() else {
         return 0;
     };
+    let maximum_broad_overlap = max_broad_edit_overlap(&dependencies, u16::from(maximum));
+    if maximum_broad_overlap <= u16::from(maximum) {
+        // An exact dependency hit is necessarily contained in this object's
+        // expanded dependency box.  The sweep therefore proves that no legal
+        // edit center can exceed the exact cap, without walking the (possibly
+        // region-height) union of the boxes.
+        return maximum_broad_overlap;
+    }
     let center_bounds =
         dependencies
             .iter()
@@ -425,6 +433,71 @@ fn max_affected_objects_for_edit(
         }
     }
     observed_maximum
+}
+
+/// Returns the largest number of inclusive edit-center boxes sharing a voxel.
+///
+/// Every maximum is witnessed at the minimum coordinate of one box on each
+/// axis.  Sweeping those x/y witnesses and maintaining z intervals makes this
+/// depend only on the bounded candidate list, rather than on world volume.
+fn max_broad_edit_overlap(
+    dependencies: &[(EditCenterBounds, EditCenterBounds)],
+    maximum_allowed: u16,
+) -> u16 {
+    let mut maximum = 0_u16;
+    let mut x_witnesses = dependencies
+        .iter()
+        .map(|(centers, _)| centers.min.x)
+        .collect::<Vec<_>>();
+    x_witnesses.sort_unstable();
+    x_witnesses.dedup();
+
+    for x in x_witnesses {
+        let active = dependencies
+            .iter()
+            .map(|(centers, _)| *centers)
+            .filter(|centers| centers.min.x <= x && x <= centers.max.x)
+            .collect::<Vec<_>>();
+        maximum = maximum.max(max_rectangle_overlap(&active, maximum_allowed));
+        if maximum > maximum_allowed {
+            return maximum;
+        }
+    }
+    maximum
+}
+
+/// Returns the largest number of inclusive y/z rectangles sharing a voxel.
+fn max_rectangle_overlap(rectangles: &[EditCenterBounds], maximum_allowed: u16) -> u16 {
+    let mut maximum = 0_u16;
+    let mut y_witnesses = rectangles
+        .iter()
+        .map(|bounds| bounds.min.y)
+        .collect::<Vec<_>>();
+    y_witnesses.sort_unstable();
+    y_witnesses.dedup();
+
+    for y in y_witnesses {
+        let mut z_witnesses = rectangles
+            .iter()
+            .filter(|bounds| bounds.min.y <= y && y <= bounds.max.y)
+            .map(|bounds| bounds.min.z)
+            .collect::<Vec<_>>();
+        z_witnesses.sort_unstable();
+        z_witnesses.dedup();
+        for z in z_witnesses {
+            let overlap = rectangles
+                .iter()
+                .filter(|bounds| {
+                    bounds.min.y <= y && y <= bounds.max.y && bounds.min.z <= z && z <= bounds.max.z
+                })
+                .count();
+            maximum = maximum.max(u16::try_from(overlap).unwrap_or(u16::MAX));
+            if maximum > maximum_allowed {
+                return maximum;
+            }
+        }
+    }
+    maximum
 }
 
 fn edit_center_bounds(bounds: AabbQ8) -> Option<EditCenterBounds> {
@@ -743,6 +816,7 @@ fn voxel_in_bounds(coordinate: VoxelCoord, bounds: AabbQ8) -> bool {
 
 fn dependency_keys_for(bounds: AabbQ8) -> Vec<DependencyGridCellKey> {
     horizontal_range(bounds, DEPENDENCY_CELL_METERS, REGION_XZ_MIN_Q8)
+        .into_iter()
         .flat_map(|(x, z)| {
             i16::try_from(x)
                 .ok()
@@ -754,6 +828,7 @@ fn dependency_keys_for(bounds: AabbQ8) -> Vec<DependencyGridCellKey> {
 
 fn sample_keys_for(bounds: AabbQ8) -> Vec<SampleGridCellKey> {
     horizontal_range(bounds, SAMPLE_CELL_METERS, 0)
+        .into_iter()
         .flat_map(|(x, z)| {
             i16::try_from(x)
                 .ok()
@@ -763,17 +838,24 @@ fn sample_keys_for(bounds: AabbQ8) -> Vec<SampleGridCellKey> {
         .collect()
 }
 
-fn horizontal_range(
-    bounds: AabbQ8,
-    meters: i32,
-    origin_q8: i32,
-) -> impl Iterator<Item = (i32, i32)> {
-    let edge = meters * Q8_UNITS_PER_METER;
-    let min_x = (bounds.min.x - origin_q8).div_euclid(edge);
-    let max_x = (bounds.max_exclusive.x - 1 - origin_q8).div_euclid(edge);
-    let min_z = (bounds.min.z - origin_q8).div_euclid(edge);
-    let max_z = (bounds.max_exclusive.z - 1 - origin_q8).div_euclid(edge);
-    (min_x..=max_x).flat_map(move |x| (min_z..=max_z).map(move |z| (x, z)))
+fn horizontal_range(bounds: AabbQ8, meters: i32, origin_q8: i32) -> Vec<(i32, i32)> {
+    let edge = i64::from(meters) * i64::from(Q8_UNITS_PER_METER);
+    let min_x = i64::from(bounds.min.x).max(i64::from(REGION_XZ_MIN_Q8));
+    let max_x = i64::from(bounds.max_exclusive.x).min(i64::from(REGION_XZ_MAX_Q8_EXCLUSIVE));
+    let min_z = i64::from(bounds.min.z).max(i64::from(REGION_XZ_MIN_Q8));
+    let max_z = i64::from(bounds.max_exclusive.z).min(i64::from(REGION_XZ_MAX_Q8_EXCLUSIVE));
+    if min_x >= max_x || min_z >= max_z {
+        return Vec::new();
+    }
+    let origin_q8 = i64::from(origin_q8);
+    let min_x = (min_x - origin_q8).div_euclid(edge);
+    let max_x = (max_x - 1 - origin_q8).div_euclid(edge);
+    let min_z = (min_z - origin_q8).div_euclid(edge);
+    let max_z = (max_z - 1 - origin_q8).div_euclid(edge);
+    (min_x..=max_x)
+        .flat_map(move |x| (min_z..=max_z).map(move |z| (x, z)))
+        .filter_map(|(x, z)| i32::try_from(x).ok().zip(i32::try_from(z).ok()))
+        .collect()
 }
 
 fn brick_count(bounds: AabbQ8) -> u16 {
