@@ -25,11 +25,11 @@ fn report() -> ForestFeasibilityReport {
         timestamp_utc: "2026-07-17T00:00:00Z".into(),
         passed: true,
         failure_reasons: Vec::new(),
-        build: BuildProfile {
+        build: Some(BuildProfile {
             cargo_profile: "release".into(),
             git_commit: "a".repeat(40),
             rustc_version: "rustc 1.89.0".into(),
-        },
+        }),
         world: identity(),
         manifest_sha256: "b".repeat(64),
         machine: MachineProfile {
@@ -235,14 +235,17 @@ fn mutation_report() -> MutationFeasibilityReport {
         timestamp_utc: forest.timestamp_utc.clone(),
         passed: true,
         failure_reasons: Vec::new(),
-        build: forest.build.clone(),
+        build: forest
+            .build
+            .clone()
+            .expect("passing forest report has a build"),
         world: forest.world,
         manifest_sha256: forest.manifest_sha256.clone(),
         forest_report_sha256,
         machine: forest.machine.clone(),
         resolution: [2560, 1440],
         backend: "metal".into(),
-        cold_start_ms: 100.0,
+        cold_start_ms: Some(100.0),
         workloads: [
             MutationWorkloadRole::InteractiveCarve,
             MutationWorkloadRole::ColonyVolume,
@@ -251,13 +254,18 @@ fn mutation_report() -> MutationFeasibilityReport {
         .into_iter()
         .map(workload)
         .collect(),
-        query_costs: query_costs(),
+        query_costs: Some(query_costs()),
     }
 }
 
 fn trusted_identity(report: &ForestFeasibilityReport) -> TrustedGateIdentity {
     TrustedGateIdentity {
-        git_commit: report.build.git_commit.clone(),
+        git_commit: report
+            .build
+            .as_ref()
+            .expect("passing forest report has a build")
+            .git_commit
+            .clone(),
         parameters_digest: report.world.parameters_digest,
         manifest_sha256: report.manifest_sha256.clone(),
     }
@@ -321,14 +329,14 @@ fn feasibility_reports_reject_wrong_world_identity_and_fabricated_zeroes() {
     ));
 
     let mut invalid = mutation_report();
-    invalid.cold_start_ms = 0.0;
+    invalid.cold_start_ms = Some(0.0);
     assert!(matches!(
         invalid.validate(),
         Err(ReportValidationError::Missing { .. })
     ));
 
     let mut invalid = mutation_report();
-    invalid.query_costs.sample_counts.clear();
+    invalid.query_costs.as_mut().unwrap().sample_counts.clear();
     assert!(matches!(
         invalid.validate(),
         Err(ReportValidationError::Missing { .. })
@@ -349,6 +357,8 @@ fn passing_feasibility_reports_enforce_forest_and_query_probe_contracts() {
     let mut invalid = mutation_report();
     invalid
         .query_costs
+        .as_mut()
+        .unwrap()
         .sample_counts
         .remove("normal_query_bundles");
     assert!(matches!(
@@ -361,6 +371,8 @@ fn passing_feasibility_reports_enforce_forest_and_query_probe_contracts() {
     let mut invalid = mutation_report();
     invalid
         .query_costs
+        .as_mut()
+        .unwrap()
         .sample_counts
         .insert("normal_query_bundles".into(), 999);
     assert!(matches!(
@@ -650,6 +662,8 @@ fn cold_query_samples_allow_any_p99_within_the_four_millisecond_maximum() {
     let mut valid = mutation_report();
     let cold = valid
         .query_costs
+        .as_mut()
+        .unwrap()
         .cold_inactive_calls
         .get_mut("sample_voxel")
         .unwrap();
@@ -684,12 +698,12 @@ fn mutation_report_requires_the_exact_forest_gate_identity() {
 fn mutation_report_rejects_a_mutually_consistent_stale_gate_identity() {
     let trusted = trusted_identity(&report());
     let mut forest = report();
-    forest.build.git_commit = "d".repeat(40);
+    forest.build.as_mut().unwrap().git_commit = "d".repeat(40);
     forest.world.parameters_digest = [4; 32];
     forest.manifest_sha256 = "e".repeat(64);
 
     let mut mutation = mutation_report();
-    mutation.build = forest.build.clone();
+    mutation.build = forest.build.clone().expect("forest build was updated");
     mutation.world = forest.world;
     mutation.manifest_sha256 = forest.manifest_sha256.clone();
     mutation.forest_report_sha256 = forest.canonical_sha256().unwrap();
@@ -707,7 +721,7 @@ fn failed_environment_reports_serialize_only_with_matching_failure_reasons() {
     let mut forest = report();
     forest.passed = false;
     forest.failure_reasons = vec!["M4 machine".into(), "build".into()];
-    forest.build.cargo_profile = "dev".into();
+    forest.build.as_mut().unwrap().cargo_profile = "dev".into();
     forest.machine.os_name = "Linux".into();
     forest.machine.wgpu_backend = "vulkan".into();
     forest.machine.profile_id_sha256 = forest.machine.stable_profile_id_sha256();
@@ -795,6 +809,8 @@ fn feasibility_reports_reject_zero_filled_present_collections() {
     let mut invalid = mutation_report();
     invalid
         .query_costs
+        .as_mut()
+        .unwrap()
         .observed_work_maxima
         .insert("voxel-candidates".into(), 0);
     assert!(matches!(
@@ -816,7 +832,7 @@ fn feasibility_failure_reports_serialize_measured_gate_violations() {
     let mut mutation = mutation_report();
     mutation.passed = false;
     mutation.failure_reasons = vec!["cold_start_ms".into()];
-    mutation.cold_start_ms = 5_000.0;
+    mutation.cold_start_ms = Some(5_000.0);
     let mutation_json = mutation.to_canonical_json().unwrap();
     assert!(mutation_json.contains("\"passed\":false"));
     assert!(MutationFeasibilityReport::from_json(&mutation_json).is_ok());
@@ -845,6 +861,57 @@ fn feasibility_failure_reports_serialize_measured_gate_violations() {
     catastrophic.horizon_derived_records = 0;
     let horizon_json = horizon_failure.to_canonical_json().unwrap();
     assert!(MutationFeasibilityReport::from_json(&horizon_json).is_ok());
+}
+
+#[test]
+fn forest_failure_before_build_capture_serializes_null_build() {
+    let mut failed = report();
+    failed.passed = false;
+    failed.failure_reasons = vec!["build".into()];
+    failed.build = None;
+
+    let json = failed.to_canonical_json().unwrap();
+    assert!(json.contains("\"build\":null"));
+    assert!(ForestFeasibilityReport::from_json(&json).is_ok());
+}
+
+#[test]
+fn mutation_input_failure_preserves_unavailable_runtime_evidence() {
+    let mut failed = mutation_report();
+    failed.passed = false;
+    failed.failure_reasons = vec![
+        "cold_start_ms".into(),
+        "forest feasibility gate".into(),
+        "query costs".into(),
+        "workloads".into(),
+    ];
+    failed.cold_start_ms = None;
+    failed.workloads.clear();
+    failed.query_costs = None;
+
+    let json = failed.to_canonical_json().unwrap();
+    assert!(json.contains("\"cold_start_ms\":null"));
+    assert!(json.contains("\"workloads\":[]"));
+    assert!(json.contains("\"query_costs\":null"));
+    assert!(MutationFeasibilityReport::from_json(&json).is_ok());
+}
+
+#[test]
+fn failed_mutation_report_preserves_partial_missing_stage_trace() {
+    let mut failed = mutation_report();
+    failed.passed = false;
+    failed.failure_reasons = vec!["mutation stage".into()];
+    failed.workloads[0].stage_timings_ms.remove("gpu-upload");
+    failed.workloads[0].stage_counts.remove("gpu-upload");
+
+    let json = failed.to_canonical_json().unwrap();
+    let parsed = MutationFeasibilityReport::from_json(&json).unwrap();
+    assert!(
+        !parsed.workloads[0]
+            .stage_timings_ms
+            .contains_key("gpu-upload")
+    );
+    assert!(!parsed.workloads[0].stage_counts.contains_key("gpu-upload"));
 }
 
 #[test]

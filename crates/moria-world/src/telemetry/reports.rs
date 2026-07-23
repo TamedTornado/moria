@@ -278,7 +278,8 @@ pub struct ForestFeasibilityReport {
     pub timestamp_utc: String,
     pub passed: bool,
     pub failure_reasons: Vec<String>,
-    pub build: BuildProfile,
+    /// `None` is serialized as `null` when F1 fails before build capture completes.
+    pub build: Option<BuildProfile>,
     pub world: WorldIdentity,
     pub manifest_sha256: String,
     pub machine: MachineProfile,
@@ -519,9 +520,11 @@ pub struct MutationFeasibilityReport {
     pub machine: MachineProfile,
     pub resolution: [u32; 2],
     pub backend: String,
-    pub cold_start_ms: f64,
+    /// `None` is serialized as `null` when F2 fails before cold-start capture completes.
+    pub cold_start_ms: Option<f64>,
     pub workloads: Vec<MutationWorkloadEvidence>,
-    pub query_costs: QueryCostEvidence,
+    /// `None` is serialized as `null` when the query probe never runs.
+    pub query_costs: Option<QueryCostEvidence>,
 }
 
 impl MutationFeasibilityReport {
@@ -540,14 +543,21 @@ impl MutationFeasibilityReport {
             )?;
         }
         validate_world_identity(&self.world)?;
-        finite_positive(self.cold_start_ms, "cold_start_ms")?;
-        if self.passed && self.cold_start_ms >= 5_000.0 {
-            return Err(ReportValidationError::Limit {
-                field: "cold_start_ms",
-            });
+        if let Some(cold_start_ms) = self.cold_start_ms {
+            finite_positive(cold_start_ms, "cold_start_ms")?;
+            if self.passed && cold_start_ms >= 5_000.0 {
+                return Err(ReportValidationError::Limit {
+                    field: "cold_start_ms",
+                });
+            }
+        } else {
+            validate_acceptance_requirement(self.passed, &self.failure_reasons, "cold_start_ms")?;
+        }
+        if self.workloads.len() > 3 {
+            return Err(ReportValidationError::Missing { field: "workloads" });
         }
         if self.workloads.len() != 3 {
-            return Err(ReportValidationError::Missing { field: "workloads" });
+            validate_acceptance_requirement(self.passed, &self.failure_reasons, "workloads")?;
         }
         let expected = [
             MutationWorkloadRole::InteractiveCarve,
@@ -582,7 +592,11 @@ impl MutationFeasibilityReport {
                 field: "catastrophic mutation stage count",
             });
         }
-        validate_query_costs(&self.query_costs, self.passed)
+        if let Some(query_costs) = &self.query_costs {
+            validate_query_costs(query_costs, self.passed)
+        } else {
+            validate_acceptance_requirement(self.passed, &self.failure_reasons, "query costs")
+        }
     }
 
     pub fn to_canonical_json(&self) -> Result<String, ReportValidationError> {
@@ -612,7 +626,10 @@ impl MutationFeasibilityReport {
         forest.validate()?;
         trusted.validate()?;
         if !forest.passed
-            || self.build != forest.build
+            || forest
+                .build
+                .as_ref()
+                .is_none_or(|build| self.build != *build)
             || self.world != forest.world
             || self.manifest_sha256 != forest.manifest_sha256
             || self.machine != forest.machine
@@ -622,7 +639,13 @@ impl MutationFeasibilityReport {
                 field: "forest feasibility gate",
             });
         }
-        if !trusted.matches(&forest.build, &forest.world, &forest.manifest_sha256)
+        let forest_build = forest
+            .build
+            .as_ref()
+            .ok_or(ReportValidationError::Identity {
+                field: "forest feasibility gate",
+            })?;
+        if !trusted.matches(forest_build, &forest.world, &forest.manifest_sha256)
             || !trusted.matches(&self.build, &self.world, &self.manifest_sha256)
         {
             return Err(ReportValidationError::Identity {
@@ -638,7 +661,7 @@ struct GateHeader<'a> {
     timestamp_utc: &'a str,
     passed: bool,
     failure_reasons: &'a [String],
-    build: &'a BuildProfile,
+    build: Option<&'a BuildProfile>,
     manifest_sha256: &'a str,
     machine: &'a MachineProfile,
 }
@@ -650,7 +673,7 @@ impl<'a> GateHeader<'a> {
             timestamp_utc: &report.timestamp_utc,
             passed: report.passed,
             failure_reasons: &report.failure_reasons,
-            build: &report.build,
+            build: report.build.as_ref(),
             manifest_sha256: &report.manifest_sha256,
             machine: &report.machine,
         }
@@ -662,7 +685,7 @@ impl<'a> GateHeader<'a> {
             timestamp_utc: &report.timestamp_utc,
             passed: report.passed,
             failure_reasons: &report.failure_reasons,
-            build: &report.build,
+            build: Some(&report.build),
             manifest_sha256: &report.manifest_sha256,
             machine: &report.machine,
         }
@@ -685,16 +708,20 @@ fn validate_header(
     if !sorted_unique_nonempty(header.failure_reasons) {
         return Err(ReportValidationError::FailureReasons);
     }
-    header.build.validate_complete()?;
+    if let Some(build) = header.build {
+        build.validate_complete()?;
+        if build.cargo_profile != "release" {
+            validate_acceptance_requirement(header.passed, header.failure_reasons, "build")?;
+        }
+    } else {
+        validate_acceptance_requirement(header.passed, header.failure_reasons, "build")?;
+    }
     if !is_sha256(header.manifest_sha256) {
         return Err(ReportValidationError::Identity {
             field: "manifest_sha256",
         });
     }
     header.machine.validate_complete()?;
-    if header.build.cargo_profile != "release" {
-        validate_acceptance_requirement(header.passed, header.failure_reasons, "build")?;
-    }
     if validate_m4_machine(header.machine).is_err() {
         validate_acceptance_requirement(header.passed, header.failure_reasons, "M4 machine")?;
     }
@@ -965,20 +992,25 @@ fn validate_workload(
         }
     }
     let unavailable_stages = !passed && has_failure_reason(failure_reasons, "mutation stage");
-    let empty_stage_evidence = value.stage_timings_ms.is_empty() && value.stage_counts.is_empty();
-    if !(unavailable_stages && empty_stage_evidence)
-        && (value.stage_timings_ms.len() != REQUIRED_MUTATION_STAGES.len()
-            || value.stage_counts.len() != REQUIRED_MUTATION_STAGES.len()
-            || REQUIRED_MUTATION_STAGES.iter().any(|stage| {
-                !value.stage_timings_ms.contains_key(*stage)
-                    || !value.stage_counts.contains_key(*stage)
-            }))
+    let stage_maps_agree = value.stage_timings_ms.len() == value.stage_counts.len()
+        && value
+            .stage_timings_ms
+            .keys()
+            .all(|stage| value.stage_counts.contains_key(stage));
+    let stage_keys_are_known = value
+        .stage_timings_ms
+        .keys()
+        .all(|stage| REQUIRED_MUTATION_STAGES.contains(&stage.as_str()));
+    let complete_stage_evidence = stage_maps_agree
+        && stage_keys_are_known
+        && value.stage_timings_ms.len() == REQUIRED_MUTATION_STAGES.len();
+    if !(unavailable_stages && stage_maps_agree && stage_keys_are_known) && !complete_stage_evidence
     {
         return Err(ReportValidationError::Missing {
             field: "mutation stage",
         });
     }
-    if !(unavailable_stages && empty_stage_evidence)
+    if !unavailable_stages
         && !(!passed && has_failure_reason(failure_reasons, "mutation stage count"))
         && NONEMPTY_MUTATION_STAGES
             .iter()
