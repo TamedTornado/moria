@@ -56,6 +56,7 @@ const NONEMPTY_MUTATION_STAGES: [&str; 11] = [
     "render-queue",
     "reconciliation",
 ];
+const RECONCILIATION_RENDERER_STAGES: [&str; 3] = ["render-extract", "gpu-upload", "render-queue"];
 
 /// Why an evidence object cannot be accepted as a complete gate artifact.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1107,7 +1108,12 @@ fn validate_workload(
             || ["admission", "schedule", "reconciliation"]
                 .iter()
                 .any(|stage| value.stage_counts[*stage] != u64::from(value.request_count))
-            || value.stage_counts["commit"] != u64::from(value.committed_batches))
+            || value.stage_counts["commit"] != u64::from(value.committed_batches)
+            // A stage can legitimately record fan-out or retries, but it must
+            // account for every item declared reconciled by the renderer barrier.
+            || RECONCILIATION_RENDERER_STAGES
+                .iter()
+                .any(|stage| value.stage_counts[*stage] < u64::from(value.barrier_expected_items)))
     {
         return Err(ReportValidationError::Inconsistent {
             field: "workload trace",

@@ -218,7 +218,8 @@ fn workload(role: MutationWorkloadRole) -> MutationWorkloadEvidence {
             .into_iter()
             .map(|stage| {
                 let count = match stage {
-                    "admission" | "schedule" | "commit" | "reconciliation" => request_count,
+                    "admission" | "schedule" | "commit" | "render-extract" | "gpu-upload"
+                    | "render-queue" | "reconciliation" => request_count,
                     _ => 1,
                 };
                 (stage.into(), u64::from(count))
@@ -650,6 +651,30 @@ fn passing_workload_requires_commit_records_to_match_committed_batches() {
             field: "workload trace"
         })
     ));
+}
+
+#[test]
+fn passing_workload_requires_renderer_stages_to_cover_barrier_items() {
+    for stage in ["render-extract", "gpu-upload", "render-queue"] {
+        let mut invalid = mutation_report();
+        assert_eq!(invalid.workloads[1].barrier_expected_items, 8);
+        invalid.workloads[1].stage_counts.insert(stage.into(), 1);
+        assert!(
+            matches!(
+                invalid.validate(),
+                Err(ReportValidationError::Inconsistent {
+                    field: "workload trace"
+                })
+            ),
+            "under-counted {stage} evidence must not satisfy the renderer barrier"
+        );
+    }
+
+    let mut retried = mutation_report();
+    retried.workloads[1]
+        .stage_counts
+        .insert("gpu-upload".into(), 9);
+    assert!(retried.validate().is_ok());
 }
 
 #[test]
