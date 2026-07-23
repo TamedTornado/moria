@@ -322,7 +322,7 @@ fn visit_centerline_cells(
             distances[axis] = if steps[axis] > 0 {
                 VOXEL_EDGE_Q8_I64 - offset
             } else if offset == 0 {
-                VOXEL_EDGE_Q8_I64
+                0
             } else {
                 offset
             };
@@ -337,7 +337,9 @@ fn visit_centerline_cells(
         }
         let mut next_axis = None;
         for axis in 0..3 {
-            if steps[axis] == 0 {
+            if steps[axis] == 0
+                || [current.x, current.y, current.z][axis] == [end.x, end.y, end.z][axis]
+            {
                 continue;
             }
             if next_axis.is_none_or(|other| {
@@ -349,6 +351,7 @@ fn visit_centerline_cells(
         let axis = next_axis.expect("a non-terminal DDA cell has movement");
         for tied_axis in 0..3 {
             if steps[tied_axis] != 0
+                && [current.x, current.y, current.z][tied_axis] != [end.x, end.y, end.z][tied_axis]
                 && distances[tied_axis] * magnitudes[axis]
                     == distances[axis] * magnitudes[tied_axis]
             {
@@ -1004,6 +1007,16 @@ mod tests {
             )
             .unwrap();
         assert!(app.world().resource::<SweepQueryResult>().0.is_ok());
+    }
+
+    #[test]
+    fn sweep_candidates_reach_an_in_bounds_multi_axis_negative_boundary_endpoint() {
+        let capsule = CapsuleQ8::new(WorldPointQ8::new(0, -31_208, 42), 46, 0);
+        let displacement = Vec3Q8::new(-1_330, -1_430, 1_200);
+
+        let candidates = sweep_candidates(capsule, displacement, identity().bounds).unwrap();
+
+        assert!(candidates.iter().count() <= usize::from(MAX_SWEEP_CANDIDATE_TESTS));
     }
 
     #[test]
