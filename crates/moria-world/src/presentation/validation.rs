@@ -632,23 +632,12 @@ fn valid_gltf_references(document: &serde_json::Value, layout: &GlbLayout<'_>) -
                     value_index(camera).is_some_and(|index| index < cameras.len())
                 })
         })
-        && skins.iter().all(|skin| {
-            skin.is_object()
-                && skin.get("inverseBindMatrices").is_none_or(|accessor| {
-                    value_index(accessor).is_some_and(|index| layout.accessor(index).is_some())
-                })
-                && skin
-                    .get("skeleton")
-                    .is_none_or(|node| value_index(node).is_some_and(|index| index < nodes.len()))
-                && skin
-                    .get("joints")
-                    .and_then(serde_json::Value::as_array)
-                    .is_some_and(|joints| {
-                        joints
-                            .iter()
-                            .all(|node| value_index(node).is_some_and(|index| index < nodes.len()))
-                    })
-        })
+        && skins
+            .iter()
+            .all(|skin| valid_skin_references(skin, layout, nodes))
+        && nodes
+            .iter()
+            .all(|node| valid_skinned_node(node, meshes, skins, layout))
         && document
             .get("animations")
             .and_then(serde_json::Value::as_array)
@@ -657,6 +646,129 @@ fn valid_gltf_references(document: &serde_json::Value, layout: &GlbLayout<'_>) -
                     .iter()
                     .all(|animation| valid_animation(animation, layout, document.get("nodes")))
             })
+}
+
+fn valid_skin_references(
+    skin: &serde_json::Value,
+    layout: &GlbLayout<'_>,
+    nodes: &[serde_json::Value],
+) -> bool {
+    let Some(joints) = skin.get("joints").and_then(serde_json::Value::as_array) else {
+        return false;
+    };
+    skin.is_object()
+        && !joints.is_empty()
+        && skin.get("inverseBindMatrices").is_none_or(|accessor| {
+            value_index(accessor)
+                .and_then(|index| layout.accessor(index))
+                .is_some_and(|accessor| {
+                    accessor.is_f32_type("MAT4")
+                        && accessor.count == joints.len() as u32
+                        && finite_f32_accessor(accessor, layout.binary)
+                })
+        })
+        && skin
+            .get("skeleton")
+            .is_none_or(|node| value_index(node).is_some_and(|index| index < nodes.len()))
+        && joints
+            .iter()
+            .all(|node| value_index(node).is_some_and(|index| index < nodes.len()))
+}
+
+fn valid_skinned_node(
+    node: &serde_json::Value,
+    meshes: &[serde_json::Value],
+    skins: &[serde_json::Value],
+    layout: &GlbLayout<'_>,
+) -> bool {
+    let Some(skin) = node
+        .get("skin")
+        .and_then(value_index)
+        .and_then(|index| skins.get(index))
+    else {
+        return node.get("skin").is_none();
+    };
+    let Some(mesh) = node
+        .get("mesh")
+        .and_then(value_index)
+        .and_then(|index| meshes.get(index))
+    else {
+        return node.get("mesh").is_none();
+    };
+    let Some(joints) = skin.get("joints").and_then(serde_json::Value::as_array) else {
+        return false;
+    };
+    mesh.get("primitives")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|primitives| {
+            primitives
+                .iter()
+                .all(|primitive| valid_skinned_primitive(primitive, layout, joints.len() as u32))
+        })
+}
+
+fn valid_skinned_primitive(
+    primitive: &serde_json::Value,
+    layout: &GlbLayout<'_>,
+    joint_count: u32,
+) -> bool {
+    let Some(attributes) = primitive
+        .get("attributes")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return false;
+    };
+    let Some(position) = attributes
+        .get("POSITION")
+        .and_then(value_index)
+        .and_then(|index| layout.accessor(index))
+    else {
+        return false;
+    };
+    let Some(joints) = attributes
+        .get("JOINTS_0")
+        .and_then(value_index)
+        .and_then(|index| layout.accessor(index))
+    else {
+        return false;
+    };
+    let Some(weights) = attributes
+        .get("WEIGHTS_0")
+        .and_then(value_index)
+        .and_then(|index| layout.accessor(index))
+    else {
+        return false;
+    };
+    joints.is_joint_type()
+        && weights.is_weight_type()
+        && joints.count == position.count
+        && weights.count == position.count
+        && (!weights.is_f32_type("VEC4") || finite_f32_accessor(weights, layout.binary))
+        && joint_indices_in_range(joints, layout.binary, joint_count)
+}
+
+fn joint_indices_in_range(accessor: &GlbAccessor, binary: &[u8], joint_count: u32) -> bool {
+    (0..usize::try_from(accessor.count).unwrap_or(usize::MAX)).all(|element| {
+        (0..4).all(|component| {
+            let offset = element
+                .checked_mul(accessor.stride)
+                .and_then(|offset| offset.checked_add(accessor.offset))
+                .and_then(|offset| {
+                    offset.checked_add(component * component_size(accessor.component_type)?)
+                });
+            match accessor.component_type {
+                5121 => offset
+                    .and_then(|offset| binary.get(offset).copied())
+                    .is_some_and(|index| u32::from(index) < joint_count),
+                5123 => offset
+                    .and_then(|offset| binary.get(offset..offset + 2))
+                    .and_then(|bytes| bytes.try_into().ok())
+                    .map(u16::from_le_bytes)
+                    .is_some_and(|index| u32::from(index) < joint_count),
+                _ => false,
+            }
+        })
+    })
 }
 
 fn valid_primitive_references(
@@ -1022,6 +1134,9 @@ impl<'a> GlbLayout<'a> {
             let component_type =
                 u32::try_from(value_usize(accessor.get("componentType")?)?).ok()?;
             let component_size = component_size(component_type)?;
+            let normalized = accessor
+                .get("normalized")
+                .map_or(Some(false), serde_json::Value::as_bool)?;
             let accessor_type = match accessor.get("type")?.as_str()? {
                 "SCALAR" => "SCALAR",
                 "VEC2" => "VEC2",
@@ -1056,6 +1171,7 @@ impl<'a> GlbLayout<'a> {
             }
             parsed.push(GlbAccessor {
                 component_type,
+                normalized,
                 count,
                 accessor_type,
                 offset: view_offset.checked_add(accessor_offset)?,
@@ -1081,6 +1197,7 @@ impl<'a> GlbLayout<'a> {
 
 struct GlbAccessor {
     component_type: u32,
+    normalized: bool,
     count: u32,
     accessor_type: &'static str,
     offset: usize,
@@ -1095,6 +1212,16 @@ impl GlbAccessor {
 
     fn is_index_type(&self) -> bool {
         self.accessor_type == "SCALAR" && matches!(self.component_type, 5121 | 5123 | 5125)
+    }
+
+    fn is_joint_type(&self) -> bool {
+        self.accessor_type == "VEC4" && matches!(self.component_type, 5121 | 5123)
+    }
+
+    fn is_weight_type(&self) -> bool {
+        self.accessor_type == "VEC4"
+            && (self.component_type == 5126
+                || (self.normalized && matches!(self.component_type, 5121 | 5123)))
     }
 }
 
@@ -1128,7 +1255,21 @@ fn valid_support_centered_scenes(document: &serde_json::Value, mesh_count: usize
     let Some(nodes) = document.get("nodes").and_then(serde_json::Value::as_array) else {
         return false;
     };
-    if nodes.is_empty() || !nodes.iter().all(identity_node_transform) {
+    let joint_nodes = document
+        .get("skins")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|skin| skin.get("joints").and_then(serde_json::Value::as_array))
+        .flatten()
+        .filter_map(value_index)
+        .collect::<BTreeSet<_>>();
+    if nodes.is_empty()
+        || !nodes.iter().enumerate().all(|(index, node)| {
+            joint_nodes.contains(&index) && node.get("mesh").is_none()
+                || identity_node_transform(node)
+        })
+    {
         return false;
     }
     let Some(scenes) = document.get("scenes").and_then(serde_json::Value::as_array) else {
@@ -1568,7 +1709,10 @@ mod glb_tests {
 
     use serde_json::Value;
 
-    use super::{GlbLayout, glb_document, valid_animation, valid_glb, valid_gltf_references};
+    use super::{
+        GlbLayout, glb_document, valid_animation, valid_glb, valid_gltf_references,
+        valid_support_centered_scenes,
+    };
 
     #[test]
     fn glb_validation_rejects_a_truncated_binary_chunk() {
@@ -1803,6 +1947,85 @@ mod glb_tests {
     }
 
     #[test]
+    fn glb_validation_enforces_skin_accessor_semantics_and_joint_rest_poses() {
+        let explorer = explorer_fixture();
+        let (document, binary) = glb_document(&explorer).expect("explorer GLB document");
+        let layout = GlbLayout::new(&document, binary).expect("explorer GLB layout");
+        assert!(valid_gltf_references(&document, &layout));
+
+        for (field, accessor) in [
+            ("inverseBindMatrices", 3),
+            ("JOINTS_0", 5),
+            ("WEIGHTS_0", 4),
+        ] {
+            let mut malformed = document.clone();
+            if field == "inverseBindMatrices" {
+                malformed["skins"][0][field] = Value::from(accessor);
+            } else {
+                malformed["meshes"][0]["primitives"][0]["attributes"][field] =
+                    Value::from(accessor);
+            }
+            assert!(
+                !valid_gltf_references(&malformed, &layout),
+                "{field} must use its required accessor type"
+            );
+        }
+
+        let wrong_joint_count = mutate_explorer(&explorer, |document, _| {
+            document["accessors"][4]["count"] = Value::from(7);
+        });
+        let (document, binary) = glb_document(&wrong_joint_count).expect("mutated explorer");
+        let layout = GlbLayout::new(&document, binary).expect("valid mutated layout");
+        assert!(
+            !valid_gltf_references(&document, &layout),
+            "joint attributes must have one entry per vertex"
+        );
+
+        let out_of_range_joint = mutate_explorer(&explorer, |_, binary| {
+            binary[384] = 1;
+        });
+        let (document, binary) = glb_document(&out_of_range_joint).expect("mutated explorer");
+        let layout = GlbLayout::new(&document, binary).expect("valid mutated layout");
+        assert!(
+            !valid_gltf_references(&document, &layout),
+            "joint attribute values must index the declared skin joints"
+        );
+
+        let non_finite_bind_matrix = mutate_explorer(&explorer, |_, binary| {
+            binary[616..620].copy_from_slice(&f32::NAN.to_le_bytes());
+        });
+        let (document, binary) = glb_document(&non_finite_bind_matrix).expect("mutated explorer");
+        let layout = GlbLayout::new(&document, binary).expect("valid mutated layout");
+        assert!(
+            !valid_gltf_references(&document, &layout),
+            "inverse bind matrices must be finite"
+        );
+
+        let multi_joint_rest_pose = mutate_explorer(&explorer, |document, binary| {
+            document["nodes"]
+                .as_array_mut()
+                .expect("nodes")
+                .push(serde_json::json!({
+                    "translation": [0.0, 0.5, 0.0],
+                }));
+            document["nodes"][0]["children"] = serde_json::json!([2]);
+            document["skins"][0]["joints"] = serde_json::json!([0, 2]);
+            document["skins"][0]["inverseBindMatrices"] =
+                Value::from(append_identity_bind_matrices(document, binary, 2));
+        });
+        let (document, binary) = glb_document(&multi_joint_rest_pose).expect("mutated explorer");
+        let layout = GlbLayout::new(&document, binary).expect("valid multi-joint layout");
+        assert!(valid_gltf_references(&document, &layout));
+        assert!(
+            valid_support_centered_scenes(
+                &document,
+                document["meshes"].as_array().expect("meshes").len()
+            ),
+            "joint-local rest poses do not move the support-centered mesh placement"
+        );
+    }
+
+    #[test]
     fn glb_validation_rejects_unreferenced_animation_samplers_without_accessors() {
         let explorer = fs::read(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -1944,6 +2167,54 @@ mod glb_tests {
             "/../../assets/vegetation/pine_near.glb"
         ))
         .expect("pine-near fixture exists")
+    }
+
+    fn explorer_fixture() -> Vec<u8> {
+        fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/player/explorer.glb"
+        ))
+        .expect("explorer fixture exists")
+    }
+
+    fn mutate_explorer(
+        mutate_from: &[u8],
+        mutate: impl FnOnce(&mut Value, &mut Vec<u8>),
+    ) -> Vec<u8> {
+        mutate_pine(mutate_from, mutate)
+    }
+
+    fn append_identity_bind_matrices(
+        document: &mut Value,
+        binary: &mut Vec<u8>,
+        count: usize,
+    ) -> usize {
+        let offset = binary.len();
+        for _ in 0..count {
+            for value in [
+                1.0_f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ] {
+                binary.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        document["buffers"][0]["byteLength"] = Value::from(binary.len());
+        let views = document["bufferViews"]
+            .as_array_mut()
+            .expect("buffer views");
+        views.push(serde_json::json!({
+            "buffer": 0,
+            "byteOffset": offset,
+            "byteLength": count * 64,
+        }));
+        let view_index = views.len() - 1;
+        let accessors = document["accessors"].as_array_mut().expect("accessors");
+        accessors.push(serde_json::json!({
+            "bufferView": view_index,
+            "componentType": 5126,
+            "count": count,
+            "type": "MAT4",
+        }));
+        accessors.len() - 1
     }
 
     fn mutate_pine(mutate_from: &[u8], mutate: impl FnOnce(&mut Value, &mut Vec<u8>)) -> Vec<u8> {
