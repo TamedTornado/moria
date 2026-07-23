@@ -332,6 +332,7 @@ impl ForestFeasibilityReport {
                 required_forest_object_counts(self.forest_area_m2, self.eligible_land_area_m2);
             let required_species_counts = required_forest_species_counts(self.forest_area_m2);
             if !matches_required_counts(&self.required_object_counts, &required_object_counts)
+                || !matches_required_count_keys(&self.object_counts, &required_object_counts)
                 || required_object_counts
                     .iter()
                     .any(|(kind, required)| self.object_counts.get(*kind).unwrap_or(&0) < required)
@@ -367,10 +368,21 @@ impl ForestFeasibilityReport {
                     field: "forest species counts",
                 });
             }
+            if self.object_counts.get("tree-a") != self.species_counts.get("birch")
+                || self.object_counts.get("tree-b") != self.species_counts.get("pine")
+            {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "forest object species",
+                });
+            }
             if self.canopy_range_bins.len() != REQUIRED_CANOPY_RANGE_BINS.len()
                 || REQUIRED_CANOPY_RANGE_BINS.iter().any(|bin| {
                     self.canopy_range_bins.get(*bin).unwrap_or(&0) < &MINIMUM_CANOPY_RANGE_BIN_COUNT
                 })
+                || self.canopy_range_bins["birch-lower"] > self.species_counts["birch"]
+                || self.canopy_range_bins["birch-upper"] > self.species_counts["birch"]
+                || self.canopy_range_bins["pine-lower"] > self.species_counts["pine"]
+                || self.canopy_range_bins["pine-upper"] > self.species_counts["pine"]
             {
                 return Err(ReportValidationError::Inconsistent {
                     field: "canopy range bins",
@@ -793,6 +805,13 @@ fn matches_required_counts(observed: &BTreeMap<String, u32>, required: &[(&str, 
         && required
             .iter()
             .all(|(name, count)| observed.get(*name) == Some(count))
+}
+
+fn matches_required_count_keys(observed: &BTreeMap<String, u32>, required: &[(&str, u32)]) -> bool {
+    observed.len() == required.len()
+        && required
+            .iter()
+            .all(|(name, _)| observed.contains_key(*name))
 }
 
 fn matches_minimum_counts(observed: &BTreeMap<String, u32>, required: &[(&str, u32)]) -> bool {

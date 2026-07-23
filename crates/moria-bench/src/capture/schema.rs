@@ -211,6 +211,37 @@ pub struct StreamingEvidence {
     pub object_index: ObjectIndexEvidence,
 }
 
+/// Immutable identities obtained from the capture baseline before a benchmark run.
+///
+/// A report cannot establish its own authority by containing well-formed values;
+/// callers must compare it to this independently captured identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrustedCaptureIdentity {
+    pub git_commit: String,
+    pub parameters_digest: [u8; 32],
+    pub manifest_sha256: String,
+}
+
+impl TrustedCaptureIdentity {
+    fn validate(&self) -> Result<(), ReportValidationError> {
+        if !is_git_commit(&self.git_commit)
+            || self.parameters_digest.iter().all(|byte| *byte == 0)
+            || !sha256(&self.manifest_sha256)
+        {
+            return Err(ReportValidationError::Identity {
+                field: "trusted capture identity",
+            });
+        }
+        Ok(())
+    }
+
+    fn matches(&self, build: &BuildProfile, world: &WorldIdentity, assets: &AssetEvidence) -> bool {
+        self.git_commit == build.git_commit
+            && self.parameters_digest == world.parameters_digest
+            && self.manifest_sha256 == assets.manifest_sha256
+    }
+}
+
 /// `Option` fields are always serialized: `null` records unavailable runtime evidence.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -405,6 +436,27 @@ impl BenchmarkReport {
         }
         report.validate()?;
         Ok(report)
+    }
+
+    /// Verifies a complete report against the identity captured before the run.
+    pub fn validate_against_trusted_capture(
+        &self,
+        trusted: &TrustedCaptureIdentity,
+    ) -> Result<(), ReportValidationError> {
+        self.validate()?;
+        trusted.validate()?;
+        let (Some(build), Some(world), Some(assets)) = (&self.build, &self.world, &self.assets)
+        else {
+            return Err(ReportValidationError::Missing {
+                field: "completed capture identity",
+            });
+        };
+        if !trusted.matches(build, world, assets) {
+            return Err(ReportValidationError::Identity {
+                field: "trusted capture identity",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -965,6 +1017,12 @@ fn sorted_unique(values: &[String]) -> bool {
 }
 fn sha256(value: &str) -> bool {
     value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+fn is_git_commit(value: &str) -> bool {
+    value.len() == 40
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))

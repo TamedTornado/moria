@@ -428,6 +428,41 @@ fn passing_forest_report_requires_complete_density_species_canopy_and_placement_
 }
 
 #[test]
+fn passing_forest_report_requires_object_species_and_canopy_evidence_to_agree() {
+    let mut invalid = report();
+    invalid.object_counts.insert("tree-a".into(), 2_641);
+    invalid.species_counts.insert("pine".into(), 2_161);
+    invalid.object_index.placement_records += 1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "forest object species"
+        })
+    ));
+
+    let mut invalid = report();
+    invalid.object_counts.insert("fabricated".into(), 1);
+    invalid.object_index.placement_records += 1;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "forest object counts"
+        })
+    ));
+
+    let mut invalid = report();
+    invalid
+        .canopy_range_bins
+        .insert("birch-lower".into(), 2_641);
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "canopy range bins"
+        })
+    ));
+}
+
+#[test]
 fn passing_forest_report_derives_density_minima_from_reported_areas() {
     let mut invalid = report();
     invalid.forest_area_m2 = 240_000;

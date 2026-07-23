@@ -4,7 +4,7 @@ use moria_bench::capture::schema::{
     ActiveBand, ActiveCounts, AssetEvidence, BaselineStatus, BenchmarkReport, CoverageEvidence,
     FrameRateMetrics, GraphicsMemoryEstimate, GraphicsMemoryEvidence, MutationLatencyMetrics,
     MutationWorkloadLatency, QueueDepths, ResidentGraphicsMeasurement, RoundTripEvidence,
-    SaveEvidence, ScenarioName, StreamingEvidence,
+    SaveEvidence, ScenarioName, StreamingEvidence, TrustedCaptureIdentity,
 };
 use moria_world::telemetry::{
     BuildProfile, Distribution, MachineProfile, MutationWorkloadRole, ObjectIndexEvidence,
@@ -161,6 +161,28 @@ fn report() -> BenchmarkReport {
             monotonic_growth_check_passed: true,
             object_index: object_index(),
         }),
+    }
+}
+
+fn trusted_capture_identity(report: &BenchmarkReport) -> TrustedCaptureIdentity {
+    TrustedCaptureIdentity {
+        git_commit: report
+            .build
+            .as_ref()
+            .expect("complete report has a build")
+            .git_commit
+            .clone(),
+        parameters_digest: report
+            .world
+            .as_ref()
+            .expect("complete report has a world")
+            .parameters_digest,
+        manifest_sha256: report
+            .assets
+            .as_ref()
+            .expect("complete report has assets")
+            .manifest_sha256
+            .clone(),
     }
 }
 
@@ -387,6 +409,32 @@ fn completed_report_rejects_wrong_product_and_machine_identities() {
     assert!(matches!(
         invalid.validate(),
         Err(ReportValidationError::Identity { field: "machine" })
+    ));
+}
+
+#[test]
+fn complete_report_requires_a_matching_trusted_capture_identity() {
+    let report = report();
+    let trusted = trusted_capture_identity(&report);
+    assert!(report.validate_against_trusted_capture(&trusted).is_ok());
+
+    let mut stale = report.clone();
+    stale.build.as_mut().unwrap().git_commit = "c".repeat(40);
+    assert!(stale.validate().is_ok());
+    assert!(matches!(
+        stale.validate_against_trusted_capture(&trusted),
+        Err(ReportValidationError::Identity {
+            field: "trusted capture identity"
+        })
+    ));
+
+    let mut fabricated = trusted;
+    fabricated.manifest_sha256 = "d".repeat(64);
+    assert!(matches!(
+        report.validate_against_trusted_capture(&fabricated),
+        Err(ReportValidationError::Identity {
+            field: "trusted capture identity"
+        })
     ));
 }
 
