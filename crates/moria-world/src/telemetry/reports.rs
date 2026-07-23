@@ -721,6 +721,11 @@ fn validate_object_index(
 ) -> Result<(), ReportValidationError> {
     finite_positive(value.validation_ms, "object_index.validation_ms")?;
     finite_positive(value.build_ms, "object_index.build_ms")?;
+    if value.build_ms > value.validation_ms {
+        return Err(ReportValidationError::Inconsistent {
+            field: "object_index timing",
+        });
+    }
     validate_named_counts(&value.retained_byte_categories)?;
     let retained_category_bytes = value
         .retained_byte_categories

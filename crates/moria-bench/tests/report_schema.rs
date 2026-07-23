@@ -659,6 +659,38 @@ fn mutation_latency_enforces_exact_role_latency_boundaries() {
 }
 
 #[test]
+fn carve_storm_round_trip_requires_every_saved_delta_voxel_and_nonempty_bricks() {
+    let mut incomplete_round_trip = mutation_report();
+    incomplete_round_trip
+        .save
+        .round_trip
+        .as_mut()
+        .unwrap()
+        .delta_voxels_compared = 1;
+    assert!(matches!(
+        incomplete_round_trip.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "round_trip"
+        })
+    ));
+
+    let mut empty_delta_brick = mutation_report();
+    empty_delta_brick.save.changed_voxels = Some(255);
+    empty_delta_brick
+        .save
+        .round_trip
+        .as_mut()
+        .unwrap()
+        .delta_voxels_compared = 255;
+    assert!(matches!(
+        empty_delta_brick.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "mutation save"
+        })
+    ));
+}
+
+#[test]
 fn mutation_workloads_use_the_cli_scenario_spelling() {
     assert_eq!(
         serde_json::to_string(&ScenarioName::CarveStorm).unwrap(),

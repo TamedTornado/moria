@@ -526,9 +526,17 @@ fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidation
             field: "round_trip",
         });
     }
+    if let (Some(changed_voxels), Some(changed_bricks)) = (save.changed_voxels, save.changed_bricks)
+        && changed_voxels < changed_bricks
+    {
+        return Err(ReportValidationError::Inconsistent {
+            field: "mutation save",
+        });
+    }
     if let Some(round_trip) = save.round_trip
         && round_trip.passed
         && !(round_trip.delta_voxels_compared > 0
+            && Some(round_trip.delta_voxels_compared) == save.changed_voxels
             && round_trip.base_samples_compared > 0
             && round_trip.identity_match
             && !round_trip.derived_bytes_found)

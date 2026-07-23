@@ -268,6 +268,15 @@ fn forest_report_rejects_inconsistent_pass_flags_and_non_finite_metrics() {
         invalid.validate(),
         Err(ReportValidationError::NonFinite { .. })
     ));
+
+    let mut invalid = report();
+    invalid.object_index.build_ms = 250.0;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "object_index timing"
+        })
+    ));
 }
 
 #[test]
