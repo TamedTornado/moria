@@ -3,12 +3,26 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
+use crate::config::PRODUCT_ONE_SEED;
 use crate::{WorldIdentity, WorldPointQ8};
 
 const FOREST_SCHEMA: &str = "moria-product-one-forest-feasibility";
 const MUTATION_SCHEMA: &str = "moria-product-one-mutation-feasibility";
 const M4_ACCEPTANCE_LABEL: &str = "m4-mac-mini-32gb";
+const FOREST_MINIMUM_AREA_M2: u32 = 120_000;
+const TREE_AREA_PER_TREE_M2: u32 = 25;
+const BUSHES_PER_HECTARE: u32 = 450;
+const BOULDERS_PER_HECTARE: u32 = 24;
+const STUMPS_PER_HECTARE: u32 = 14;
+const ROCKS_PER_HECTARE: u32 = 90;
+const HECTARE_M2: u32 = 10_000;
+const BIRCH_PERCENT: u32 = 55;
+const PINE_PERCENT: u32 = 45;
+const REQUIRED_CANOPY_RANGE_BINS: [&str; 4] =
+    ["birch-lower", "birch-upper", "pine-lower", "pine-upper"];
+const MINIMUM_CANOPY_RANGE_BIN_COUNT: u32 = 16;
 const REQUIRED_MUTATION_STAGES: [&str; 18] = [
     "admission",
     "schedule",
@@ -23,6 +37,19 @@ const REQUIRED_MUTATION_STAGES: [&str; 18] = [
     "dressing-remove",
     "dressing-install",
     "bevy-install",
+    "primary-ready",
+    "render-extract",
+    "gpu-upload",
+    "render-queue",
+    "reconciliation",
+];
+const NONEMPTY_MUTATION_STAGES: [&str; 11] = [
+    "admission",
+    "schedule",
+    "edit-stage",
+    "commit",
+    "snapshot",
+    "terrain-mesh",
     "primary-ready",
     "render-extract",
     "gpu-upload",
@@ -61,6 +88,58 @@ pub struct BuildProfile {
     pub rustc_version: String,
 }
 
+/// The immutable source identities approved for one feasibility-gate run.
+///
+/// The caller obtains this from the clean gate baseline before producing F1/F2;
+/// reports are not allowed to establish their own authority by agreeing with one
+/// another.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrustedGateIdentity {
+    pub git_commit: String,
+    pub parameters_digest: [u8; 32],
+    pub manifest_sha256: String,
+}
+
+impl TrustedGateIdentity {
+    fn validate(&self) -> Result<(), ReportValidationError> {
+        if !is_git_commit(&self.git_commit)
+            || self.parameters_digest.iter().all(|byte| *byte == 0)
+            || !is_sha256(&self.manifest_sha256)
+        {
+            return Err(ReportValidationError::Identity {
+                field: "trusted gate identity",
+            });
+        }
+        Ok(())
+    }
+
+    fn matches(&self, build: &BuildProfile, world: &WorldIdentity, manifest_sha256: &str) -> bool {
+        self.git_commit == build.git_commit
+            && self.parameters_digest == world.parameters_digest
+            && self.manifest_sha256 == manifest_sha256
+    }
+}
+
+impl BuildProfile {
+    pub fn validate_complete(&self) -> Result<(), ReportValidationError> {
+        if blank(&self.cargo_profile)
+            || !is_git_commit(&self.git_commit)
+            || blank(&self.rustc_version)
+        {
+            return Err(ReportValidationError::Identity { field: "build" });
+        }
+        Ok(())
+    }
+
+    pub fn validate_release(&self) -> Result<(), ReportValidationError> {
+        self.validate_complete()?;
+        if self.cargo_profile != "release" {
+            return Err(ReportValidationError::Identity { field: "build" });
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MachineProfile {
@@ -80,6 +159,67 @@ pub struct MachineProfile {
     pub driver_metadata_available: bool,
     pub memory_architecture: String,
     pub acceptance_label: String,
+}
+
+impl MachineProfile {
+    /// Computes the SHA-256 of the stable, normalized machine identity payload.
+    ///
+    /// The payload deliberately excludes `profile_id_sha256` itself and includes
+    /// every reported OS, hardware, driver, backend, and acceptance field.
+    pub fn stable_profile_id_sha256(&self) -> String {
+        let identity = serde_json::json!({
+            "schema": "moria-machine-profile-v1",
+            "os_name": self.os_name.trim(),
+            "os_version": self.os_version.trim(),
+            "architecture": self.architecture.trim().to_ascii_lowercase(),
+            "cpu_model": self.cpu_model.trim(),
+            "logical_cores": self.logical_cores,
+            "total_physical_memory_bytes": self.total_physical_memory_bytes,
+            "gpu_adapter_name": self.gpu_adapter_name.trim(),
+            "gpu_vendor": self.gpu_vendor,
+            "gpu_device": self.gpu_device,
+            "gpu_device_class": self.gpu_device_class.trim().to_ascii_lowercase(),
+            "wgpu_backend": self.wgpu_backend.trim().to_ascii_lowercase(),
+            "driver": self.driver.as_deref().map(str::trim),
+            "driver_metadata_available": self.driver_metadata_available,
+            "memory_architecture": self.memory_architecture.trim().to_ascii_lowercase(),
+            "acceptance_label": self.acceptance_label.trim().to_ascii_lowercase(),
+        });
+        format!("{:x}", Sha256::digest(identity.to_string().as_bytes()))
+    }
+
+    pub fn validate_complete(&self) -> Result<(), ReportValidationError> {
+        let required = [
+            &self.os_name,
+            &self.os_version,
+            &self.architecture,
+            &self.cpu_model,
+            &self.gpu_adapter_name,
+            &self.gpu_device_class,
+            &self.wgpu_backend,
+            &self.memory_architecture,
+            &self.acceptance_label,
+        ];
+        if required.iter().any(|value| blank(value))
+            || self.logical_cores == 0
+            || self.total_physical_memory_bytes == 0
+            || !is_sha256(&self.profile_id_sha256)
+            || self.profile_id_sha256 != self.stable_profile_id_sha256()
+            || self.driver_metadata_available != self.driver.is_some()
+            || self.driver.as_ref().is_some_and(|driver| blank(driver))
+            || !matches!(self.memory_architecture.as_str(), "unified" | "discrete")
+            || !matches!(self.gpu_device_class.as_str(), "integrated" | "discrete")
+            || !matches!(self.wgpu_backend.as_str(), "metal" | "vulkan")
+        {
+            return Err(ReportValidationError::Identity { field: "machine" });
+        }
+        Ok(())
+    }
+
+    pub fn validate_m4_acceptance(&self) -> Result<(), ReportValidationError> {
+        self.validate_complete()?;
+        validate_m4_machine(self)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -112,25 +252,12 @@ pub struct ObjectIndexEvidence {
 }
 
 impl ObjectIndexEvidence {
-    /// A zero-sized, contract-valid evidence value useful before a manifest has placements.
-    #[must_use]
-    pub fn passing_fixture() -> Self {
-        Self {
-            validation_ms: 0.0,
-            build_ms: 0.0,
-            retained_bytes: 0,
-            retained_byte_categories: BTreeMap::new(),
-            placement_records: 0,
-            dependency_grid_entries: 0,
-            sample_grid_entries: 0,
-            max_dependency_cell_entries: 0,
-            max_sample_cell_entries: 0,
-            max_horizon_tree_members_per_cell: 0,
-            max_edit_candidates: 0,
-            max_edit_affected_objects: 0,
-            max_dependency_bricks: 0,
-            dependency_coordinate_allocation_bytes: 0,
-        }
+    pub fn validate_measured(&self) -> Result<(), ReportValidationError> {
+        validate_forest_object_index(self, false)
+    }
+
+    pub fn validate_complete(&self) -> Result<(), ReportValidationError> {
+        validate_forest_object_index(self, true)
     }
 }
 
@@ -151,7 +278,8 @@ pub struct ForestFeasibilityReport {
     pub timestamp_utc: String,
     pub passed: bool,
     pub failure_reasons: Vec<String>,
-    pub build: BuildProfile,
+    /// `None` is serialized as `null` when F1 fails before build capture completes.
+    pub build: Option<BuildProfile>,
     pub world: WorldIdentity,
     pub manifest_sha256: String,
     pub machine: MachineProfile,
@@ -174,13 +302,15 @@ pub struct ForestFeasibilityReport {
 impl ForestFeasibilityReport {
     pub fn validate(&self) -> Result<(), ReportValidationError> {
         validate_header(FOREST_SCHEMA, GateHeader::from_forest(self))?;
-        validate_forest_object_index(&self.object_index)?;
-        validate_named_counts(&self.object_counts)?;
-        validate_named_counts(&self.required_object_counts)?;
-        validate_named_counts(&self.species_counts)?;
-        validate_named_counts(&self.canopy_range_bins)?;
+        validate_forest_object_index(&self.object_index, self.passed)?;
+        validate_positive_named_counts(&self.object_counts)?;
+        validate_positive_named_counts(&self.required_object_counts)?;
+        validate_positive_named_counts(&self.species_counts)?;
+        validate_positive_named_counts(&self.canopy_range_bins)?;
+        validate_world_identity(&self.world)?;
         if self.forest_area_m2 == 0
             || self.eligible_land_area_m2 == 0
+            || self.forest_area_m2 > self.eligible_land_area_m2
             || self.object_counts.is_empty()
             || self.required_object_counts.is_empty()
             || self.species_counts.is_empty()
@@ -192,16 +322,111 @@ impl ForestFeasibilityReport {
                 field: "forest measurement",
             });
         }
-        for (kind, required) in &self.required_object_counts {
-            if self.object_counts.get(kind).unwrap_or(&0) < required {
+        if self.passed && self.forest_area_m2 < FOREST_MINIMUM_AREA_M2 {
+            return Err(ReportValidationError::Missing {
+                field: "forest measurement",
+            });
+        }
+        if self.passed {
+            let required_object_counts =
+                required_forest_object_counts(self.forest_area_m2, self.eligible_land_area_m2);
+            let required_species_counts = required_forest_species_counts(self.forest_area_m2);
+            if !matches_required_counts(&self.required_object_counts, &required_object_counts)
+                || !matches_required_count_keys(&self.object_counts, &required_object_counts)
+                || required_object_counts
+                    .iter()
+                    .any(|(kind, required)| self.object_counts.get(*kind).unwrap_or(&0) < required)
+            {
                 return Err(ReportValidationError::Inconsistent {
-                    field: "object counts",
+                    field: "forest object counts",
+                });
+            }
+            if !matches_minimum_counts(&self.species_counts, &required_species_counts) {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "forest species counts",
+                });
+            }
+            let required_tree_count = ceil_div(self.forest_area_m2, TREE_AREA_PER_TREE_M2);
+            let observed_tree_count = ["tree-a", "tree-b"]
+                .into_iter()
+                .map(|kind| u64::from(*self.object_counts.get(kind).unwrap_or(&0)))
+                .sum::<u64>();
+            if observed_tree_count < u64::from(required_tree_count) {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "forest tree count",
+                });
+            }
+            if self
+                .species_counts
+                .values()
+                .copied()
+                .map(u64::from)
+                .sum::<u64>()
+                != observed_tree_count
+            {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "forest species counts",
+                });
+            }
+            if self.object_counts.get("tree-a") != self.species_counts.get("birch")
+                || self.object_counts.get("tree-b") != self.species_counts.get("pine")
+            {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "forest object species",
+                });
+            }
+            if self.canopy_range_bins.len() != REQUIRED_CANOPY_RANGE_BINS.len()
+                || REQUIRED_CANOPY_RANGE_BINS.iter().any(|bin| {
+                    self.canopy_range_bins.get(*bin).unwrap_or(&0) < &MINIMUM_CANOPY_RANGE_BIN_COUNT
+                })
+                || self.canopy_range_bins["birch-lower"] > self.species_counts["birch"]
+                || self.canopy_range_bins["birch-upper"] > self.species_counts["birch"]
+                || self.canopy_range_bins["pine-lower"] > self.species_counts["pine"]
+                || self.canopy_range_bins["pine-upper"] > self.species_counts["pine"]
+                || u64::from(self.canopy_range_bins["birch-lower"])
+                    + u64::from(self.canopy_range_bins["birch-upper"])
+                    > u64::from(self.species_counts["birch"])
+                || u64::from(self.canopy_range_bins["pine-lower"])
+                    + u64::from(self.canopy_range_bins["pine-upper"])
+                    > u64::from(self.species_counts["pine"])
+            {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "canopy range bins",
+                });
+            }
+            if self
+                .object_counts
+                .values()
+                .copied()
+                .map(u64::from)
+                .sum::<u64>()
+                != u64::from(self.object_index.placement_records)
+            {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "placement records",
                 });
             }
         }
         if self.canopy_min_q8 > self.canopy_max_q8 {
             return Err(ReportValidationError::Inconsistent {
                 field: "canopy range",
+            });
+        }
+        if self.passed && (self.canopy_min_q8 < 2 * 256 || self.canopy_max_q8 > 4 * 256) {
+            return Err(ReportValidationError::Limit {
+                field: "canopy range",
+            });
+        }
+        if self.passed
+            && (self.minimum_tree_spacing_q8 < 5 * 256 || self.minimum_route_clearance_q8 < 3 * 256)
+        {
+            return Err(ReportValidationError::Limit {
+                field: "forest clearance",
+            });
+        }
+        if self.passed && self.overlap_conflicts != 0 {
+            return Err(ReportValidationError::Inconsistent {
+                field: "overlap conflicts",
             });
         }
         if self.overlap_conflicts == 0 && self.first_conflict.is_some()
@@ -216,12 +441,37 @@ impl ForestFeasibilityReport {
                 field: "first_conflict",
             });
         }
-        validate_worst_target(&self.worst_edit_target)
+        validate_worst_target(
+            &self.worst_edit_target,
+            &self.object_index,
+            &self.world,
+            self.passed,
+        )
     }
 
     pub fn to_canonical_json(&self) -> Result<String, ReportValidationError> {
         self.validate()?;
         serde_json::to_string(self).map_err(|_| ReportValidationError::Serialization)
+    }
+
+    pub fn from_json(json: &str) -> Result<Self, ReportValidationError> {
+        let report: Self =
+            serde_json::from_str(json).map_err(|_| ReportValidationError::Serialization)?;
+        let value: serde_json::Value =
+            serde_json::from_str(json).map_err(|_| ReportValidationError::Serialization)?;
+        if !json_object_has_keys(&value, &["build", "first_conflict"])
+            || !json_nested_object_has_keys(&value, "machine", &["driver"])
+        {
+            return Err(ReportValidationError::Missing { field: "JSON key" });
+        }
+        report.validate()?;
+        Ok(report)
+    }
+
+    /// SHA-256 of the validated canonical JSON bytes consumed by Gate F2.
+    pub fn canonical_sha256(&self) -> Result<String, ReportValidationError> {
+        let json = self.to_canonical_json()?;
+        Ok(format!("{:x}", Sha256::digest(json.as_bytes())))
     }
 }
 
@@ -252,6 +502,16 @@ pub struct MutationWorkloadEvidence {
     pub changed_voxels: u64,
     pub changed_bricks: u32,
     pub committed_batches: u32,
+    /// Center of the edit exercised by this workload, in authoritative world coordinates.
+    pub target_center: WorldPointQ8,
+    /// Broad dependency-index candidates examined for the workload edit.
+    pub broad_candidates: u16,
+    /// Exact dependency IDs returned after candidate filtering.
+    pub exact_dependency_ids: u16,
+    /// Dependency bricks considered by dirty discovery for the workload edit.
+    pub dependency_bricks: u16,
+    /// Exact dependency predicates evaluated for the workload edit.
+    pub dependency_predicate_probes: u64,
     pub stage_timings_ms: BTreeMap<String, f64>,
     pub stage_counts: BTreeMap<String, u64>,
     pub barrier_expected_items: u32,
@@ -288,9 +548,11 @@ pub struct MutationFeasibilityReport {
     pub machine: MachineProfile,
     pub resolution: [u32; 2],
     pub backend: String,
-    pub cold_start_ms: f64,
+    /// `None` is serialized as `null` when F2 fails before cold-start capture completes.
+    pub cold_start_ms: Option<f64>,
     pub workloads: Vec<MutationWorkloadEvidence>,
-    pub query_costs: QueryCostEvidence,
+    /// `None` is serialized as `null` when the query probe never runs.
+    pub query_costs: Option<QueryCostEvidence>,
 }
 
 impl MutationFeasibilityReport {
@@ -302,13 +564,28 @@ impl MutationFeasibilityReport {
             });
         }
         if self.resolution != [2560, 1440] || self.backend != "metal" {
-            return Err(ReportValidationError::Identity {
-                field: "mutation display",
-            });
+            validate_acceptance_requirement(
+                self.passed,
+                &self.failure_reasons,
+                "mutation display",
+            )?;
         }
-        finite(self.cold_start_ms, "cold_start_ms")?;
-        if self.workloads.len() != 3 {
+        validate_world_identity(&self.world)?;
+        if let Some(cold_start_ms) = self.cold_start_ms {
+            finite_positive(cold_start_ms, "cold_start_ms")?;
+            if self.passed && cold_start_ms >= 5_000.0 {
+                return Err(ReportValidationError::Limit {
+                    field: "cold_start_ms",
+                });
+            }
+        } else {
+            validate_acceptance_requirement(self.passed, &self.failure_reasons, "cold_start_ms")?;
+        }
+        if self.workloads.len() > 3 {
             return Err(ReportValidationError::Missing { field: "workloads" });
+        }
+        if self.workloads.len() != 3 {
+            validate_acceptance_requirement(self.passed, &self.failure_reasons, "workloads")?;
         }
         let expected = [
             MutationWorkloadRole::InteractiveCarve,
@@ -321,14 +598,107 @@ impl MutationFeasibilityReport {
                     field: "workload roles",
                 });
             }
-            validate_workload(workload)?;
+            validate_workload(workload, self.passed, &self.failure_reasons)?;
         }
-        validate_query_costs(&self.query_costs)
+        if self.passed
+            && ["seams", "bevy-install"].iter().any(|stage| {
+                self.workloads
+                    .iter()
+                    .all(|workload| workload.stage_counts[*stage] == 0)
+            })
+        {
+            return Err(ReportValidationError::Missing {
+                field: "aggregate mutation stage count",
+            });
+        }
+        if self.passed
+            && ["object-mesh", "dressing-remove", "dressing-install"]
+                .iter()
+                .any(|stage| self.workloads[2].stage_counts[*stage] == 0)
+        {
+            return Err(ReportValidationError::Missing {
+                field: "catastrophic mutation stage count",
+            });
+        }
+        if let Some(query_costs) = &self.query_costs {
+            validate_query_costs(query_costs, self.passed)
+        } else {
+            validate_acceptance_requirement(self.passed, &self.failure_reasons, "query costs")
+        }
     }
 
     pub fn to_canonical_json(&self) -> Result<String, ReportValidationError> {
         self.validate()?;
         serde_json::to_string(self).map_err(|_| ReportValidationError::Serialization)
+    }
+
+    pub fn from_json(json: &str) -> Result<Self, ReportValidationError> {
+        let report: Self =
+            serde_json::from_str(json).map_err(|_| ReportValidationError::Serialization)?;
+        let value: serde_json::Value =
+            serde_json::from_str(json).map_err(|_| ReportValidationError::Serialization)?;
+        if !json_object_has_keys(&value, &["cold_start_ms", "query_costs"])
+            || !json_nested_object_has_keys(&value, "machine", &["driver"])
+        {
+            return Err(ReportValidationError::Missing { field: "JSON key" });
+        }
+        report.validate()?;
+        Ok(report)
+    }
+
+    /// Verifies that F2 consumes the exact passing F1 artifact and gate identity.
+    pub fn validate_against_forest(
+        &self,
+        forest: &ForestFeasibilityReport,
+        trusted: &TrustedGateIdentity,
+    ) -> Result<(), ReportValidationError> {
+        self.validate()?;
+        forest.validate()?;
+        trusted.validate()?;
+        if !forest.passed
+            || forest
+                .build
+                .as_ref()
+                .is_none_or(|build| self.build != *build)
+            || self.world != forest.world
+            || self.manifest_sha256 != forest.manifest_sha256
+            || self.machine != forest.machine
+            || self.forest_report_sha256 != forest.canonical_sha256()?
+        {
+            return Err(ReportValidationError::Identity {
+                field: "forest feasibility gate",
+            });
+        }
+        let forest_build = forest
+            .build
+            .as_ref()
+            .ok_or(ReportValidationError::Identity {
+                field: "forest feasibility gate",
+            })?;
+        if !trusted.matches(forest_build, &forest.world, &forest.manifest_sha256)
+            || !trusted.matches(&self.build, &self.world, &self.manifest_sha256)
+        {
+            return Err(ReportValidationError::Identity {
+                field: "trusted gate identity",
+            });
+        }
+        let catastrophic = self
+            .workloads
+            .get(2)
+            .ok_or(ReportValidationError::Missing {
+                field: "catastrophic workload target",
+            })?;
+        let target = &forest.worst_edit_target;
+        if catastrophic.target_center != target.center
+            || catastrophic.broad_candidates != target.broad_candidates
+            || catastrophic.exact_dependency_ids != target.exact_dependency_ids
+            || catastrophic.dependency_bricks != target.dependency_bricks
+        {
+            return Err(ReportValidationError::Inconsistent {
+                field: "catastrophic workload target",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -337,7 +707,7 @@ struct GateHeader<'a> {
     timestamp_utc: &'a str,
     passed: bool,
     failure_reasons: &'a [String],
-    build: &'a BuildProfile,
+    build: Option<&'a BuildProfile>,
     manifest_sha256: &'a str,
     machine: &'a MachineProfile,
 }
@@ -349,7 +719,7 @@ impl<'a> GateHeader<'a> {
             timestamp_utc: &report.timestamp_utc,
             passed: report.passed,
             failure_reasons: &report.failure_reasons,
-            build: &report.build,
+            build: report.build.as_ref(),
             manifest_sha256: &report.manifest_sha256,
             machine: &report.machine,
         }
@@ -361,7 +731,7 @@ impl<'a> GateHeader<'a> {
             timestamp_utc: &report.timestamp_utc,
             passed: report.passed,
             failure_reasons: &report.failure_reasons,
-            build: &report.build,
+            build: Some(&report.build),
             manifest_sha256: &report.manifest_sha256,
             machine: &report.machine,
         }
@@ -384,41 +754,47 @@ fn validate_header(
     if !sorted_unique_nonempty(header.failure_reasons) {
         return Err(ReportValidationError::FailureReasons);
     }
-    if header.build.cargo_profile != "release"
-        || !is_git_commit(&header.build.git_commit)
-        || header.build.rustc_version.is_empty()
-    {
-        return Err(ReportValidationError::Identity { field: "build" });
+    if let Some(build) = header.build {
+        build.validate_complete()?;
+        if build.cargo_profile != "release" {
+            validate_acceptance_requirement(header.passed, header.failure_reasons, "build")?;
+        }
+    } else {
+        validate_acceptance_requirement(header.passed, header.failure_reasons, "build")?;
     }
     if !is_sha256(header.manifest_sha256) {
         return Err(ReportValidationError::Identity {
             field: "manifest_sha256",
         });
     }
-    validate_m4_machine(header.machine)
+    header.machine.validate_complete()?;
+    if validate_m4_machine(header.machine).is_err() {
+        validate_acceptance_requirement(header.passed, header.failure_reasons, "M4 machine")?;
+    }
+    Ok(())
+}
+
+fn validate_acceptance_requirement(
+    passed: bool,
+    failure_reasons: &[String],
+    field: &'static str,
+) -> Result<(), ReportValidationError> {
+    if passed {
+        Err(ReportValidationError::Identity { field })
+    } else if failure_reasons.iter().any(|reason| reason == field) {
+        Ok(())
+    } else {
+        Err(ReportValidationError::FailureReasons)
+    }
 }
 
 fn validate_m4_machine(machine: &MachineProfile) -> Result<(), ReportValidationError> {
-    let required = [
-        &machine.os_name,
-        &machine.os_version,
-        &machine.architecture,
-        &machine.cpu_model,
-        &machine.gpu_adapter_name,
-        &machine.gpu_device_class,
-        &machine.wgpu_backend,
-        &machine.memory_architecture,
-        &machine.acceptance_label,
-    ];
-    if required.iter().any(|value| value.is_empty())
-        || machine.logical_cores == 0
-        || machine.total_physical_memory_bytes == 0
-        || !is_sha256(&machine.profile_id_sha256)
-        || machine.driver_metadata_available != machine.driver.is_some()
-    {
-        return Err(ReportValidationError::Identity { field: "machine" });
-    }
     if machine.acceptance_label != M4_ACCEPTANCE_LABEL
+        || machine.os_name != "macOS"
+        || machine.architecture != "aarch64"
+        || !machine.cpu_model.contains("M4")
+        || !machine.gpu_adapter_name.contains("M4")
+        || machine.gpu_device_class != "integrated"
         || machine.wgpu_backend != "metal"
         || machine.memory_architecture != "unified"
         || machine.total_physical_memory_bytes < 32 * 1024 * 1024 * 1024
@@ -430,20 +806,121 @@ fn validate_m4_machine(machine: &MachineProfile) -> Result<(), ReportValidationE
     Ok(())
 }
 
-fn validate_object_index(value: &ObjectIndexEvidence) -> Result<(), ReportValidationError> {
-    finite(value.validation_ms, "object_index.validation_ms")?;
-    finite(value.build_ms, "object_index.build_ms")?;
+fn matches_required_counts(observed: &BTreeMap<String, u32>, required: &[(&str, u32)]) -> bool {
+    observed.len() == required.len()
+        && required
+            .iter()
+            .all(|(name, count)| observed.get(*name) == Some(count))
+}
+
+fn matches_required_count_keys(observed: &BTreeMap<String, u32>, required: &[(&str, u32)]) -> bool {
+    observed.len() == required.len()
+        && required
+            .iter()
+            .all(|(name, _)| observed.contains_key(*name))
+}
+
+fn matches_minimum_counts(observed: &BTreeMap<String, u32>, required: &[(&str, u32)]) -> bool {
+    observed.len() == required.len()
+        && required.iter().all(|(name, count)| {
+            observed
+                .get(*name)
+                .is_some_and(|observed| observed >= count)
+        })
+}
+
+fn has_failure_reason(failure_reasons: &[String], reason: &str) -> bool {
+    failure_reasons.iter().any(|value| value == reason)
+}
+
+fn required_forest_object_counts(
+    forest_area_m2: u32,
+    eligible_land_area_m2: u32,
+) -> [(&'static str, u32); 7] {
+    let tree_count = ceil_div(forest_area_m2, TREE_AREA_PER_TREE_M2);
+    let [birch_count, pine_count] = required_tree_species_counts(tree_count);
+    [
+        (
+            "boulder",
+            ceil_scaled(eligible_land_area_m2, BOULDERS_PER_HECTARE, HECTARE_M2),
+        ),
+        (
+            "bush",
+            ceil_scaled(forest_area_m2, BUSHES_PER_HECTARE, HECTARE_M2),
+        ),
+        (
+            "rock",
+            ceil_scaled(eligible_land_area_m2, ROCKS_PER_HECTARE, HECTARE_M2),
+        ),
+        ("ruin", 1),
+        (
+            "stump",
+            ceil_scaled(eligible_land_area_m2, STUMPS_PER_HECTARE, HECTARE_M2),
+        ),
+        ("tree-a", birch_count),
+        ("tree-b", pine_count),
+    ]
+}
+
+fn required_forest_species_counts(forest_area_m2: u32) -> [(&'static str, u32); 2] {
+    let [birch_count, pine_count] =
+        required_tree_species_counts(ceil_div(forest_area_m2, TREE_AREA_PER_TREE_M2));
+    [("birch", birch_count), ("pine", pine_count)]
+}
+
+fn required_tree_species_counts(tree_count: u32) -> [u32; 2] {
+    [
+        u32::try_from(u64::from(tree_count) * u64::from(BIRCH_PERCENT) / 100)
+            .expect("tree species count fits u32"),
+        u32::try_from(u64::from(tree_count) * u64::from(PINE_PERCENT) / 100)
+            .expect("tree species count fits u32"),
+    ]
+}
+
+fn ceil_scaled(value: u32, multiplier: u32, divisor: u32) -> u32 {
+    let product = u64::from(value) * u64::from(multiplier);
+    u32::try_from(product.div_ceil(u64::from(divisor))).expect("scaled count fits u32")
+}
+
+fn ceil_div(value: u32, divisor: u32) -> u32 {
+    value.div_ceil(divisor)
+}
+
+fn validate_object_index(
+    value: &ObjectIndexEvidence,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
+    finite_positive(value.validation_ms, "object_index.validation_ms")?;
+    finite_positive(value.build_ms, "object_index.build_ms")?;
+    if value.build_ms > value.validation_ms {
+        return Err(ReportValidationError::Inconsistent {
+            field: "object_index timing",
+        });
+    }
     validate_named_counts(&value.retained_byte_categories)?;
-    if value.validation_ms > 1_000.0
-        || value.build_ms > 250.0
-        || value.retained_bytes > 16 * 1024 * 1024
-        || value.max_dependency_cell_entries > 1_024
-        || value.max_sample_cell_entries > 64
-        || value.max_horizon_tree_members_per_cell > 1_024
-        || value.max_edit_candidates > 256
-        || value.max_edit_affected_objects > 64
-        || value.max_dependency_bricks > 128
-        || value.dependency_coordinate_allocation_bytes != 0
+    let retained_category_bytes = value
+        .retained_byte_categories
+        .values()
+        .try_fold(0_u64, |total, bytes| total.checked_add(*bytes))
+        .ok_or(ReportValidationError::Inconsistent {
+            field: "object_index retained bytes",
+        })?;
+    if retained_category_bytes != value.retained_bytes {
+        return Err(ReportValidationError::Inconsistent {
+            field: "object_index retained bytes",
+        });
+    }
+    if passed
+        && (value.validation_ms > 1_000.0
+            || value.build_ms > 250.0
+            || value.retained_bytes > 16 * 1024 * 1024
+            || value.max_dependency_cell_entries > 1_024
+            || value.max_sample_cell_entries > 64
+            || value.max_horizon_tree_members_per_cell > 1_024
+            || value.max_edit_candidates > 256
+            || value.max_edit_affected_objects > 64
+            || value.max_dependency_bricks > 128
+            || value.dependency_coordinate_allocation_bytes != 0)
     {
         return Err(ReportValidationError::Limit {
             field: "object_index",
@@ -452,84 +929,342 @@ fn validate_object_index(value: &ObjectIndexEvidence) -> Result<(), ReportValida
     Ok(())
 }
 
-fn validate_forest_object_index(value: &ObjectIndexEvidence) -> Result<(), ReportValidationError> {
-    validate_object_index(value)?;
+fn validate_forest_object_index(
+    value: &ObjectIndexEvidence,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
+    validate_object_index(value, passed)?;
     if value.validation_ms <= 0.0
         || value.build_ms <= 0.0
         || value.placement_records == 0
         || value.dependency_grid_entries == 0
         || value.sample_grid_entries == 0
         || value.retained_byte_categories.is_empty()
+        || value
+            .retained_byte_categories
+            .values()
+            .any(|bytes| *bytes == 0)
+        || value.max_dependency_cell_entries == 0
+        || value.max_sample_cell_entries == 0
+        || value.max_horizon_tree_members_per_cell == 0
+        || value.max_edit_candidates == 0
+        || value.max_edit_affected_objects == 0
+        || value.max_dependency_bricks == 0
     {
         return Err(ReportValidationError::Missing {
             field: "object index measurement",
         });
     }
+    if u16::from(value.max_edit_affected_objects) > value.max_edit_candidates {
+        return Err(ReportValidationError::Inconsistent {
+            field: "object index edit maxima",
+        });
+    }
     Ok(())
 }
 
-fn validate_worst_target(target: &WorstEditTargetEvidence) -> Result<(), ReportValidationError> {
-    if target.broad_candidates > 256
-        || target.exact_dependency_ids > 64
-        || target.dependency_bricks > 128
+fn validate_worst_target(
+    target: &WorstEditTargetEvidence,
+    object_index: &ObjectIndexEvidence,
+    world: &WorldIdentity,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
+    if passed
+        && (target.broad_candidates > 256
+            || target.exact_dependency_ids > 64
+            || target.dependency_bricks > 128)
     {
         return Err(ReportValidationError::Limit {
             field: "worst_edit_target",
         });
     }
+    if !world.bounds.contains(target.center)
+        || target.broad_candidates == 0
+        || target.exact_dependency_ids == 0
+        || target.dependency_bricks == 0
+    {
+        return Err(ReportValidationError::Missing {
+            field: "worst_edit_target",
+        });
+    }
+    if target.exact_dependency_ids > target.broad_candidates
+        || target.exact_dependency_ids > u16::from(object_index.max_edit_affected_objects)
+        || (passed
+            && (target.broad_candidates != object_index.max_edit_candidates
+                || target.tie_break_rank != 0))
+    {
+        return Err(ReportValidationError::Inconsistent {
+            field: "worst edit target",
+        });
+    }
     Ok(())
 }
 
-fn validate_workload(value: &MutationWorkloadEvidence) -> Result<(), ReportValidationError> {
-    if value.request_count == 0
+fn validate_workload(
+    value: &MutationWorkloadEvidence,
+    passed: bool,
+    failure_reasons: &[String],
+) -> Result<(), ReportValidationError> {
+    let expected_request_count = match value.role {
+        MutationWorkloadRole::InteractiveCarve | MutationWorkloadRole::CatastrophicCarve => 1,
+        MutationWorkloadRole::ColonyVolume => 8,
+    };
+    let reconciliation_shortfall =
+        value.barrier_renderer_ready_items < value.barrier_expected_items;
+    if value.request_count != expected_request_count
         || value.first_committed_frame < value.submitted_frame
         || value.final_reconciled_frame < value.first_committed_frame
-        || value.barrier_expected_items != value.barrier_renderer_ready_items
+        || value.barrier_renderer_ready_items > value.barrier_expected_items
+        || (passed && reconciliation_shortfall)
+        || (!passed
+            && reconciliation_shortfall
+            && !has_failure_reason(failure_reasons, "workload reconciliation"))
     {
         return Err(ReportValidationError::Inconsistent {
             field: "workload reconciliation",
         });
     }
+    let unavailable_distributions =
+        !passed && has_failure_reason(failure_reasons, "workload distributions");
     for (name, distribution) in [
         ("admission_ms", value.admission_ms),
         ("first_commit_ms", value.first_commit_ms),
         ("primary_ready_ms", value.primary_ready_ms),
         ("reconciliation_ms", value.reconciliation_ms),
     ] {
-        validate_distribution(distribution, name)?;
+        if !(unavailable_distributions && distribution_unavailable(distribution)) {
+            validate_distribution(distribution, name)?;
+        }
     }
     for (stage, elapsed) in &value.stage_timings_ms {
-        finite(*elapsed, "stage_timings_ms")?;
+        finite_nonnegative(*elapsed, "stage_timings_ms")?;
         if stage.is_empty() {
             return Err(ReportValidationError::Missing {
                 field: "stage timing key",
             });
         }
     }
-    if REQUIRED_MUTATION_STAGES.iter().any(|stage| {
-        !value.stage_timings_ms.contains_key(*stage) || !value.stage_counts.contains_key(*stage)
-    }) {
+    let unavailable_stages = !passed && has_failure_reason(failure_reasons, "mutation stage");
+    let stage_maps_agree = value.stage_timings_ms.len() == value.stage_counts.len()
+        && value
+            .stage_timings_ms
+            .keys()
+            .all(|stage| value.stage_counts.contains_key(stage));
+    let stage_keys_are_known = value
+        .stage_timings_ms
+        .keys()
+        .all(|stage| REQUIRED_MUTATION_STAGES.contains(&stage.as_str()));
+    let complete_stage_evidence = stage_maps_agree
+        && stage_keys_are_known
+        && value.stage_timings_ms.len() == REQUIRED_MUTATION_STAGES.len();
+    if !(unavailable_stages && stage_maps_agree && stage_keys_are_known) && !complete_stage_evidence
+    {
         return Err(ReportValidationError::Missing {
             field: "mutation stage",
         });
     }
+    if !unavailable_stages
+        && !(!passed && has_failure_reason(failure_reasons, "mutation stage count"))
+        && NONEMPTY_MUTATION_STAGES
+            .iter()
+            .any(|stage| value.stage_counts[*stage] == 0)
+    {
+        return Err(ReportValidationError::Missing {
+            field: "mutation stage count",
+        });
+    }
+    let unavailable_measurement =
+        !passed && has_failure_reason(failure_reasons, "workload measurement");
     for (field, metric) in [
         ("changed_bricks_per_second", value.changed_bricks_per_second),
         ("maximum_runnable_wait_ms", value.maximum_runnable_wait_ms),
         ("maximum_frame_ms", value.maximum_frame_ms),
     ] {
-        finite(metric, field)?;
+        if unavailable_measurement {
+            finite_nonnegative(metric, field)?;
+        } else {
+            finite_positive(metric, field)?;
+        }
+    }
+    if !unavailable_measurement
+        && (value.changed_voxels == 0
+            || value.changed_bricks == 0
+            || value.committed_batches == 0
+            || value.barrier_expected_items == 0)
+    {
+        return Err(ReportValidationError::Missing {
+            field: "workload measurement",
+        });
+    }
+    if value.changed_voxels < u64::from(value.changed_bricks) {
+        return Err(ReportValidationError::Inconsistent {
+            field: "workload measurement",
+        });
+    }
+    if passed
+        && (value.committed_batches < value.request_count
+            || value.barrier_expected_items < value.committed_batches
+            || ["admission", "schedule", "reconciliation"]
+                .iter()
+                .any(|stage| value.stage_counts[*stage] != u64::from(value.request_count))
+            || value.stage_counts["commit"] != u64::from(value.committed_batches))
+    {
+        return Err(ReportValidationError::Inconsistent {
+            field: "workload trace",
+        });
+    }
+    if passed
+        && (value.admission_ms.max > 2.0
+            || value.first_commit_ms.max
+                > match value.role {
+                    MutationWorkloadRole::ColonyVolume => 250.0,
+                    MutationWorkloadRole::InteractiveCarve
+                    | MutationWorkloadRole::CatastrophicCarve => 100.0,
+                }
+            || value.primary_ready_ms.p95 > 250.0
+            || value.primary_ready_ms.max > 500.0
+            || value.reconciliation_ms.max
+                > match value.role {
+                    MutationWorkloadRole::InteractiveCarve => 1_000.0,
+                    MutationWorkloadRole::ColonyVolume
+                    | MutationWorkloadRole::CatastrophicCarve => 30_000.0,
+                }
+            || value.changed_bricks_per_second < 32.0
+            || value.maximum_runnable_wait_ms > 500.0
+            || value.maximum_frame_ms > 33.3)
+    {
+        return Err(ReportValidationError::Limit {
+            field: "workload acceptance",
+        });
+    }
+    if passed && value.role == MutationWorkloadRole::InteractiveCarve && !value.traversable {
+        return Err(ReportValidationError::Inconsistent {
+            field: "interactive traversal",
+        });
+    }
+    if value.role == MutationWorkloadRole::CatastrophicCarve {
+        if passed
+            && (value.broad_candidates == 0
+                || value.exact_dependency_ids == 0
+                || value.dependency_bricks == 0
+                || value.dependency_predicate_probes == 0
+                || value.stage_counts["dirty-discovery"] == 0
+                || value.stage_counts["dependency-eligibility"] == 0)
+        {
+            return Err(ReportValidationError::Missing {
+                field: "catastrophic dependency witness",
+            });
+        }
+        if passed
+            && (!value.horizon_partition_checked
+                || value.horizon_excluded_base_cards == 0
+                || value.horizon_derived_records == 0)
+        {
+            return Err(ReportValidationError::Missing {
+                field: "catastrophic Horizon evidence",
+            });
+        }
+        if passed {
+            let dependency_ms = value.stage_timings_ms["dirty-discovery"]
+                + value.stage_timings_ms["dependency-eligibility"];
+            if dependency_ms > 1.0 {
+                return Err(ReportValidationError::Limit {
+                    field: "object dependency",
+                });
+            }
+        }
     }
     Ok(())
 }
 
-fn validate_query_costs(value: &QueryCostEvidence) -> Result<(), ReportValidationError> {
-    for distribution in value
-        .cold_inactive_calls
-        .values()
-        .chain(value.frame_critical_calls.values())
+fn validate_query_costs(
+    value: &QueryCostEvidence,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
+    if value.sample_counts.is_empty()
+        || value.cold_inactive_calls.is_empty()
+        || value.frame_critical_calls.is_empty()
+        || value.observed_work_maxima.is_empty()
+        || value.sample_counts.keys().any(|key| blank(key))
+        || value.sample_counts.values().any(|count| *count == 0)
+        || value.cold_inactive_calls.keys().any(|key| blank(key))
+        || value.frame_critical_calls.keys().any(|key| blank(key))
+        || value.observed_work_maxima.keys().any(|key| blank(key))
+        || value.observed_work_maxima.values().any(|count| *count == 0)
     {
+        return Err(ReportValidationError::Missing {
+            field: "query evidence",
+        });
+    }
+    for distribution in value.cold_inactive_calls.values() {
         validate_distribution(*distribution, "query distribution")?;
+        if passed && distribution.max > 4.0 {
+            return Err(ReportValidationError::Limit {
+                field: "cold query cost",
+            });
+        }
+    }
+    for (name, count) in [
+        ("cold_inactive_sample_voxel", 256),
+        ("normal_query_bundles", 1_000),
+        ("sample_column", 128),
+        ("diagnostic_metadata_page", 128),
+        ("diagnostic_cells_page", 128),
+        ("player_sweep", 4_000),
+        ("camera_sweep", 1_000),
+        ("debug_ray", 1_000),
+        ("water_surface", 1_000),
+        ("water_contact", 1_000),
+        ("active_band", 1_000),
+    ] {
+        if value.sample_counts.get(name) != Some(&count) {
+            return Err(ReportValidationError::Missing {
+                field: "query evidence",
+            });
+        }
+    }
+    if !value.cold_inactive_calls.contains_key("sample_voxel") {
+        return Err(ReportValidationError::Missing {
+            field: "query evidence",
+        });
+    }
+    for name in [
+        "player_sweep",
+        "camera_sweep",
+        "debug_ray",
+        "water_surface",
+        "water_contact",
+        "active_band",
+    ] {
+        if !value.frame_critical_calls.contains_key(name) {
+            return Err(ReportValidationError::Missing {
+                field: "query evidence",
+            });
+        }
+    }
+    for (name, maximum) in [
+        ("cold_coordinates_distinct", 256),
+        ("ray_voxel_visits", 448),
+        ("sweep_candidate_tests", 8_192),
+        ("overlap_candidate_tests", 512),
+        ("column_runs", 64),
+        ("diagnostic_metadata_bricks", 256),
+        ("diagnostic_cells_bricks", 2),
+        ("diagnostic_cells", 8_192),
+    ] {
+        if value.observed_work_maxima.get(name) != Some(&maximum) {
+            return Err(ReportValidationError::Missing {
+                field: "query evidence",
+            });
+        }
+    }
+    for distribution in value.frame_critical_calls.values() {
+        validate_distribution(*distribution, "query distribution")?;
+        if passed && (distribution.p99 > 1.0 || distribution.max > 4.0) {
+            return Err(ReportValidationError::Limit {
+                field: "frame-critical query cost",
+            });
+        }
     }
     for distribution in [
         value.normal_bundle_ms,
@@ -539,6 +1274,20 @@ fn validate_query_costs(value: &QueryCostEvidence) -> Result<(), ReportValidatio
     ] {
         validate_distribution(distribution, "query distribution")?;
     }
+    if passed
+        && (value.normal_bundle_ms.p99 > 2.0
+            || value.normal_bundle_ms.max > 4.0
+            || value.column_ms.p99 > 1.0
+            || value.column_ms.max > 4.0
+            || value.diagnostic_metadata_page_ms.p99 > 1.0
+            || value.diagnostic_metadata_page_ms.max > 4.0
+            || value.diagnostic_cells_page_ms.p99 > 4.0
+            || value.diagnostic_cells_page_ms.max > 8.0)
+    {
+        return Err(ReportValidationError::Limit {
+            field: "query cost",
+        });
+    }
     Ok(())
 }
 
@@ -547,7 +1296,7 @@ fn validate_distribution(
     field: &'static str,
 ) -> Result<(), ReportValidationError> {
     for metric in [value.min, value.p50, value.p95, value.p99, value.max] {
-        finite(metric, field)?;
+        finite_nonnegative(metric, field)?;
     }
     if !(value.min <= value.p50
         && value.p50 <= value.p95
@@ -556,15 +1305,36 @@ fn validate_distribution(
     {
         return Err(ReportValidationError::Inconsistent { field });
     }
+    if value.max == 0.0 {
+        return Err(ReportValidationError::Missing { field });
+    }
     Ok(())
 }
 
+fn distribution_unavailable(value: Distribution) -> bool {
+    [value.min, value.p50, value.p95, value.p99, value.max]
+        .into_iter()
+        .all(|metric| metric == 0.0)
+}
+
 fn validate_named_counts<T>(values: &BTreeMap<String, T>) -> Result<(), ReportValidationError> {
-    if values.keys().any(String::is_empty) {
+    if values.keys().any(|key| blank(key)) {
         Err(ReportValidationError::Missing { field: "map key" })
     } else {
         Ok(())
     }
+}
+
+fn validate_positive_named_counts(
+    values: &BTreeMap<String, u32>,
+) -> Result<(), ReportValidationError> {
+    validate_named_counts(values)?;
+    if values.values().any(|count| *count == 0) {
+        return Err(ReportValidationError::Missing {
+            field: "map measurement",
+        });
+    }
+    Ok(())
 }
 
 fn finite(value: f64, field: &'static str) -> Result<(), ReportValidationError> {
@@ -574,25 +1344,107 @@ fn finite(value: f64, field: &'static str) -> Result<(), ReportValidationError> 
         .ok_or(ReportValidationError::NonFinite { field })
 }
 
+fn finite_nonnegative(value: f64, field: &'static str) -> Result<(), ReportValidationError> {
+    finite(value, field)?;
+    if value < 0.0 {
+        return Err(ReportValidationError::Inconsistent { field });
+    }
+    Ok(())
+}
+
+fn finite_positive(value: f64, field: &'static str) -> Result<(), ReportValidationError> {
+    finite_nonnegative(value, field)?;
+    if value == 0.0 {
+        return Err(ReportValidationError::Missing { field });
+    }
+    Ok(())
+}
+
 fn sorted_unique_nonempty(values: &[String]) -> bool {
-    values.iter().all(|value| !value.is_empty()) && values.windows(2).all(|pair| pair[0] < pair[1])
+    values.iter().all(|value| !blank(value)) && values.windows(2).all(|pair| pair[0] < pair[1])
 }
 
 fn is_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 fn is_git_commit(value: &str) -> bool {
-    value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    value.len() == 40
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn rfc3339_utc(value: &str) -> bool {
-    // The runner emits whole RFC 3339 UTC timestamps. This strict structural check avoids
-    // accepting local timestamps without introducing a wall-clock dependency into telemetry.
-    value.ends_with('Z')
-        && value.len() >= 20
-        && value.as_bytes().get(4) == Some(&b'-')
-        && value.as_bytes().get(7) == Some(&b'-')
-        && value.as_bytes().get(10) == Some(&b'T')
-        && value.as_bytes().get(13) == Some(&b':')
-        && value.as_bytes().get(16) == Some(&b':')
+    let Some(date_time) = value.strip_suffix('Z') else {
+        return false;
+    };
+    let (whole, fraction) = date_time
+        .split_once('.')
+        .map_or((date_time, None), |(whole, fraction)| {
+            (whole, Some(fraction))
+        });
+    if fraction
+        .is_some_and(|digits| digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()))
+        || whole.len() != 19
+        || whole.as_bytes()[4] != b'-'
+        || whole.as_bytes()[7] != b'-'
+        || whole.as_bytes()[10] != b'T'
+        || whole.as_bytes()[13] != b':'
+        || whole.as_bytes()[16] != b':'
+    {
+        return false;
+    }
+    let number = |range: core::ops::Range<usize>| whole[range].parse::<u32>().ok();
+    let (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second)) = (
+        number(0..4),
+        number(5..7),
+        number(8..10),
+        number(11..13),
+        number(14..16),
+        number(17..19),
+    ) else {
+        return false;
+    };
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return false,
+    };
+    day != 0 && day <= days && hour < 24 && minute < 60 && second < 60
+}
+
+fn validate_world_identity(world: &WorldIdentity) -> Result<(), ReportValidationError> {
+    let min = world.bounds.min();
+    let max = world.bounds.max_exclusive();
+    if world.seed != PRODUCT_ONE_SEED
+        || world.parameters_digest.iter().all(|byte| *byte == 0)
+        || min != WorldPointQ8::new(-128_000, -32_768, -128_000)
+        || max != WorldPointQ8::new(128_000, 32_768, 128_000)
+    {
+        return Err(ReportValidationError::Identity { field: "world" });
+    }
+    Ok(())
+}
+
+fn blank(value: &str) -> bool {
+    value.trim().is_empty()
+}
+
+fn json_object_has_keys(value: &serde_json::Value, keys: &[&str]) -> bool {
+    value
+        .as_object()
+        .is_some_and(|object| keys.iter().all(|key| object.contains_key(*key)))
+}
+
+fn json_nested_object_has_keys(value: &serde_json::Value, field: &str, keys: &[&str]) -> bool {
+    value
+        .as_object()
+        .and_then(|object| object.get(field))
+        .is_some_and(|nested| json_object_has_keys(nested, keys))
 }

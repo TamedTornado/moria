@@ -6,7 +6,7 @@ mod runtime;
 pub use reports::{
     BuildProfile, Distribution, ForestFeasibilityReport, MachineProfile, MutationFeasibilityReport,
     MutationWorkloadEvidence, MutationWorkloadRole, ObjectIndexEvidence, QueryCostEvidence,
-    ReportValidationError, WorstEditTargetEvidence,
+    ReportValidationError, TrustedGateIdentity, WorstEditTargetEvidence,
 };
 pub use runtime::{
     ActiveCounts, EditObservation, GraphicsMemoryEstimate, QueueDepths, WorldTelemetryRead,

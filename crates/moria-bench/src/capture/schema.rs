@@ -2,10 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use moria_world::WorldIdentity;
+use moria_world::config::PRODUCT_ONE_SEED;
 use moria_world::telemetry::{
-    BuildProfile, Distribution, MachineProfile, ObjectIndexEvidence, ReportValidationError,
+    BuildProfile, Distribution, MachineProfile, MutationWorkloadRole, ObjectIndexEvidence,
+    ReportValidationError,
 };
+use moria_world::{WorldIdentity, WorldPointQ8};
 use serde::{Deserialize, Serialize};
 
 const SCHEMA: &str = "moria-product-one-benchmark";
@@ -36,6 +38,7 @@ const TOP_LEVEL_KEYS: [&str; 19] = [
 #[serde(rename_all = "kebab-case")]
 pub enum ScenarioName {
     Flythrough,
+    #[serde(rename = "mutation-workloads")]
     CarveStorm,
 }
 
@@ -45,6 +48,37 @@ pub enum BaselineStatus {
     Provisional,
     Verified,
 }
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ActiveBand {
+    Far,
+    Horizon,
+    Middle,
+    Near,
+}
+
+const ALL_ACTIVE_BANDS: [ActiveBand; 4] = [
+    ActiveBand::Far,
+    ActiveBand::Horizon,
+    ActiveBand::Middle,
+    ActiveBand::Near,
+];
+const REQUIRED_FLYTHROUGH_ROUTE_TAGS: [&str; 13] = [
+    "aquifer",
+    "cave-floor",
+    "cave-mouth",
+    "cliff-top",
+    "forest",
+    "lake",
+    "meadow",
+    "ore-vein",
+    "river",
+    "rock-shelves",
+    "ruin-stair-bottom",
+    "ruin-stair-top",
+    "signature-carve-hillside",
+];
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -121,16 +155,29 @@ pub struct MutationLatencyMetrics {
     pub accepted_to_first_commit_ms: Distribution,
     pub commit_to_primary_ready_ms: Distribution,
     pub accepted_to_reconciliation_ms: Distribution,
+    pub workloads: Vec<MutationWorkloadLatency>,
     pub changed_bricks_per_second: f64,
     pub maximum_runnable_wait_ms: f64,
     pub representative_max_frame_ms: f64,
+}
+
+/// Per-workload timing distributions retained alongside the pooled benchmark summary.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MutationWorkloadLatency {
+    pub role: MutationWorkloadRole,
+    pub request_count: u32,
+    pub admission_ms: Distribution,
+    pub accepted_to_first_commit_ms: Distribution,
+    pub commit_to_primary_ready_ms: Distribution,
+    pub accepted_to_reconciliation_ms: Distribution,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CoverageEvidence {
     pub route_tags_visited: Vec<String>,
-    pub active_bands_entered: Vec<String>,
+    pub active_bands_entered: Vec<ActiveBand>,
     pub edited_material_counts: BTreeMap<String, u32>,
     pub final_changed_spheres: u32,
     pub final_changed_region_cells: u32,
@@ -162,6 +209,57 @@ pub struct StreamingEvidence {
     pub return_steady_derived_bytes: u64,
     pub monotonic_growth_check_passed: bool,
     pub object_index: ObjectIndexEvidence,
+}
+
+/// Immutable identities obtained from the capture baseline before a benchmark run.
+///
+/// A report cannot establish its own authority by containing well-formed values;
+/// callers must compare it to this independently captured identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrustedCaptureIdentity {
+    pub git_commit: String,
+    pub parameters_digest: [u8; 32],
+    pub manifest_sha256: String,
+}
+
+impl TrustedCaptureIdentity {
+    fn validate(&self) -> Result<(), ReportValidationError> {
+        if !is_git_commit(&self.git_commit)
+            || self.parameters_digest.iter().all(|byte| *byte == 0)
+            || !sha256(&self.manifest_sha256)
+        {
+            return Err(ReportValidationError::Identity {
+                field: "trusted capture identity",
+            });
+        }
+        Ok(())
+    }
+
+    fn matches(&self, build: &BuildProfile, world: &WorldIdentity, assets: &AssetEvidence) -> bool {
+        self.git_commit == build.git_commit
+            && self.parameters_digest == world.parameters_digest
+            && self.manifest_sha256 == assets.manifest_sha256
+    }
+}
+
+/// A Product approval record obtained from the approval ledger, not from the report itself.
+///
+/// The caller is responsible for loading this record from its independently controlled source.
+/// Its ID must match the report before an estimate may substitute for resident evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrustedEstimateSubstitutionApproval {
+    pub approval_id: String,
+}
+
+impl TrustedEstimateSubstitutionApproval {
+    fn validate(&self) -> Result<(), ReportValidationError> {
+        if blank(&self.approval_id) {
+            return Err(ReportValidationError::Identity {
+                field: "estimate_substitution_approval_id",
+            });
+        }
+        Ok(())
+    }
 }
 
 /// `Option` fields are always serialized: `null` records unavailable runtime evidence.
@@ -223,6 +321,13 @@ impl BenchmarkReport {
     }
 
     pub fn validate(&self) -> Result<(), ReportValidationError> {
+        self.validate_with_estimate_substitution_approval(None)
+    }
+
+    fn validate_with_estimate_substitution_approval(
+        &self,
+        trusted_approval: Option<&TrustedEstimateSubstitutionApproval>,
+    ) -> Result<(), ReportValidationError> {
         if self.schema != SCHEMA {
             return Err(ReportValidationError::Schema);
         }
@@ -232,7 +337,7 @@ impl BenchmarkReport {
         if self.passed != self.failure_reasons.is_empty() {
             return Err(ReportValidationError::PassedFlagMismatch);
         }
-        if !sorted_unique_nonempty(&self.failure_reasons) {
+        if !sorted_unique(&self.failure_reasons) {
             return Err(ReportValidationError::FailureReasons);
         }
         let required = [
@@ -260,36 +365,54 @@ impl BenchmarkReport {
         }
 
         if let Some(value) = &self.build {
-            validate_build(value)?;
+            validate_build(value, self.passed)?;
         }
-
         if let Some(resolution) = self.resolution
-            && (resolution[0] == 0 || resolution[1] == 0)
+            && !matches!(resolution, [1920, 1080] | [2560, 1440])
         {
             return Err(ReportValidationError::Identity {
                 field: "resolution",
             });
         }
         if let Some(value) = self.cold_start_ms {
-            finite(value, "cold_start_ms")?;
+            finite_positive(value, "cold_start_ms")?;
+            if self.passed && value >= 5_000.0 {
+                return Err(ReportValidationError::Limit {
+                    field: "cold_start_ms",
+                });
+            }
+        }
+        if let Some(value) = &self.world {
+            validate_world(value)?;
         }
         if let Some(value) = &self.assets {
-            validate_asset_evidence(value)?;
+            validate_asset_evidence(value, self.passed)?;
+        }
+        if let Some(machine) = &self.machine {
+            validate_machine_profile(machine)?;
+            if let Some(resolution) = self.resolution {
+                validate_machine_resolution(machine, resolution)?;
+            }
         }
         if let Some(value) = self.frame_rate {
-            validate_frame_rate(value)?;
+            validate_frame_rate(value, self.passed)?;
         }
         if let Some(value) = self.frame_time_ms {
             validate_distribution(value, "frame_time_ms")?;
+            if self.passed && value.p95 > 16.67 {
+                return Err(ReportValidationError::Limit {
+                    field: "frame_time_ms.p95",
+                });
+            }
         }
         if let Some(value) = &self.graphics_memory {
-            validate_graphics_memory(value, self.passed, &self.failure_reasons)?;
+            validate_graphics_memory(value, self.passed, &self.failure_reasons, trusted_approval)?;
         }
         if let Some(value) = &self.coverage {
-            validate_coverage(value)?;
+            validate_coverage(value, self.scenario, self.passed)?;
         }
         if let Some(value) = &self.streaming {
-            validate_streaming(value)?;
+            validate_streaming(value, self.passed)?;
         }
 
         match self.scenario {
@@ -304,6 +427,8 @@ impl BenchmarkReport {
     }
 
     pub fn from_json(json: &str) -> Result<Self, ReportValidationError> {
+        let report: Self =
+            serde_json::from_str(json).map_err(|_| ReportValidationError::Serialization)?;
         let value: serde_json::Value =
             serde_json::from_str(json).map_err(|_| ReportValidationError::Serialization)?;
         let object = value
@@ -318,10 +443,58 @@ impl BenchmarkReport {
                 field: "top-level key",
             });
         }
-        let report: Self =
-            serde_json::from_value(value).map_err(|_| ReportValidationError::Serialization)?;
+        if !json_object_has_keys(
+            object.get("save").unwrap_or(&serde_json::Value::Null),
+            &[
+                "attempted",
+                "completed",
+                "size_bytes",
+                "changed_voxels",
+                "changed_bricks",
+                "round_trip",
+            ],
+        ) || !json_nullable_object_has_keys(object.get("machine"), &["driver"])
+            || !json_nullable_object_has_keys(
+                object.get("graphics_memory"),
+                &["resident_measurement", "estimate_substitution_approval_id"],
+            )
+        {
+            return Err(ReportValidationError::Missing { field: "JSON key" });
+        }
         report.validate()?;
         Ok(report)
+    }
+
+    /// Verifies a complete report against the identity captured before the run.
+    pub fn validate_against_trusted_capture(
+        &self,
+        trusted: &TrustedCaptureIdentity,
+    ) -> Result<(), ReportValidationError> {
+        self.validate()?;
+        trusted.validate()?;
+        let (Some(build), Some(world), Some(assets)) = (&self.build, &self.world, &self.assets)
+        else {
+            return Err(ReportValidationError::Missing {
+                field: "completed capture identity",
+            });
+        };
+        if !trusted.matches(build, world, assets) {
+            return Err(ReportValidationError::Identity {
+                field: "trusted capture identity",
+            });
+        }
+        Ok(())
+    }
+
+    /// Validates an estimate substitution against a Product approval loaded separately from the
+    /// benchmark report. The approved ledger remains a proxy, so this never permits
+    /// `product_target_proven` to become true.
+    pub fn validate_against_trusted_estimate_substitution_approval(
+        &self,
+        trusted_approval: &TrustedEstimateSubstitutionApproval,
+    ) -> Result<(), ReportValidationError> {
+        trusted_approval.validate()?;
+        self.validate_with_estimate_substitution_approval(Some(trusted_approval))
     }
 }
 
@@ -332,62 +505,27 @@ fn validate_flythrough(report: &BenchmarkReport) -> Result<(), ReportValidationE
         });
     }
     let save = &report.save;
-    if save.attempted || save.completed || save.round_trip.is_some() {
+    if save.attempted
+        || save.completed
+        || save.round_trip.is_some()
+        || save.size_bytes.is_some_and(|value| value != 0)
+        || save.changed_voxels.is_some_and(|value| value != 0)
+        || save.changed_bricks.is_some_and(|value| value != 0)
+    {
         return Err(ReportValidationError::Inconsistent {
             field: "flythrough save",
         });
-    }
-    for (field, value) in [
-        ("save.size_bytes", save.size_bytes.is_some()),
-        ("save.changed_voxels", save.changed_voxels.is_some()),
-        ("save.changed_bricks", save.changed_bricks.is_some()),
-    ] {
-        if !value && !has_failure_reason(report, field) {
-            return Err(ReportValidationError::Missing { field });
-        }
     }
     if report.passed
         && (save.size_bytes != Some(0)
             || save.changed_voxels != Some(0)
             || save.changed_bricks != Some(0))
     {
-        return Err(ReportValidationError::Inconsistent {
+        return Err(ReportValidationError::Missing {
             field: "flythrough save",
         });
     }
-    Ok(())
-}
-
-fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidationError> {
-    if report.mutation_latency.is_none() && !has_failure_reason(report, "mutation_latency") {
-        return Err(ReportValidationError::Missing {
-            field: "mutation_latency",
-        });
-    }
-    if let Some(value) = &report.mutation_latency {
-        validate_mutation_latency(value)?;
-    }
-    let save = &report.save;
-    if report.passed
-        && (!save.attempted
-            || !save.completed
-            || save.size_bytes.is_none()
-            || save.changed_voxels.is_none()
-            || save.changed_bricks.is_none()
-            || save.round_trip.is_none())
-    {
-        return Err(ReportValidationError::Missing {
-            field: "mutation save",
-        });
-    }
-    if let Some(round_trip) = save.round_trip
-        && report.passed
-        && (!round_trip.passed || !round_trip.identity_match || round_trip.derived_bytes_found)
-    {
-        return Err(ReportValidationError::Inconsistent {
-            field: "round_trip",
-        });
-    }
+    validate_missing_save_counts(save, &report.failure_reasons)?;
     Ok(())
 }
 
@@ -417,35 +555,146 @@ fn missing_evidence_reasons(failure_reason: &str) -> Vec<String> {
     reasons
 }
 
-fn has_failure_reason(report: &BenchmarkReport, field: &str) -> bool {
-    report.failure_reasons.iter().any(|reason| reason == field)
-}
-
-fn validate_build(build: &BuildProfile) -> Result<(), ReportValidationError> {
-    if build.cargo_profile.is_empty()
-        || build.git_commit.len() != 40
-        || !build
-            .git_commit
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
-        || build.rustc_version.is_empty()
+fn validate_carve_storm(report: &BenchmarkReport) -> Result<(), ReportValidationError> {
+    if report.mutation_latency.is_none()
+        && (report.passed
+            || !report
+                .failure_reasons
+                .iter()
+                .any(|reason| reason == "mutation_latency"))
     {
-        return Err(ReportValidationError::Identity { field: "build" });
+        return Err(ReportValidationError::Missing {
+            field: "mutation_latency",
+        });
+    }
+    if let Some(value) = &report.mutation_latency {
+        validate_mutation_latency(value, report.passed)?;
+    }
+    let save = &report.save;
+    if save.completed
+        && (!save.attempted
+            || save.size_bytes.is_none()
+            || save.changed_voxels.is_none()
+            || save.changed_bricks.is_none())
+        || !save.completed && (save.size_bytes.is_some() || save.round_trip.is_some())
+        || !save.attempted
+            && (save.completed
+                || save.size_bytes.is_some()
+                || save.changed_voxels.is_some()
+                || save.changed_bricks.is_some()
+                || save.round_trip.is_some())
+    {
+        return Err(ReportValidationError::Inconsistent {
+            field: "mutation save state",
+        });
+    }
+    if report.passed
+        && (!save.attempted
+            || !save.completed
+            || save.size_bytes.is_none()
+            || save.changed_voxels.is_none()
+            || save.changed_bricks.is_none()
+            || save.round_trip.is_none())
+    {
+        return Err(ReportValidationError::Missing {
+            field: "mutation save",
+        });
+    }
+    validate_missing_save_counts(save, &report.failure_reasons)?;
+    if !report.passed
+        && save.round_trip.is_none()
+        && !report
+            .failure_reasons
+            .iter()
+            .any(|reason| reason == "round_trip")
+    {
+        return Err(ReportValidationError::Missing {
+            field: "round_trip",
+        });
+    }
+    if let (Some(changed_voxels), Some(changed_bricks)) = (save.changed_voxels, save.changed_bricks)
+        && changed_voxels < changed_bricks
+    {
+        return Err(ReportValidationError::Inconsistent {
+            field: "mutation save",
+        });
+    }
+    if let Some(round_trip) = save.round_trip
+        && round_trip.passed
+        && !(round_trip.delta_voxels_compared > 0
+            && Some(round_trip.delta_voxels_compared) == save.changed_voxels
+            && round_trip.base_samples_compared > 0
+            && round_trip.identity_match
+            && !round_trip.derived_bytes_found)
+    {
+        return Err(ReportValidationError::Inconsistent {
+            field: "round_trip",
+        });
+    }
+    for (field, value) in [
+        ("save.size_bytes", save.size_bytes),
+        ("save.changed_voxels", save.changed_voxels.map(u64::from)),
+        ("save.changed_bricks", save.changed_bricks.map(u64::from)),
+    ] {
+        if value == Some(0) {
+            return Err(ReportValidationError::Missing { field });
+        }
+    }
+    if report.passed
+        && (save.size_bytes.is_some_and(|bytes| bytes >= 50_000_000)
+            || save.changed_bricks.is_some_and(|bricks| bricks < 256)
+            || save.round_trip.is_some_and(|round_trip| !round_trip.passed))
+    {
+        return Err(ReportValidationError::Limit {
+            field: "mutation save",
+        });
     }
     Ok(())
 }
 
-fn validate_asset_evidence(value: &AssetEvidence) -> Result<(), ReportValidationError> {
+fn validate_missing_save_counts(
+    save: &SaveEvidence,
+    failure_reasons: &[String],
+) -> Result<(), ReportValidationError> {
+    for (field, present) in [
+        ("save.size_bytes", save.size_bytes.is_some()),
+        ("save.changed_voxels", save.changed_voxels.is_some()),
+        ("save.changed_bricks", save.changed_bricks.is_some()),
+    ] {
+        if !present && !failure_reasons.iter().any(|reason| reason == field) {
+            return Err(ReportValidationError::Missing { field });
+        }
+    }
+    Ok(())
+}
+
+fn validate_build(build: &BuildProfile, passed: bool) -> Result<(), ReportValidationError> {
+    if passed {
+        build.validate_release()
+    } else {
+        build.validate_complete()
+    }
+}
+
+fn validate_asset_evidence(
+    value: &AssetEvidence,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
     if !sha256(&value.manifest_sha256)
-        || !sorted_unique_nonempty(&value.fallbacks)
-        || !sorted_unique_nonempty(&value.warnings)
+        || !sorted_unique(&value.fallbacks)
+        || !sorted_unique(&value.warnings)
     {
         return Err(ReportValidationError::Identity { field: "assets" });
     }
+    if passed && !value.fallbacks.is_empty() {
+        return Err(ReportValidationError::Inconsistent {
+            field: "asset fallbacks",
+        });
+    }
     Ok(())
 }
 
-fn validate_frame_rate(value: FrameRateMetrics) -> Result<(), ReportValidationError> {
+fn validate_frame_rate(value: FrameRateMetrics, passed: bool) -> Result<(), ReportValidationError> {
     if value.sample_count == 0 {
         return Err(ReportValidationError::Missing {
             field: "frame samples",
@@ -456,7 +705,23 @@ fn validate_frame_rate(value: FrameRateMetrics) -> Result<(), ReportValidationEr
         ("arithmetic_fps", value.arithmetic_fps),
         ("one_percent_low_fps", value.one_percent_low_fps),
     ] {
-        finite(metric, name)?;
+        finite_positive(metric, name)?;
+    }
+    let calculated_fps = value.sample_count as f64 / value.measured_seconds;
+    if (calculated_fps - value.arithmetic_fps).abs() > calculated_fps.abs() * 0.000_001 {
+        return Err(ReportValidationError::Inconsistent {
+            field: "arithmetic_fps",
+        });
+    }
+    if value.one_percent_low_fps > value.arithmetic_fps {
+        return Err(ReportValidationError::Inconsistent {
+            field: "one_percent_low_fps",
+        });
+    }
+    if passed && value.arithmetic_fps < 60.0 {
+        return Err(ReportValidationError::Limit {
+            field: "arithmetic_fps",
+        });
     }
     Ok(())
 }
@@ -465,31 +730,71 @@ fn validate_graphics_memory(
     value: &GraphicsMemoryEvidence,
     passed: bool,
     reasons: &[String],
+    trusted_approval: Option<&TrustedEstimateSubstitutionApproval>,
 ) -> Result<(), ReportValidationError> {
-    if !value.application_ledger.untracked_driver_overhead
+    if value.application_ledger.peak_bytes == 0
+        || value.application_ledger.end_bytes == 0
+        || value.application_ledger.categories.is_empty()
         || value
             .application_ledger
             .categories
-            .keys()
-            .any(String::is_empty)
+            .values()
+            .any(|bytes| *bytes == 0)
+    {
+        return Err(ReportValidationError::Missing {
+            field: "application_ledger",
+        });
+    }
+    if !value.application_ledger.untracked_driver_overhead
+        || value.application_ledger.end_bytes > value.application_ledger.peak_bytes
+        || value
+            .application_ledger
+            .categories
+            .iter()
+            .any(|(name, _)| blank(name))
     {
         return Err(ReportValidationError::Inconsistent {
             field: "application_ledger",
         });
     }
+    let category_total = value
+        .application_ledger
+        .categories
+        .values()
+        .try_fold(0_u64, |total, bytes| total.checked_add(*bytes))
+        .ok_or(ReportValidationError::Inconsistent {
+            field: "application_ledger",
+        })?;
+    if category_total != value.application_ledger.peak_bytes {
+        return Err(ReportValidationError::Inconsistent {
+            field: "application_ledger",
+        });
+    }
     if let Some(measurement) = &value.resident_measurement {
-        if measurement.provider.is_empty()
-            || measurement.scope.is_empty()
+        let provider = measurement.provider.to_ascii_lowercase();
+        let scope = measurement.scope.to_ascii_lowercase();
+        if blank(&measurement.provider)
+            || blank(&measurement.scope)
             || measurement.sampling_interval_ms == 0
+            || measurement.peak_bytes == 0
             || !sha256(&measurement.artifact_sha256)
-            || measurement.artifact_path.is_empty()
+            || blank(&measurement.artifact_path)
         {
             return Err(ReportValidationError::Missing {
                 field: "resident_measurement",
             });
         }
-        let covers_target = measurement.scope.contains("game process")
-            && measurement.scope.contains("resident graphics")
+        if provider.contains("application allocation ledger")
+            || provider == "application ledger"
+            || scope.contains("application allocation ledger")
+            || scope.contains("application ledger")
+        {
+            return Err(ReportValidationError::Identity {
+                field: "resident_measurement",
+            });
+        }
+        let covers_target = scope.contains("game process")
+            && scope.contains("resident graphics")
             && measurement.peak_bytes < GRAPHICS_MEMORY_TARGET_BYTES;
         if value.product_target_proven != covers_target {
             return Err(ReportValidationError::Inconsistent {
@@ -501,23 +806,38 @@ fn validate_graphics_memory(
             field: "product_target_proven",
         });
     }
-    if value
-        .estimate_substitution_approval_id
-        .as_deref()
-        .is_some_and(str::is_empty)
-    {
-        return Err(ReportValidationError::Identity {
-            field: "estimate_substitution_approval_id",
-        });
-    }
-    if passed && !value.product_target_proven && value.estimate_substitution_approval_id.is_none() {
+    let estimate_substitution_approved = match (
+        value.estimate_substitution_approval_id.as_deref(),
+        trusted_approval,
+    ) {
+        (None, None) => false,
+        (Some(approval_id), Some(trusted)) if approval_id == trusted.approval_id => {
+            if value.application_ledger.peak_bytes >= GRAPHICS_MEMORY_TARGET_BYTES {
+                return Err(ReportValidationError::Limit {
+                    field: "application_ledger",
+                });
+            }
+            if value.product_target_proven {
+                return Err(ReportValidationError::Inconsistent {
+                    field: "product_target_proven",
+                });
+            }
+            true
+        }
+        _ => {
+            return Err(ReportValidationError::Identity {
+                field: "estimate_substitution_approval_id",
+            });
+        }
+    };
+    if passed && !value.product_target_proven && !estimate_substitution_approved {
         return Err(ReportValidationError::Inconsistent {
             field: "resident graphics memory",
         });
     }
     if !passed
-        && value.resident_measurement.is_none()
-        && value.estimate_substitution_approval_id.is_none()
+        && !value.product_target_proven
+        && !estimate_substitution_approved
         && !reasons
             .iter()
             .any(|reason| reason == "resident_graphics_memory_unproven")
@@ -529,35 +849,98 @@ fn validate_graphics_memory(
     Ok(())
 }
 
-fn validate_coverage(value: &CoverageEvidence) -> Result<(), ReportValidationError> {
-    if !sorted_unique_nonempty(&value.route_tags_visited)
-        || !sorted_unique_nonempty(&value.active_bands_entered)
-        || value.edited_material_counts.keys().any(String::is_empty)
+fn validate_coverage(
+    value: &CoverageEvidence,
+    scenario: ScenarioName,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
+    if value.route_tags_visited.is_empty()
+        || !sorted_unique(&value.route_tags_visited)
+        || value.active_bands_entered.is_empty()
+        || !value
+            .active_bands_entered
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+        || value.edited_material_counts.keys().any(|key| blank(key))
     {
+        if value.active_bands_entered.is_empty() {
+            return Err(ReportValidationError::Missing {
+                field: "coverage.active_bands_entered",
+            });
+        }
         return Err(ReportValidationError::Inconsistent { field: "coverage" });
+    }
+    if passed
+        && (value.active_bands_entered != ALL_ACTIVE_BANDS
+            || !value.workload_minimum_met
+            || match scenario {
+                ScenarioName::Flythrough => {
+                    REQUIRED_FLYTHROUGH_ROUTE_TAGS.iter().any(|tag| {
+                        !value
+                            .route_tags_visited
+                            .binary_search_by(|visited| visited.as_str().cmp(tag))
+                            .is_ok()
+                    }) || !value.edited_material_counts.is_empty()
+                        || value.final_changed_spheres != 0
+                        || value.final_changed_region_cells != 0
+                }
+                ScenarioName::CarveStorm => {
+                    value.edited_material_counts.is_empty()
+                        || value
+                            .edited_material_counts
+                            .values()
+                            .any(|count| *count == 0)
+                        || value.final_changed_spheres == 0
+                        || value.final_changed_region_cells == 0
+                }
+            })
+    {
+        return Err(ReportValidationError::Inconsistent {
+            field: "coverage pass",
+        });
     }
     Ok(())
 }
 
-fn validate_streaming(value: &StreamingEvidence) -> Result<(), ReportValidationError> {
-    if !value.monotonic_growth_check_passed
-        || value.return_steady_derived_bytes
-            > value.first_steady_derived_bytes.saturating_mul(105) / 100
+fn validate_streaming(
+    value: &StreamingEvidence,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
+    if value.peak_active_counts.bricks == 0
+        || value.peak_active_counts.meshes == 0
+        || value.peak_active_counts.objects == 0
+        || value.peak_queue_depths.extraction == 0
+        || value.peak_queue_depths.installation == 0
+        || value.peak_queue_depths.render == 0
+        || value.first_steady_derived_bytes == 0
+        || value.return_steady_derived_bytes == 0
+    {
+        return Err(ReportValidationError::Missing {
+            field: "streaming measurement",
+        });
+    }
+    if passed {
+        value.object_index.validate_complete()?;
+    } else {
+        value.object_index.validate_measured()?;
+    }
+    if passed
+        && (!value.monotonic_growth_check_passed
+            || value.return_steady_derived_bytes
+                > value.first_steady_derived_bytes.saturating_mul(105) / 100)
     {
         return Err(ReportValidationError::Inconsistent {
             field: "monotonic growth",
         });
     }
-    finite(
-        value.object_index.validation_ms,
-        "object_index.validation_ms",
-    )?;
-    finite(value.object_index.build_ms, "object_index.build_ms")?;
     Ok(())
 }
 
-fn validate_mutation_latency(value: &MutationLatencyMetrics) -> Result<(), ReportValidationError> {
-    if value.sample_count == 0 {
+fn validate_mutation_latency(
+    value: &MutationLatencyMetrics,
+    passed: bool,
+) -> Result<(), ReportValidationError> {
+    if value.sample_count != 10 {
         return Err(ReportValidationError::Missing {
             field: "mutation samples",
         });
@@ -570,6 +953,53 @@ fn validate_mutation_latency(value: &MutationLatencyMetrics) -> Result<(), Repor
     ] {
         validate_distribution(distribution, "mutation distribution")?;
     }
+    let expected_workloads = [
+        (MutationWorkloadRole::InteractiveCarve, 1),
+        (MutationWorkloadRole::ColonyVolume, 8),
+        (MutationWorkloadRole::CatastrophicCarve, 1),
+    ];
+    if value.workloads.len() != expected_workloads.len()
+        || value.workloads.iter().zip(expected_workloads).any(
+            |(workload, (role, request_count))| {
+                workload.role != role || workload.request_count != request_count
+            },
+        )
+    {
+        return Err(ReportValidationError::Inconsistent {
+            field: "mutation workload samples",
+        });
+    }
+    for workload in &value.workloads {
+        for distribution in [
+            workload.admission_ms,
+            workload.accepted_to_first_commit_ms,
+            workload.commit_to_primary_ready_ms,
+            workload.accepted_to_reconciliation_ms,
+        ] {
+            validate_distribution(distribution, "mutation workload distribution")?;
+        }
+        if passed
+            && (workload.admission_ms.max > 2.0
+                || workload.accepted_to_first_commit_ms.max
+                    > match workload.role {
+                        MutationWorkloadRole::InteractiveCarve
+                        | MutationWorkloadRole::CatastrophicCarve => 100.0,
+                        MutationWorkloadRole::ColonyVolume => 250.0,
+                    }
+                || workload.commit_to_primary_ready_ms.p95 > 250.0
+                || workload.commit_to_primary_ready_ms.max > 500.0
+                || workload.accepted_to_reconciliation_ms.max
+                    > match workload.role {
+                        MutationWorkloadRole::InteractiveCarve => 1_000.0,
+                        MutationWorkloadRole::ColonyVolume
+                        | MutationWorkloadRole::CatastrophicCarve => 30_000.0,
+                    })
+        {
+            return Err(ReportValidationError::Limit {
+                field: "mutation workload latency",
+            });
+        }
+    }
     for (name, metric) in [
         ("changed_bricks_per_second", value.changed_bricks_per_second),
         ("maximum_runnable_wait_ms", value.maximum_runnable_wait_ms),
@@ -578,7 +1008,21 @@ fn validate_mutation_latency(value: &MutationLatencyMetrics) -> Result<(), Repor
             value.representative_max_frame_ms,
         ),
     ] {
-        finite(metric, name)?;
+        finite_positive(metric, name)?;
+    }
+    if passed
+        && (value.admission_ms.max > 2.0
+            || value.accepted_to_first_commit_ms.max > 250.0
+            || value.commit_to_primary_ready_ms.p95 > 250.0
+            || value.commit_to_primary_ready_ms.max > 500.0
+            || value.accepted_to_reconciliation_ms.max > 30_000.0
+            || value.changed_bricks_per_second < 32.0
+            || value.maximum_runnable_wait_ms > 500.0
+            || value.representative_max_frame_ms > 33.3)
+    {
+        return Err(ReportValidationError::Limit {
+            field: "mutation latency",
+        });
     }
     Ok(())
 }
@@ -588,7 +1032,7 @@ fn validate_distribution(
     field: &'static str,
 ) -> Result<(), ReportValidationError> {
     for metric in [value.min, value.p50, value.p95, value.p99, value.max] {
-        finite(metric, field)?;
+        finite_nonnegative(metric, field)?;
     }
     if !(value.min <= value.p50
         && value.p50 <= value.p95
@@ -596,6 +1040,9 @@ fn validate_distribution(
         && value.p99 <= value.max)
     {
         return Err(ReportValidationError::Inconsistent { field });
+    }
+    if value.max == 0.0 {
+        return Err(ReportValidationError::Missing { field });
     }
     Ok(())
 }
@@ -606,72 +1053,137 @@ fn finite(value: f64, field: &'static str) -> Result<(), ReportValidationError> 
         .then_some(())
         .ok_or(ReportValidationError::NonFinite { field })
 }
-fn sorted_unique_nonempty(values: &[String]) -> bool {
-    values.iter().all(|value| !value.is_empty()) && values.windows(2).all(|pair| pair[0] < pair[1])
+fn finite_nonnegative(value: f64, field: &'static str) -> Result<(), ReportValidationError> {
+    finite(value, field)?;
+    if value < 0.0 {
+        return Err(ReportValidationError::Inconsistent { field });
+    }
+    Ok(())
+}
+fn finite_positive(value: f64, field: &'static str) -> Result<(), ReportValidationError> {
+    finite_nonnegative(value, field)?;
+    if value == 0.0 {
+        return Err(ReportValidationError::Missing { field });
+    }
+    Ok(())
+}
+fn sorted_unique(values: &[String]) -> bool {
+    values.iter().all(|value| !blank(value)) && values.windows(2).all(|pair| pair[0] < pair[1])
 }
 fn sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+fn is_git_commit(value: &str) -> bool {
+    value.len() == 40
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 fn rfc3339_utc(value: &str) -> bool {
-    value.ends_with('Z')
-        && value.len() >= 20
-        && value.as_bytes().get(4) == Some(&b'-')
-        && value.as_bytes().get(7) == Some(&b'-')
-        && value.as_bytes().get(10) == Some(&b'T')
-        && value.as_bytes().get(13) == Some(&b':')
-        && value.as_bytes().get(16) == Some(&b':')
+    let Some(date_time) = value.strip_suffix('Z') else {
+        return false;
+    };
+    let (whole, fraction) = date_time
+        .split_once('.')
+        .map_or((date_time, None), |(whole, fraction)| {
+            (whole, Some(fraction))
+        });
+    if fraction
+        .is_some_and(|digits| digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()))
+        || whole.len() != 19
+        || whole.as_bytes()[4] != b'-'
+        || whole.as_bytes()[7] != b'-'
+        || whole.as_bytes()[10] != b'T'
+        || whole.as_bytes()[13] != b':'
+        || whole.as_bytes()[16] != b':'
+    {
+        return false;
+    }
+    let number = |range: core::ops::Range<usize>| whole[range].parse::<u32>().ok();
+    let (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second)) = (
+        number(0..4),
+        number(5..7),
+        number(8..10),
+        number(11..13),
+        number(14..16),
+        number(17..19),
+    ) else {
+        return false;
+    };
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return false,
+    };
+    day != 0 && day <= days && hour < 24 && minute < 60 && second < 60
 }
 
-#[cfg(test)]
-mod tests {
-    use super::BenchmarkReport;
-
-    #[test]
-    fn report_before_start_is_complete_null_json_with_missing_evidence_reasons() {
-        let report = BenchmarkReport::failed_before_start("2026-07-17T00:00:00Z", "runtime");
-
-        let json = report.to_canonical_json().unwrap();
-        let restored = BenchmarkReport::from_json(&json).unwrap();
-
-        assert!(!restored.passed);
-        assert!(
-            restored
-                .failure_reasons
-                .binary_search(&"build".into())
-                .is_ok()
-        );
-        assert!(
-            restored
-                .failure_reasons
-                .binary_search(&"world".into())
-                .is_ok()
-        );
-        assert!(
-            restored
-                .failure_reasons
-                .binary_search(&"runtime".into())
-                .is_ok()
-        );
-        assert!(json.contains("\"build\":null"));
-        assert!(
-            json.contains("\"save\":{\"attempted\":false,\"completed\":false,\"size_bytes\":null")
-        );
+fn validate_world(world: &WorldIdentity) -> Result<(), ReportValidationError> {
+    if world.seed != PRODUCT_ONE_SEED
+        || world.parameters_digest.iter().all(|byte| *byte == 0)
+        || world.bounds.min() != WorldPointQ8::new(-128_000, -32_768, -128_000)
+        || world.bounds.max_exclusive() != WorldPointQ8::new(128_000, 32_768, 128_000)
+    {
+        return Err(ReportValidationError::Identity { field: "world" });
     }
+    Ok(())
+}
 
-    #[test]
-    fn partial_runtime_failure_requires_reasons_only_for_unavailable_evidence() {
-        let mut report = BenchmarkReport::failed_before_start("2026-07-17T00:00:00Z", "runtime");
-        report.resolution = Some([2560, 1440]);
-        report
-            .failure_reasons
-            .retain(|reason| reason != "resolution");
-
-        report.validate().unwrap();
-        assert!(
-            report
-                .to_canonical_json()
-                .unwrap()
-                .contains("\"resolution\":[2560,1440]")
-        );
+fn validate_machine_profile(machine: &MachineProfile) -> Result<(), ReportValidationError> {
+    machine.validate_complete()?;
+    match machine.wgpu_backend.as_str() {
+        "metal" => {
+            machine.validate_m4_acceptance()?;
+        }
+        "vulkan" => {
+            if machine.os_name != "Linux"
+                || machine.memory_architecture != "discrete"
+                || machine.gpu_device_class != "discrete"
+                || !machine.gpu_adapter_name.contains("3060")
+            {
+                return Err(ReportValidationError::Identity {
+                    field: "Linux 3060 machine",
+                });
+            }
+        }
+        _ => return Err(ReportValidationError::Identity { field: "machine" }),
     }
+    Ok(())
+}
+
+fn validate_machine_resolution(
+    machine: &MachineProfile,
+    resolution: [u32; 2],
+) -> Result<(), ReportValidationError> {
+    match machine.wgpu_backend.as_str() {
+        "metal" if !matches!(resolution, [1920, 1080] | [2560, 1440]) => {
+            Err(ReportValidationError::Identity {
+                field: "M4 resolution",
+            })
+        }
+        "vulkan" if resolution != [2560, 1440] => Err(ReportValidationError::Identity {
+            field: "Linux 3060 machine",
+        }),
+        _ => Ok(()),
+    }
+}
+
+fn blank(value: &str) -> bool {
+    value.trim().is_empty()
+}
+
+fn json_object_has_keys(value: &serde_json::Value, keys: &[&str]) -> bool {
+    value
+        .as_object()
+        .is_some_and(|object| keys.iter().all(|key| object.contains_key(*key)))
+}
+
+fn json_nullable_object_has_keys(value: Option<&serde_json::Value>, keys: &[&str]) -> bool {
+    value.is_some_and(|value| value.is_null() || json_object_has_keys(value, keys))
 }
