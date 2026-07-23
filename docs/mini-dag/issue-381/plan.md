@@ -15,6 +15,15 @@ animation assets, or any change to PR #365.
   `prove-forest`; its feature-gated facade builds the same forest.
 - `moria-bench` requires `--forest-proof` for `feasibility-mutation`, and
   `MutationFeasibilityReport` stores `forest_report_sha256`.
+- `RenderingConfig::{cluster_visibility_m,horizon_object_cell_size_m,
+  horizon_derived_lod_m}` occur only in the config type/default, presentation
+  RON and its fixture, config validation, and config documentation. No runtime
+  renderer, streaming, object-index, or other substrate-generic consumer reads
+  them.
+- `MutationWorkloadEvidence::{horizon_partition_checked,
+  horizon_excluded_base_cards,horizon_derived_records}` occur only in the
+  report schema and the F2 documentation. No producer, validator, or
+  substrate-generic accounting consumer reads them.
 - GitHub issue #66 is the open `M-044` assisted gate and #111 is the open
   paired `M-081` gate. The local graph and live issue bodies encode edges
   twice: manifest IDs in `depends_on`/“Depends on”/“Inputs” and numeric issue
@@ -65,6 +74,13 @@ animation assets, or any change to PR #365.
 7. Keep `feasibility-mutation` as a standalone scenario for now, but remove
    its `--forest-proof` argument and `forest_report_sha256` field. This does
    not make it a replacement product gate.
+8. Remove all six inspected orphan fields named above. The three rendering
+   fields describe only the retired tree-cluster/cell/derived-LOD contract, and
+   the three workload fields describe only base-card partition evidence. Do
+   not rename them, retain them as generic-looking settings, or replace them
+   with a new aggregation. Keep `object_visibility_m`, generic workload stage
+   timings/counts, changed-voxel/brick/batch counts, and renderer barrier
+   counts.
 
 ## Red/Green TDD path
 
@@ -81,20 +97,78 @@ evidence shows an expectation itself is incorrect.
 Add `crates/moria-world/tests/forest_surface_removed.rs` with repository-level
 contract tests:
 
-- `checked_in_forest_population_and_commands_are_absent` asserts that
-  `assets/config/curated_manifest.ron` and the `crates/moria-curate` workspace
-  member do not exist, and that active contributor/CLI sources contain neither
-  `prove-forest` nor `--forest-proof`.
+- `checked_in_forest_population_and_command_invocations_are_absent` asserts
+  that `assets/config/curated_manifest.ron` and `crates/moria-curate/` do not
+  exist; inspects the root workspace member list to prove the package is gone;
+  and scans the exact ordinary command surfaces `README.md`, `AGENTS.md`,
+  `.cargo/config.toml`, root `Cargo.toml`, and every `crates/*/Cargo.toml` for
+  an invocation of `prove-forest` or `--forest-proof`. It also scans the
+  non-test prefix of `crates/moria-bench/src/cli.rs` and all other
+  `crates/*/src/**/*.rs` for production CLI acceptance branches. Do not assert
+  that these tokens are absent from repository history, supersession prose,
+  disposition records, or the enforcement tests.
+  The focused `moria-bench` parser tests below are the executable proof that
+  the old option is rejected rather than merely undocumented.
+- `retired_forest_schema_is_absent_from_executable_surfaces` recursively scans
+  the exact roots `crates/moria-world/src`, `crates/moria-bench/src`,
+  `crates/moria-demo/src`, `assets/config`, and `assets/manifests` for the
+  retired report/config field identifiers. Its allowlist is limited to the
+  `#[cfg(test)]` portion of `crates/moria-bench/src/cli.rs` that passes the old
+  option to assert rejection and this enforcement test's own string literals.
+  The production portion of `cli.rs` remains scanned. The identifiers include
+  `ForestFeasibilityReport`, `forest_report_sha256`,
+  `max_horizon_tree_members_per_cell`, `cluster_visibility_m`,
+  `horizon_object_cell_size_m`, `horizon_derived_lod_m`,
+  `horizon_partition_checked`, `horizon_excluded_base_cards`, and
+  `horizon_derived_records`.
+- `retired_command_references_are_dispositioned` audits only the two retired
+  CLI spellings across `docs/**/*.md`, `docs/issues.json`, and
+  `test-specs/**/*.md`. Allowed references are explicit and executable:
+
+  - historical whole-file/prefix allowlists:
+    `docs/interview-record.md`, `docs/issue-review.md`,
+    `docs/tdd-review.md`, `docs/pm-runs/**`, and `docs/seeds/**`;
+  - supersession references: a `docs/tdd/**`,
+    `docs/design-document.md`, or `docs/engineering-evidence.md` Markdown
+    paragraph containing the token must also contain `superseded` and #380 or
+    #381; the wholly retired asset specs
+    `test-specs/issue-{210..219}.md` may retain their bodies only with the
+    required status line, while every other mixed spec must mark the
+    containing command clause superseded;
+    `docs/issues.json` references are allowed only inside nodes whose parsed
+    labels/status mark that forest clause or node superseded;
+  - disposition whole-file allowlist:
+    `docs/recovery/pr-363-disposition.md`;
+  - enforcement-reference allowlists:
+    `docs/mini-dag/issue-381/plan.md`,
+    `crates/moria-world/tests/forest_surface_removed.rs`, and the
+    `#[cfg(test)]` module of `crates/moria-bench/src/cli.rs`.
+
+  Any unclassified reference fails with its path and line/JSON node. This is
+  not a scan for words such as “forest,” “tree,” or “Horizon”; it checks that
+  retired command spellings cannot remain as ordinary invocations or active
+  clauses while preserving auditable history and negative tests.
 - `active_tracker_supersedes_the_forest_gate` parses `docs/issues.json`, asserts
   that `M-044` has the `superseded` label and a #380/#381 disposition, and
   asserts that `M-081` and `V-26` are superseded and that no non-superseded
   node depends on `M-044`, `M-081`, or `V-26`.
+- `active_tree_asset_and_horizon_specs_are_dispositioned` reads the exact
+  `test-specs/issue-{210..219}.md` set and requires the #380/#381 supersession
+  status in every file. For the mixed spec list in Green step 5, any retained
+  paragraph naming tree-Horizon membership, base cards, derived/tombstone
+  records, or the retired F1 forest digest/command must carry the same explicit
+  supersession marker. The test also asserts that `issue-67`, `issue-85`, and
+  `issue-351` still contain their generic token/source-revision, stale-result,
+  pin/evict, and reactivation lifecycle clauses; runtime preservation remains
+  covered by the existing `streaming::lifecycle` tests.
 - `active_runtime_inventory_has_no_forest_contract_assets` asserts the runtime
   asset paths exclude the curated manifest, birch/pine/bush/grass population
   assets, and tree Horizon cards while retained prop paths remain declared.
 
 These tests fail on the current tree because the manifest/crate/commands and
-asset declarations exist, #66 is active, and the dependency edges remain.
+retired schema fields and asset declarations exist, active documents still
+invoke the commands, active asset/Horizon specs lack supersession markers, #66
+is active, and the dependency edges remain.
 
 Extend existing focused tests before implementation:
 
@@ -108,11 +182,40 @@ Extend existing focused tests before implementation:
   unknown. Both expectations fail before the CLI change.
 - In `crates/moria-world/tests/telemetry_reports.rs`, replace the retired
   forest-report fixture with a valid `MutationFeasibilityReport` fixture that
-  has no `forest_report_sha256`. Assert canonical JSON omits that field while
-  the retained validators still reject an inconsistent pass flag, a non-finite
-  metric, and the wrong machine identity. This is Red because the current
-  struct/serialized schema requires the forest digest; the minimum Green change
-  is removing only that field and validator while keeping the shared checks.
+  has neither `forest_report_sha256` nor the three retired Horizon/base-card
+  workload fields. Add these focused preservation cases:
+
+  - `mutation_report_preserves_generic_identity_digests_and_truth_state`
+    validates a passing report and round-trips its schema, release build/git
+    identity, `WorldIdentity` seed/parameter digest/bounds, generic
+    `manifest_sha256`, machine/profile digest, backend, and resolution. It
+    asserts canonical JSON omits `forest_report_sha256`; rejects a malformed
+    manifest digest, git identity, or M4 machine identity; rejects
+    `passed:true` with a reason and `passed:false` without a reason; rejects
+    unsorted/duplicate/empty reasons; and accepts `passed:false` with a sorted
+    nonempty reason list. This preserves truthful failed evidence rather than
+    requiring every valid report to be green.
+  - `mutation_report_rejects_workload_and_barrier_misreconciliation` mutates
+    the passing fixture independently to cover zero request count,
+    `first_committed_frame < submitted_frame`,
+    `final_reconciled_frame < first_committed_frame`, mismatched
+    `barrier_expected_items`/`barrier_renderer_ready_items`, a missing required
+    stage timing/count, and a missing/reordered workload role. Each must retain
+    its current deterministic `Inconsistent` or `Missing` rejection.
+  - `mutation_report_preserves_accounting_and_finite_measurements` round-trips
+    exact `changed_voxels`, `changed_bricks`, `committed_batches`,
+    `stage_timings_ms`, `stage_counts`, equal renderer-barrier counts, query
+    sample counts, and observed-work maxima. It separately rejects a
+    non-finite distribution, stage timing, throughput, runnable-wait, and
+    frame metric. Deserializing JSON containing any of the four removed report
+    fields must fail under `deny_unknown_fields`.
+
+  These tests are Red because the current Rust fixtures cannot be constructed
+  without the forest digest and three Horizon fields. The minimum Green change
+  removes only those fields and their forest-digest validation; it does not
+  relax header, role, stage, reconciliation, barrier, finite-metric, identity,
+  digest, or canonical-serialization behavior and does not invent new
+  accounting relationships.
 - In `crates/moria-world/tests/asset_declarations.rs`, assert the reduced
   inventory exactly and move the shared-handle regression in
   `asset_validation.rs` from `BirchNear` to retained `Boulder`/`Rock` handles.
@@ -159,8 +262,12 @@ cargo test -p moria-bench --test query_probe
      edit-attribution, dependency-brick, and retained-memory limits. Remove
      global per-hectare counts, route clearance, birch/pine/bush/canopy ranges,
      and their defaults/validators.
-   - Remove grass density/understory and tree-Horizon cap fields from
-     `RenderingConfig`, and remove
+   - Remove grass density/understory and all four tree-Horizon fields
+     `cluster_visibility_m`, `horizon_object_cell_size_m`,
+     `horizon_derived_lod_m`, and `max_horizon_tree_members_per_cell` from
+     `RenderingConfig`. Remove their defaults and validators rather than
+     moving or renaming them: repository inspection found no
+     substrate-generic consumer. Also remove
      `forest_object_validation_max_ms` /
      `forest_object_index_build_max_ms` from `BenchmarkConfig`.
    - Make the matching deletions in
@@ -189,6 +296,14 @@ cargo test -p moria-bench --test query_probe
      `MutationFeasibilityReport`. Keep build/world/manifest digests,
      `MachineProfile`, `passed == failure_reasons.is_empty()`, sorted reasons,
      finite metrics, workload reconciliation, and canonical JSON behavior.
+   - Remove `horizon_partition_checked`, `horizon_excluded_base_cards`, and
+     `horizon_derived_records` from `MutationWorkloadEvidence` and from
+     `docs/tdd/{data-model,implementation-plan}.md`. They have no existing
+     producer or validator and encode only the retired tree-card partition;
+     do not replace them with a new aggregate or counter. Keep workload roles,
+     frame ordering, exact changed-voxel/brick/batch and stage accounting,
+     equal expected/ready renderer-barrier counts, timing distributions, and
+     query evidence.
    - Remove `max_horizon_tree_members_per_cell` from `ObjectIndexEvidence` and
      update the benchmark schema/output fixture. Keep every generic index
      accounting field.
@@ -234,11 +349,33 @@ cargo test -p moria-bench --test query_probe
      `docs/issue-review.md`, and `docs/tdd-review.md` remain history; add only a
      status banner where needed to prevent them being read as current
      authority.
-   - Mark forest-only test specs (`issue-60`, `124`, `139`, `143`, `219`,
-     `228`, `326`, `330`, `334`, `339`, `344`, and `347`) superseded in their
-     forest portions. Update generic specs `issue-49`, `52`, `69`, `81`, `341`,
-     `343`, and `352` to remove forest vocabulary/coupling while retaining
-     their substrate properties.
+   - Add an explicit `Superseded by #380/#381 for current product work` status
+     to every retired tree/vegetation asset wire-in spec
+     `test-specs/issue-{210..219}.md`; none remains an active asset contract.
+     Also mark the forest-specific portions of `issue-60`, `124`, `139`, `143`,
+     `228`, `326`, `330`, `344`, and `347` superseded. Where any of those
+     files, plus `issue-107`, `issue-334`, and `issue-339`, mix generic and
+     forest requirements, retain the generic determinism, facade boundary,
+     overlap, shared-handle, identity, config, or report validation clause and
+     mark only the forest/F1 clause superseded.
+   - Mark the tree-membership, tree-card aggregation, base-card,
+     derived/tombstone, and tree-Horizon evidence clauses superseded in
+     `issue-54`, `67`, `77`, `85`, `88`, `89`, `93`, `99`, `105`, `131`,
+     `133`, `134`, `232`, `335`, `339`, `341`, and `351`. Preserve, in those
+     same specs, the generic 32 m/4 m index caps and queries; exact
+     changed-mask attribution; authored-versus-derived ownership; key/token/
+     revision stale-result rejection; pin/evict/reactivation lifecycle;
+     atomic payload replacement; union invalidation after load; resource
+     ledger accounting; expected-versus-ready barrier rejection; terminal
+     reconciliation; identity/digest validation; and truthful evidence state.
+     In particular, `issue-67`, `issue-85`, and `issue-351` continue to specify
+     the existing generic `HorizonLifecycle` state transitions, but no longer
+     require assigned-tree partitions, base-card membership, derived records,
+     or tombstones.
+   - Update generic specs `issue-49`, `52`, `69`, `81`, `341`, `343`, and
+     `352` to remove forest vocabulary/coupling while retaining their
+     substrate properties. A superseded spec remains a historical file; do
+     not delete it or rewrite it into a replacement requirement.
    - In `docs/issues.json`, label and annotate obsolete forest-only nodes,
      including `M-017`, `M-042`, `M-043`, `M-044`, `M-081`, `M-099`, `M-100`,
      `M-129`, species/understory/card acquisition `M-130`–`M-139`,
@@ -289,14 +426,25 @@ cargo test -p moria-bench --test query_probe
   and orphan asset declarations. Use generic names only for retained generic
   behavior; do not introduce new cell sizes, formats, generators, or proof
   schemas.
-- Run a negative scan over active code/data/docs. `prove-forest`,
-  `--forest-proof`, `ForestFeasibilityReport`, `forest_report_sha256`, retired
-  config field names, and the curated-manifest asset path must be absent.
-  Historical records may mention them only behind an explicit superseded
-  status.
+- Run the executable negative scan with
+  `cargo test -p moria-world --test forest_surface_removed`. Its fixed path
+  inventory and allowlists are part of the test and must not be replaced by
+  `rg` over the whole repository. It proves the deleted file/package/workspace
+  member stay absent, ordinary contributor/build surfaces contain no old
+  invocation, executable/config sources contain no retired schema fields, the
+  runtime asset inventory is reduced, and active tracker nodes are
+  dispositioned. Separately run the `moria-bench` CLI unit test proving
+  `feasibility-mutation` succeeds without a proof and any supplied
+  `--forest-proof` is an unknown argument. Historical, supersession,
+  disposition, plan, and negative-test references remain allowed only at the
+  exact paths listed in the Red test; their tokens are not evidence that a
+  command can still be invoked.
 - Re-run the generic characterization tests above, then:
 
 ```sh
+cargo test -p moria-world --test forest_surface_removed
+cargo test -p moria-world --test telemetry_reports
+cargo test -p moria-bench cli::tests
 cargo fmt --all -- --check
 cargo check --all-targets
 cargo clippy --all-targets -- -D warnings
@@ -353,12 +501,20 @@ verify them with read-only `gh ... --json` checks immediately before and after:
 - Active config, validators, reports, tests, assets, and docs do not require
   forest area, species ratios, canopy bins/ranges, tree/bush/prop population
   density, understory, global tree spacing, or forest-route clearance.
+- The three retired tree-Horizon rendering settings and three retired
+  Horizon/base-card workload evidence fields are absent from executable/config
+  schemas; no replacement aggregation was introduced.
 - Optional tree-shaped analytic fixtures may remain, but no species/canopy
   value is a product pass condition.
 - The existing 32 m/4 m object index, sorted/deduplicated bounded queries,
   exact affected-object cap/oracles, overlap safety, ownership, mutation
   reconciliation, resource accounting, digest/machine identity, truthful
   failure state, and atomic evidence-output tests still pass.
+- `MutationFeasibilityReport` tests retain generic build/world/manifest/machine
+  identity, exact workload/stage/count/barrier serialization, frame and
+  barrier reconciliation rejection, finite-metric rejection, required stage
+  and workload-role checks, and both truthful passing and truthful failing
+  evidence states after forest fields are removed.
 - `HorizonLifecycle` keeps its existing token/revision, pin/evict,
   previous-presentation, and reactivation tests green using the relocated
   `HorizonCellKey`; only tree membership in the object index is removed.
