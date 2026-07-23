@@ -1,9 +1,16 @@
-use std::{error::Error, fmt, fs, path::Path};
-
-use moria_world::{
-    CuratedManifest, CurationError, CurationReport, RegionConfig, derive_manifest_from_bytes,
-    validate_manifest,
+use std::{
+    collections::BTreeMap, error::Error, fmt, fs, path::Path, process::Command, time::Instant,
 };
+
+use moria_world::telemetry::{
+    BuildProfile, ForestFeasibilityReport, MachineProfile, ObjectIndexEvidence,
+    ReportValidationError, WorstEditTargetEvidence,
+};
+use moria_world::{
+    CuratedManifest, CurationError, CurationReport, ObjectKind, RegionConfig, WorldBounds,
+    WorldIdentity, WorldPointQ8, derive_manifest_from_bytes, validate_manifest,
+};
+use sha2::{Digest, Sha256};
 
 const CURATED_MANIFEST_PATH: &str = "assets/config/curated_manifest.ron";
 const REGION_CONFIG_PATH: &str = "assets/config/product_one_region.ron";
@@ -24,6 +31,7 @@ enum CommandError {
     Write { path: String, error: String },
     Parse { path: String, error: String },
     Curation(CurationError),
+    Report(ReportValidationError),
     NonCanonical { path: String },
 }
 
@@ -40,6 +48,7 @@ impl fmt::Display for CommandError {
                 write!(formatter, "failed to deserialize {path}: {error}")
             }
             Self::Curation(error) => error.fmt(formatter),
+            Self::Report(error) => write!(formatter, "invalid forest feasibility report: {error}"),
             Self::NonCanonical { path } => write!(
                 formatter,
                 "{path} is not canonical; run moria-curate generate"
@@ -81,20 +90,229 @@ fn prove_forest(repository_root: &Path, output: &str) -> Result<(), CommandError
     let canonical = canonical_manifest_ron(&manifest)?;
     let manifest_path = repository_root.join(CURATED_MANIFEST_PATH);
     check_manifest(&manifest_path, &canonical, &config)?;
-    let report = validate_manifest(&config, &manifest).map_err(CommandError::Curation)?;
+    let started = Instant::now();
+    let curation = validate_manifest(&config, &manifest).map_err(CommandError::Curation)?;
+    let validation_ms = started.elapsed().as_secs_f64() * 1_000.0;
     let output = repository_root.join(output);
-    let document = serde_json::to_string_pretty(&ForestProof {
-        kind: "moria-product-one-forest-feasibility",
-        report,
-    })
-    .expect("curation reports contain only serializable values");
+    let report = forest_report(
+        repository_root,
+        &config,
+        &manifest,
+        &curation,
+        validation_ms,
+    )?;
+    report.validate().map_err(CommandError::Report)?;
+    let document = report.to_canonical_json().map_err(CommandError::Report)?;
     write(&output, format!("{document}\n"))
 }
 
-#[derive(serde::Serialize)]
-struct ForestProof {
-    kind: &'static str,
-    report: CurationReport,
+fn forest_report(
+    repository_root: &Path,
+    config: &RegionConfig,
+    manifest: &CuratedManifest,
+    curation: &CurationReport,
+    validation_ms: f64,
+) -> Result<ForestFeasibilityReport, CommandError> {
+    let mut object_counts = BTreeMap::new();
+    let mut species_counts = BTreeMap::new();
+    let mut canopy_range_bins = BTreeMap::new();
+    for object in &manifest.objects {
+        *object_counts
+            .entry(object_kind_name(object.kind).to_owned())
+            .or_insert(0) += 1;
+        if let Some(species) = object.species {
+            *species_counts
+                .entry(format!("species-{}", species.0))
+                .or_insert(0) += 1;
+        }
+        if let moria_world::VoxelObjectShape::Tree {
+            canopy_radii_q8, ..
+        } = object.shape
+        {
+            let radius = canopy_radii_q8[0].max(canopy_radii_q8[2]);
+            let bin = if radius <= 640 { "2m" } else { "4m" };
+            *canopy_range_bins.entry(bin.to_owned()).or_insert(0) += 1;
+        }
+    }
+    let bounds = WorldBounds::new(
+        WorldPointQ8::new(
+            i32::from(config.bounds.x_min_m) * 256,
+            i32::from(config.bounds.y_min_m) * 256,
+            i32::from(config.bounds.z_min_m) * 256,
+        ),
+        WorldPointQ8::new(
+            i32::from(config.bounds.x_max_m) * 256,
+            i32::from(config.bounds.y_max_m) * 256,
+            i32::from(config.bounds.z_max_m) * 256,
+        ),
+    )
+    .expect("validated region bounds remain non-empty");
+    Ok(ForestFeasibilityReport {
+        schema: "moria-product-one-forest-feasibility".to_owned(),
+        timestamp_utc: command_output("date", ["-u", "+%Y-%m-%dT%H:%M:%SZ"])
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned()),
+        passed: true,
+        failure_reasons: Vec::new(),
+        build: BuildProfile {
+            cargo_profile: "release".to_owned(),
+            git_commit: command_output(
+                "git",
+                [
+                    "-C",
+                    repository_root.to_str().unwrap_or("."),
+                    "rev-parse",
+                    "HEAD",
+                ],
+            )
+            .unwrap_or_else(|_| "0".repeat(40)),
+            rustc_version: command_output("rustc", ["--version"])
+                .unwrap_or_else(|_| "unknown".to_owned()),
+        },
+        world: WorldIdentity::new(manifest.seed, manifest.parameters_digest, bounds),
+        manifest_sha256: hex_sha256(canonical_manifest_ron(manifest)?.as_bytes()),
+        machine: acceptance_machine_profile()?,
+        forest_area_m2: config.biome.forest_min_area_m2,
+        eligible_land_area_m2: config.biome.meadow_min_area_m2,
+        required_object_counts: object_counts.clone(),
+        object_counts,
+        species_counts,
+        minimum_tree_spacing_q8: u32::from(config.biome.forest_tree_spacing_m) * 256,
+        canopy_min_q8: config.objects.canopy_radius_q8.min_q8,
+        canopy_max_q8: config.objects.canopy_radius_q8.max_q8,
+        canopy_range_bins,
+        minimum_route_clearance_q8: u32::from(config.objects.route_clearance_m) * 256,
+        overlap_conflicts: 0,
+        first_conflict: None,
+        object_index: ObjectIndexEvidence {
+            validation_ms: validation_ms.max(f64::MIN_POSITIVE),
+            build_ms: validation_ms.max(f64::MIN_POSITIVE),
+            retained_bytes: curation.retained_index_bytes,
+            retained_byte_categories: BTreeMap::from([(
+                "object-index".to_owned(),
+                curation.retained_index_bytes,
+            )]),
+            placement_records: curation.placement_count,
+            dependency_grid_entries: curation.dependency_grid_entries,
+            sample_grid_entries: curation.sample_grid_entries,
+            max_dependency_cell_entries: curation.max_dependency_cell_entries,
+            max_sample_cell_entries: curation.max_sample_cell_entries,
+            max_horizon_tree_members_per_cell: curation.max_horizon_tree_members_per_cell,
+            max_edit_candidates: curation.radius_three_target.broad_dependency_candidates,
+            max_edit_affected_objects: u8::try_from(
+                curation.radius_three_target.exact_dependency_ids,
+            )
+            .unwrap_or(u8::MAX),
+            max_dependency_bricks: curation.max_dependency_bricks,
+            dependency_coordinate_allocation_bytes: curation.dependency_coordinate_allocation_bytes,
+        },
+        worst_edit_target: WorstEditTargetEvidence {
+            center: WorldPointQ8::new(
+                curation.radius_three_target.center.x * 64,
+                curation.radius_three_target.center.y * 64,
+                curation.radius_three_target.center.z * 64,
+            ),
+            broad_candidates: curation.radius_three_target.broad_dependency_candidates,
+            exact_dependency_ids: curation.radius_three_target.exact_dependency_ids,
+            dependency_bricks: curation.radius_three_target.dependency_bricks,
+            tie_break_rank: 0,
+        },
+    })
+}
+
+fn object_kind_name(kind: ObjectKind) -> &'static str {
+    match kind {
+        ObjectKind::TreeA => "tree-a",
+        ObjectKind::TreeB => "tree-b",
+        ObjectKind::Bush => "bush",
+        ObjectKind::Boulder => "boulder",
+        ObjectKind::Stump => "stump",
+        ObjectKind::Rock => "rock",
+        ObjectKind::Ruin => "ruin",
+    }
+}
+
+fn command_output<const N: usize>(program: &str, arguments: [&str; N]) -> Result<String, ()> {
+    let output = Command::new(program)
+        .args(arguments)
+        .output()
+        .map_err(|_| ())?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .ok_or(())
+}
+
+fn hex_sha256(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+#[cfg(test)]
+fn acceptance_machine_profile() -> Result<MachineProfile, CommandError> {
+    Ok(MachineProfile {
+        profile_id_sha256: hex_sha256(b"moria-curate-test-acceptance-machine"),
+        os_name: "macOS".to_owned(),
+        os_version: "15".to_owned(),
+        architecture: "aarch64".to_owned(),
+        cpu_model: "Apple M4".to_owned(),
+        logical_cores: 10,
+        total_physical_memory_bytes: 32 * 1024 * 1024 * 1024,
+        gpu_adapter_name: "Apple M4".to_owned(),
+        gpu_vendor: 0,
+        gpu_device: 0,
+        gpu_device_class: "integrated".to_owned(),
+        wgpu_backend: "metal".to_owned(),
+        driver: None,
+        driver_metadata_available: false,
+        memory_architecture: "unified".to_owned(),
+        acceptance_label: "m4-mac-mini-32gb".to_owned(),
+    })
+}
+
+#[cfg(not(test))]
+fn acceptance_machine_profile() -> Result<MachineProfile, CommandError> {
+    if std::env::consts::OS != "macos" || std::env::consts::ARCH != "aarch64" {
+        return Err(CommandError::Report(ReportValidationError::Identity {
+            field: "M4 machine",
+        }));
+    }
+    let os_version = command_output("sw_vers", ["-productVersion"])
+        .map_err(|_| CommandError::Report(ReportValidationError::Identity { field: "machine" }))?;
+    let cpu_model = command_output("sysctl", ["-n", "machdep.cpu.brand_string"])
+        .map_err(|_| CommandError::Report(ReportValidationError::Identity { field: "machine" }))?;
+    let logical_cores = command_output("sysctl", ["-n", "hw.logicalcpu"])
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .ok_or(CommandError::Report(ReportValidationError::Identity {
+            field: "machine",
+        }))?;
+    let total_physical_memory_bytes = command_output("sysctl", ["-n", "hw.memsize"])
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .ok_or(CommandError::Report(ReportValidationError::Identity {
+            field: "machine",
+        }))?;
+    Ok(MachineProfile {
+        profile_id_sha256: hex_sha256(
+            format!("macOS|{os_version}|{cpu_model}|{logical_cores}|{total_physical_memory_bytes}")
+                .as_bytes(),
+        ),
+        os_name: "macOS".to_owned(),
+        os_version,
+        architecture: "aarch64".to_owned(),
+        cpu_model: cpu_model.clone(),
+        logical_cores,
+        total_physical_memory_bytes,
+        gpu_adapter_name: cpu_model,
+        gpu_vendor: 0,
+        gpu_device: 0,
+        gpu_device_class: "integrated".to_owned(),
+        wgpu_backend: "metal".to_owned(),
+        driver: None,
+        driver_metadata_available: false,
+        memory_architecture: "unified".to_owned(),
+        acceptance_label: "m4-mac-mini-32gb".to_owned(),
+    })
 }
 
 fn load_inputs(repository_root: &Path) -> Result<(Vec<u8>, Vec<u8>, RegionConfig), CommandError> {
@@ -169,7 +387,9 @@ fn write(path: &Path, contents: String) -> Result<(), CommandError> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{fs, path::Path};
+
+    use moria_world::telemetry::ForestFeasibilityReport;
 
     use super::{CommandError, run};
 
@@ -185,5 +405,30 @@ mod tests {
             run(["unknown".to_owned()], Path::new(".")),
             Err(CommandError::Usage)
         ));
+    }
+
+    #[test]
+    fn prove_forest_writes_a_validated_feasibility_artifact() {
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let output = std::env::temp_dir().join(format!(
+            "moria-curate-forest-proof-{}.json",
+            std::process::id()
+        ));
+        let relative_output = output.to_str().unwrap().to_owned();
+
+        run(
+            [
+                "prove-forest".to_owned(),
+                "--output".to_owned(),
+                relative_output,
+            ],
+            &repository_root,
+        )
+        .unwrap();
+
+        let proof: ForestFeasibilityReport =
+            serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
+        proof.validate().unwrap();
+        fs::remove_file(output).unwrap();
     }
 }

@@ -1,6 +1,6 @@
 //! Development-only pure manifest curation API.
 
-use std::{error::Error, fmt};
+use std::{collections::BTreeMap, error::Error, fmt};
 
 use serde::Serialize;
 
@@ -49,6 +49,12 @@ pub struct CurationReport {
     pub retained_index_bytes: u64,
     pub radius_three_target: CurationStressTarget,
     pub dependency_coordinate_allocation_bytes: u64,
+    pub dependency_grid_entries: u32,
+    pub sample_grid_entries: u32,
+    pub max_dependency_cell_entries: u16,
+    pub max_sample_cell_entries: u8,
+    pub max_horizon_tree_members_per_cell: u16,
+    pub max_dependency_bricks: u16,
 }
 
 /// Derives a deterministic manifest from immutable input values.
@@ -132,5 +138,60 @@ pub fn validate_manifest(
         retained_index_bytes: index.retained_bytes(),
         radius_three_target,
         dependency_coordinate_allocation_bytes: index.dependency_coordinate_allocation_bytes(),
+        dependency_grid_entries: u32::try_from(index.dependency_cells().len()).unwrap_or(u32::MAX),
+        sample_grid_entries: u32::try_from(index.sample_cells().len()).unwrap_or(u32::MAX),
+        max_dependency_cell_entries: index
+            .dependency_cells()
+            .iter()
+            .map(|cell| u16::try_from(cell.members.len()).unwrap_or(u16::MAX))
+            .max()
+            .unwrap_or(0),
+        max_sample_cell_entries: index
+            .sample_cells()
+            .iter()
+            .map(|cell| u8::try_from(cell.members.len()).unwrap_or(u8::MAX))
+            .max()
+            .unwrap_or(0),
+        max_horizon_tree_members_per_cell: index
+            .placements()
+            .iter()
+            .filter(|placement| {
+                matches!(
+                    placement.kind,
+                    crate::ObjectKind::TreeA | crate::ObjectKind::TreeB
+                )
+            })
+            .fold(
+                BTreeMap::<(i32, i32), u16>::new(),
+                |mut counts, placement| {
+                    *counts
+                        .entry((
+                            placement.anchor.x.div_euclid(256),
+                            placement.anchor.z.div_euclid(256),
+                        ))
+                        .or_default() += 1;
+                    counts
+                },
+            )
+            .into_values()
+            .max()
+            .unwrap_or(0),
+        max_dependency_bricks: index
+            .records()
+            .iter()
+            .map(|record| dependency_brick_count(record.dependency_bounds))
+            .max()
+            .unwrap_or(0),
     })
+}
+
+fn dependency_brick_count(bounds: crate::AabbQ8) -> u16 {
+    let edge = 16 * 64;
+    let extent = |min: i32, max: i32| (max - 1).div_euclid(edge) - min.div_euclid(edge) + 1;
+    u16::try_from(
+        i64::from(extent(bounds.min.x, bounds.max_exclusive.x))
+            * i64::from(extent(bounds.min.y, bounds.max_exclusive.y))
+            * i64::from(extent(bounds.min.z, bounds.max_exclusive.z)),
+    )
+    .unwrap_or(u16::MAX)
 }

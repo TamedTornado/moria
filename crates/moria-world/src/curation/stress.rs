@@ -5,6 +5,7 @@ use serde::Serialize;
 use crate::{AabbQ8, ObjectKind, ObjectSpatialIndex, VoxelCoord, WorldPointQ8};
 
 const RADIUS_Q8: i32 = 3 * 256;
+const RADIUS_VOXELS: i32 = RADIUS_Q8 / 64;
 const CELL_Q8: i32 = 32 * 256;
 const BRICK_Q8: i32 = 16 * 64;
 
@@ -24,7 +25,13 @@ pub(super) fn select_radius_three_stress_target(
         .placements()
         .iter()
         .filter(|placement| matches!(placement.kind, ObjectKind::TreeA | ObjectKind::TreeB))
-        .map(|placement| placement.anchor)
+        .map(|placement| {
+            VoxelCoord::new(
+                placement.anchor.x - RADIUS_VOXELS,
+                placement.anchor.y,
+                placement.anchor.z - RADIUS_VOXELS,
+            )
+        })
         .collect::<Vec<_>>();
     centers.sort_unstable();
     centers.dedup();
@@ -76,7 +83,8 @@ fn score(index: &ObjectSpatialIndex<'_>, center: VoxelCoord) -> Option<CurationS
         dependency_bricks: exact
             .into_iter()
             .map(|member| bricks(index.records()[member as usize].dependency_bounds))
-            .fold(0, u16::saturating_add),
+            .max()
+            .unwrap_or(0),
         changed_bricks: bricks(bounds),
     })
 }
@@ -122,7 +130,7 @@ mod tests {
     use super::select_radius_three_stress_target;
 
     #[test]
-    fn score_ties_choose_the_lexicographically_smallest_tree_center() {
+    fn score_ties_choose_the_lexicographically_smallest_surface_center() {
         let tree = |id, x| ObjectPlacement {
             id: ObjectId(id),
             kind: crate::ObjectKind::TreeA,
@@ -143,7 +151,33 @@ mod tests {
         let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
         assert_eq!(
             select_radius_three_stress_target(&index).unwrap().center,
-            crate::VoxelCoord::new(-400, 0, 0)
+            crate::VoxelCoord::new(-412, 0, -12)
         );
+    }
+
+    #[test]
+    fn considers_surface_centers_away_from_tree_anchors() {
+        let tree = |id, x| ObjectPlacement {
+            id: ObjectId(id),
+            kind: crate::ObjectKind::TreeA,
+            transform_q: QuantizedTransform {
+                translation: crate::WorldPointQ8::new(x * 64, 0, 0),
+                yaw_quarter_turns: 0,
+                uniform_scale_q8: 256,
+            },
+            species: Some(SpeciesId(1)),
+            shape: VoxelObjectShape::Tree {
+                trunk_radius_q8: 64,
+                trunk_height_q8: 256,
+                canopy_radii_q8: [128; 3],
+            },
+            anchor: crate::VoxelCoord::new(x, 0, 0),
+        };
+        let placements = [tree(1, 0), tree(2, 24)];
+        let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();
+
+        let target = select_radius_three_stress_target(&index).unwrap();
+        assert_ne!(target.center, placements[0].anchor);
+        assert_ne!(target.center, placements[1].anchor);
     }
 }
