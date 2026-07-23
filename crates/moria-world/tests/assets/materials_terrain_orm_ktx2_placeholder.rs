@@ -1,21 +1,57 @@
 use std::{fs, path::PathBuf};
 
+use bevy::{
+    asset::RenderAssetUsages,
+    image::{CompressedImageFormats, Image, ImageSampler, ImageType},
+};
 use moria_world::presentation::{AssetId, AssetLoader, AssetMissingAction, RuntimeAssetProfile};
 
 const KTX2_IDENTIFIER: [u8; 12] = [
     0xAB, b'K', b'T', b'X', b' ', b'2', b'0', 0xBB, 0x0D, 0x0A, 0x1A, 0x0A,
 ];
-const KTX_SS_BASIS_LZ: u32 = 1;
+const KTX_SS_ZSTANDARD: u32 = 2;
 const TERRAIN_WIDTH: u32 = 1024;
 const TERRAIN_LAYER_COUNT: u32 = 14;
 const TERRAIN_MIP_COUNT: u32 = 11;
 const KTX2_HEADER_BYTES: usize = 80;
 const KTX2_LEVEL_INDEX_BYTES: usize = 24;
+const KHR_DF_MODEL_UASTC: u8 = 166;
 const KHR_DF_TRANSFER_LINEAR: u8 = 1;
 
 #[test]
 fn terrain_orm_placeholder_is_a_linear_mipmapped_basis_ktx2_array() {
     let bytes = fs::read(asset_path()).expect("terrain ORM placeholder exists at its final path");
+
+    for supported_formats in [
+        CompressedImageFormats::ASTC_LDR,
+        CompressedImageFormats::BC,
+        CompressedImageFormats::ETC2,
+    ] {
+        let image = Image::from_buffer(
+            &bytes,
+            ImageType::Extension("ktx2"),
+            supported_formats,
+            false,
+            ImageSampler::Default,
+            RenderAssetUsages::default(),
+        )
+        .unwrap_or_else(|error| {
+            panic!(
+                "Bevy can parse and transcode the Basis Universal KTX2 payload for {supported_formats:?}: {error}"
+            )
+        });
+        assert_eq!(image.width(), TERRAIN_WIDTH);
+        assert_eq!(image.height(), TERRAIN_WIDTH);
+        assert_eq!(
+            image.texture_descriptor.size.depth_or_array_layers,
+            TERRAIN_LAYER_COUNT
+        );
+        assert_eq!(image.texture_descriptor.mip_level_count, TERRAIN_MIP_COUNT);
+        assert!(
+            !image.texture_descriptor.format.is_srgb(),
+            "ORM data must remain linear after transcoding"
+        );
+    }
 
     assert!(bytes.starts_with(&KTX2_IDENTIFIER));
     assert_eq!(read_u32_le(&bytes, 12), 0, "Basis textures use vkFormat 0");
@@ -34,7 +70,11 @@ fn terrain_orm_placeholder_is_a_linear_mipmapped_basis_ktx2_array() {
         "the array has one face per layer"
     );
     assert_eq!(read_u32_le(&bytes, 40), TERRAIN_MIP_COUNT);
-    assert_eq!(read_u32_le(&bytes, 44), KTX_SS_BASIS_LZ);
+    assert_eq!(
+        read_u32_le(&bytes, 44),
+        KTX_SS_ZSTANDARD,
+        "the UASTC payload uses KTX2 Zstandard supercompression"
+    );
 
     assert!(
         bytes.len() >= KTX2_HEADER_BYTES + KTX2_LEVEL_INDEX_BYTES * TERRAIN_MIP_COUNT as usize,
@@ -64,6 +104,11 @@ fn terrain_orm_placeholder_is_a_linear_mipmapped_basis_ktx2_array() {
             .checked_add(dfd_length)
             .is_some_and(|end| end <= bytes.len()),
         "the data-format descriptor lies within the KTX2 file"
+    );
+    assert_eq!(
+        bytes[dfd_offset + 12],
+        KHR_DF_MODEL_UASTC,
+        "the KTX2 data-format descriptor declares a Basis Universal UASTC payload"
     );
     assert_eq!(
         bytes[dfd_offset + 14],

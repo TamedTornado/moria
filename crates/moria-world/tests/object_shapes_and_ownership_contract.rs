@@ -1,8 +1,9 @@
 use moria_world::{
-    AIR, CUT_STONE, CollisionClass, GRANITE, LEAF, MaterialDef, MaterialRegistry, ObjectId,
-    ObjectKind, ObjectPlacement, QuantizedTransform, SolidPresentationOwner, SparseVoxelStamp,
-    StampRun, Voxel, VoxelCoord, VoxelObjectShape, VoxelSource, WOOD, WorldPointQ8,
-    dependency_contains, raw_shape_contains, sample_object_shape, sample_sparse_stamp,
+    AIR, BaseVoxel, CUT_STONE, CollisionClass, GRANITE, LEAF, MaterialDef, MaterialRegistry,
+    ObjectId, ObjectKind, ObjectPlacement, QuantizedTransform, SolidPresentationOwner,
+    SparseVoxelStamp, StampRun, VOXEL_EDGE_Q8, Voxel, VoxelCoord, VoxelObjectShape, VoxelOffset,
+    VoxelSource, WOOD, WorldPointQ8, dependency_contains, evaluate_base_voxel_with_objects,
+    raw_shape_bounds, raw_shape_contains, sample_object_shape, sample_sparse_stamp,
     solid_presentation_owner,
 };
 
@@ -111,6 +112,13 @@ fn sparse_stamp_sampling_rotates_about_its_pivot_and_preserves_air_carves() {
         sample_sparse_stamp(&placement, &stamp, VoxelCoord::new(1, 0, 0)),
         None
     );
+    placement.shape = VoxelObjectShape::SparseStamp {
+        asset_key: "different.stamp".into(),
+    };
+    assert_eq!(
+        sample_sparse_stamp(&placement, &stamp, VoxelCoord::new(0, 0, 0)),
+        None
+    );
 }
 
 #[test]
@@ -145,4 +153,125 @@ fn lazy_dependency_contains_raw_cells_and_excludes_distant_cells() {
         &placement,
         VoxelCoord::new(64, 64, 64)
     ));
+}
+
+#[test]
+fn extraction_stencil_contains_every_declared_object_extractor_read() {
+    let stencil = moria_world::OBJECT_EXTRACTION_STENCIL;
+    let unique = stencil
+        .iter()
+        .map(|offset| (offset.x, offset.y, offset.z))
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert!(stencil.len() <= 512);
+    assert_eq!(
+        unique.len(),
+        stencil.len(),
+        "stencil offsets must be unique"
+    );
+    for y in -2..=2 {
+        for z in -2..=2 {
+            for x in -2..=2 {
+                assert!(
+                    stencil.contains(&VoxelOffset { x, y, z }),
+                    "missing extractor read ({x}, {y}, {z})"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn base_object_evaluation_applies_ruin_then_lowest_object_id_then_terrain_precedence() {
+    let mut higher = placement(VoxelObjectShape::Bush { radii_q8: [256; 3] });
+    higher.id = ObjectId(12);
+    let mut lower = higher.clone();
+    lower.id = ObjectId(3);
+    let stamp = SparseVoxelStamp {
+        key: "test.stamp".into(),
+        size_voxels: [1, 1, 1],
+        pivot_voxel: [0, 0, 0],
+        palette: vec![AIR],
+        runs: vec![StampRun {
+            start_linear: 0,
+            len: 1,
+            palette_index: 0,
+            density: 0,
+        }],
+        tags: Default::default(),
+    };
+    let mut ruin = placement(VoxelObjectShape::SparseStamp {
+        asset_key: stamp.key.clone(),
+    });
+    ruin.id = ObjectId(0);
+    ruin.kind = ObjectKind::Ruin;
+    let terrain = Voxel::new(GRANITE, 255, 0, 0);
+
+    assert_eq!(
+        evaluate_base_voxel_with_objects(
+            terrain,
+            VoxelCoord::new(0, 0, 0),
+            [&higher, &lower],
+            &ruin,
+            &stamp,
+        ),
+        BaseVoxel {
+            voxel: Voxel::new(AIR, 0, 0, 0),
+            source: VoxelSource::Ruin(ObjectId(0)),
+        }
+    );
+    assert_eq!(
+        evaluate_base_voxel_with_objects(
+            terrain,
+            VoxelCoord::new(1, 0, 0),
+            [&higher, &lower],
+            &ruin,
+            &stamp,
+        ),
+        BaseVoxel {
+            voxel: Voxel::new(LEAF, 255, 0, 0),
+            source: VoxelSource::Object(ObjectId(3)),
+        }
+    );
+    assert_eq!(
+        evaluate_base_voxel_with_objects(
+            terrain,
+            VoxelCoord::new(20, 20, 20),
+            [&higher, &lower],
+            &ruin,
+            &stamp,
+        ),
+        BaseVoxel {
+            voxel: terrain,
+            source: VoxelSource::Terrain,
+        }
+    );
+}
+
+#[test]
+fn analytic_bounds_cover_tree_cells_when_canopy_extends_below_anchor() {
+    let placement = placement(VoxelObjectShape::Tree {
+        trunk_radius_q8: 32,
+        trunk_height_q8: 64,
+        canopy_radii_q8: [128; 3],
+    });
+    let bounds = raw_shape_bounds(&placement).expect("analytic tree has finite bounds");
+
+    for y in -8..=8 {
+        for z in -8..=8 {
+            for x in -8..=8 {
+                let coord = VoxelCoord::new(x, y, z);
+                if raw_shape_contains(&placement, coord) {
+                    assert!(
+                        bounds.contains(WorldPointQ8::new(
+                            x * VOXEL_EDGE_Q8 + VOXEL_EDGE_Q8 / 2,
+                            y * VOXEL_EDGE_Q8 + VOXEL_EDGE_Q8 / 2,
+                            z * VOXEL_EDGE_Q8 + VOXEL_EDGE_Q8 / 2,
+                        )),
+                        "bounds omitted sampled cell {coord:?}"
+                    );
+                }
+            }
+        }
+    }
 }

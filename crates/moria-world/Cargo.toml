@@ -40,7 +40,7 @@ path = "tests/curation_facade.rs"
 required-features = ["curation"]
 
 [dependencies]
-bevy = { workspace = true, features = ["bevy_asset", "bevy_image", "bevy_render"] }
+bevy = { workspace = true, features = ["basis-universal", "bevy_asset", "bevy_image", "bevy_render", "ktx2", "zstd_rust"] }
 basisu = "0.1"
 directories.workspace = true
 ktx2 = "0.5"

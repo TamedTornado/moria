@@ -4,9 +4,10 @@ pub mod conformance;
 
 use bevy::{
     app::FixedUpdate,
-    prelude::{App, Fixed, ResMut, Resource, Time},
+    prelude::{App, Fixed, ResMut, Resource, Time, Virtual},
     time::TimeUpdateStrategy,
 };
+use std::time::Duration;
 
 #[derive(Resource, Default)]
 struct FixedTickObserver(u64);
@@ -43,9 +44,16 @@ pub fn run_fixed_ticks(app: &mut App, count: u32) {
     }
 
     let observed_before = app.world().resource::<FixedTickObserver>().0;
+    let previous_max_delta = app.world().resource::<Time<Virtual>>().max_delta();
+    app.world_mut()
+        .resource_mut::<Time<Virtual>>()
+        .set_max_delta(Duration::MAX);
     app.insert_resource(TimeUpdateStrategy::FixedTimesteps(count));
     app.update();
 
+    app.world_mut()
+        .resource_mut::<Time<Virtual>>()
+        .set_max_delta(previous_max_delta);
     app.insert_resource(previous_strategy);
 
     let observed = app.world().resource::<FixedTickObserver>().0 - observed_before;

@@ -11,7 +11,7 @@ pub use index::{
 };
 
 pub use shapes::{
-    OBJECT_EXTRACTION_STENCIL, VoxelOffset, dependency_contains, raw_shape_bounds,
-    raw_shape_contains, sample_object_shape, sample_sparse_stamp,
+    OBJECT_EXTRACTION_STENCIL, VoxelOffset, dependency_contains, evaluate_base_voxel_with_objects,
+    raw_shape_bounds, raw_shape_contains, sample_object_shape, sample_sparse_stamp,
 };
 pub use validation::validate_object_shape_disjointness;

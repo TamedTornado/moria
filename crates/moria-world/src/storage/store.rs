@@ -198,10 +198,11 @@ impl WorldStore {
 
     /// Expands regenerated base truth for an active purpose without materializing current truth.
     pub(crate) fn materialize_detail(&mut self, brick: BrickCoord) {
+        let revision = self.revision;
         let record = self
             .active
             .entry(brick)
-            .or_insert_with(|| BrickRecord::regenerate(&self.identity, brick));
+            .or_insert_with(|| BrickRecord::regenerate(&self.identity, brick, revision));
         record.materialize(&self.identity, brick);
     }
 
@@ -213,10 +214,11 @@ impl WorldStore {
         I: IntoIterator<Item = (VoxelCoord, Voxel)>,
     {
         let changes: BTreeMap<_, _> = changes.into_iter().collect();
-        if changes
-            .iter()
-            .all(|(coordinate, value)| self.current_voxel(*coordinate) == *value)
-        {
+        let changes: Vec<_> = changes
+            .into_iter()
+            .filter(|(coordinate, value)| self.current_voxel(*coordinate) != *value)
+            .collect();
+        if changes.is_empty() {
             return self.revision;
         }
 
@@ -269,6 +271,11 @@ impl WorldStore {
     #[cfg(test)]
     pub(super) fn active_brick_count(&self) -> usize {
         self.active.len()
+    }
+
+    #[cfg(test)]
+    pub(super) fn active_revision(&self, brick: BrickCoord) -> Option<u64> {
+        self.active.get(&brick).map(BrickRecord::revision)
     }
 
     #[cfg(test)]
