@@ -975,6 +975,11 @@ fn validate_workload(
             field: "workload measurement",
         });
     }
+    if value.changed_voxels < u64::from(value.changed_bricks) {
+        return Err(ReportValidationError::Inconsistent {
+            field: "workload measurement",
+        });
+    }
     if passed
         && (value.committed_batches < value.request_count
             || value.barrier_expected_items < value.committed_batches

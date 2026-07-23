@@ -808,6 +808,20 @@ fn failed_mutation_reports_require_reasons_for_unavailable_workload_evidence() {
 }
 
 #[test]
+fn mutation_workload_rejects_more_changed_bricks_than_voxels() {
+    let mut invalid = mutation_report();
+    invalid.workloads[0].changed_voxels = 1;
+    invalid.workloads[0].changed_bricks = 2;
+
+    assert!(matches!(
+        invalid.validate(),
+        Err(ReportValidationError::Inconsistent {
+            field: "workload measurement"
+        })
+    ));
+}
+
+#[test]
 fn passing_mutation_reports_require_stage_evidence() {
     for stage in ["seams", "bevy-install"] {
         let mut invalid = mutation_report();
