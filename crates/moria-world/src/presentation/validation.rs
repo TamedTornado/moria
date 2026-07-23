@@ -746,7 +746,7 @@ fn valid_animation(
     }
     if !samplers
         .iter()
-        .all(|sampler| valid_animation_sampler_references(sampler, layout))
+        .all(|sampler| valid_animation_sampler(sampler, layout))
     {
         return false;
     }
@@ -773,10 +773,8 @@ fn valid_animation(
         else {
             return false;
         };
-        let interpolation = sampler
-            .get("interpolation")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("LINEAR");
+        let interpolation =
+            animation_interpolation(sampler).expect("validated sampler interpolation");
         let Some(expected_output_count) = (match interpolation {
             "LINEAR" | "STEP" => Some(input.count),
             "CUBICSPLINE" => input.count.checked_mul(3),
@@ -784,14 +782,6 @@ fn valid_animation(
         }) else {
             return false;
         };
-        if !input.is_f32_type("SCALAR")
-            || !finite_f32_accessor(input, layout.binary)
-            || !strictly_increasing_f32_accessor(input, layout.binary)
-            || output.component_type != 5126
-            || !finite_f32_accessor(output, layout.binary)
-        {
-            return false;
-        }
         let Some(target) = channel.get("target").and_then(serde_json::Value::as_object) else {
             return false;
         };
@@ -817,14 +807,39 @@ fn valid_animation(
     })
 }
 
-fn valid_animation_sampler_references(sampler: &serde_json::Value, layout: &GlbLayout<'_>) -> bool {
+fn valid_animation_sampler(sampler: &serde_json::Value, layout: &GlbLayout<'_>) -> bool {
+    let Some(input) = sampler
+        .get("input")
+        .and_then(value_index)
+        .and_then(|index| layout.accessor(index))
+    else {
+        return false;
+    };
+    let Some(output) = sampler
+        .get("output")
+        .and_then(value_index)
+        .and_then(|index| layout.accessor(index))
+    else {
+        return false;
+    };
+
     sampler.is_object()
-        && ["input", "output"].iter().all(|field| {
-            sampler
-                .get(*field)
-                .and_then(value_index)
-                .is_some_and(|index| layout.accessor(index).is_some())
-        })
+        && animation_interpolation(sampler).is_some()
+        && input.is_f32_type("SCALAR")
+        && finite_f32_accessor(input, layout.binary)
+        && strictly_increasing_f32_accessor(input, layout.binary)
+        && output.component_type == 5126
+        && finite_f32_accessor(output, layout.binary)
+}
+
+fn animation_interpolation(sampler: &serde_json::Value) -> Option<&str> {
+    match sampler.get("interpolation") {
+        None => Some("LINEAR"),
+        Some(interpolation) => match interpolation.as_str()? {
+            "LINEAR" | "STEP" | "CUBICSPLINE" => interpolation.as_str(),
+            _ => None,
+        },
+    }
 }
 
 fn strictly_increasing_f32_accessor(accessor: &GlbAccessor, binary: &[u8]) -> bool {
@@ -979,7 +994,10 @@ impl<'a> GlbLayout<'a> {
             if value_usize(view.get("buffer")?)? != 0 {
                 return None;
             }
-            let offset = view.get("byteOffset").and_then(value_usize).unwrap_or(0);
+            let offset = match view.get("byteOffset") {
+                Some(offset) => value_usize(offset)?,
+                None => 0,
+            };
             let length = value_usize(view.get("byteLength")?)?;
             if offset.checked_add(length)? > buffer_length {
                 return None;
@@ -1020,10 +1038,10 @@ impl<'a> GlbLayout<'a> {
                 return None;
             }
             let element_size = component_size.checked_mul(components)?;
-            let accessor_offset = accessor
-                .get("byteOffset")
-                .and_then(value_usize)
-                .unwrap_or(0);
+            let accessor_offset = match accessor.get("byteOffset") {
+                Some(offset) => value_usize(offset)?,
+                None => 0,
+            };
             let element_stride = stride.unwrap_or(element_size);
             let used = usize::try_from(count)
                 .ok()?
@@ -1646,6 +1664,16 @@ mod glb_tests {
         });
         assert!(!valid_pine(&misaligned_view));
 
+        let malformed_view_offset = mutate_pine(&fixture, |document, _| {
+            document["bufferViews"][0]["byteOffset"] = Value::from("invalid");
+        });
+        assert!(!valid_pine(&malformed_view_offset));
+
+        let malformed_accessor_offset = mutate_pine(&fixture, |document, _| {
+            document["accessors"][0]["byteOffset"] = Value::from("invalid");
+        });
+        assert!(!valid_pine(&malformed_accessor_offset));
+
         let two_byte_aligned_index_view = mutate_pine(&fixture, |document, binary| {
             document["buffers"][0]["byteLength"] = Value::from(722);
             document["bufferViews"][4]["byteOffset"] = Value::from(626);
@@ -1813,6 +1841,80 @@ mod glb_tests {
     }
 
     #[test]
+    fn glb_validation_rejects_unreferenced_animation_sampler_semantic_errors() {
+        let explorer = fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/player/explorer.glb"
+        ))
+        .expect("explorer fixture exists");
+        let (document, binary) = glb_document(&explorer).expect("explorer GLB document");
+        let layout = GlbLayout::new(&document, binary).expect("explorer GLB layout");
+        let sampler = document["animations"][0]["samplers"][0].clone();
+
+        for (field, value) in [
+            ("interpolation", Value::from("BEZIER")),
+            ("interpolation", Value::from(7)),
+            (
+                "input",
+                Value::from(
+                    layout
+                        .accessors
+                        .iter()
+                        .position(|accessor| !accessor.is_f32_type("SCALAR"))
+                        .expect("explorer has a non-time accessor"),
+                ),
+            ),
+            (
+                "output",
+                Value::from(
+                    layout
+                        .accessors
+                        .iter()
+                        .position(|accessor| accessor.component_type != 5126)
+                        .expect("explorer has a non-float accessor"),
+                ),
+            ),
+        ] {
+            let mut malformed = document.clone();
+            let mut malformed_sampler = sampler.clone();
+            malformed_sampler[field] = value;
+            malformed["animations"][0]["samplers"]
+                .as_array_mut()
+                .expect("animation samplers")
+                .push(malformed_sampler);
+
+            assert!(
+                !valid_animation(&malformed["animations"][0], &layout, malformed.get("nodes")),
+                "unreferenced samplers must validate their {field}"
+            );
+        }
+
+        for field in ["input", "output"] {
+            let mut malformed = document.clone();
+            let mut malformed_binary = binary.to_vec();
+            let accessor_index =
+                append_non_finite_scalar_accessor(&mut malformed, &mut malformed_binary);
+            let mut malformed_sampler = sampler.clone();
+            malformed_sampler[field] = Value::from(accessor_index);
+            malformed["animations"][0]["samplers"]
+                .as_array_mut()
+                .expect("animation samplers")
+                .push(malformed_sampler);
+            let malformed_layout =
+                GlbLayout::new(&malformed, &malformed_binary).expect("valid malformed layout");
+
+            assert!(
+                !valid_animation(
+                    &malformed["animations"][0],
+                    &malformed_layout,
+                    malformed.get("nodes")
+                ),
+                "unreferenced sampler {field} must reject non-finite data"
+            );
+        }
+    }
+
+    #[test]
     fn glb_validation_ignores_aligned_unknown_chunks_after_binary() {
         let mut extensible_glb = pine_fixture();
         extensible_glb.extend_from_slice(&4_u32.to_le_bytes());
@@ -1907,6 +2009,30 @@ mod glb_tests {
         bytes.extend_from_slice(&0x004E_4942u32.to_le_bytes());
         bytes.extend_from_slice(&binary);
         bytes
+    }
+
+    fn append_non_finite_scalar_accessor(document: &mut Value, binary: &mut Vec<u8>) -> usize {
+        let offset = binary.len();
+        binary.extend_from_slice(&f32::NAN.to_le_bytes());
+        document["buffers"][0]["byteLength"] = Value::from(binary.len());
+
+        let views = document["bufferViews"]
+            .as_array_mut()
+            .expect("buffer views");
+        views.push(serde_json::json!({
+            "buffer": 0,
+            "byteOffset": offset,
+            "byteLength": 4,
+        }));
+        let view_index = views.len() - 1;
+        let accessors = document["accessors"].as_array_mut().expect("accessors");
+        accessors.push(serde_json::json!({
+            "bufferView": view_index,
+            "componentType": 5126,
+            "count": 1,
+            "type": "SCALAR",
+        }));
+        accessors.len() - 1
     }
 }
 fn nonblank(value: &str) -> bool {
