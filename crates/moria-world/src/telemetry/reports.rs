@@ -174,7 +174,7 @@ pub struct ForestFeasibilityReport {
 impl ForestFeasibilityReport {
     pub fn validate(&self) -> Result<(), ReportValidationError> {
         validate_header(FOREST_SCHEMA, GateHeader::from_forest(self))?;
-        validate_forest_object_index(&self.object_index)?;
+        validate_forest_object_index(&self.object_index, self.passed)?;
         validate_named_counts(&self.object_counts)?;
         validate_named_counts(&self.required_object_counts)?;
         validate_named_counts(&self.species_counts)?;
@@ -384,9 +384,10 @@ fn validate_header(
     if !sorted_unique_nonempty(header.failure_reasons) {
         return Err(ReportValidationError::FailureReasons);
     }
-    if header.build.cargo_profile != "release"
-        || !is_git_commit(&header.build.git_commit)
-        || header.build.rustc_version.is_empty()
+    if header.passed
+        && (header.build.cargo_profile != "release"
+            || !is_git_commit(&header.build.git_commit)
+            || header.build.rustc_version.is_empty())
     {
         return Err(ReportValidationError::Identity { field: "build" });
     }
@@ -395,7 +396,11 @@ fn validate_header(
             field: "manifest_sha256",
         });
     }
-    validate_m4_machine(header.machine)
+    if header.passed {
+        validate_m4_machine(header.machine)
+    } else {
+        Ok(())
+    }
 }
 
 fn validate_m4_machine(machine: &MachineProfile) -> Result<(), ReportValidationError> {
@@ -452,8 +457,17 @@ fn validate_object_index(value: &ObjectIndexEvidence) -> Result<(), ReportValida
     Ok(())
 }
 
-fn validate_forest_object_index(value: &ObjectIndexEvidence) -> Result<(), ReportValidationError> {
-    validate_object_index(value)?;
+fn validate_forest_object_index(
+    value: &ObjectIndexEvidence,
+    enforce_limits: bool,
+) -> Result<(), ReportValidationError> {
+    if enforce_limits {
+        validate_object_index(value)?;
+    } else {
+        finite(value.validation_ms, "object_index.validation_ms")?;
+        finite(value.build_ms, "object_index.build_ms")?;
+        validate_named_counts(&value.retained_byte_categories)?;
+    }
     if value.validation_ms <= 0.0
         || value.build_ms <= 0.0
         || value.placement_records == 0

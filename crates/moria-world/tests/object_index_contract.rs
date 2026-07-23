@@ -124,3 +124,24 @@ fn broad_edit_candidates_are_not_mistaken_for_exact_affected_objects() {
 
     assert_eq!(index.placements().len(), 70);
 }
+
+#[test]
+fn exact_edit_hits_cannot_exceed_the_configured_cap() {
+    let placements = (0..65)
+        .map(|index| boulder(u64::try_from(index + 1).unwrap(), 0, 0))
+        .collect::<Vec<_>>();
+    let config = ObjectIndexConfig {
+        max_edit_dependency_candidates: 256,
+        max_affected_objects_per_edit: 64,
+        max_sample_members_per_cell: 65,
+        ..ObjectIndexConfig::default()
+    };
+
+    assert!(matches!(
+        build_object_index(&placements, &config),
+        Err(ManifestError::ObjectEditAffectedExceeded {
+            actual: 65,
+            maximum: 64,
+        })
+    ));
+}

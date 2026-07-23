@@ -83,8 +83,8 @@ pub fn derive_manifest(
     derive_manifest_from_bytes(config_bytes.as_bytes(), stamp_bytes.as_bytes())
 }
 
-/// Derives a manifest from the authoritative configuration and stamp bytes.
-pub fn derive_manifest_from_bytes(
+/// Derives a manifest from the canonical serialization owned by this facade.
+fn derive_manifest_from_bytes(
     config_bytes: &[u8],
     stamp_bytes: &[u8],
 ) -> Result<CuratedManifest, CurationError> {

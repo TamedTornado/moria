@@ -18,7 +18,8 @@ fn curation_package_depends_on_the_feature_gated_world_facade_only() {
             "curation CLI must not use {forbidden}"
         );
     }
-    assert!(source.contains("derive_manifest"));
+    assert!(source.contains("derive_manifest("));
+    assert!(!source.contains("derive_manifest_from_bytes"));
     assert!(source.contains("validate_manifest"));
 }
 

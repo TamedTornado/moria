@@ -1,4 +1,6 @@
-use std::{collections::BTreeMap, error::Error, fmt, fs, path::Path, process::Command};
+use std::{
+    collections::BTreeMap, error::Error, fmt, fs, path::Path, process::Command, time::Instant,
+};
 
 use moria_world::telemetry::{
     BuildProfile, ForestFeasibilityReport, MachineProfile, ObjectIndexEvidence,
@@ -6,7 +8,7 @@ use moria_world::telemetry::{
 };
 use moria_world::{
     BiomeId, ColumnCoord, CuratedManifest, CurationError, CurationReport, ObjectKind, RegionConfig,
-    WorldBounds, WorldIdentity, WorldPointQ8, biome_at, derive_manifest_from_bytes,
+    SparseVoxelStamp, WorldBounds, WorldIdentity, WorldPointQ8, biome_at, derive_manifest,
     validate_manifest,
 };
 use sha2::{Digest, Sha256};
@@ -70,9 +72,8 @@ fn run(
         }
         _ => return Err(CommandError::Usage),
     };
-    let (config_bytes, stamp_bytes, config) = load_inputs(repository_root)?;
-    let manifest =
-        derive_manifest_from_bytes(&config_bytes, &stamp_bytes).map_err(CommandError::Curation)?;
+    let (config, stamp) = load_inputs(repository_root)?;
+    let manifest = derive_manifest(config.seed, &config, &stamp).map_err(CommandError::Curation)?;
     let canonical = canonical_manifest_ron(&manifest)?;
     let manifest_path = repository_root.join(CURATED_MANIFEST_PATH);
 
@@ -93,20 +94,38 @@ fn prove_forest(repository_root: &Path, output: &str) -> Result<(), CommandError
 }
 
 fn prove_forest_inner(repository_root: &Path, output: &Path) -> Result<(), CommandError> {
-    let (config_bytes, stamp_bytes, config) = load_inputs(repository_root)?;
-    let manifest =
-        derive_manifest_from_bytes(&config_bytes, &stamp_bytes).map_err(CommandError::Curation)?;
+    let validation_started = Instant::now();
+    let (config, stamp) = load_inputs(repository_root)?;
+    let manifest = derive_manifest(config.seed, &config, &stamp).map_err(CommandError::Curation)?;
     let canonical = canonical_manifest_ron(&manifest)?;
     let manifest_path = repository_root.join(CURATED_MANIFEST_PATH);
     check_manifest(&manifest_path, &canonical, &config)?;
     let curation = validate_manifest(&config, &manifest).map_err(CommandError::Curation)?;
-    let report = forest_report(repository_root, &config, &manifest, &curation)?;
-    report.validate().map_err(CommandError::Report)?;
+    let full_validation_us =
+        u64::try_from(validation_started.elapsed().as_micros()).unwrap_or(u64::MAX);
+    let mut report = forest_report(
+        repository_root,
+        &config,
+        &manifest,
+        &curation,
+        full_validation_us,
+    )?;
+    if let Err(error) = report.validate() {
+        report.passed = false;
+        report.failure_reasons = vec![error.to_string()];
+        report.required_object_counts = report.object_counts.clone();
+        let document = report.to_canonical_json().map_err(CommandError::Report)?;
+        write(output, format!("{document}\n"))?;
+        return Err(CommandError::Report(error));
+    }
     let document = report.to_canonical_json().map_err(CommandError::Report)?;
     write(output, format!("{document}\n"))
 }
 
 fn write_failed_forest_artifact(output: &Path, error: &CommandError) -> Result<(), CommandError> {
+    if output.exists() {
+        return Ok(());
+    }
     let document = serde_json::json!({
         "schema": "moria-product-one-forest-feasibility",
         "passed": false,
@@ -120,6 +139,7 @@ fn forest_report(
     config: &RegionConfig,
     manifest: &CuratedManifest,
     curation: &CurationReport,
+    full_validation_us: u64,
 ) -> Result<ForestFeasibilityReport, CommandError> {
     let mut object_counts = BTreeMap::new();
     let mut species_counts = BTreeMap::new();
@@ -211,7 +231,7 @@ fn forest_report(
         },
         world: WorldIdentity::new(manifest.seed, manifest.parameters_digest, bounds),
         manifest_sha256: hex_sha256(canonical_manifest_ron(manifest)?.as_bytes()),
-        machine: acceptance_machine_profile()?,
+        machine: acceptance_machine_profile().unwrap_or_else(|_| incomplete_machine_profile()),
         forest_area_m2,
         eligible_land_area_m2,
         required_object_counts,
@@ -225,8 +245,7 @@ fn forest_report(
         overlap_conflicts: 0,
         first_conflict: None,
         object_index: ObjectIndexEvidence {
-            validation_ms: (curation.object_index_validation_us as f64 / 1_000.0)
-                .max(f64::MIN_POSITIVE),
+            validation_ms: (full_validation_us as f64 / 1_000.0).max(f64::MIN_POSITIVE),
             build_ms: (curation.object_index_build_us as f64 / 1_000.0).max(f64::MIN_POSITIVE),
             retained_bytes: curation.retained_index_bytes,
             retained_byte_categories: BTreeMap::from([(
@@ -373,6 +392,30 @@ fn hex_sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+fn incomplete_machine_profile() -> MachineProfile {
+    let os_name = std::env::consts::OS.to_owned();
+    let architecture = std::env::consts::ARCH.to_owned();
+    let profile_id_sha256 = hex_sha256(format!("{os_name}|{architecture}").as_bytes());
+    MachineProfile {
+        profile_id_sha256,
+        os_name,
+        os_version: "unavailable".to_owned(),
+        architecture,
+        cpu_model: "unavailable".to_owned(),
+        logical_cores: 1,
+        total_physical_memory_bytes: 1,
+        gpu_adapter_name: "unavailable".to_owned(),
+        gpu_vendor: 0,
+        gpu_device: 0,
+        gpu_device_class: "unavailable".to_owned(),
+        wgpu_backend: "unavailable".to_owned(),
+        driver: None,
+        driver_metadata_available: false,
+        memory_architecture: "unavailable".to_owned(),
+        acceptance_label: "unavailable".to_owned(),
+    }
+}
+
 #[cfg(test)]
 fn acceptance_machine_profile() -> Result<MachineProfile, CommandError> {
     Ok(MachineProfile {
@@ -441,7 +484,7 @@ fn acceptance_machine_profile() -> Result<MachineProfile, CommandError> {
     })
 }
 
-fn load_inputs(repository_root: &Path) -> Result<(Vec<u8>, Vec<u8>, RegionConfig), CommandError> {
+fn load_inputs(repository_root: &Path) -> Result<(RegionConfig, SparseVoxelStamp), CommandError> {
     let config_path = repository_root.join(REGION_CONFIG_PATH);
     let config_bytes = read(&config_path)?;
     let config = ron::de::from_bytes(&config_bytes).map_err(|error| CommandError::Parse {
@@ -450,7 +493,11 @@ fn load_inputs(repository_root: &Path) -> Result<(Vec<u8>, Vec<u8>, RegionConfig
     })?;
     let stamp_path = repository_root.join(RUIN_STAMP_PATH);
     let stamp_bytes = read(&stamp_path)?;
-    Ok((config_bytes, stamp_bytes, config))
+    let stamp = ron::de::from_bytes(&stamp_bytes).map_err(|error| CommandError::Parse {
+        path: stamp_path.display().to_string(),
+        error: error.to_string(),
+    })?;
+    Ok((config, stamp))
 }
 
 fn read(path: &Path) -> Result<Vec<u8>, CommandError> {
@@ -515,6 +562,8 @@ fn write(path: &Path, contents: String) -> Result<(), CommandError> {
 mod tests {
     use std::{fs, path::Path};
 
+    use moria_world::telemetry::ForestFeasibilityReport;
+
     use super::{CommandError, run};
 
     #[test]
@@ -552,10 +601,11 @@ mod tests {
             .is_err()
         );
 
-        let proof: serde_json::Value = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
-        assert_eq!(proof["schema"], "moria-product-one-forest-feasibility");
-        assert_eq!(proof["passed"], false);
-        assert!(!proof["failure_reasons"].as_array().unwrap().is_empty());
+        let proof: ForestFeasibilityReport =
+            serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
+        assert!(!proof.passed);
+        assert!(!proof.failure_reasons.is_empty());
+        proof.validate().unwrap();
         fs::remove_file(output).unwrap();
     }
 }

@@ -13,6 +13,7 @@ const ALLOCATOR_BYTES: u64 = 16;
 const DEPENDENCY_CELL_METERS: i32 = 32;
 const SAMPLE_CELL_METERS: i32 = 4;
 const HORIZON_CELL_METERS: i32 = 64;
+const EDIT_RADIUS_Q8: i32 = 3 * Q8_UNITS_PER_METER;
 
 /// One horizontal 32 m dependency-table key.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -252,7 +253,7 @@ pub fn build_object_index<'a>(
         &dependency_cells,
         &sample_cells,
     );
-    validate_edit_caps(&dependency_cells, config)?;
+    validate_edit_caps(&dependency_cells, &records, config)?;
     if retained_bytes > u64::from(config.max_retained_bytes) {
         return Err(ManifestError::ObjectIndexRetainedBytesExceeded {
             actual: retained_bytes,
@@ -270,9 +271,11 @@ pub fn build_object_index<'a>(
 
 fn validate_edit_caps(
     cells: &[DependencyGridCell],
+    records: &[ObjectIndexRecord],
     config: &ObjectIndexConfig,
 ) -> Result<(), ManifestError> {
     let mut starts = BTreeMap::<DependencyGridCellKey, ()>::new();
+    let mut exact_overlap_cache = BTreeMap::<Vec<u32>, Option<u16>>::new();
     for cell in cells {
         for x_offset in [-1_i16, 0] {
             for z_offset in [-1_i16, 0] {
@@ -308,8 +311,120 @@ fn validate_edit_caps(
                 maximum: config.max_edit_dependency_candidates,
             });
         }
+        if actual > u16::from(config.max_affected_objects_per_edit) {
+            let affected = *exact_overlap_cache
+                .entry(members.clone())
+                .or_insert_with(|| {
+                    exact_edit_overlap_exceeding(
+                        &members,
+                        records,
+                        u16::from(config.max_affected_objects_per_edit),
+                    )
+                });
+            if let Some(affected) = affected {
+                return Err(ManifestError::ObjectEditAffectedExceeded {
+                    actual: affected,
+                    maximum: config.max_affected_objects_per_edit,
+                });
+            }
+        }
     }
     Ok(())
+}
+
+/// Returns an exact dependency overlap above `maximum` for a legal radius-3 m edit center.
+///
+/// A dependency bound overlaps an edit precisely while the integer voxel center
+/// lies inside its transformed center box.  Sweeping box boundaries therefore
+/// checks every distinct overlap region without conflating broad grid candidates
+/// with exact affected objects.
+fn exact_edit_overlap_exceeding(
+    members: &[u32],
+    records: &[ObjectIndexRecord],
+    maximum: u16,
+) -> Option<u16> {
+    let bounds = members
+        .iter()
+        .filter_map(|&member| records.get(usize::try_from(member).ok()?))
+        .map(|record| edit_center_bounds(record.dependency_bounds))
+        .collect::<Vec<_>>();
+    for x_members in sweep_axis(&bounds, &(0..bounds.len()).collect::<Vec<_>>(), |bound| {
+        (bound.min.x, bound.max.x)
+    }) {
+        if x_members.len() <= usize::from(maximum) {
+            continue;
+        }
+        for y_members in sweep_axis(&bounds, &x_members, |bound| (bound.min.y, bound.max.y)) {
+            if y_members.len() <= usize::from(maximum) {
+                continue;
+            }
+            for z_members in sweep_axis(&bounds, &y_members, |bound| (bound.min.z, bound.max.z)) {
+                if z_members.len() > usize::from(maximum) {
+                    return Some(u16::try_from(z_members.len()).unwrap_or(u16::MAX));
+                }
+            }
+        }
+    }
+    None
+}
+
+#[derive(Clone, Copy)]
+struct EditCenterBounds {
+    min: VoxelCoord,
+    max: VoxelCoord,
+}
+
+fn edit_center_bounds(bounds: AabbQ8) -> EditCenterBounds {
+    let minimum = |coordinate: i32| (coordinate - EDIT_RADIUS_Q8).div_euclid(VOXEL_EDGE_Q8);
+    let maximum = |coordinate: i32| (coordinate + EDIT_RADIUS_Q8 - 1).div_euclid(VOXEL_EDGE_Q8);
+    EditCenterBounds {
+        min: VoxelCoord::new(
+            minimum(bounds.min.x),
+            minimum(bounds.min.y),
+            minimum(bounds.min.z),
+        ),
+        max: VoxelCoord::new(
+            maximum(bounds.max_exclusive.x),
+            maximum(bounds.max_exclusive.y),
+            maximum(bounds.max_exclusive.z),
+        ),
+    }
+}
+
+/// Returns active member sets for all nonempty integer-coordinate slabs on one axis.
+fn sweep_axis(
+    bounds: &[EditCenterBounds],
+    members: &[usize],
+    axis: impl Fn(EditCenterBounds) -> (i32, i32),
+) -> Vec<Vec<usize>> {
+    let mut events = members
+        .iter()
+        .flat_map(|&member| {
+            let (minimum, maximum) = axis(bounds[member]);
+            [
+                (minimum, member, true),
+                (maximum.saturating_add(1), member, false),
+            ]
+        })
+        .collect::<Vec<_>>();
+    events.sort_unstable_by_key(|&(coordinate, member, starts)| (coordinate, member, starts));
+
+    let mut active = vec![false; bounds.len()];
+    let mut slabs = Vec::new();
+    for group in events.chunk_by(|left, right| left.0 == right.0) {
+        for &(_, member, starts) in group {
+            active[member] = starts;
+        }
+        let members = active
+            .iter()
+            .enumerate()
+            .filter_map(|(member, &is_active)| is_active.then_some(member))
+            .collect::<Vec<_>>();
+        if !members.is_empty() {
+            slabs.push(members);
+        }
+    }
+    slabs
 }
 
 /// Returns active placements whose raw bounds overlap `bounds`, sorted by ID.

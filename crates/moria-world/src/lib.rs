@@ -37,8 +37,7 @@ pub use curation::{
 };
 #[cfg(feature = "curation")]
 pub use curation::{
-    CurationError, CurationReport, CurationStressTarget, derive_manifest,
-    derive_manifest_from_bytes, validate_manifest,
+    CurationError, CurationReport, CurationStressTarget, derive_manifest, validate_manifest,
 };
 pub use generation::{
     AabbQ8, BiomeId, ColumnRun, ColumnSample, ProceduralClass, RunKind, WorldBounds, WorldIdentity,
