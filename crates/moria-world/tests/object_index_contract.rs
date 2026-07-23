@@ -348,6 +348,49 @@ fn edit_affected_cap_skips_region_volume_for_spread_candidates() {
 }
 
 #[test]
+fn edit_affected_cap_uses_overlap_events_for_distant_candidates() {
+    // These 65 boxes meet at one conservative edit-center event, but the
+    // boulders occupy eight distant corners so no radius-3 m edit reaches
+    // more than nine exact dependency sets. The remaining candidates stretch
+    // the region height. Validation must therefore inspect the local overlap
+    // geometry, not every voxel in the union of candidate center boxes.
+    let mut placements = (1..=65)
+        .map(|id| {
+            let corner = id % 8;
+            boulder_at(
+                id,
+                if corner & 1 == 0 { -16 } else { 16 },
+                if corner & 2 == 0 { -16 } else { 16 },
+                if corner & 4 == 0 { -16 } else { 16 },
+            )
+        })
+        .collect::<Vec<_>>();
+    placements.extend(
+        (-512..=-32)
+            .step_by(8)
+            .chain((32..512).step_by(8))
+            .enumerate()
+            .map(|(index, y)| {
+                boulder_at(
+                    u64::try_from(index + 66).expect("nonnegative test index"),
+                    0,
+                    y,
+                    0,
+                )
+            }),
+    );
+    let config = ObjectIndexConfig {
+        max_edit_dependency_candidates: 256,
+        max_affected_objects_per_edit: 64,
+        max_sample_members_per_cell: 255,
+        ..Default::default()
+    };
+
+    let result = build_object_index(&placements, &config);
+    assert!(result.is_ok(), "{result:?}");
+}
+
+#[test]
 fn placement_query_outside_region_does_not_overflow_grid_math() {
     let placements = [boulder(1, 0, 0)];
     let index = build_object_index(&placements, &ObjectIndexConfig::default()).unwrap();

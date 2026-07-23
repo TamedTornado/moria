@@ -365,41 +365,28 @@ fn max_affected_objects_for_edit(
         })
         .collect::<Vec<_>>();
 
-    let Some(first) = dependencies.first() else {
+    if dependencies.is_empty() {
         return 0;
-    };
-    let maximum_broad_overlap = max_broad_edit_overlap(&dependencies, u16::from(maximum));
-    if maximum_broad_overlap <= u16::from(maximum) {
+    }
+    let Some(broad_overlap) = broad_edit_overlap_exceeding(&dependencies, u16::from(maximum))
+    else {
         // An exact dependency hit is necessarily contained in this object's
         // expanded dependency box.  The sweep therefore proves that no legal
         // edit center can exceed the exact cap, without walking the (possibly
         // region-height) union of the boxes.
-        return maximum_broad_overlap;
-    }
-    let center_bounds =
-        dependencies
-            .iter()
-            .fold(first.0, |bounds, (centers, _)| EditCenterBounds {
-                min: VoxelCoord::new(
-                    bounds.min.x.min(centers.min.x),
-                    bounds.min.y.min(centers.min.y),
-                    bounds.min.z.min(centers.min.z),
-                ),
-                max: VoxelCoord::new(
-                    bounds.max.x.max(centers.max.x),
-                    bounds.max.y.max(centers.max.y),
-                    bounds.max.z.max(centers.max.z),
-                ),
-            });
+        return u16::from(maximum);
+    };
+    let center_bounds = broad_overlap.bounds;
     let mut observed_maximum = 0_u16;
     for x in center_bounds.min.x..=center_bounds.max.x {
         for y in center_bounds.min.y..=center_bounds.max.y {
             for z in center_bounds.min.z..=center_bounds.max.z {
                 let center = VoxelCoord::new(x, y, z);
-                let candidates = dependencies
+                let candidates = broad_overlap
+                    .members
                     .iter()
-                    .filter(|(_, dependency)| {
-                        edit_sphere_can_reach_dependency_bounds(*dependency, center)
+                    .filter(|&&index| {
+                        edit_sphere_can_reach_dependency_bounds(dependencies[index].1, center)
                     })
                     .count();
                 if candidates <= usize::from(maximum) {
@@ -408,19 +395,20 @@ fn max_affected_objects_for_edit(
                     continue;
                 }
                 let affected = u16::try_from(
-                    dependencies
+                    broad_overlap
+                        .members
                         .iter()
-                        .enumerate()
-                        .filter(|(index, (_, dependency))| {
-                            edit_sphere_can_reach_dependency_bounds(*dependency, center) && {
-                                let member = members[*index];
-                                let position = usize::try_from(member).ok();
-                                position
-                                    .and_then(|position| placements.get(position))
-                                    .is_some_and(|placement| {
-                                        edit_sphere_hits_dependency(placement, center)
-                                    })
-                            }
+                        .filter(|&&index| {
+                            edit_sphere_can_reach_dependency_bounds(dependencies[index].1, center)
+                                && {
+                                    let member = members[index];
+                                    let position = usize::try_from(member).ok();
+                                    position
+                                        .and_then(|position| placements.get(position))
+                                        .is_some_and(|placement| {
+                                            edit_sphere_hits_dependency(placement, center)
+                                        })
+                                }
                         })
                         .count(),
                 )
@@ -435,16 +423,19 @@ fn max_affected_objects_for_edit(
     observed_maximum
 }
 
-/// Returns the largest number of inclusive edit-center boxes sharing a voxel.
+struct BroadEditOverlap {
+    bounds: EditCenterBounds,
+    members: Vec<usize>,
+}
+
+/// Returns one event-local box intersection containing more than `maximum_allowed` candidates.
 ///
-/// Every maximum is witnessed at the minimum coordinate of one box on each
-/// axis.  Sweeping those x/y witnesses and maintaining z intervals makes this
-/// depend only on the bounded candidate list, rather than on world volume.
-fn max_broad_edit_overlap(
+/// The sweep visits only candidate-box boundaries.  It deliberately avoids
+/// materializing the potentially region-sized union of all candidate boxes.
+fn broad_edit_overlap_exceeding(
     dependencies: &[(EditCenterBounds, EditCenterBounds)],
     maximum_allowed: u16,
-) -> u16 {
-    let mut maximum = 0_u16;
+) -> Option<BroadEditOverlap> {
     let mut x_witnesses = dependencies
         .iter()
         .map(|(centers, _)| centers.min.x)
@@ -455,49 +446,65 @@ fn max_broad_edit_overlap(
     for x in x_witnesses {
         let active = dependencies
             .iter()
-            .map(|(centers, _)| *centers)
-            .filter(|centers| centers.min.x <= x && x <= centers.max.x)
+            .enumerate()
+            .filter(|(_, (centers, _))| centers.min.x <= x && x <= centers.max.x)
             .collect::<Vec<_>>();
-        maximum = maximum.max(max_rectangle_overlap(&active, maximum_allowed));
-        if maximum > maximum_allowed {
-            return maximum;
-        }
-    }
-    maximum
-}
-
-/// Returns the largest number of inclusive y/z rectangles sharing a voxel.
-fn max_rectangle_overlap(rectangles: &[EditCenterBounds], maximum_allowed: u16) -> u16 {
-    let mut maximum = 0_u16;
-    let mut y_witnesses = rectangles
-        .iter()
-        .map(|bounds| bounds.min.y)
-        .collect::<Vec<_>>();
-    y_witnesses.sort_unstable();
-    y_witnesses.dedup();
-
-    for y in y_witnesses {
-        let mut z_witnesses = rectangles
+        let mut y_witnesses = active
             .iter()
-            .filter(|bounds| bounds.min.y <= y && y <= bounds.max.y)
-            .map(|bounds| bounds.min.z)
+            .map(|(_, (centers, _))| centers.min.y)
             .collect::<Vec<_>>();
-        z_witnesses.sort_unstable();
-        z_witnesses.dedup();
-        for z in z_witnesses {
-            let overlap = rectangles
+        y_witnesses.sort_unstable();
+        y_witnesses.dedup();
+        for y in y_witnesses {
+            let active_y = active
                 .iter()
-                .filter(|bounds| {
-                    bounds.min.y <= y && y <= bounds.max.y && bounds.min.z <= z && z <= bounds.max.z
-                })
-                .count();
-            maximum = maximum.max(u16::try_from(overlap).unwrap_or(u16::MAX));
-            if maximum > maximum_allowed {
-                return maximum;
+                .filter(|(_, (centers, _))| centers.min.y <= y && y <= centers.max.y)
+                .copied()
+                .collect::<Vec<_>>();
+            let mut z_events = active_y
+                .iter()
+                .flat_map(|(_, (centers, _))| [(centers.min.z, 1_i16), (centers.max.z + 1, -1_i16)])
+                .collect::<Vec<_>>();
+            z_events.sort_unstable_by_key(|&(z, delta)| (z, -delta));
+            let mut overlap = 0_i16;
+            for (z, delta) in z_events {
+                overlap += delta;
+                if overlap <= i16::try_from(maximum_allowed).unwrap_or(i16::MAX) {
+                    continue;
+                }
+                let members = active_y
+                    .iter()
+                    .filter(|(_, (centers, _))| centers.min.z <= z && z <= centers.max.z)
+                    .map(|(index, _)| *index)
+                    .collect::<Vec<_>>();
+                let bounds = members
+                    .iter()
+                    .fold(dependencies[members[0]].0, |bounds, &index| {
+                        intersect_edit_center_bounds(bounds, dependencies[index].0)
+                    });
+                return Some(BroadEditOverlap { bounds, members });
             }
         }
     }
-    maximum
+    None
+}
+
+fn intersect_edit_center_bounds(
+    left: EditCenterBounds,
+    right: EditCenterBounds,
+) -> EditCenterBounds {
+    EditCenterBounds {
+        min: VoxelCoord::new(
+            left.min.x.max(right.min.x),
+            left.min.y.max(right.min.y),
+            left.min.z.max(right.min.z),
+        ),
+        max: VoxelCoord::new(
+            left.max.x.min(right.max.x),
+            left.max.y.min(right.max.y),
+            left.max.z.min(right.max.z),
+        ),
+    }
 }
 
 fn edit_center_bounds(bounds: AabbQ8) -> Option<EditCenterBounds> {
