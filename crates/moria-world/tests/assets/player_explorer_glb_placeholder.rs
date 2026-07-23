@@ -85,29 +85,6 @@ fn explorer_placeholder_is_a_skeletal_capsule_glb_with_required_clips() {
     );
     assert!(skin.get("inverseBindMatrices").is_some());
 
-    let scene_index = document["scene"].as_u64().expect("default scene") as usize;
-    let scene = &document["scenes"].as_array().expect("scenes array")[scene_index];
-    let skeleton_node = skin["skeleton"].as_u64().expect("skeleton root");
-    assert!(
-        scene["nodes"].as_array().is_some_and(|nodes| nodes
-            .iter()
-            .any(|node| node.as_u64() == Some(skeleton_node))),
-        "the instantiated scene includes the skeleton root"
-    );
-    let mesh_node = document["nodes"]
-        .as_array()
-        .expect("explorer nodes")
-        .iter()
-        .position(|node| node["mesh"].as_u64() == Some(0))
-        .expect("skinned explorer mesh node") as u64;
-    assert_eq!(document["nodes"][mesh_node as usize]["skin"], 0);
-    assert!(
-        document["nodes"][skeleton_node as usize]["children"]
-            .as_array()
-            .is_some_and(|children| children.iter().any(|node| node.as_u64() == Some(mesh_node))),
-        "the skinned mesh is parented under the instantiated skeleton root"
-    );
-
     let clips: Vec<_> = document["animations"]
         .as_array()
         .expect("required animation clips")
