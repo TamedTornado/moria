@@ -2,7 +2,7 @@
   "schema_version": "1",
   "source_manifest_sha256": "b6cd0cabdf82eef1cb6208e7a483634fa20625d5c2489eedf6ff405a18555aa5",
   "product_target": {
-    "statement": "Product identity is contested without human resolution: sources alternately define Moria as a reusable GPU-resident voxel-world substrate (Rust crate/family of crates) whose walkable-world executable is only a public-API validation harness, versus Product One (“The Walkable World”) as a product-shaped demo deliverable (generated region, player character, dig/place proof, performance targets, milestones). All sources agree the full game and System/LLM/spell/gas/combat/AI/building layers are out of current repository scope and that the substrate is meant for downstream game consumers.",
+    "statement": "Product identity is contested without human resolution: sources alternately define Moria as a reusable GPU-resident voxel-world substrate (Rust crate/family of crates) whose walkable-world executable is only a public-API validation harness, versus Product One (“The Walkable World”) as a product-shaped demo deliverable (generated region, player character, dig/place proof, performance targets, milestones). Sources agree that full game-specific layers such as the System/LLM, spells, gas policy, combat, and AI are outside current repository scope and that the substrate is meant for downstream game consumers. Whether current substrate scope includes voxel placement APIs, blueprints, mechanisms, rooms, integrity, and related voxel-world-substrate architecture remains contested pending the unresolved voxel-substrate authority and deliverable-scope decisions.",
     "supporting_claim_ids": [
       "claim_readme_substrate_crate",
       "claim_readme_harness_not_game",
@@ -16,22 +16,26 @@
       "claim_product_one_nongoals",
       "claim_product_one_what_it_buys",
       "claim_vws_substrate_not_game",
-      "claim_vws_multi_game_foundation"
+      "claim_vws_multi_game_foundation",
+      "claim_vws_weather_integrity_building"
     ],
     "supporting_decision_ids": [
       "dec_product_target",
       "dec_current_deliverable_scope",
+      "dec_authority_readme",
       "dec_authority_project_boundary",
       "dec_authority_product_one",
-      "dec_authority_seeds_readme"
+      "dec_authority_seeds_readme",
+      "dec_authority_voxel_substrate",
+      "dec_matter_simulation_current_scope"
     ]
   },
   "documents": [
     {
       "id": "src_readme",
       "path": "README.md",
-      "role": "context",
-      "notes": "Repository intro restating substrate-crate product framing and harness role; points at docs/seeds/ but does not rank seed authority."
+      "role": "unresolved",
+      "notes": "Repository intro asserts the substrate-crate product framing and validation-harness role, which compete with Product One’s product-shaped demo framing. Its authority is not selected without human feedback."
     },
     {
       "id": "src_seeds_readme",
@@ -294,7 +298,7 @@
       "id": "claim_vws_look_hybrid_meshing",
       "statement": "Recommended look strategy is hybrid: smooth isosurface extraction (surface nets or dual contouring) for terrain/structures; vegetation/clutter as voxel-backed objects or instanced dressing; default voxel size 25cm with 16³ bricks.",
       "source_ids": ["src_voxel_substrate"],
-      "locators": [{ "heading": "## 2. The Look Problem: Voxels That Don't Look Like Voxels", "lines": "19-36" }],
+      "locators": [{ "heading": "## 2. The Look Problem: Voxels That Don't Look Like Voxels", "lines": "19-36" }, { "heading": "## 3. Storage: Bricks, Palettes, Columns / ### 3.1 Brick pool", "lines": "40-46" }],
       "disposition": "supporting"
     },
     {
@@ -334,7 +338,7 @@
         { "heading": "## 8. Structural Integrity & Cave-ins", "lines": "143-152" },
         { "heading": "## 9. Building: Placement as First-Class Verb", "lines": "156-163" }
       ],
-      "disposition": "future_consumer"
+      "disposition": "unresolved"
     },
     {
       "id": "claim_vws_layering_rules",
@@ -454,7 +458,124 @@
       ],
       "selected": null,
       "status": "unresolved",
-      "rationale": "Project-boundary limits the executable to a public-API validation harness and excludes game layers. Product One specifies a concrete walkable demo, player, seed world, and performance product-spec. Seeds README asserts Product One is binding for substrate implementation and harness. Without human selection, current-deliverable breadth stays contested even though exclusion of full game/System layers is shared.",
+      "rationale": "Project-boundary limits the executable to a public-API validation harness and excludes game layers. Product One specifies a concrete walkable demo, player, seed world, and performance product-spec. Seeds README asserts Product One is binding for substrate implementation and harness. The separate API-boundary, tree-felling, and matter-simulation decisions record concrete scope conflicts that cannot be implicitly resolved by selecting this breadth decision. Without human selection, current-deliverable breadth stays contested even though exclusion of full game/System layers is shared.",
+      "resolution_source": null
+    },
+    {
+      "id": "dec_authority_readme",
+      "question": "What planning authority does the root README.md hold for product identity and the walkable executable's role?",
+      "evidence_claim_ids": [
+        "claim_readme_substrate_crate",
+        "claim_readme_harness_not_game",
+        "claim_product_one_product_statement",
+        "claim_product_one_scope_blurb",
+        "claim_boundary_product_is_substrate"
+      ],
+      "options": [
+        {
+          "id": "opt_readme_binding_boundary",
+          "label": "Binding product-boundary statement",
+          "description": "Treat the README's substrate-crate identity and harness-only role as binding constraints; this is incompatible with treating Product One as an independent game product."
+        },
+        {
+          "id": "opt_readme_supporting_context",
+          "label": "Supporting repository context",
+          "description": "Treat the README as non-binding context; the product target and harness role are determined by the selected seed authorities."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "The README directly asserts the substrate product and a harness-only executable. Those statements compete with Product One's product-shaped demo framing, and no source can self-authenticate its own authority. Human feedback must assign its role.",
+      "resolution_source": null
+    },
+    {
+      "id": "dec_api_boundary_for_dig_place",
+      "question": "For the current deliverable, must dig/place verbs and mirror queries be public substrate interfaces shared with an external-game consumer, or may they remain engine-internal debug-tool APIs?",
+      "evidence_claim_ids": [
+        "claim_boundary_harness_public_api",
+        "claim_boundary_cargo_workspace",
+        "claim_product_one_substrate_slice",
+        "claim_product_one_what_it_buys",
+        "claim_vws_layering_rules"
+      ],
+      "options": [
+        {
+          "id": "opt_api_public_shared_consumer",
+          "label": "Public shared substrate interfaces",
+          "description": "The validation harness and an external game use the same public dig/place verbs and mirror-query interfaces. This is compatible with selecting project-boundary as binding and incompatible with retaining a privileged engine-internal-only path."
+        },
+        {
+          "id": "opt_api_engine_internal_debug_only",
+          "label": "Engine-internal debug-only APIs",
+          "description": "Dig/place and mirror queries may be internal APIs used by debug tools. This follows Product One's literal wording but is incompatible with a binding project-boundary requirement that the harness consume the same public interfaces as an external game."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "Project-boundary requires the harness to use public interfaces available to an external game. Product One calls the same verbs and queries engine-internal APIs for debug tools. These are contradictory interface-boundary constraints unless one source is given a role or the human supplies a reconciliation; no reconciliation is selected here.",
+      "resolution_source": null
+    },
+    {
+      "id": "dec_tree_felling_current_scope",
+      "question": "Is voxel-tree felling with rigid-body conversion required in the current deliverable, a Product One stretch goal, or outside the selected current scope?",
+      "evidence_claim_ids": [
+        "claim_product_one_substrate_slice",
+        "claim_product_one_milestones",
+        "claim_vws_build_order",
+        "claim_vws_vegetation_objects"
+      ],
+      "options": [
+        {
+          "id": "opt_felling_required_vws_build_order",
+          "label": "Required by current substrate build order",
+          "description": "Require felling as part of the current deliverable, which follows the voxel-substrate build order only if it is selected as binding current scope. This conflicts with Product One's explicit no-felling matter slice and stretch-only milestone."
+        },
+        {
+          "id": "opt_felling_product_one_stretch",
+          "label": "Product One stretch goal only",
+          "description": "Exclude felling/rigid conversion from the current required slice and retain it only as Product One milestone 7. This conflicts with treating the voxel-substrate felling build-order step as a binding current requirement."
+        },
+        {
+          "id": "opt_felling_outside_selected_scope",
+          "label": "Outside the selected current scope",
+          "description": "Do not include felling in the present deliverable because the selected product/deliverable authority is narrower than either detailed milestone plan."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "Product One explicitly excludes felling and rigid conversion from its matter slice and calls Timber a stretch milestone, while the voxel-substrate current build order includes a voxel tree with felling. This is a current-scope consequence of the unsettled Product One and voxel-substrate authority choices, not an ordinary implementation-prioritization question.",
+      "resolution_source": null
+    },
+    {
+      "id": "dec_matter_simulation_current_scope",
+      "question": "Are brick CA (including fire), fluids tier 2, integrity, and granular settling required in the current deliverable, or excluded from the selected Product One matter slice?",
+      "evidence_claim_ids": [
+        "claim_product_one_substrate_slice",
+        "claim_product_one_milestones",
+        "claim_vws_build_order",
+        "claim_seeds_readme_vws_architecture_ref",
+        "claim_product_one_references_vws"
+      ],
+      "options": [
+        {
+          "id": "opt_matter_simulation_required_vws_build_order",
+          "label": "Required by the voxel-substrate current build order",
+          "description": "Require brick CA/fire, tier-2 fluids, integrity, and granular settling as current work because the voxel-world-substrate vertical slice is binding current scope. This conflicts with Product One's explicit exclusions, and cannot coexist with treating its partial matter slice as binding without a human-supplied reconciliation."
+        },
+        {
+          "id": "opt_matter_simulation_excluded_product_one_slice",
+          "label": "Excluded by the Product One current matter slice",
+          "description": "Do not require CA/fire, tier-2 fluids, integrity, or granular settling now; retain static tier-1 water and the other Product One-selected matter work. This conflicts with treating voxel-world-substrate build-order steps 5–7 as binding current requirements."
+        },
+        {
+          "id": "opt_matter_simulation_outside_selected_scope",
+          "label": "Outside the selected deliverable",
+          "description": "Do not select either detailed matter-simulation plan as current scope because the selected authority defines a narrower substrate/API deliverable; neither set of simulation features is required now."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "Product One explicitly says no CA, fire, fluids tier 2/3, integrity, or granular settling in its partial matter layer, while voxel-world-substrate's self-described substrate vertical-slice build order requires CA/fire, tier-1+2 fluids, and integrity/granular. The seeds index and Product One both frame voxel-world-substrate as a reference selected by Product One, but that document-role relationship has not been selected. This is therefore a material current-deliverable authority conflict, not a deferred implementation choice.",
       "resolution_source": null
     },
     {
@@ -583,6 +704,10 @@
   "unresolved_decision_ids": [
     "dec_product_target",
     "dec_current_deliverable_scope",
+    "dec_authority_readme",
+    "dec_api_boundary_for_dig_place",
+    "dec_tree_felling_current_scope",
+    "dec_matter_simulation_current_scope",
     "dec_authority_project_boundary",
     "dec_authority_product_one",
     "dec_authority_seeds_readme",
@@ -701,12 +826,10 @@
     },
     {
       "id": "ddq_fluids_tier2_solver",
-      "question": "Does fluids tier 2 need a pressure solve (DF-accurate U-bend behavior) or is momentum-only enough?",
+      "question": "If human scope resolution includes fluids tier 2, does its coarse-flow solver need a pressure solve (DF-accurate U-bend behavior) or is momentum-only enough?",
       "evidence_claim_ids": [
         "claim_vws_fluids_three_tier",
-        "claim_vws_open_questions",
-        "claim_product_one_nongoals",
-        "claim_product_one_substrate_slice"
+        "claim_vws_open_questions"
       ],
       "options": [
         {
@@ -716,13 +839,9 @@
         {
           "id": "opt_fluids_pressure_solve",
           "label": "Pressure solve for U-bend accuracy"
-        },
-        {
-          "id": "opt_fluids_tier2_out_of_current_slice",
-          "label": "Leave tier 2 out of the current Product One slice (static tier-1 only)"
         }
       ],
-      "rationale": "Architecture open question; Product One already excludes fluids beyond static bodies from its slice, so solver choice is design/future-scope detail rather than authority."
+      "rationale": "This is an architecture question only after the current-scope conflict is resolved. dec_matter_simulation_current_scope—not this deferred question—determines whether fluids tier 2 is required now; neither this question nor its options select Product One or voxel-world-substrate authority."
     },
     {
       "id": "ddq_multiplayer_scope_language",
@@ -743,30 +862,6 @@
         }
       ],
       "rationale": "Architecture flags this as an open question about scope language; it does not choose the current product identity."
-    },
-    {
-      "id": "ddq_tree_felling_stretch",
-      "question": "Is tree felling with rigid-body fall in the current milestone path or only stretch?",
-      "evidence_claim_ids": [
-        "claim_product_one_substrate_slice",
-        "claim_product_one_milestones",
-        "claim_vws_vegetation_objects"
-      ],
-      "options": [
-        {
-          "id": "opt_felling_stretch_only",
-          "label": "Stretch goal only (Product One milestone 7)"
-        },
-        {
-          "id": "opt_felling_required",
-          "label": "Required for the current deliverable"
-        },
-        {
-          "id": "opt_felling_excluded",
-          "label": "Excluded from current delivery entirely"
-        }
-      ],
-      "rationale": "Product One already marks timber/felling as stretch and excludes rigid conversion from the matter slice; remaining choice is implementation prioritization, not product authority."
     },
     {
       "id": "ddq_missing_pivot_architecture_details",
