@@ -2,7 +2,7 @@
   "schema_version": "1",
   "source_manifest_sha256": "b6cd0cabdf82eef1cb6208e7a483634fa20625d5c2489eedf6ff405a18555aa5",
   "product_target": {
-    "statement": "Product identity for this planning run is contested and not human-resolved. Competing framings are: (A) Moria as a reusable GPU-resident voxel-world substrate delivered as a Rust crate or small crate family, with any walkable-world executable only a public-API validation harness and not a game layer; and (B) Product One as “The Walkable World,” a product-shaped demo of substrate slice + one generated region + third-person character with dig/place proof, performance targets, and milestone demos. Across sources the full game, System/LLM, spells, gas, combat, AI, and building layers are out of scope for this repository. Full architecture in the substrate design spec exceeds Product One and is not uniformly claimed as the current deliverable.",
+    "statement": "Product identity for this planning run is contested and not human-resolved. Competing framings are: (A) Moria as a reusable GPU-resident voxel-world substrate delivered as a Rust crate or small crate family, with any walkable-world executable only a public-API validation harness and not a game layer; (B) Product One as “The Walkable World,” a product-shaped demo of substrate slice + one generated region + third-person character with dig/place proof, performance targets, and milestone demos; or (C) the fuller reusable substrate architecture. The sources exclude a full game and game-layer System/LLM, spells, combat, and AI, but do not uniformly settle the scope of building or gas-policy facilities: boundary/Product One material excludes a future game-facing building layer, UI/blueprints/mechanisms, and gas/pricing, while Product One affirmatively requires a hand-stamped blueprint/prefab path once and the architecture reference specifies placement, blueprints, mechanisms, rooms, and a script/API gas-policy plug-in. Whether these facilities are current substrate scope, narrowly permitted seams, or future-consumer functionality remains unresolved.",
     "supporting_claim_ids": [
       "cl_readme_substrate_product",
       "cl_readme_harness_not_game",
@@ -17,13 +17,19 @@
       "cl_seeds_readme_binding_claims",
       "cl_seeds_readme_moria_only_substrate",
       "cl_substrate_substrate_not_game",
-      "cl_substrate_standalone_engine"
+      "cl_substrate_standalone_engine",
+      "cl_substrate_broader_systems",
+      "cl_substrate_layering_crates",
+      "cl_p1_terrain_features",
+      "cl_substrate_gas_policy_seam"
     ],
     "supporting_decision_ids": [
       "dec_product_identity",
       "dec_document_authority",
       "dec_current_deliverable_scope",
-      "dec_walkable_world_role"
+      "dec_walkable_world_role",
+      "dec_building_facilities_scope",
+      "dec_gas_policy_scope"
     ]
   },
   "documents": [
@@ -173,7 +179,7 @@
     },
     {
       "id": "cl_p1_terrain_features",
-      "statement": "Seed world must produce rolling meadow, dense mixed forest, river + lake, cliff/strata outcrop, karst cave to ~-40m, aquifer band and ore vein, micro voxel objects, and a small ruin stamp.",
+      "statement": "Seed world must produce rolling meadow, dense mixed forest, river + lake, cliff/strata outcrop, karst cave to ~-40m, aquifer band and ore vein, micro voxel objects, and a small ruin placed by POI metadata using a hand-stamped blueprint; this exercises the stamp/prefab path once.",
       "source_ids": ["src_product_one"],
       "locator": { "heading": "Terrain composition (what the generator must produce from this seed)", "lines": "33-43" },
       "disposition": "supporting"
@@ -201,7 +207,7 @@
     },
     {
       "id": "cl_p1_performance_targets",
-      "statement": "Performance targets: 60fps at 1440p on 3060-class and on M4 Mac Mini; dig-to-remesh within 2 frames for 3m-radius carve; cold-start < 5s to walkable; full region under ~2GB GPU resident; delta save < 50MB after heavy defacement; benchmarks with machine profile are part of the deliverable.",
+      "statement": "Performance targets: 60fps at 1440p on a 3060-class mid GPU and 60fps at 1080p–1440p on the M4 Mac Mini dev machine; dig-to-remesh within 2 frames for 3m-radius carve; cold-start < 5s to walkable; full region under ~2GB GPU resident; delta save < 50MB after heavy defacement; benchmarks with machine profile are part of the deliverable.",
       "source_ids": ["src_product_one"],
       "locator": { "heading": "5. Performance Targets (the actual product spec)", "lines": "77-90" },
       "disposition": "unresolved"
@@ -229,9 +235,16 @@
     },
     {
       "id": "cl_substrate_companion_missing",
-      "statement": "This doc is companion to system-substrate-pivot.md and builds on GPU-resident brick pool, CA sim, and FleX-pattern coupling from the pivot doc without relitigating that design.",
+      "statement": "This document is companion to system-substrate-pivot.md.",
       "source_ids": ["src_voxel_substrate"],
       "locator": { "heading": null, "lines": "3" },
+      "disposition": "supporting"
+    },
+    {
+      "id": "cl_substrate_pivot_assumptions",
+      "statement": "The substrate specification builds on the pivot document's GPU-resident brick pool, CA simulation, and FleX-pattern coupling without relitigating that design.",
+      "source_ids": ["src_voxel_substrate"],
+      "locator": { "heading": "1. Design Goals", "lines": "13" },
       "disposition": "supporting"
     },
     {
@@ -299,10 +312,10 @@
     },
     {
       "id": "cl_substrate_broader_systems",
-      "statement": "Architecture also specifies weather/ambient sim, structural integrity/cave-ins, building placement/blueprints/mechanisms/rooms, entities/pathfinding/Z-axis nav, and persistence/streaming rings — supporting future fortress/ARPG consumers beyond Product One.",
+      "statement": "Architecture also specifies weather/ambient sim, structural integrity/cave-ins, building placement/blueprints/mechanisms/rooms, entities/pathfinding/Z-axis nav, and persistence/streaming rings, including stated fortress- and ARPG-oriented uses.",
       "source_ids": ["src_voxel_substrate"],
       "locator": { "heading": "7. Weather, Time & Ambient Simulation", "lines": "133-181" },
-      "disposition": "future_consumer"
+      "disposition": "unresolved"
     },
     {
       "id": "cl_substrate_layering_crates",
@@ -312,11 +325,18 @@
       "disposition": "supporting"
     },
     {
+      "id": "cl_substrate_gas_policy_seam",
+      "statement": "The architecture places a gas-policy plug-in in the script/API layer and describes gas as a policy object injected there, with different game clients supplying mana-gas, labor/material, or zero-price policies.",
+      "source_ids": ["src_voxel_substrate"],
+      "locator": { "heading": "12. Layering: The Substrate as Reusable Crates", "lines": "193-206" },
+      "disposition": "unresolved"
+    },
+    {
       "id": "cl_substrate_build_order",
-      "statement": "Substrate vertical-slice build order includes brick pool through persistence/streaming, with milestones that go beyond Product One (brick CA fire, tree felling, fluids tier 2, integrity/cave-ins).",
+      "statement": "The substrate specification's vertical-slice build order runs from brick pool and lazy materialization through persistence and streaming, including CA/fire, tree felling, fluids tier 1+2, and integrity/granular milestones.",
       "source_ids": ["src_voxel_substrate"],
       "locator": { "heading": "13. Build Order (vertical slice for the substrate itself)", "lines": "212-223" },
-      "disposition": "future_consumer"
+      "disposition": "unresolved"
     },
     {
       "id": "cl_substrate_open_questions",
@@ -334,8 +354,8 @@
     },
     {
       "id": "cl_substrate_system_game_clients",
-      "statement": "Downstream game clients contemplated by the substrate include System ARPG, DF-style fortress/colony, Moria-style descent roguelike, and pure sandbox; they are not this repository's product.",
-      "source_ids": ["src_voxel_substrate", "src_project_boundary"],
+      "statement": "The substrate design contemplates System ARPG, DF-style fortress/colony, Moria-style descent roguelike, and pure sandbox as consumers of the same crate stack.",
+      "source_ids": ["src_voxel_substrate"],
       "locator": { "heading": "1. Design Goals", "lines": "12" },
       "disposition": "future_consumer"
     }
@@ -355,7 +375,11 @@
         "cl_p1_what_it_buys",
         "cl_seeds_readme_binding_claims",
         "cl_seeds_readme_moria_only_substrate",
-        "cl_substrate_substrate_not_game"
+        "cl_substrate_substrate_not_game",
+        "cl_substrate_broader_systems",
+        "cl_substrate_layering_crates",
+        "cl_p1_terrain_features",
+        "cl_substrate_gas_policy_seam"
       ],
       "options": [
         {
@@ -389,7 +413,8 @@
         "cl_boundary_product_crate",
         "cl_p1_scope_blurb",
         "cl_p1_product_statement",
-        "cl_substrate_companion_missing"
+        "cl_substrate_companion_missing",
+        "cl_substrate_pivot_assumptions"
       ],
       "options": [
         {
@@ -458,6 +483,76 @@
       "resolution_source": null
     },
     {
+      "id": "dec_building_facilities_scope",
+      "question": "Do the building-related facilities in the substrate architecture belong to this planning run's current substrate scope, or are they excluded future game-facing building layers?",
+      "evidence_claim_ids": [
+        "cl_boundary_game_layers_oos",
+        "cl_p1_nongoals",
+        "cl_p1_terrain_features",
+        "cl_substrate_broader_systems",
+        "cl_substrate_layering_crates",
+        "cl_substrate_substrate_not_game"
+      ],
+      "options": [
+        {
+          "id": "opt_building_facilities_excluded",
+          "label": "Exclude all building facilities from current scope",
+          "summary": "Read the boundary's future building-layer exclusion and Product One's building UI, blueprints, and mechanisms non-goal as excluding the architecture's placement, all blueprint or stamp/prefab facilities, mechanisms, rooms, and related semantic facilities from this deliverable. This reading does not include the Product One ruin stamp path."
+        },
+        {
+          "id": "opt_building_p1_stamp_path_only",
+          "label": "Include only the Product One ruin stamp path",
+          "summary": "Include only the authoring-time hand-stamped blueprint/prefab path needed to place Product One's POI ruin, while excluding general building UI, reusable blueprint facilities, mechanisms, rooms, and other game-facing building facilities from current scope."
+        },
+        {
+          "id": "opt_building_substrate_facilities_in_scope",
+          "label": "Include substrate-level building facilities",
+          "summary": "Read the exclusion as applying to a future game-facing building layer while allowing reusable placement, a minimal authoring-time stamp/prefab path (as required for the ruin), blueprint, mechanism, and room facilities that the architecture places below the game layer."
+        },
+        {
+          "id": "opt_building_defer_with_no_current_commitment",
+          "label": "Defer facilities without current-scope commitment",
+          "summary": "Treat the architecture material as context/reference and make no current commitment to building-related facilities until a human selects the authoritative scope."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "project-boundary excludes future building layers, and Product One excludes building UI, blueprints, and mechanisms, but the same Product One source requires a hand-stamped blueprint/prefab ruin path once. In contrast, the architecture reference specifies placement APIs, blueprints, mechanisms, rooms, and a semantic layer beneath its game layer. The documents do not establish whether the minimal stamp/prefab path is distinct from the excluded blueprint facilities, an exception, or evidence that reusable building facilities are current scope; no human feedback resolves that reading.",
+      "resolution_source": null
+    },
+    {
+      "id": "dec_gas_policy_scope",
+      "question": "Does current scope exclude all gas/pricing facilities, or only concrete game policy while retaining the substrate's generic gas-policy injection seam?",
+      "evidence_claim_ids": [
+        "cl_boundary_game_layers_oos",
+        "cl_p1_scope_blurb",
+        "cl_p1_nongoals",
+        "cl_substrate_gas_policy_seam",
+        "cl_substrate_layering_crates"
+      ],
+      "options": [
+        {
+          "id": "opt_gas_all_excluded",
+          "label": "Exclude all gas/pricing facilities",
+          "summary": "Read the boundary and Product One gas/pricing exclusions as omitting even the generic gas-policy injection seam from the current deliverable."
+        },
+        {
+          "id": "opt_gas_generic_seam_only",
+          "label": "Retain generic injection seam only",
+          "summary": "Read the exclusions as applying to game-specific gas/pricing policy while retaining the reusable script/API seam with no concrete game policy implemented."
+        },
+        {
+          "id": "opt_gas_defer_no_commitment",
+          "label": "Defer without scope commitment",
+          "summary": "Treat the architecture seam as reference material and make no commitment about gas-policy facilities until a human selects the authoritative scope."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "project-boundary and Product One exclude gas or gas/pricing from the current product-shaped work. The architecture reference instead places a generic gas-policy plug-in in the script/API layer and says game clients inject their own policy. The sources do not establish whether this is a compatible generic substrate seam or a facility excluded from the run; no human feedback resolves the reading.",
+      "resolution_source": null
+    },
+    {
       "id": "dec_walkable_world_role",
       "question": "What is the authority role of the walkable-world executable relative to the substrate?",
       "evidence_claim_ids": [
@@ -496,6 +591,8 @@
     "dec_product_identity",
     "dec_document_authority",
     "dec_current_deliverable_scope",
+    "dec_building_facilities_scope",
+    "dec_gas_policy_scope",
     "dec_walkable_world_role"
   ],
   "deferred_design_questions": [
@@ -650,6 +747,7 @@
       "question": "How should planning treat GPU-resident / FleX coupling details that the substrate doc defers to the missing system-substrate-pivot.md?",
       "evidence_claim_ids": [
         "cl_substrate_companion_missing",
+        "cl_substrate_pivot_assumptions",
         "cl_p1_dev_platform",
         "cl_readme_substrate_product"
       ],
