@@ -185,3 +185,118 @@ Authority package structurally ready for human decision.
 ### Approval
 
 Approved.
+
+## Auditor Turn — 2026-07-24T07:23:47Z
+
+Mode: continue
+
+Responding to: 2026-07-24T07:11:49Z
+
+### Prior Findings Status
+
+1. **resolved — “The new LOD and object-layer decisions rely on Product One evidence that their cited claim does not contain.”** `claim-product-one-open-question-decision-bed` still quotes and locates `docs/seeds/product-one-seed.md:116`, and both decisions still cite it.
+2. **resolved — “The revised build-order disposition still obscures the current/deferred split.”** The former aggregate build-order claim remains absent, and the Product One dressing/water and matter-exclusion claims remain separate.
+3. **superseded — The prior structural approval no longer applies to the present package.** Since the approval at `2026-07-24T07:11:49Z`, both authority JSON files have been materially revised to incorporate later human feedback, including a new harness-scope decision and wholesale changes to Product One claim dispositions. Those changes require fresh authority review.
+
+### New Findings
+
+1. **unresolved — The quoted human feedback was broadened into a wholesale loss of Product One's technical authority without recording that material interpretation.** The recorded feedback says Product One is a downstream consumer/validation example rather than the repository product and specifically excludes a third-person player or character, skeletal mesh, animation, curated traversal, a prescribed forest/canopy workload, and machine-specific performance thresholds. The ledger additionally changes Product One's dig/place proof, generation slice, matter exclusions, dressing/static-water slice, GPU/meshing constraints, API sliver, benchmarks, portability rule, and substrate output from binding to `future_consumer`. That broader demotion conflicts with the seed index's statement that Product One “defines the binding substrate implementation” at `docs/seeds/README.md:6-9`, yet no decision asks whether the feedback supersedes Product One only as the product/demo deliverable or also as the selector of substrate requirements. The inconsistency is visible inside `documents`: `src-product-one` says Product One does not define current deliverables, while `src-voxel-substrate` still says “Product One and the project boundary narrow its current scope.” Add an explicit authority decision preserving both interpretations and the exact feedback limits, or obtain feedback that expressly selects the wholesale demotion. Until then, the current substrate slice is not honestly established.
+
+2. **unresolved — Tier-2 fluid scope is now silently excluded with no applicable authority.** `claim-substrate-open-fluid-tier-2` is marked `excluded`, and the former `decision-fluid-tier-2-current-scope` has been removed. But the architecture places tier-2 coarse flow in the substrate at `docs/seeds/voxel-world-substrate.md:123-129`, includes fluids tier 1+2 in the substrate build order at lines 218-220, and leaves only the pressure-versus-momentum implementation choice open at line 230. Product One excludes tier 2 only from its own slice at `docs/seeds/product-one-seed.md:61`; under the revised `downstream_consumer` role, that cannot silently exclude tier 2 from the reusable substrate. The quoted feedback does not mention fluids. Restore an explicit current/deferred/excluded scope decision and, if current, keep the solver choice visibly unresolved.
+
+3. **unresolved — The package no longer decides whether GPU residency is a current product constraint.** The current repository summary calls Moria “GPU-resident” at `README.md:3-6`, the architecture calls GPU residency a design goal at `docs/seeds/voxel-world-substrate.md:13`, and the target cites `claim-readme-summary` while omitting that material property from its statement. `decision-pivot-derived-authority` correctly limits details attributable only to the missing pivot, but it does not select whether the independently extant high-level GPU-residency requirement is current, deferred, or merely contextual. The quoted feedback identifies the reusable substrate as the product and excludes listed harness additions; it does not exclude GPU residency. Record that authority decision explicitly rather than dropping the property through omission.
+
+4. **unresolved — The multiplayer claim disposition contradicts the selected decision.** `claim-substrate-open-multiplayer` is marked `excluded`, although `decision-multiplayer-current-scope` selects an option that excludes implementation while retaining the verb/command architecture's compatibility implication. Split implementation from compatibility or use a disposition that preserves the retained part; the current single `excluded` label hides part of the selected outcome.
+
+### Questions For Coder
+
+1. Was the human feedback intended to remove Product One's authority only as the repository product and for the specifically listed demo/harness additions, or to supersede every Product One technical substrate requirement? If no additional feedback answers that, please leave the interpretation explicitly unresolved.
+2. Should GPU residency remain a current Moria constraint based on the root summary and architecture, or is it intentionally deferred/contextual? The supplied feedback quote does not answer this.
+
+### Answers To Coder
+
+None — no coder question followed the prior auditor turn.
+
+### Notes To Coder
+
+I independently reread all five configured and available source documents and followed every repository-relative document reference. All five source SHA-256 digests match `source-manifest.json`; the independently computed manifest SHA-256 is `00da87328bf38a3bd7eb6f35272e7fbea04cdeec05b10ac55f2fb594ab27a4e3` and matches the ledger; `base_revision` matches current `HEAD` (`6c68baaaa83b01d1080b3b591591569816ea3305`); and `docs/seeds/system-substrate-pivot.md` is correctly represented as missing. Both JSON files parse, all configured sources have roles, all claim source IDs and line ranges are valid, all decision/target references resolve, resolved selections name real options, the unresolved index matches the three currently labeled unresolved decisions, and `git diff --check` passes.
+
+The source inventory and mechanical integrity are sound. The blockers are authority interpretation and visible scope decisions introduced by the post-approval feedback rewrite. A later structural approval may leave material decisions unresolved, but it will not resolve them and will not authorize downstream planning.
+
+Authority package rejected.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-24T07:27:50Z
+
+Mode: continue
+
+Responding to: 2026-07-24T07:23:47Z
+
+### Responses To Findings
+
+1. Addressed: added unresolved `decision-product-one-technical-scope`. It preserves the index's statement that Product One defines the binding substrate implementation alongside the later feedback's downstream-consumer statement. The explicitly named demo/harness exclusions remain excluded; the remaining technical claims are now `unresolved`, not silently demoted to `future_consumer`.
+2. Addressed: restored tier-2 fluid scope as unresolved through `decision-fluid-tier-2-current-scope`, backed by the substrate build order, the open solver question, and Product One's consumer-slice exclusion. The pressure-versus-momentum choice remains visible and cannot be selected until tier-2 scope is selected.
+3. Addressed: added unresolved `decision-gpu-residency-current-scope`, with root-summary, architecture, Product One, and missing-pivot provenance evidence. The target no longer implies a selection that the feedback did not make.
+4. Addressed: split multiplayer into the retained compatibility claim (`supporting`) and the excluded implementation claim (`excluded`), both cited by the resolved current-scope decision.
+
+### Answers To Auditor
+
+1. No additional feedback establishes whether the comment removes only Product One's repository-product/demo authority or every Product One technical substrate requirement. I have therefore left that interpretation explicitly unresolved rather than choosing either reading.
+2. The supplied feedback does not decide GPU residency. I have left it explicitly unresolved as a current-constraint versus deferred/contextual decision; the missing pivot continues to limit verification of its detailed implementation claims.
+
+### TDD Changes Made
+
+- Parsed both authority JSON files.
+- Recomputed and matched `source_manifest_sha256` against the completed manifest.
+- Validated all claim and decision references, resolved selections, and the ordered unresolved-decision index.
+- Ran `git diff --check` successfully.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The unresolved set now also includes the Product One technical-scope interpretation, tier-2 fluid scope, and GPU-residency current-scope decision. The previously resolved repository boundary, public-interface boundary, minimal-harness exclusions, deferred multiplayer implementation, and missing-pivot limitation remain intact.
+
+## Auditor Turn — 2026-07-24T07:31:35Z
+
+Mode: approved
+
+Responding to: 2026-07-24T07:27:50Z
+
+### Prior Findings Status
+
+1. **resolved — “The quoted human feedback was broadened into a wholesale loss of Product One's technical authority without recording that material interpretation.”** `decision-product-one-technical-scope` now preserves the seed index's binding-implementation statement and the later downstream-consumer feedback as competing readings. It remains unresolved, and Product One's non-explicitly-excluded technical claims are consistently marked `unresolved`.
+2. **resolved — “Tier-2 fluid scope is now silently excluded with no applicable authority.”** `decision-fluid-tier-2-current-scope` now presents current, deferred, and excluded scope options using the substrate build order, its open solver question, and Product One's slice exclusion. No option is selected.
+3. **resolved — “The package no longer decides whether GPU residency is a current product constraint.”** `decision-gpu-residency-current-scope` records the current-constraint and deferred/contextual readings, cites all extant GPU evidence and the missing-pivot limitation, and remains visibly unresolved.
+4. **resolved — “The multiplayer claim disposition contradicts the selected decision.”** The ledger now separates the retained server-authoritative compatibility implication (`claim-substrate-open-multiplayer`, `supporting`) from excluded multiplayer implementation (`claim-substrate-multiplayer-implementation`, `excluded`), consistent with `decision-multiplayer-current-scope`.
+
+### New Findings
+
+None.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+None — the coder asked no question.
+
+### Notes To Coder
+
+I independently reread all five configured and available source documents and followed every repository-relative document reference. Their SHA-256 digests match `source-manifest.json`; the independently computed manifest digest is `00da87328bf38a3bd7eb6f35272e7fbea04cdeec05b10ac55f2fb594ab27a4e3` and matches the ledger; `base_revision` matches `HEAD` (`6c68baaaa83b01d1080b3b591591569816ea3305`); and `docs/seeds/system-substrate-pivot.md` remains accurately recorded as missing with an explicit evidentiary limitation.
+
+Both JSON files parse. Every configured source has exactly one document role; all 39 claims have valid sources and line ranges; all claim, decision, and product-target references resolve; every resolved selection names an actual option; the unresolved-decision index exactly matches the six unresolved decisions; and `git diff --check` passes. The roles and decisions distinguish the repository product, downstream consumers, validation harness, architecture reference, and provenance index without deriving the target from filename, detail, repetition, or README placement. The recorded human feedback is applied to the product boundary and its expressly named harness exclusions without silently extending it to Product One's remaining technical requirements.
+
+The Product One technical-authority interpretation, voxel size, distant-terrain LOD, object-layer scaling, tier-2 fluid scope, and GPU-residency scope remain materially unresolved. This structural approval does not resolve any of them and does not authorize downstream planning.
+
+Authority package structurally ready for human decision.
+
+### Approval
+
+Approved.
