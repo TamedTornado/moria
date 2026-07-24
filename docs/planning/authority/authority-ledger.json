@@ -1,0 +1,797 @@
+{
+  "schema_version": "1",
+  "source_manifest_sha256": "b6cd0cabdf82eef1cb6208e7a483634fa20625d5c2489eedf6ff405a18555aa5",
+  "product_target": {
+    "statement": "Product identity is contested without human resolution: sources alternately define Moria as a reusable GPU-resident voxel-world substrate (Rust crate/family of crates) whose walkable-world executable is only a public-API validation harness, versus Product One (“The Walkable World”) as a product-shaped demo deliverable (generated region, player character, dig/place proof, performance targets, milestones). All sources agree the full game and System/LLM/spell/gas/combat/AI/building layers are out of current repository scope and that the substrate is meant for downstream game consumers.",
+    "supporting_claim_ids": [
+      "claim_readme_substrate_crate",
+      "claim_readme_harness_not_game",
+      "claim_boundary_product_is_substrate",
+      "claim_boundary_game_downstream",
+      "claim_boundary_harness_public_api",
+      "claim_boundary_out_of_scope_layers",
+      "claim_seeds_readme_only_substrate",
+      "claim_seeds_readme_product_one_binding",
+      "claim_product_one_product_statement",
+      "claim_product_one_nongoals",
+      "claim_product_one_what_it_buys",
+      "claim_vws_substrate_not_game",
+      "claim_vws_multi_game_foundation"
+    ],
+    "supporting_decision_ids": [
+      "dec_product_target",
+      "dec_current_deliverable_scope",
+      "dec_authority_project_boundary",
+      "dec_authority_product_one",
+      "dec_authority_seeds_readme"
+    ]
+  },
+  "documents": [
+    {
+      "id": "src_readme",
+      "path": "README.md",
+      "role": "context",
+      "notes": "Repository intro restating substrate-crate product framing and harness role; points at docs/seeds/ but does not rank seed authority."
+    },
+    {
+      "id": "src_seeds_readme",
+      "path": "docs/seeds/README.md",
+      "role": "unresolved",
+      "notes": "Preservation index that asserts which seeds are binding; those assertions are evidence under analysis, not self-authenticating authority. Whether it functions as a binding authority index or non-binding context is an open document-authority decision."
+    },
+    {
+      "id": "src_project_boundary",
+      "path": "docs/seeds/project-boundary.md",
+      "role": "unresolved",
+      "notes": "Asserts Moria’s product is the reusable substrate crate/family and that the walkable executable is only a validation harness. Competes with Product One’s product-statement framing for product-target and current-deliverable authority."
+    },
+    {
+      "id": "src_product_one",
+      "path": "docs/seeds/product-one-seed.md",
+      "role": "unresolved",
+      "notes": "Defines Product One “The Walkable World” with product statement, seed world, substrate slice, player, performance targets, and milestones. Seeds README calls it binding; project-boundary may relegate this scope to a harness. Authority undecided without human selection."
+    },
+    {
+      "id": "src_voxel_substrate",
+      "path": "docs/seeds/voxel-world-substrate.md",
+      "role": "unresolved",
+      "notes": "World-layer architecture specification. Product One and seeds README treat it as the broader substrate reference from which a first slice is selected; it is not itself a product-identity statement. Much content is future-facing relative to Product One nongoals. Authority role remains open because it depends on Product One’s unsettled authority and on whether the full architecture binds now."
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim_readme_substrate_crate",
+      "statement": "Moria is a reusable, GPU-resident voxel-world substrate intended to be consumed by the actual game as a Rust crate.",
+      "source_ids": ["src_readme"],
+      "locators": [{ "heading": null, "lines": "3-4" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_readme_harness_not_game",
+      "statement": "Its walkable-world executable is a separate consumer and validation harness for terrain generation, streaming, meshing, editing, collision, persistence, and performance—not a game layer.",
+      "source_ids": ["src_readme"],
+      "locators": [{ "heading": null, "lines": "4-6" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_readme_seeds_preserved",
+      "statement": "The substrate inputs are preserved in docs/seeds/.",
+      "source_ids": ["src_readme"],
+      "locators": [{ "heading": null, "lines": "8" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_seeds_readme_product_one_binding",
+      "statement": "product-one-seed.md defines the binding substrate implementation and its walkable-world validation harness.",
+      "source_ids": ["src_seeds_readme"],
+      "locators": [{ "heading": null, "lines": "6-7" }],
+      "disposition": "unresolved"
+    },
+    {
+      "id": "claim_seeds_readme_vws_architecture_ref",
+      "statement": "voxel-world-substrate.md is the substrate architecture reference; only the portions selected by the Product One seed are required for this milestone.",
+      "source_ids": ["src_seeds_readme"],
+      "locators": [{ "heading": null, "lines": "8-9" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_seeds_readme_boundary_operator_binding",
+      "statement": "project-boundary.md records the operator's binding clarification: Moria is a reusable crate consumed by a separate game, and the included executable is only a public-API validation harness.",
+      "source_ids": ["src_seeds_readme"],
+      "locators": [{ "heading": null, "lines": "11-13" }],
+      "disposition": "unresolved"
+    },
+    {
+      "id": "claim_seeds_readme_only_substrate",
+      "statement": "Moria is only the voxel-world substrate. Broader game, System, LLM, spell, gas, combat, AI, and building intent is deliberately absent and out of scope.",
+      "source_ids": ["src_seeds_readme"],
+      "locators": [{ "heading": null, "lines": "15-16" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_seeds_readme_preserved_verbatim",
+      "statement": "These documents are preserved publicly and verbatim from the source material provided on 2026-07-13.",
+      "source_ids": ["src_seeds_readme"],
+      "locators": [{ "heading": null, "lines": "3-4" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_boundary_product_is_substrate",
+      "statement": "Moria's product is the reusable voxel-world substrate, exposed as a Rust crate or a small family of tightly scoped Rust crates.",
+      "source_ids": ["src_project_boundary"],
+      "locators": [{ "heading": "# Moria project boundary", "lines": "3-4" }],
+      "disposition": "unresolved"
+    },
+    {
+      "id": "claim_boundary_game_downstream",
+      "statement": "The actual game is a separate downstream consumer and is not part of this repository.",
+      "source_ids": ["src_project_boundary"],
+      "locators": [{ "heading": "# Moria project boundary", "lines": "6-7" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_boundary_harness_public_api",
+      "statement": "Moria may include a walkable-world executable, but that executable is only a validation harness and must consume the substrate through the same public interfaces available to an external game rather than owning privileged or game-specific implementation paths.",
+      "source_ids": ["src_project_boundary"],
+      "locators": [{ "heading": "# Moria project boundary", "lines": "7-10" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_boundary_cargo_workspace",
+      "statement": "There is an immediate, concrete reason to use a Cargo workspace boundary between the reusable substrate and its validation harness; the precise crate split is a technical-design decision, but the consumer boundary is not optional.",
+      "source_ids": ["src_project_boundary"],
+      "locators": [{ "heading": "# Moria project boundary", "lines": "12-14" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_boundary_out_of_scope_layers",
+      "statement": "Game rules and the future System, LLM, spell, gas, combat, AI, and building layers are out of scope; compatibility seams may be designed where substrate requirements demand them, but those layers must not be implemented here.",
+      "source_ids": ["src_project_boundary"],
+      "locators": [{ "heading": "# Moria project boundary", "lines": "16-18" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_scope_blurb",
+      "statement": "Scope: the voxel substrate, one generated region, and a character who can run around in it. No System, no spells, no gas, no game. This is the tech proven as a product-shaped demo.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "# Product One Seed — \"The Walkable World\"", "lines": "3" }],
+      "disposition": "unresolved"
+    },
+    {
+      "id": "claim_product_one_references_vws",
+      "statement": "Everything in the Product One seed references voxel-world-substrate.md; this doc pins down what gets built first, what the seed world contains, and what \"done\" looks like.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "# Product One Seed — \"The Walkable World\"", "lines": "3" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_product_statement",
+      "statement": "A generated natural world — hills, forest, river, cliffs, caves — that you can run through in third person, where everything you see is voxel truth: you can walk to any point, the terrain is continuous and smooth, and a debug key proves it's all mutable matter underneath. The demo's job is to make one claim undeniable: this is not a heightmap with props — it's a fully material world, and it looks good.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "## 1. Product Statement", "lines": "9" }],
+      "disposition": "unresolved"
+    },
+    {
+      "id": "claim_product_one_nongoals",
+      "statement": "Explicit non-goals include combat/stats/entities beyond the player/AI; The System/LLM; gas/pricing/intent; building UI/blueprints/mechanisms; fluids beyond static bodies; weather sim/seasons/growth beyond a fixed time-of-day slider; and persistence beyond reload of the same seed plus deltas (single save slot, no versioning).",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "### Non-goals (explicitly out)", "lines": "11-18" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_dig_place_in_scope",
+      "statement": "Dig and place stay in scope on a debug key, not as gameplay but as the proof that the world is mutable substrate rather than decorative terrain.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "### The one indulgence kept in", "lines": "20-21" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_region_spec",
+      "statement": "The seed region is 1km × 1km × 256m with ~25cm voxels and 16³ bricks; the whole region must not fit in memory as raw voxels.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "### Region", "lines": "30-31" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_terrain_composition",
+      "statement": "The generator must produce a curated demo region including meadow, dense mixed forest, river and lake, cliff/strata, karst cave to ~-40m, aquifer band and ore vein, micro voxel objects, and a small ruin stamp.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "### Terrain composition (what the generator must produce from this seed)", "lines": "33-43" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_materials_palette",
+      "statement": "Seed materials palette is about fourteen materials (air, water, topsoil, subsoil, sand, gravel, limestone, sandstone, shale, granite, iron-ore, wood, leaf, cut-stone) with hardness, granular flag, and render/splat properties; state nibble exists but no CA consumes it in product one.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "### Materials palette (seed set, ~14)", "lines": "45-46" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_substrate_slice",
+      "statement": "Product one builds generation layer full (continent may be stubbed), matter layer partial (brick pool, meshing, grass/clutter, voxel objects without felling, static water tier 1; no CA/fire/fluids-tier-2/3/integrity/granular settle), and script/API layer sliver (dig/place verbs and mirror queries as engine-internal API only; no embedded scripting language).",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "## 3. Substrate Slice Included", "lines": "52-64" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_player",
+      "statement": "Player is a third-person character controller (run, sprint, jump, swim) with free-orbit camera, collision against voxel truth not render mesh, Z-traversal of cave/cliffs/ruin, and debug dig/place/view tools.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "## 4. The Player", "lines": "69-73" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_performance_targets",
+      "statement": "Performance targets framed as the actual product spec include 60fps at 1440p on mid GPU / M4 constraints, dig-to-remesh within 2 frames, cold-start under 5s, full region under ~2GB GPU resident, delta save under 50MB, plus a scripted benchmark scene as deliverable.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "## 5. Performance Targets (the actual product spec)", "lines": "77-90" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_dev_platform_constraints",
+      "statement": "Dev-platform constraints: no 64-bit buffer atomics; bandwidth is the ceiling; keep FleX command/mirror architecture; stay on wgpu/WGSL with no native Metal fork in load-bearing layers; discrete-GPU targets provisional until re-baselined.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "### Dev-platform constraints (M4 Mac Mini, 32GB unified, wgpu/Metal)", "lines": "91-96" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_milestones",
+      "statement": "Ordered demoable milestones 1–6 cover hill meshing, carve tunnel, true geology, dressed world, playable continuous run, and numbers/benchmarks; milestone 7 timber/felling is stretch.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "## 6. Milestones (demoable, in order)", "lines": "100-108" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_what_it_buys",
+      "statement": "Product One buys substrate crates with enforced API boundary, a public demo artifact, measurement-based answers to substrate open questions, and a starting point for product two (fortress-mode toybox or ARPG with the System).",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "## 7. What Product One Buys", "lines": "112-117" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_product_one_product_two_future",
+      "statement": "Product two (fortress-mode toybox or the ARPG with the System) starts later from a walkable world and is not the current product.",
+      "source_ids": ["src_product_one"],
+      "locators": [{ "heading": "## 7. What Product One Buys", "lines": "117" }],
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "claim_vws_companion_pivot",
+      "statement": "Voxel World Substrate is companion to system-substrate-pivot.md and details the world layer over a fully mutable voxel substrate.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "# Voxel World Substrate — Design Specification", "lines": "3" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_vws_stand_alone_no_llm",
+      "statement": "The System (LLM) hooks are noted where they attach, but this substrate must stand alone as an engine layer with zero LLM dependency.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "# Voxel World Substrate — Design Specification", "lines": "3" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_vws_design_goals",
+      "statement": "Design goals: reads as a normal world; mutable everywhere including deep Z; substrate not game; GPU-resident per the pivot doc.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "## 1. Design Goals", "lines": "7-13" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_vws_substrate_not_game",
+      "statement": "Clean layering so the same crate stack supports the System ARPG, a DF-style fortress/colony game, a Moria-style descent roguelike, or a pure sandbox; game rules live above the substrate.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "## 1. Design Goals", "lines": "12" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_vws_multi_game_foundation",
+      "statement": "The substrate is intended as foundation for multiple downstream games (System ARPG, fortress/colony, Moria-style descent, sandbox), not as those games themselves.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "## 1. Design Goals", "lines": "12" }, { "heading": "## 12. Layering: The Substrate as Reusable Crates", "lines": "185-208" }],
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "claim_vws_look_hybrid_meshing",
+      "statement": "Recommended look strategy is hybrid: smooth isosurface extraction (surface nets or dual contouring) for terrain/structures; vegetation/clutter as voxel-backed objects or instanced dressing; default voxel size 25cm with 16³ bricks.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "## 2. The Look Problem: Voxels That Don't Look Like Voxels", "lines": "19-36" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_vws_storage_bricks",
+      "statement": "Storage uses a brick pool with homogeneous sentinels, packed per-voxel payload, per-brick aggregates, and a 2D column index for surface/Z-slice/worldgen lazy materialization.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "## 3. Storage: Bricks, Palettes, Columns", "lines": "40-66" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_vws_geology_pipeline",
+      "statement": "World generation is geology-first layered pipeline (continent/climate, terrain, strata, caves/voids) with lazy brick materialization and System attachment only on metadata/placement/palettes, not geology noise.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "## 4. World Generation: Geology First", "lines": "70-92" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_vws_vegetation_objects",
+      "statement": "Trees and micro props are voxel objects; grass/clutter is instanced dressing from voxel data; granular materials get settle rules.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "## 5. Vegetation & Surface Dressing", "lines": "96-117" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_vws_fluids_three_tier",
+      "statement": "Fluids use three tiers: static bodies, coarse brick-aggregate flow, and fine PBD splash particles.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "## 6. Water & Fluids", "lines": "121-129" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_vws_weather_integrity_building",
+      "statement": "Architecture includes weather/time ambient sim, structural integrity/cave-ins, and first-class building/placement/blueprints/mechanisms/rooms.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [
+        { "heading": "## 7. Weather, Time & Ambient Simulation", "lines": "133-139" },
+        { "heading": "## 8. Structural Integrity & Cave-ins", "lines": "143-152" },
+        { "heading": "## 9. Building: Placement as First-Class Verb", "lines": "156-163" }
+      ],
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "claim_vws_layering_rules",
+      "statement": "Layering rules: gas is a policy object at script/API layer; the System is a game-layer client not a substrate feature; nothing above the matter layer touches voxels directly—everything goes through verbs and queries.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "## 12. Layering: The Substrate as Reusable Crates", "lines": "205-208" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_vws_build_order",
+      "statement": "Substrate vertical-slice build order runs from brick pool and stub worldgen through meshing, dig/place, geology, CA/vegetation, fluids, integrity, then persistence/streaming.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "## 13. Build Order (vertical slice for the substrate itself)", "lines": "212-223" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_vws_open_questions",
+      "statement": "Open questions include final voxel size (25cm vs 12.5cm), distant terrain LOD strategy, object-layer capacity/spatial acceleration, fluids tier-2 pressure solve vs momentum-only, and whether multiplayer readiness stays in scope statements.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "## 14. Open Questions", "lines": "225-231" }],
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim_excluded_full_game_stack",
+      "statement": "Full game implementation including System/LLM, spells, gas policy, combat, AI, and building gameplay layers is out of scope for this repository's current product.",
+      "source_ids": [
+        "src_project_boundary",
+        "src_seeds_readme",
+        "src_product_one",
+        "src_readme"
+      ],
+      "locators": [
+        { "heading": "# Moria project boundary", "lines": "16-18" },
+        { "heading": null, "lines": "15-16" },
+        { "heading": "### Non-goals (explicitly out)", "lines": "11-18" },
+        { "heading": null, "lines": "4-6" }
+      ],
+      "disposition": "excluded"
+    },
+    {
+      "id": "claim_missing_pivot_referenced",
+      "statement": "system-substrate-pivot.md is referenced as companion/foundation for GPU-resident brick pool, CA sim, and FleX-pattern coupling, but is not present in the repository.",
+      "source_ids": ["src_voxel_substrate"],
+      "locators": [{ "heading": "# Voxel World Substrate — Design Specification", "lines": "3" }, { "heading": "## 1. Design Goals", "lines": "13" }],
+      "disposition": "supporting"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "dec_product_target",
+      "question": "What is the product target for this planning run?",
+      "evidence_claim_ids": [
+        "claim_readme_substrate_crate",
+        "claim_boundary_product_is_substrate",
+        "claim_seeds_readme_only_substrate",
+        "claim_seeds_readme_product_one_binding",
+        "claim_product_one_scope_blurb",
+        "claim_product_one_product_statement",
+        "claim_product_one_what_it_buys",
+        "claim_vws_substrate_not_game"
+      ],
+      "options": [
+        {
+          "id": "opt_substrate_crate",
+          "label": "Moria reusable voxel-world substrate crate/family of crates",
+          "description": "Product identity is the substrate library. README and project-boundary state this explicitly; walkable world is not the product."
+        },
+        {
+          "id": "opt_product_one_walkable_world",
+          "label": "Product One “The Walkable World” demo as the product",
+          "description": "Product identity is the product-shaped demo: generated region, third-person character, dig/place proof, performance targets, and milestones as written in product-one-seed.md."
+        },
+        {
+          "id": "opt_substrate_with_product_one_milestone",
+          "label": "Substrate product with Product One as the current milestone definition",
+          "description": "Product identity remains the substrate crate, while Product One defines the first implementation milestone and validation-harness shape without becoming a separate product identity."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "Root README and project-boundary name the substrate crate as Moria’s product. Product One is written as a product statement with demo/performance deliverables and is labeled binding by seeds README. Seeds README also says Moria is only the substrate and that Product One defines substrate implementation plus harness. These framings are reconcilable only by choosing among the options; no human feedback selects one.",
+      "resolution_source": null
+    },
+    {
+      "id": "dec_current_deliverable_scope",
+      "question": "What is in current-deliverable scope for this run?",
+      "evidence_claim_ids": [
+        "claim_readme_harness_not_game",
+        "claim_boundary_harness_public_api",
+        "claim_boundary_out_of_scope_layers",
+        "claim_seeds_readme_product_one_binding",
+        "claim_seeds_readme_vws_architecture_ref",
+        "claim_product_one_substrate_slice",
+        "claim_product_one_player",
+        "claim_product_one_performance_targets",
+        "claim_product_one_milestones",
+        "claim_product_one_nongoals",
+        "claim_vws_weather_integrity_building",
+        "claim_excluded_full_game_stack"
+      ],
+      "options": [
+        {
+          "id": "opt_deliverable_substrate_apis_only",
+          "label": "Substrate crates and public APIs only",
+          "description": "Deliver the reusable substrate (and workspace boundary). Any walkable executable is optional harness work, not a scoped product demo with authored seed-world content and performance product-spec."
+        },
+        {
+          "id": "opt_deliverable_product_one_full",
+          "label": "Full Product One seed scope",
+          "description": "Deliver the Product One substrate slice, curated seed world, player/controller/camera, dig/place proof tools, milestones 1–6, and benchmark/performance targets as current deliverables."
+        },
+        {
+          "id": "opt_deliverable_substrate_plus_harness_slice",
+          "label": "Substrate plus public-API harness implementing the Product One slice",
+          "description": "Deliver substrate crates and a validation harness that exercises the Product One slice through public interfaces, without treating the walkable demo as an independent game product."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "Project-boundary limits the executable to a public-API validation harness and excludes game layers. Product One specifies a concrete walkable demo, player, seed world, and performance product-spec. Seeds README asserts Product One is binding for substrate implementation and harness. Without human selection, current-deliverable breadth stays contested even though exclusion of full game/System layers is shared.",
+      "resolution_source": null
+    },
+    {
+      "id": "dec_authority_project_boundary",
+      "question": "What planning authority does project-boundary.md hold?",
+      "evidence_claim_ids": [
+        "claim_boundary_product_is_substrate",
+        "claim_boundary_game_downstream",
+        "claim_boundary_harness_public_api",
+        "claim_boundary_cargo_workspace",
+        "claim_seeds_readme_boundary_operator_binding"
+      ],
+      "options": [
+        {
+          "id": "opt_boundary_binding_constraints",
+          "label": "Binding product-boundary constraints",
+          "description": "Treat as binding constraints on product identity, repository scope, harness role, and consumer boundary."
+        },
+        {
+          "id": "opt_boundary_supporting_only",
+          "label": "Supporting operator note only",
+          "description": "Treat as non-binding context that may refine but not override Product One or other seeds."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "Seeds README calls this the operator's binding clarification, and the document states product identity directly. That self-description and index ranking are not self-authenticating; Product One’s product statement can be read as competing product authority. No human feedback assigns the role.",
+      "resolution_source": null
+    },
+    {
+      "id": "dec_authority_product_one",
+      "question": "What planning authority does product-one-seed.md hold?",
+      "evidence_claim_ids": [
+        "claim_seeds_readme_product_one_binding",
+        "claim_product_one_scope_blurb",
+        "claim_product_one_product_statement",
+        "claim_product_one_substrate_slice",
+        "claim_product_one_what_it_buys",
+        "claim_boundary_product_is_substrate",
+        "claim_boundary_harness_public_api"
+      ],
+      "options": [
+        {
+          "id": "opt_po_binding_target",
+          "label": "Binding target for current product/deliverable",
+          "description": "Product One is the binding definition of what is being built now."
+        },
+        {
+          "id": "opt_po_binding_milestone_under_substrate",
+          "label": "Binding milestone/harness scope under substrate product",
+          "description": "Product One binds the first implementation slice and validation harness while product identity remains the substrate crate."
+        },
+        {
+          "id": "opt_po_supporting_demo_spec",
+          "label": "Supporting demo/harness specification only",
+          "description": "Product One is non-binding design color for a harness; only project-boundary (or other selected authority) binds scope."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "Seeds README labels Product One binding for substrate implementation and harness. Product One is written as a product statement. Project-boundary can be read as demoting that content to harness scope under a substrate product. Filename, ordering, and the word “binding” do not resolve the conflict without human selection.",
+      "resolution_source": null
+    },
+    {
+      "id": "dec_authority_seeds_readme",
+      "question": "What planning authority does docs/seeds/README.md hold when it ranks other seeds as binding?",
+      "evidence_claim_ids": [
+        "claim_seeds_readme_product_one_binding",
+        "claim_seeds_readme_vws_architecture_ref",
+        "claim_seeds_readme_boundary_operator_binding",
+        "claim_seeds_readme_preserved_verbatim",
+        "claim_seeds_readme_only_substrate"
+      ],
+      "options": [
+        {
+          "id": "opt_seeds_readme_binding_index",
+          "label": "Binding authority index",
+          "description": "Accept its ranking: Product One binding for implementation/harness, project-boundary binding clarification, voxel-world-substrate architecture reference with Product One selection."
+        },
+        {
+          "id": "opt_seeds_readme_nonbinding_context",
+          "label": "Non-binding preservation/context index",
+          "description": "Treat as a preserved index and narrative only; authority of each seed must be established from content and human resolution, not from this README’s labels."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "The seeds README is the only document that explicitly ranks peer seeds as binding. Under the analysis rules, such assertions are evidence to analyze, not self-authenticating authority. Human feedback is required to accept or reject that ranking.",
+      "resolution_source": null
+    },
+    {
+      "id": "dec_authority_voxel_substrate",
+      "question": "What planning authority does voxel-world-substrate.md hold for current work?",
+      "evidence_claim_ids": [
+        "claim_seeds_readme_vws_architecture_ref",
+        "claim_product_one_references_vws",
+        "claim_product_one_substrate_slice",
+        "claim_vws_design_goals",
+        "claim_vws_weather_integrity_building",
+        "claim_vws_open_questions",
+        "claim_missing_pivot_referenced"
+      ],
+      "options": [
+        {
+          "id": "opt_vws_supporting_selected_by_product_one",
+          "label": "Supporting architecture reference; only Product One-selected portions required now",
+          "description": "Matches seeds README and Product One’s “pins down what gets built first” framing; broader layers remain future/architecture context."
+        },
+        {
+          "id": "opt_vws_binding_full_architecture",
+          "label": "Binding full substrate architecture for current delivery",
+          "description": "Require the full design (including weather, integrity, building, multi-tier fluids, etc.) as current authority, not merely a selectable reference."
+        },
+        {
+          "id": "opt_vws_context_only",
+          "label": "Non-binding context only",
+          "description": "Treat as historical/design notes without constraining current deliverable selection."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "Product One and seeds README consistently describe this document as the architecture reference that Product One slices. That cross-source agreement is strong evidence for a supporting-reference role, but document-authority still requires human confirmation because accepting “only Product One-selected portions” depends on Product One’s own unsettled authority, and the full architecture otherwise conflicts with Product One nongoals and project-boundary exclusions.",
+      "resolution_source": null
+    }
+  ],
+  "unresolved_decision_ids": [
+    "dec_product_target",
+    "dec_current_deliverable_scope",
+    "dec_authority_project_boundary",
+    "dec_authority_product_one",
+    "dec_authority_seeds_readme",
+    "dec_authority_voxel_substrate"
+  ],
+  "deferred_design_questions": [
+    {
+      "id": "ddq_voxel_size",
+      "question": "Final world-grid voxel size: 25cm vs 12.5cm (possibly per-region)?",
+      "evidence_claim_ids": [
+        "claim_product_one_region_spec",
+        "claim_vws_look_hybrid_meshing",
+        "claim_vws_open_questions"
+      ],
+      "options": [
+        {
+          "id": "opt_voxel_25cm",
+          "label": "25cm (4 voxels/meter) as assumed default"
+        },
+        {
+          "id": "opt_voxel_12_5cm",
+          "label": "12.5cm for higher fidelity at higher cost"
+        },
+        {
+          "id": "opt_voxel_per_region",
+          "label": "Per-region mix (fine near settlements, coarse wilderness)"
+        }
+      ],
+      "rationale": "Both Product One and the substrate doc treat 25cm as the working assumption and explicitly leave final call to measurement; this does not change product identity or document authority."
+    },
+    {
+      "id": "ddq_precise_crate_split",
+      "question": "How should the substrate be split across crates within the Cargo workspace?",
+      "evidence_claim_ids": [
+        "claim_boundary_product_is_substrate",
+        "claim_boundary_cargo_workspace",
+        "claim_vws_layering_rules"
+      ],
+      "options": [
+        {
+          "id": "opt_single_crate",
+          "label": "One substrate crate plus harness package"
+        },
+        {
+          "id": "opt_layered_crate_family",
+          "label": "Family of crates aligned to generation/matter/script layers"
+        }
+      ],
+      "rationale": "Project-boundary states the consumer/workspace boundary is mandatory but the precise crate split is a technical-design decision."
+    },
+    {
+      "id": "ddq_meshing_algorithm",
+      "question": "Primary terrain meshing algorithm: surface nets, dual contouring, or hybrid policy?",
+      "evidence_claim_ids": [
+        "claim_vws_look_hybrid_meshing",
+        "claim_product_one_substrate_slice"
+      ],
+      "options": [
+        {
+          "id": "opt_surface_nets",
+          "label": "Surface nets"
+        },
+        {
+          "id": "opt_dual_contouring",
+          "label": "Dual contouring"
+        },
+        {
+          "id": "opt_meshing_hybrid_policy",
+          "label": "Hybrid/material-dependent extraction policy"
+        }
+      ],
+      "rationale": "Architecture lists both algorithms; Product One requires GPU dirty-brick incremental meshing without binding a single algorithm choice."
+    },
+    {
+      "id": "ddq_lod_strategy",
+      "question": "Distant terrain LOD: chunked marching-cubes LOD versus imposter cards from the column index?",
+      "evidence_claim_ids": [
+        "claim_vws_open_questions",
+        "claim_product_one_performance_targets"
+      ],
+      "options": [
+        {
+          "id": "opt_lod_chunked_mc",
+          "label": "Chunked marching-cubes (or similar) LOD meshes"
+        },
+        {
+          "id": "opt_lod_imposters",
+          "label": "Imposter cards / column-index imposters"
+        },
+        {
+          "id": "opt_lod_undecided_measure",
+          "label": "Defer until camera and streaming measurements"
+        }
+      ],
+      "rationale": "Listed as an open substrate question; does not determine product target or which document binds."
+    },
+    {
+      "id": "ddq_object_layer_scaling",
+      "question": "At what object count does the voxel-object registry need its own spatial acceleration structure?",
+      "evidence_claim_ids": [
+        "claim_vws_open_questions",
+        "claim_vws_vegetation_objects",
+        "claim_product_one_substrate_slice"
+      ],
+      "options": [
+        {
+          "id": "opt_object_simple_registry",
+          "label": "Simple registry until measured pain"
+        },
+        {
+          "id": "opt_object_spatial_index_from_start",
+          "label": "Spatial acceleration structure from early milestones"
+        }
+      ],
+      "rationale": "Open implementation/scaling question in the architecture reference."
+    },
+    {
+      "id": "ddq_fluids_tier2_solver",
+      "question": "Does fluids tier 2 need a pressure solve (DF-accurate U-bend behavior) or is momentum-only enough?",
+      "evidence_claim_ids": [
+        "claim_vws_fluids_three_tier",
+        "claim_vws_open_questions",
+        "claim_product_one_nongoals",
+        "claim_product_one_substrate_slice"
+      ],
+      "options": [
+        {
+          "id": "opt_fluids_momentum_only",
+          "label": "Momentum-only coarse flow"
+        },
+        {
+          "id": "opt_fluids_pressure_solve",
+          "label": "Pressure solve for U-bend accuracy"
+        },
+        {
+          "id": "opt_fluids_tier2_out_of_current_slice",
+          "label": "Leave tier 2 out of the current Product One slice (static tier-1 only)"
+        }
+      ],
+      "rationale": "Architecture open question; Product One already excludes fluids beyond static bodies from its slice, so solver choice is design/future-scope detail rather than authority."
+    },
+    {
+      "id": "ddq_multiplayer_scope_language",
+      "question": "Should multiplayer/server-authoritative readiness remain in scope statements even if not built now?",
+      "evidence_claim_ids": [
+        "claim_vws_open_questions",
+        "claim_vws_layering_rules",
+        "claim_product_one_dev_platform_constraints"
+      ],
+      "options": [
+        {
+          "id": "opt_mp_keep_in_scope_statements",
+          "label": "Keep multiplayer-ready verb/command architecture in scope statements"
+        },
+        {
+          "id": "opt_mp_omit_until_later",
+          "label": "Omit multiplayer from scope statements until a later product"
+        }
+      ],
+      "rationale": "Architecture flags this as an open question about scope language; it does not choose the current product identity."
+    },
+    {
+      "id": "ddq_tree_felling_stretch",
+      "question": "Is tree felling with rigid-body fall in the current milestone path or only stretch?",
+      "evidence_claim_ids": [
+        "claim_product_one_substrate_slice",
+        "claim_product_one_milestones",
+        "claim_vws_vegetation_objects"
+      ],
+      "options": [
+        {
+          "id": "opt_felling_stretch_only",
+          "label": "Stretch goal only (Product One milestone 7)"
+        },
+        {
+          "id": "opt_felling_required",
+          "label": "Required for the current deliverable"
+        },
+        {
+          "id": "opt_felling_excluded",
+          "label": "Excluded from current delivery entirely"
+        }
+      ],
+      "rationale": "Product One already marks timber/felling as stretch and excludes rigid conversion from the matter slice; remaining choice is implementation prioritization, not product authority."
+    },
+    {
+      "id": "ddq_missing_pivot_architecture_details",
+      "question": "How should GPU-resident pool, CA, and FleX command/mirror details that were deferred to system-substrate-pivot.md be reconstructed or replaced?",
+      "evidence_claim_ids": [
+        "claim_vws_companion_pivot",
+        "claim_missing_pivot_referenced",
+        "claim_product_one_dev_platform_constraints",
+        "claim_vws_design_goals"
+      ],
+      "options": [
+        {
+          "id": "opt_pivot_recover_external",
+          "label": "Recover the missing pivot document from external source material"
+        },
+        {
+          "id": "opt_pivot_redesign_from_seeds",
+          "label": "Redesign those mechanisms from Product One and voxel-world-substrate text alone"
+        },
+        {
+          "id": "opt_pivot_stub_until_needed",
+          "label": "Stub FleX/mirror/CA integration details until a later architecture pass"
+        }
+      ],
+      "rationale": "The missing pivot is a provenance gap for architecture detail. Product One and project-boundary still state product/harness framing without it, so absence does not by itself block an authority package, but implementers need a later technical resolution."
+    }
+  ]
+}
