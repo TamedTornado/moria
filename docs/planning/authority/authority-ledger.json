@@ -23,6 +23,7 @@
     "supporting_decision_ids": [
       "D-product-identity",
       "D-walkable-world-role",
+      "D-dig-place-api-boundary",
       "D-current-deliverable-scope",
       "D-document-authority"
     ]
@@ -31,14 +32,14 @@
     {
       "id": "src-readme",
       "path": "README.md",
-      "role": "context",
-      "notes": "Top-level product framing: substrate crate consumed by a separate game; walkable-world executable described as consumer/validation harness. Points at docs/seeds/ for preserved inputs. Not self-authenticating over the seed corpus."
+      "role": "unresolved",
+      "notes": "Top-level product framing: substrate crate consumed by a separate game; walkable-world executable described as consumer/validation harness. Points at docs/seeds/ for preserved inputs. Its current-product and harness-role assertions conflict with Product One's demo framing; no source establishes that this top-level document is merely context."
     },
     {
       "id": "src-seeds-readme",
       "path": "docs/seeds/README.md",
-      "role": "stale_index",
-      "notes": "Seed-folder index that asserts binding status for product-one-seed.md and project-boundary.md and demotes voxel-world-substrate.md to architecture reference. README binding assertions are evidence to analyze, not self-authenticating authority."
+      "role": "unresolved",
+      "notes": "Seed-folder index that asserts binding status for product-one-seed.md and project-boundary.md and describes voxel-world-substrate.md as an architecture reference. Those assertions are evidence to analyze, not self-authenticating authority; no source evidence establishes that this index is stale."
     },
     {
       "id": "src-project-boundary",
@@ -55,8 +56,8 @@
     {
       "id": "src-voxel-substrate",
       "path": "docs/seeds/voxel-world-substrate.md",
-      "role": "supporting_reference",
-      "notes": "Substrate architecture design specification (storage, gen, vegetation, fluids, integrity, building, layering, build order). Product One and the seeds index treat it as a reference whose required portions are selected by the first product slice. Broader build-order items beyond Product One remain non-current scope unless human authority expands deliverable. Companion pivot doc is missing."
+      "role": "unresolved",
+      "notes": "Substrate architecture design specification (storage, gen, vegetation, fluids, integrity, building, layering, build order). Product One and the seeds index describe it as a reference whose required portions are selected by the first product slice, while the architecture itself presents a broader substrate build order. Until D-document-authority is selected, this document remains a candidate binding source as well as a possible supporting reference. Companion pivot doc is missing."
     }
   ],
   "claims": [
@@ -389,6 +390,18 @@
       "disposition": "supporting"
     },
     {
+      "id": "C-vws-meshing-recommendation",
+      "statement": "For terrain, the architecture recommends smooth isosurface extraction using surface nets or dual contouring over dirty bricks; it describes a hybrid approach in which terrain and structures use smooth extraction, with optional hard-face extraction for crystalline masonry.",
+      "source_ids": ["src-voxel-substrate"],
+      "locators": [
+        {
+          "heading": "2. The Look Problem: Voxels That Don't Look Like Voxels",
+          "lines": "24-34"
+        }
+      ],
+      "disposition": "supporting"
+    },
+    {
       "id": "C-vws-voxel-size-default",
       "statement": "Voxel size for the world grid assumed at 25cm (4 voxels/meter) with 16³ bricks; open question whether 12.5cm or per-region sizing is better.",
       "source_ids": ["src-voxel-substrate"],
@@ -418,7 +431,7 @@
     },
     {
       "id": "C-vws-build-order-broader",
-      "statement": "Substrate vertical-slice build order includes brick pool, meshing, dig/place, geology, brick CA (fire/wetness) + tree felling, fluids tier 1+2, integrity + granular, and persistence/streaming—broader than Product One's included slice.",
+      "statement": "Substrate vertical-slice build order includes brick pool, meshing, dig/place, geology, brick CA (fire/wetness) + tree felling, fluids tier 1+2, integrity + granular, and persistence/streaming.",
       "source_ids": ["src-voxel-substrate"],
       "locators": [
         {
@@ -430,7 +443,7 @@
     },
     {
       "id": "C-vws-excluded-from-product-one-parity",
-      "statement": "Architecture includes weather/seasons, fire ecology, structural integrity, building/blueprints/mechanisms, multi-class pathfinding, and multi-tier fluids beyond Product One non-goals; these are substrate capabilities described for multi-game reuse rather than Product One scope.",
+      "statement": "The architecture describes weather/seasons, fire ecology, structural integrity, building/blueprints/mechanisms, multi-class pathfinding, and multi-tier fluids.",
       "source_ids": ["src-voxel-substrate"],
       "locators": [
         {
@@ -448,9 +461,61 @@
         {
           "heading": "9. Building: Placement as First-Class Verb",
           "lines": "156-163"
+        },
+        {
+          "heading": "10. Entities, Pathfinding & the Z-Axis",
+          "lines": "167-172"
         }
       ],
-      "disposition": "future_consumer"
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-vws-lod-open-question",
+      "statement": "The architecture asks whether distant terrain should use chunked marching-cubes LOD or imposter cards from the column index.",
+      "source_ids": ["src-voxel-substrate"],
+      "locators": [
+        {
+          "heading": "14. Open Questions",
+          "lines": "228"
+        }
+      ],
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-vws-object-capacity-open-question",
+      "statement": "The architecture asks at what tree count the object registry needs its own spatial acceleration structure.",
+      "source_ids": ["src-voxel-substrate"],
+      "locators": [
+        {
+          "heading": "14. Open Questions",
+          "lines": "229"
+        }
+      ],
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-vws-fluids-pressure-open-question",
+      "statement": "The architecture asks whether fluids tier 2 needs a pressure solve for DF-accurate U-bend behavior or whether momentum-only behavior is enough.",
+      "source_ids": ["src-voxel-substrate"],
+      "locators": [
+        {
+          "heading": "14. Open Questions",
+          "lines": "230"
+        }
+      ],
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-vws-multiplayer-open-question",
+      "statement": "The architecture asks whether server-authoritative-ready verb/command architecture should remain in scope statements even if multiplayer is not built.",
+      "source_ids": ["src-voxel-substrate"],
+      "locators": [
+        {
+          "heading": "14. Open Questions",
+          "lines": "231"
+        }
+      ],
+      "disposition": "supporting"
     },
     {
       "id": "C-vws-system-hooks-not-dependency",
@@ -540,6 +605,35 @@
       "resolution_source": null
     },
     {
+      "id": "D-dig-place-api-boundary",
+      "question": "Which authority controls the interface boundary for current dig/place verbs and mirror queries?",
+      "evidence_claim_ids": [
+        "C-boundary-harness-api",
+        "C-p1-substrate-slice"
+      ],
+      "options": [
+        {
+          "id": "public-external-game-interface",
+          "label": "Public external-game interface controls",
+          "summary": "project-boundary.md controls: the validation harness accesses dig/place and mirror-query capabilities only through the same public interfaces available to an external game."
+        },
+        {
+          "id": "engine-internal-debug-interface",
+          "label": "Engine-internal debug interface controls",
+          "summary": "product-one-seed.md controls: Product One's debug tools call engine-internal dig/place verbs and mirror queries, without a requirement that those calls use an external-game public interface."
+        },
+        {
+          "id": "public-contract-with-internal-implementation",
+          "label": "Public contract with internal implementation",
+          "summary": "Both sources bind only if the terms can be reconciled by a public external-game contract for the harness while retaining a separate internal implementation detail; human authority must confirm that this interpretation is intended."
+        }
+      ],
+      "selected": null,
+      "status": "unresolved",
+      "rationale": "project-boundary requires the harness to use public external-game interfaces, while Product One explicitly calls the same dig/place verbs and mirror queries engine-internal API. The combined document-authority option can otherwise make both sources binding without determining which interface requirement governs. This is an authority and current-deliverable boundary question, not an implementation-algorithm choice.",
+      "resolution_source": null
+    },
+    {
       "id": "D-current-deliverable-scope",
       "question": "What binds current-deliverable scope (in vs out for this milestone/planning run)?",
       "evidence_claim_ids": [
@@ -585,6 +679,7 @@
         "C-p1-pins-first-build",
         "C-boundary-product-crate",
         "C-readme-substrate-identity",
+        "C-readme-harness-not-game",
         "C-vws-companion-pivot"
       ],
       "options": [
@@ -602,17 +697,28 @@
           "id": "product-one-primary",
           "label": "Product One primary product authority",
           "summary": "product-one-seed.md is the sole binding_target for what is built now; project-boundary and root README are supporting constraints; VWS is supporting reference."
+        },
+        {
+          "id": "vws-architecture-binding",
+          "label": "VWS architecture as binding source",
+          "summary": "voxel-world-substrate.md binds the substrate product and current vertical-slice build order; Product One is a scope proposal or selected demonstration slice, while project-boundary and root README constrain the reusable-crate boundary."
+        },
+        {
+          "id": "root-readme-primary",
+          "label": "Root README primary product authority",
+          "summary": "README.md binds the reusable-substrate product and validation-harness role; the seed documents remain competing supporting proposals or constraints unless separately adopted by human authority."
         }
       ],
       "selected": null,
       "status": "unresolved",
-      "rationale": "Seeds README uses the word \"binding\" for both Product One and project-boundary, but filename, ordering, and in-document \"binding\" language are not self-authenticating. Product One and project-boundary can conflict on product identity and walkable-world role. No human feedback establishes document-role hierarchy.",
+      "rationale": "Seeds README uses the word \"binding\" for both Product One and project-boundary, but filename, ordering, and in-document \"binding\" language are not self-authenticating. The root README makes direct product and harness-role assertions that conflict with Product One's demo framing. Product One and project-boundary also conflict on product identity and walkable-world role. No human feedback establishes document-role hierarchy.",
       "resolution_source": null
     }
   ],
   "unresolved_decision_ids": [
     "D-product-identity",
     "D-walkable-world-role",
+    "D-dig-place-api-boundary",
     "D-current-deliverable-scope",
     "D-document-authority"
   ],
@@ -644,7 +750,7 @@
       "id": "DDQ-lod-strategy",
       "question": "Distant terrain LOD: chunked marching-cubes LOD versus imposter cards from the column index?",
       "evidence_claim_ids": [
-        "C-vws-build-order-broader"
+        "C-vws-lod-open-question"
       ],
       "options": [
         {
@@ -662,8 +768,7 @@
       "id": "DDQ-object-layer-capacity",
       "question": "At what tree/object count does the object registry need its own spatial acceleration structure?",
       "evidence_claim_ids": [
-        "C-p1-substrate-slice",
-        "C-vws-build-order-broader"
+        "C-vws-object-capacity-open-question"
       ],
       "options": [
         {
@@ -681,8 +786,7 @@
       "id": "DDQ-fluids-tier2-pressure",
       "question": "Does fluids tier 2 need a pressure solve (DF-accurate U-bend behavior) or is momentum-only enough?",
       "evidence_claim_ids": [
-        "C-p1-nongoals",
-        "C-vws-excluded-from-product-one-parity"
+        "C-vws-fluids-pressure-open-question"
       ],
       "options": [
         {
@@ -694,7 +798,7 @@
           "label": "Pressure solve for U-bend accuracy"
         }
       ],
-      "rationale": "Architecture open question; Product One excludes fluids beyond tier-1 static bodies from current scope, so this is not an authority gate for the present deliverable."
+      "rationale": "Architecture open question. If Product One is selected for current scope, its non-goals would defer fluids beyond tier-1 static bodies; if a different scope option is selected, this technical choice may be scheduled differently. It does not itself select product authority."
     },
     {
       "id": "DDQ-crate-split",
@@ -720,7 +824,7 @@
       "question": "Primary terrain meshing algorithm: surface nets, dual contouring, or hybrid selection rules?",
       "evidence_claim_ids": [
         "C-p1-substrate-slice",
-        "C-vws-voxel-size-default"
+        "C-vws-meshing-recommendation"
       ],
       "options": [
         {
@@ -742,7 +846,7 @@
       "id": "DDQ-multiplayer-statements",
       "question": "Should multiplayer/server-authoritative readiness remain in scope statements even if not built now?",
       "evidence_claim_ids": [
-        "C-vws-layering-rules"
+        "C-vws-multiplayer-open-question"
       ],
       "options": [
         {
