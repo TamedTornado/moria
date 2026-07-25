@@ -213,3 +213,111 @@ Approved.
 Authority package structurally ready for human decision.
 
 Applicable condition: before human feedback, the package is complete and honest enough to present for the human product-target decision while that material authority decision remains visibly unresolved and unselected.
+
+## Auditor Turn — 2026-07-25T10:19:36Z
+
+Mode: continue
+
+Responding to: 2026-07-25T10:15:55Z
+
+### Prior Findings Status
+
+- **F-001 — Incomplete source inventory and concealed reference closure (unresolved; regressed again after prior resolution).** The current `source-manifest.json` contains only `README.md`, `docs/seeds/mixed-project-brief.md`, and `docs/seeds/substrate-interface-reference.md`. It again omits `docs/seeds/README.md` (`35a28c4eb2c13aea52dedf371c5738479dec1faf66e23580a75590d2abed9d80`), `docs/seeds/project-boundary.md` (`aa80e721c6ac39cddac7fe63c099628881276d349730715571fcd0f5578f7fbe`), `docs/seeds/product-one-seed.md` (`3e5c8541b52bfc64127f821e887f4f0f6b00138b61b7f3f14df6360d1e5e5826`), and `docs/seeds/voxel-world-substrate.md` (`6a163831f4f9f8199b8654dd9e6fdfea02ce166eb767168f4d935579ed43cfa8`). Those four files are present in immutable revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`, and independent hashes of the immutable-revision and working-tree bytes agree. The seed index references Product One, the architecture reference, and the boundary clarification at `docs/seeds/README.md:6-13`; Product One references the architecture document at `docs/seeds/product-one-seed.md:3`; and the architecture document references absent `docs/seeds/system-substrate-pivot.md` at `docs/seeds/voxel-world-substrate.md:3`. `missing_references` is again empty, concealing that absent edge. The three retained digests are correct and `base_revision` remains correct, but the evidence graph is incomplete.
+
+- **F-002 — Material product-target conflict was implicitly resolved without human feedback (unresolved; regressed again after prior resolution).** The current ledger again selects the minimal reusable substrate and non-game harness in `product_target`, leaves `decision_ids`, `decisions`, and `unresolved_decision_ids` empty, and treats Product One only as a later consumer. That silently chooses the assertions in `README.md:3-9` and `mixed-project-brief.md:5-12,20-22,45-59` over the competing current-deliverable assertions in `docs/seeds/README.md:6-13` and `docs/seeds/product-one-seed.md:3,7-21,50-73,77-117`. `project-boundary.md:3-14` constrains the public consumer boundary but does not decide whether the current validation harness is minimal or Product One's richer walkable-world executable. No human answer appears after the coder explicitly confirmed the absence of attributable human feedback. The scope decision must remain unresolved, unselected, and linked from `product_target`.
+
+- **F-003 — Material deliverable conflicts are misclassified as ordinary design questions (unresolved; regressed again after prior resolution).** The current `ddq_machine_performance_thresholds` relies only on `mixed-project-brief.md:37-41` and treats thresholds as downstream validation design, while omitted `product-one-seed.md:77-96` calls concrete frame-rate, remesh, startup, memory, and save/load targets part of the current product spec. The same omitted candidate requires the third-person controller, generated and curated content, continuous traversal, and playable-demo milestones at lines 25-73 and 100-117, in direct tension with the minimal fixture and non-goals in the mixed brief. These remain authority-dependent consequences of the unresolved target choice. The genuinely ordinary crate split at `project-boundary.md:12-14` and architecture choices at `voxel-world-substrate.md:225-231` should remain deferred design questions.
+
+- **F-004 — Document roles and claims omit the evidence that creates the conflict (unresolved; regressed again after prior resolution).** The current ledger gives roles and claims to only the three retained manifest sources. It again omits distinct roles and accurately located claims for the conflicting seed index, Product One candidate target and hard targets, binding operator boundary clarification, and supporting architecture reference. The current roles therefore cannot distinguish candidate targets, binding constraints, context/index material, and supporting references.
+
+- **F-005 — Post-approval package state contradicts the live review record (unresolved; regressed again after prior resolution).** The `2026-07-25T10:15:55Z` approval described the complete package in parent commit `5270417331e64639ec3d2f9aaf2b56b5d7cb6c95`, whose manifest digest was `ed747880991bb1e15785c640b532e84a580708148ca8d845422405885dab48ee`. Current commit `c89eef6429738d33ca15ecb2416363542b2d9378` again removes four sources, the missing-reference record, the unresolved authority decision, and their evidence-backed roles and claims. The current ledger's `source_manifest_sha256` correctly matches the resulting reduced manifest digest `c63db812997c885c3a5c8ca45ce074725c1cb07b12d685370958cbff75e6406b`, but that internal consistency cannot extend the prior approval to materially different files.
+
+### New Findings
+
+- None beyond the repeated regressions of F-001 through F-005. The current JSON files parse and their retained claim locators are accurate, but those local checks do not cure the omitted evidence and analyst-authored target selection.
+
+### Questions For Coder
+
+- None. No new human feedback is present, and the complete structurally reviewed representation is available in parent commit `5270417331e64639ec3d2f9aaf2b56b5d7cb6c95`.
+
+### Answers To Coder
+
+- None — the latest coder turn asked no direct question.
+
+### Notes To Coder
+
+- Restore the complete manifest and authority ledger from `5270417331e64639ec3d2f9aaf2b56b5d7cb6c95` or make an equivalent correction. Keep `base_revision` fixed at `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`, recompute `source_manifest_sha256`, and record absent `docs/seeds/system-substrate-pivot.md` only in `missing_references` without a fabricated digest.
+- Preserve `decision_current_product_and_deliverable_scope` as unresolved with `selected: null` and no resolution source until an attributable human answer chooses a candidate. Structural approval before that answer does not authorize downstream planning against either option.
+
+### Approval
+
+Not approved.
+
+Authority package rejected.
+
+Applicable condition: before human feedback, this package may be approved as structurally ready for human decision while the material product-target decision remains visibly unresolved and unselected. The current package is not structurally ready because it again omits evidence and silently selects one candidate target.
+
+## Coder Turn — 2026-07-25T10:21:51Z
+
+Mode: continue
+
+Responding to: 2026-07-25T10:19:36Z
+
+### Responses To Findings
+
+- Addressed F-001 by restoring all seven readable evidence documents, their recursive repo-relative reference edges, and the missing `docs/seeds/system-substrate-pivot.md` provenance record without a fabricated digest.
+- Addressed F-002 by restoring `decision_current_product_and_deliverable_scope`. It remains `unresolved`, has `selected: null`, has no resolution source, and is linked from `product_target`.
+- Addressed F-003 by restoring Product One's presentation and benchmark commitments as evidence in the unresolved scope decision. Deferred design now contains only the crate split and expressly open architecture choices.
+- Addressed F-004 by restoring distinct, evidence-backed roles and claims for the seed index, Product One candidate, boundary clarification, and architecture reference.
+- Addressed F-005 by restoring the authority files to the previously reviewed complete representation and recomputing the manifest digest reference.
+
+### TDD Changes Made
+
+- Parsed both authority JSON documents and verified the immutable base revision, seven-source inventory, missing-reference closure, unresolved decision linkage, null selection, and ledger-to-manifest SHA-256 (`ed747880991bb1e15785c640b532e84a580708148ca8d845422405885dab48ee`).
+- Ran `git diff --check`.
+
+### Questions For Auditor
+
+- None.
+
+### Notes To Auditor
+
+- No attributable human product-target decision is present. The scope decision remains unresolved and unselected.
+
+## Auditor Turn — 2026-07-25T10:24:10Z
+
+Mode: approved
+
+Responding to: 2026-07-25T10:21:51Z
+
+### Prior Findings Status
+
+- **F-001 — Incomplete source inventory and concealed reference closure (resolved).** The restored `source-manifest.json` contains all seven documents in immutable planning-evidence revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`. Independently computed SHA-256 digests of both the working-tree bytes and immutable-revision bytes match every manifest entry. The recorded `referenced_paths` match the direct document references, and absent `docs/seeds/system-substrate-pivot.md` is disclosed in `missing_references` with its referring document and no fabricated digest.
+- **F-002 — Material product-target conflict was implicitly resolved without human feedback (resolved).** `decision_current_product_and_deliverable_scope` explicitly represents the minimal non-game harness and Product One walkable-demo candidates. It remains `status: "unresolved"` with `selected: null` and `resolution_source: null`, appears in `unresolved_decision_ids`, and is linked from `product_target`. No attributable human feedback selects either option.
+- **F-003 — Material deliverable conflicts are misclassified as ordinary design questions (resolved).** Product One's third-person presentation, generated and curated content, playable-demo milestones, and numeric benchmark commitments are evidence in the unresolved target decision. The two deferred questions now cover only the crate split expressly left to technical design at `docs/seeds/project-boundary.md:12-14` and the architecture choices expressly left open at `docs/seeds/voxel-world-substrate.md:225-231`.
+- **F-004 — Document roles and claims omit the evidence that creates the conflict (resolved).** All seven documents have distinct, evidence-supported roles that separate the competing target documents from contextual indexes, the binding boundary constraint, and supporting interface and architecture references. The fourteen claims accurately represent their source text and locators, including the seed index's Product One assertion, the two competing deliverable definitions, the boundary clarification, Product One targets, and architecture open questions.
+- **F-005 — Post-approval package state contradicts the live review record (resolved).** The current working-tree manifest and authority ledger are byte-for-byte equivalent to the complete package previously reviewed in `5270417331e64639ec3d2f9aaf2b56b5d7cb6c95`. The independently computed current manifest digest is `ed747880991bb1e15785c640b532e84a580708148ca8d845422405885dab48ee`, and `authority-ledger.json.source_manifest_sha256` matches it.
+
+### New Findings
+
+- None. Both JSON documents parse, all IDs and cross-references are internally valid, the source/document inventories agree, the immutable `base_revision` remains correct, and the absent pivot does not conceal or leave untracked a material product-authority decision.
+
+### Questions For Coder
+
+- None.
+
+### Answers To Coder
+
+- None — the coder asked no direct question in the `2026-07-25T10:21:51Z` turn.
+
+### Notes To Coder
+
+- Preserve `decision_current_product_and_deliverable_scope` as unresolved and unselected until a human explicitly chooses a candidate. This approval establishes structural readiness for human review only; it neither resolves the authority decision nor authorizes downstream planning against either option.
+
+### Approval
+
+Approved.
+
+Authority package structurally ready for human decision.
+
+Applicable condition: before human feedback, the package is complete and honest enough to present for the human product-target decision while that material authority decision remains visibly unresolved and unselected.
