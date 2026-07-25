@@ -1,11 +1,12 @@
 {
-  "schema_version": "1",
-  "source_manifest_sha256": "2d48c963c2112f2b9d454898296e588bb862f412d537517c2f28bac4a80b4cec",
+  "schema_version": 1,
+  "source_manifest_sha256": "11d65ffd74887214cf051e73cff80be560fffb3ad2425f80ac7d254391d4a498",
   "product_target": {
     "statement": "Moria is a reusable Rust voxel-world substrate delivered through public crate interfaces and exercised by a minimal validation executable; this repository delivers the substrate, not a game or the later Product One explorer vision embedded as future-consumer context.",
     "supporting_claim_ids": [
       "claim-brief-current-product",
       "claim-brief-capability-set",
+      "binding-deterministic-generation",
       "claim-brief-public-boundary",
       "claim-brief-validation-executable",
       "claim-brief-nongoals",
@@ -79,6 +80,13 @@
       "disposition": "binding"
     },
     {
+      "id": "binding-deterministic-generation",
+      "statement": "Generation is deterministic for the same versioned parameters and seed.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": { "heading": "Current correctness commitments", "lines": "26-26" },
+      "disposition": "binding"
+    },
+    {
       "id": "claim-brief-public-boundary",
       "statement": "External consumers can create and identify a world, request bounded regions, observe readiness, query material truth, submit bounded edits, and persist deltas, and must not reach into storage, meshing, or scheduler internals.",
       "source_ids": ["src-mixed-project-brief"],
@@ -119,6 +127,20 @@
       "source_ids": ["src-mixed-project-brief"],
       "locator": { "heading": "Current non-goals", "lines": "45-47" },
       "disposition": "binding"
+    },
+    {
+      "id": "future-third-person-explorer",
+      "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region with hills, a dense mixed forest, a river, and a cave.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": { "heading": "Later consumer vision", "lines": "51-53" },
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "future-forest",
+      "statement": "The later Product One vision includes a dense mixed forest in the generated region for a separate game-facing demo, not as a Moria deliverable.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": { "heading": "Later consumer vision", "lines": "51-54" },
+      "disposition": "future_consumer"
     },
     {
       "id": "claim-brief-later-consumer-vision",
