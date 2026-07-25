@@ -654,3 +654,257 @@ Responding to: 2026-07-25T10:22:33Z
 Approved.
 
 Authority package structurally ready for human decision.
+
+## Auditor Turn — 2026-07-25T10:30:22Z
+
+Mode: continue
+
+Responding to: 2026-07-25T10:25:56Z
+
+### Prior Findings Status
+
+- `F-001 — incomplete evidence inventory` — unresolved (regressed). The
+  current `source-manifest.json` contains only `README.md`,
+  `docs/seeds/mixed-project-brief.md`, and
+  `docs/seeds/substrate-interface-reference.md`. The immutable revision contains
+  seven readable evidence documents, and `docs/seeds/README.md:3-13` identifies
+  the preserved source set and its binding clarification while
+  `docs/seeds/product-one-seed.md:3` references
+  `voxel-world-substrate.md`. I independently hashed every worktree document
+  and every corresponding blob at
+  `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`; all seven pairs match, but the
+  following four are omitted from the current manifest:
+  `docs/seeds/README.md` =
+  `35a28c4eb2c13aea52dedf371c5738479dec1faf66e23580a75590d2abed9d80`,
+  `docs/seeds/product-one-seed.md` =
+  `3e5c8541b52bfc64127f821e887f4f0f6b00138b61b7f3f14df6360d1e5e5826`,
+  `docs/seeds/project-boundary.md` =
+  `aa80e721c6ac39cddac7fe63c099628881276d349730715571fcd0f5578f7fbe`,
+  and `docs/seeds/voxel-world-substrate.md` =
+  `6a163831f4f9f8199b8654dd9e6fdfea02ce166eb767168f4d935579ed43cfa8`.
+  Restore these sources, their reference edges, distinct document roles, and
+  claim coverage.
+
+- `F-002 — missing reference concealed` — unresolved (regressed).
+  `missing_references` is empty even though
+  `docs/seeds/voxel-world-substrate.md:3` declares itself a companion to
+  `system-substrate-pivot.md` and relies on that pivot again at lines 13, 42,
+  102, 127, 139, and 145. I independently confirmed that the repo-relative path
+  `docs/seeds/system-substrate-pivot.md` is absent from both the immutable
+  revision and worktree. Restore it as a missing reference with its referrer
+  and without a digest or claim that it was read.
+
+- `F-003 — material current-deliverable conflict implicitly resolved` —
+  unresolved (regressed). The current ledger again selects a substrate-only
+  product target and has no decisions or unresolved decision IDs. That conflicts
+  with the binding walkable-world deliverables in
+  `docs/seeds/product-one-seed.md:3,7-9,25-46,50-64,68-73,77-96,100-116`.
+  `docs/seeds/project-boundary.md:3-14` binds the reusable public-consumer
+  boundary but permits a walkable-world validation executable; it does not
+  choose between Product One's executable and the minimal non-game fixture in
+  `docs/seeds/mixed-project-brief.md:20-22,37-47,51-59`. Restore
+  `D-validation-deliverable-scope` or an equivalently complete decision, keep
+  it unresolved with no selected option or resolution source, and make the
+  product target conditional.
+
+- `F-004 — incomplete and misclassified design-question set` — unresolved
+  (regressed). `deferred_design_questions` is now empty. Restore ordinary
+  downstream questions for the precise crate split at
+  `docs/seeds/project-boundary.md:12-14` and the extraction implementation,
+  voxel size, distant LOD, object-registry scaling, fluid pressure, and
+  multiplayer seam supported by
+  `docs/seeds/voxel-world-substrate.md:19-36,225-231`. Product One's concrete
+  performance and platform requirements at
+  `docs/seeds/product-one-seed.md:77-96` belong to the unresolved authority
+  decision about current scope, not to a threshold-free deferred choice.
+
+- `F-005 — verified package mechanics` — partially_resolved (regressed).
+  `source-manifest.json.base_revision` exactly equals the immutable revision;
+  both JSON documents parse; the three declared source digests match both the
+  worktree and immutable revision; and the current manifest's independently
+  computed SHA-256,
+  `6c557ccf441cbd9cf873bb1afb6316fde536800d1c2f7ae970346fec0e266610`,
+  matches `authority-ledger.json`. These mechanics validate only the incomplete
+  three-source package and must be repeated after restoration.
+
+- `F-006 — inaccurate and incomplete claim locators` — unresolved
+  (regressed by removal). The locators on the claims that remain for the three
+  represented documents are accurate. The previously corrected boundary,
+  Product One, architecture, and missing-pivot claims are absent altogether,
+  so their evidence coverage and locator corrections are no longer present.
+
+- `F-007 — authority decision omits material Product One evidence` —
+  unresolved (regressed). The current ledger omits the authority decision and
+  all Product One claims. When restored, the decision evidence must include the
+  selected substrate slice at `docs/seeds/product-one-seed.md:50-64` and the
+  performance/platform requirements at lines 77-96, as well as the world,
+  player, and artifact claims. It must remain unselected before authenticated
+  human feedback.
+
+- `F-008 — prior approval describes a different package state` — unresolved
+  (regressed). The immediately preceding approval describes seven sources, a
+  missing-pivot record, an unresolved scope decision, and manifest digest
+  `1b00e6323565d4d3343c0734f7246118c9134215c06a636725b524389646c8a0`.
+  The current files instead contain three sources, no missing references, no
+  decisions, no deferred questions, and manifest digest
+  `6c557ccf441cbd9cf873bb1afb6316fde536800d1c2f7ae970346fec0e266610`.
+  The historical approval cannot apply to this materially different package.
+
+### New Findings
+
+- None beyond the documented regression of `F-001` through `F-008`.
+
+### Questions For Coder
+
+- None. The restoration requirements are concrete and do not require a human
+  authority answer.
+
+### Answers To Coder
+
+- No direct coder question was pending. The requested package remains a
+  pre-human structural review; no authenticated human feedback is present in
+  the ledger.
+
+### Notes To Coder
+
+- Restore the last structurally approved content in the actual manifest and
+  ledger rather than relying on historical review text. Preserve distinct
+  evidence-supported roles: the competing current-target documents are binding
+  targets, the operator boundary is a binding constraint, the architecture and
+  interface documents are supporting references, and the README documents are
+  context.
+- With no authenticated human answer, the deliverable-scope decision must
+remain visibly unresolved and unselected. Once the inventory, missing
+reference, conditional target, unresolved decision, complete claims, and
+deferred design questions are restored, the package may be approved only as
+structurally ready for human decision; that approval would neither resolve
+the decision nor authorize downstream planning.
+
+### Approval
+
+Not approved.
+
+Authority package rejected.
+
+## Coder Turn — 2026-07-25T10:35:04Z
+
+Mode: continue
+
+Responding to: 2026-07-25T10:30:22Z
+
+### Responses To Findings
+
+- Addressed F-001: restored all seven readable configured and transitively referenced sources, with their immutable-revision SHA-256 digests and discovered reference edges.
+- Addressed F-002: restored `docs/seeds/system-substrate-pivot.md` as a `not_found` missing reference from the architecture document, without a fabricated digest or read claim.
+- Addressed F-003 and F-007: restored `D-validation-deliverable-scope`, its complete Product One world, slice, player, artifact, performance/platform, boundary, and mixed-brief evidence, and the conditional product target. It remains unselected and unresolved because no authenticated human feedback exists.
+- Addressed F-004: restored the seven ordinary deferred design questions, while keeping Product One performance and platform requirements inside the unresolved authority conflict.
+- Addressed F-005, F-006, and F-008: restored the corrected claim locators, seven document roles, and the verified completed manifest digest `1b00e6323565d4d3343c0734f7246118c9134215c06a636725b524389646c8a0`.
+
+### Answers To Auditor
+
+No direct question was pending. No authenticated human authority feedback has been added or inferred.
+
+### TDD Changes Made
+
+- Revalidated JSON parsing, immutable base revision, seven-source coverage, source-file digests, missing-reference content, manifest-digest agreement, document-role coverage, and the unselected unresolved decision state.
+
+### Questions For Auditor
+
+None. Please re-review the restored package.
+
+### Notes To Auditor
+
+The restoration uses the immediately preceding seven-source structural package described in the ledger, rather than treating the historical approval as approval of the regressed three-source files. The scope decision remains a pre-human authority question and does not authorize downstream planning.
+
+## Auditor Turn — 2026-07-25T10:37:52Z
+
+Mode: approved
+
+Responding to: 2026-07-25T10:35:04Z
+
+### Prior Findings Status
+
+- `F-001 — incomplete evidence inventory` — resolved. The current manifest and
+  ledger represent all seven readable Markdown evidence documents at immutable
+  revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`. I independently
+  recomputed every worktree and immutable-blob SHA-256; each pair matches the
+  manifest. The reference edges cover every Markdown path named by those
+  sources.
+
+- `F-002 — missing reference concealed` — resolved. The absent
+  `docs/seeds/system-substrate-pivot.md` is recorded in `missing_references`
+  with `docs/seeds/voxel-world-substrate.md` as its referrer, no fabricated
+  digest, and no claim that it was read. I independently confirmed its absence
+  from both the worktree and immutable revision.
+
+- `F-003 — material current-deliverable conflict implicitly resolved` —
+  resolved for structural review. `D-validation-deliverable-scope` explicitly
+  contrasts the mixed brief's minimal non-game public-API fixture with Product
+  One's walkable third-person demo, curated world, selected substrate slice,
+  performance targets, and platform constraints. It remains `unresolved` with
+  `selected: null` and `resolution_source: null`; the product target accurately
+  describes the scope as conditional.
+
+- `F-004 — incomplete and misclassified design-question set` — resolved.
+  Product One performance and platform requirements remain part of the
+  unresolved authority choice. The exact smooth-extraction implementation,
+  crate split, voxel size, distant LOD, object-registry scaling, fluid-pressure
+  behavior, and multiplayer scope remain separately identified as deferred
+  technical or design questions.
+
+- `F-005 — verified package mechanics` — resolved.
+  `source-manifest.json.base_revision` exactly equals the immutable revision.
+  Both JSON files parse, all source/document/claim/decision references validate,
+  and the independently computed manifest SHA-256
+  `1b00e6323565d4d3343c0734f7246118c9134215c06a636725b524389646c8a0`
+  exactly matches the ledger. `git diff --check` reports no whitespace errors.
+
+- `F-006 — inaccurate and incomplete claim locators` — resolved. The restored
+  project-boundary locators cover lines 3-4, 6-10, 12-14, and 16-18; the
+  architecture storage locator separately covers voxel size, brick/sentinel
+  storage, and lazy materialization; and the missing-pivot locator enumerates
+  the companion declaration and each asserted reliance. The remaining
+  locators also accurately support their claims.
+
+- `F-007 — authority decision omits material Product One evidence` — resolved.
+  The authority decision includes Product One's world, substrate slice, player,
+  performance/platform, and artifact evidence alongside the conflicting mixed
+  brief and public-consumer boundary evidence. Its materially complete evidence
+  set remains unselected.
+
+- `F-008 — prior approval describes a different package state` — resolved.
+  Fresh inspection of the current files confirms that they again contain the
+  seven-source inventory, missing-pivot provenance, conditional target,
+  unresolved authority decision, corrected claims, and seven deferred design
+  questions. This decision does not rely on the historical approval of another
+  file state.
+
+### New Findings
+
+- None.
+
+### Questions For Coder
+
+- None.
+
+### Answers To Coder
+
+- No direct question was pending. I acknowledge the requested re-review: the
+  restored current package is internally consistent and materially complete
+  for pre-human authority review.
+
+### Notes To Coder
+
+- The applicable condition is pre-human structural approval. No authenticated
+  human feedback exists, so `D-validation-deliverable-scope` must remain
+  visibly unresolved and unselected until a human actually answers it. This
+  approval does not select an option, resolve the decision, or authorize
+  downstream planning. A future resolved-package approval will require
+  authenticated human feedback that answers every remaining authority
+  question; deferred design questions may remain open for downstream design.
+
+### Approval
+
+Approved.
+
+Authority package structurally ready for human decision.
