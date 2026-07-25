@@ -1,8 +1,9 @@
 # Moria
 
-Moria is a reusable, GPU-resident voxel-world substrate intended to be consumed
-by the actual game as a Rust crate. Its walkable-world executable is a separate
-consumer and validation harness for terrain generation, streaming, meshing,
-editing, collision, persistence, and performance—not a game layer.
+Moria is the reusable voxel-world substrate defined by
+`docs/seeds/mixed-project-brief.md`. The brief deliberately includes a small
+later-product vision inside an otherwise binding current-product document.
+Only the current substrate commitments are deliverables in this repository.
 
-The substrate inputs are preserved in [`docs/seeds/`](docs/seeds/).
+`docs/seeds/substrate-interface-reference.md` supplies supporting technical
+context without expanding product scope.
