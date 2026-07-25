@@ -204,7 +204,7 @@
       "options": [
         "Expose an explicit enum/state machine per region or stream handle on the public crate surface.",
         "Expose observable events/callbacks without a first-class state enum.",
-        "Keep states internal and only surface readiness/query results."
+        "Expose lifecycle snapshots through read-only region or stream-status queries, including requested, loading, resident, evicted, and failed states."
       ],
       "rationale": "Sources require bounded streaming and observable lifecycle states but do not prescribe API shape. That is implementation design after product authority is fixed."
     },
@@ -224,18 +224,18 @@
     },
     {
       "id": "ddq-surface-extraction-placement",
-      "question": "Where does surface extraction sit relative to the public boundary—crate-provided derived output versus consumer-side meshing from material queries?",
+      "question": "How should the crate-owned, non-authoritative surface-extraction capability be presented at the public boundary?",
       "evidence_claim_ids": [
         "claim-brief-capability-set",
         "claim-brief-public-boundary",
         "claim-brief-correctness"
       ],
       "options": [
-        "Crate owns surface extraction and exposes derived meshes as non-authoritative outputs.",
-        "Crate exposes only material truth; consumers perform extraction.",
-        "Optional extraction helpers behind a feature without making meshes authoritative."
+        "Expose crate-produced derived mesh snapshots directly as non-authoritative public outputs.",
+        "Expose crate-produced surface-extraction results through read-only region or stream-status queries, while retaining extraction implementation within the crate.",
+        "Provide crate-owned extraction helpers behind an optional feature, without making meshes authoritative."
       ],
-      "rationale": "The brief lists surface extraction among current product capabilities and forbids treating derived meshes as authoritative, but does not settle public API placement."
+      "rationale": "The brief makes surface extraction a current product capability and forbids treating derived meshes as authoritative. It leaves the public presentation of crate-owned derived output open, but does not permit moving extraction ownership to consumers."
     },
     {
       "id": "ddq-performance-reporting",
