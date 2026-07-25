@@ -1,28 +1,16 @@
 {
-  "schema_version": 1,
+  "schema_version": "1",
   "base_revision": "77801dc0dded8df3f3b65f22e779ee5ecc6d3efa",
   "sources": [
-    {
-      "id": "src-readme",
-      "path": "README.md",
-      "sha256": "1d051ddc0f447e2fd3b4d15a0c0a1763545a48533cedc6e48de0deb73f31bc48",
-      "referenced_paths": [
-        "docs/seeds/mixed-project-brief.md",
-        "docs/seeds/substrate-interface-reference.md"
-      ]
-    },
-    {
-      "id": "src-mixed-project-brief",
-      "path": "docs/seeds/mixed-project-brief.md",
-      "sha256": "365b62b1fb9d465ba18438db38cd869345da626d1634c242cfae68c5e62e1c6b",
-      "referenced_paths": []
-    },
-    {
-      "id": "src-substrate-interface-reference",
-      "path": "docs/seeds/substrate-interface-reference.md",
-      "sha256": "22a0420c735a875f179133edc21824c31252b296a2de4951c43128bc358a57a4",
-      "referenced_paths": []
-    }
+    {"id":"src-readme","path":"README.md","sha256":"1d051ddc0f447e2fd3b4d15a0c0a1763545a48533cedc6e48de0deb73f31bc48","referenced_paths":["docs/seeds/mixed-project-brief.md","docs/seeds/substrate-interface-reference.md"]},
+    {"id":"src-seeds-index","path":"docs/seeds/README.md","sha256":"35a28c4eb2c13aea52dedf371c5738479dec1faf66e23580a75590d2abed9d80","referenced_paths":["docs/seeds/product-one-seed.md","docs/seeds/voxel-world-substrate.md","docs/seeds/project-boundary.md"]},
+    {"id":"src-mixed-project-brief","path":"docs/seeds/mixed-project-brief.md","sha256":"365b62b1fb9d465ba18438db38cd869345da626d1634c242cfae68c5e62e1c6b","referenced_paths":[]},
+    {"id":"src-product-one-seed","path":"docs/seeds/product-one-seed.md","sha256":"3e5c8541b52bfc64127f821e887f4f0f6b00138b61b7f3f14df6360d1e5e5826","referenced_paths":["docs/seeds/voxel-world-substrate.md"]},
+    {"id":"src-project-boundary","path":"docs/seeds/project-boundary.md","sha256":"aa80e721c6ac39cddac7fe63c099628881276d349730715571fcd0f5578f7fbe","referenced_paths":[]},
+    {"id":"src-substrate-interface-reference","path":"docs/seeds/substrate-interface-reference.md","sha256":"22a0420c735a875f179133edc21824c31252b296a2de4951c43128bc358a57a4","referenced_paths":[]},
+    {"id":"src-voxel-world-substrate","path":"docs/seeds/voxel-world-substrate.md","sha256":"6a163831f4f9f8199b8654dd9e6fdfea02ce166eb767168f4d935579ed43cfa8","referenced_paths":["docs/seeds/system-substrate-pivot.md"]}
   ],
-  "missing_references": []
+  "missing_references": [
+    {"path":"docs/seeds/system-substrate-pivot.md","referenced_by":["docs/seeds/voxel-world-substrate.md"],"reason":"not_found"}
+  ]
 }
