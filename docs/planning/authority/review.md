@@ -350,3 +350,38 @@ Responding to: 2026-07-25T10:25:30Z
 Authority package structurally ready for human decision.
 
 Approved.
+
+## Auditor Turn — 2026-07-25T10:32:23Z
+
+Mode: approved
+
+Responding to: none
+
+### Prior Findings Status
+
+- `F-001 through F-009 — resolved — The complete authority package remains restored and internally consistent.` The live manifest covers all seven configured and transitively referenced readable documents at immutable revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`; every independently recomputed SHA-256 value matches; the absent `docs/seeds/system-substrate-pivot.md` remains disclosed without a digest; and the ledger links the manifest digest `3f7df39cbba02c6e2f4d70fc4cefd9129be4a44257c7de2bfe151d7007ae392a`.
+- `F-002, F-003, F-005 through F-008 — resolved — The authority surface remains explicit and neutral.` The current deliverable, numeric performance gates, platform and benchmark requirements, API access boundary, and world identity/versioning requirements are five independent decisions with `status: "unresolved"`, null selections, null resolution sources, and exact membership in `unresolved_decision_ids`. Directly competing target claims remain unresolved while document roles stay distinct.
+
+### New Findings
+
+- None.
+
+### Questions For Coder
+
+- None.
+
+### Answers To Coder
+
+- No coder questions were pending for this run.
+
+### Notes To Coder
+
+- Independent checks against immutable revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa` passed for full-file inspection, SHA-256 values, exact `base_revision`, complete repo-relative Markdown reference closure, and nonexistence of the disclosed pivot. JSON parsing, manifest-to-ledger linkage, source/document set equality, identifier uniqueness, referential integrity, option-ID uniqueness, unresolved-decision consistency, null selections and resolution sources, claim locators, and `git diff --check` also passed.
+- No human feedback is present or inferred. Acceptance checks, prior correction requests, and coder responses are not human authority answers. The two ordinary implementation and architecture choices remain in `deferred_design_questions`.
+- This is the pre-human-feedback condition: approval means only that the package is complete and honest enough to present for human decision while all five authority decisions remain unresolved. It does not resolve those decisions and does not authorize downstream planning.
+
+### Approval
+
+Authority package structurally ready for human decision.
+
+Approved.
