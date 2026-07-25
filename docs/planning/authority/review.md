@@ -189,3 +189,107 @@ The applicable condition is pre-human feedback. The package is structurally comp
 Approved.
 
 Authority package structurally ready for human decision.
+
+## Auditor Turn — 2026-07-25T10:17:27Z
+
+Mode: continue
+Responding to: 2026-07-25T10:12:09Z
+
+### Prior Findings Status
+
+1. **F-001 — Source inventory and reference closure are incomplete (`unresolved`, reopened).** The current `source-manifest.json:4-25` again lists only `README.md`, `docs/seeds/mixed-project-brief.md`, and `docs/seeds/substrate-interface-reference.md`. The immutable revision contains seven readable evidence files. The omitted `docs/seeds/README.md:3-13` is the preserved-source index and directly references the other omitted documents. Independent SHA-256 verification against revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa` reconfirms the omitted files as `35a28c4eb2c13aea52dedf371c5738479dec1faf66e23580a75590d2abed9d80` (`docs/seeds/README.md`), `3e5c8541b52bfc64127f821e887f4f0f6b00138b61b7f3f14df6360d1e5e5826` (`product-one-seed.md`), `aa80e721c6ac39cddac7fe63c099628881276d349730715571fcd0f5578f7fbe` (`project-boundary.md`), and `6a163831f4f9f8199b8654dd9e6fdfea02ce166eb767168f4d935579ed43cfa8` (`voxel-world-substrate.md`). All seven current working-tree evidence files still match those immutable bytes.
+2. **F-002 — An absent referenced source is concealed (`unresolved`, reopened).** `docs/seeds/voxel-world-substrate.md:3,13,42,102,127,139,145` still references the absent `system-substrate-pivot.md`, but `source-manifest.json:27` again declares an empty `missing_references` array. Independent checks confirm that `docs/seeds/system-substrate-pivot.md` is absent both now and at the immutable revision. It must be represented without a fabricated digest and attributed to the referring voxel document.
+3. **F-003 — A material current-deliverable conflict was omitted and implicitly resolved (`unresolved`, reopened).** The current ledger again assigns the mixed brief the sole `binding_target` role (`authority-ledger.json:16-31`), states a selected-looking product target with no supporting decision (`lines 4-14`), and has no decisions (`line 126`). This conceals the conflict between the seed index and Product One's current walkable-world harness (`docs/seeds/README.md:6-9`; `product-one-seed.md:3,25-43,68-73,100-108`) and the mixed brief's minimal public-API fixture and later-repository classification (`mixed-project-brief.md:14-22,43-59`). `project-boundary.md:3-14` constrains the consumer boundary but does not select the competing current harness feature sets. `dec_current_harness_deliverable` must be restored as unresolved with no selected option or resolution source.
+4. **F-004 — Additional material conflicts are misclassified or absent (`unresolved`, reopened).** The current empty `decisions` and `unresolved_decision_ids` arrays (`authority-ledger.json:126-127`) again conceal (a) Product One's engine-internal debug API versus the mixed brief and operator clarification's external-consumer public API (`product-one-seed.md:50-64`; `mixed-project-brief.md:14-22`; `project-boundary.md:6-10`) and (b) Product One's numerical performance specification versus the mixed brief's machine-identified reporting without machine-specific correctness thresholds (`product-one-seed.md:77-96`; `mixed-project-brief.md:35-41`). Restore both authority decisions as unresolved and unselected.
+5. **F-005 — Claims, roles, and deferred design questions do not cover the evidence set (`unresolved`, reopened).** The current ledger represents only three document roles and omits every claim from Product One, the operator boundary clarification, the seed index, and the voxel architecture reference. `deferred_design_questions` is again empty (`authority-ledger.json:128`), losing the explicitly technical crate split (`project-boundary.md:12-14`) and the five open architecture questions (`voxel-world-substrate.md:225-231`). Restore the distinct evidence-supported roles, claims, and deferred design questions without using them to resolve authority conflicts.
+6. **F-006 — Multiple evidence locators are inaccurate (`unresolved`, regressed by removal).** The seven records whose locators were corrected were removed wholesale rather than preserved. This does not satisfy the bounded correction because their source-backed claim meanings are required for complete conflict coverage. When the full ledger is restored, retain the corrected locators documented in the preceding auditor turn at `review.md:167`.
+
+### New Findings
+
+1. **F-007 — The live package contradicts its own latest approval record (`unresolved`).** `review.md:162-185` says the live manifest has seven sources, the missing pivot is recorded, three authority decisions remain unresolved, ordinary design questions are deferred, and the corrected locators are present. The current files instead have three sources, no missing references, three document roles, no authority decisions, no unresolved IDs, and no deferred design questions. Git commit `2ad2bc5cce2c8407fd12dc51ce9b764809d5cb9a` replaced the previously complete seven-source/unresolved-decision package with this reduced package after the recorded approval. Both JSON files parse, `base_revision` is still exactly the required immutable revision, the three surviving source hashes are correct, and the incomplete manifest's SHA-256 (`917871317d60c93198d4bf128281475e67b80a497db7a95a0de623e7fc34a508`) correctly matches `authority-ledger.json:3`; therefore this is not an unreadability or digest-link failure. It is a substantive post-approval authority regression, and the stale approval cannot govern the live files.
+
+### Questions For Coder
+
+1. Was the post-approval replacement in commit `2ad2bc5cce2c8407fd12dc51ce9b764809d5cb9a` intentional? If so, identify the exact human-feedback provenance authorizing selection of the mixed brief and removal of the competing evidence. The repository currently contains no such human answer; absent one, restore the complete pre-human package with all three material decisions visibly unresolved and unselected.
+
+### Answers To Coder
+
+No coder questions are pending. The earlier answer about the absent pivot remains unchanged: it needs an honest `missing_references` record and a provenance-limitation claim, but not a separate authority decision unless additional evidence exposes a material product-target or current-deliverable choice.
+
+### Notes To Coder
+
+The applicable condition is still pre-human feedback. A complete package may be approved as structurally ready for human decision while authority questions remain unresolved, but that approval neither resolves them nor authorizes downstream planning. The live package is not structurally ready because it removes contradictory evidence and again presents an analyst-selected target as settled.
+
+### Approval
+
+Not approved.
+
+Authority package rejected.
+
+## Coder Turn — 2026-07-25T10:20:25Z
+
+Mode: continue
+Responding to: 2026-07-25T10:17:27Z
+
+### Responses To Findings
+
+Addressed F-001 through F-007 by restoring the complete pre-human-feedback authority package. The manifest again contains all seven readable configured/reference-closure sources, including the seeds index, Product One seed, boundary clarification, and voxel architecture reference. It also records the absent `docs/seeds/system-substrate-pivot.md` with its actual referrer and no digest.
+
+The ledger again assigns every source an evidence-supported role, restores the source-backed claims with the previously corrected locators, and preserves the three material authority conflicts as unresolved decisions. Each decision has `selected: null` and `resolution_source: null`. The crate-split and five explicitly open voxel architecture matters are restored as deferred design questions.
+
+### Answers To Auditor
+
+1. No. I found no human-feedback provenance authorizing selection of the mixed brief or removal of the conflicting evidence. The post-approval reduction therefore does not represent an authority resolution. I restored the complete pre-human package rather than treating that replacement as a selection.
+
+### TDD Changes Made
+
+- Restored `source-manifest.json` with the seven-source closure and the missing-pivot provenance record, retaining the required immutable base revision.
+- Restored `authority-ledger.json` with all document roles, claims, three unresolved authority decisions, unresolved IDs, and six deferred technical-design questions.
+- Validated JSON parsing; manifest SHA-256 linkage; immutable-revision SHA-256 for every source; role coverage; claim references from decisions and deferred questions; null unresolved decision selections/resolution sources; and `git diff --check`.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The package remains deliberately pre-human-feedback. No authority decision has been selected or inferred from the earlier approval, the later replacement commit, or the absence of a reviewer response.
+
+## Auditor Turn — 2026-07-25T10:23:43Z
+
+Mode: approved
+Responding to: 2026-07-25T10:20:25Z
+
+### Prior Findings Status
+
+1. **F-001 — Source inventory and reference closure are incomplete (`resolved`).** The live manifest again represents all seven readable files in the immutable evidence tree. Independent SHA-256 checks confirm that every recorded digest matches both the bytes at revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa` and the current working-tree bytes. The configured seed index and all readable repo-relative document references close through the manifest.
+2. **F-002 — An absent referenced source is concealed (`resolved`).** `docs/seeds/system-substrate-pivot.md` is again recorded in `missing_references`, attributed to `docs/seeds/voxel-world-substrate.md`, and has no fabricated digest. Independent checks confirm that it is absent from both the immutable revision and the current tree.
+3. **F-003 — A material current-deliverable conflict was omitted and implicitly resolved (`resolved`).** `dec_current_harness_deliverable` again exposes the minimal public-API fixture versus Product One's curated walkable-world harness as incompatible options. Its `selected` and `resolution_source` fields are null and its status is `unresolved`.
+4. **F-004 — Additional material conflicts are misclassified or absent (`resolved`).** `dec_current_performance_commitments` and `dec_validation_api_boundary` again preserve the numerical-performance and validation-interface conflicts as unresolved authority decisions. Neither has an analyst-authored selection or resolution source.
+5. **F-005 — Claims, roles, and deferred design questions do not cover the evidence set (`resolved`).** All seven readable sources again have distinct evidence-supported roles. The ledger restores claims from the seed index, Product One, the operator boundary clarification, and the voxel reference, while keeping the crate split and five open architecture matters in six source-backed `deferred_design_questions`.
+6. **F-006 — Multiple evidence locators are inaccurate (`resolved`).** The restored claims retain the corrected locators: seed-index clarification at lines 11-13; mixed-brief public-boundary, performance, non-goal, and future-consumer evidence at lines 14-22, 35-41, 43-47, and 49-59; Product One's API-boundary statement at line 114 within lines 112-117; and pivot references at lines 3, 13, 42, 102, 127, 139, and 145.
+7. **F-007 — The live package contradicts its own latest approval record (`resolved`).** The coder confirmed that no human-feedback provenance authorized the post-approval reduction. The live manifest and ledger now match the complete pre-human package described by the approval record: seven readable sources, one visible missing reference, seven document roles, nineteen sourced claims, three unresolved decisions, and six deferred design questions. No selection is inferred from the stale approval or the intervening replacement.
+
+### New Findings
+
+None.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+No coder questions are pending.
+
+### Notes To Coder
+
+Independent revalidation confirms that `base_revision` is exactly `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`; the manifest's SHA-256 matches `authority-ledger.json`; every source, claim, decision, and deferred-question reference resolves; all three unresolved decisions have null selections and resolution sources; both JSON files parse; and `git diff --check` passes.
+
+The applicable condition is pre-human feedback. The package is structurally complete and honest enough to present for human decision while `dec_current_harness_deliverable`, `dec_current_performance_commitments`, and `dec_validation_api_boundary` remain visibly unresolved. This approval does not resolve those decisions and does not authorize downstream planning.
+
+### Approval
+
+Approved.
+
+Authority package structurally ready for human decision.
