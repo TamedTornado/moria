@@ -7,13 +7,15 @@
       "C-brief-product-identity",
       "C-brief-repo-delivers-substrate",
       "C-brief-capability-set",
+      "binding-deterministic-generation",
       "C-brief-public-boundary",
       "C-brief-validation-not-game",
       "C-brief-correctness",
       "C-brief-streaming-lifecycle",
       "C-brief-validation-commitments",
       "C-brief-non-goals",
-      "C-brief-product-one-future",
+      "future-third-person-explorer",
+      "future-forest",
       "C-brief-product-one-not-authorized",
       "C-readme-points-to-brief",
       "C-readme-current-only-deliverables",
@@ -141,6 +143,20 @@
       "disposition": "binding"
     },
     {
+      "id": "binding-deterministic-generation",
+      "statement": "Generation is deterministic for the same versioned parameters and seed.",
+      "source_id": "src-mixed-project-brief",
+      "source_ids": ["src-mixed-project-brief"],
+      "locators": [
+        {
+          "source_id": "src-mixed-project-brief",
+          "heading": "Current correctness commitments",
+          "lines": "26-26"
+        }
+      ],
+      "disposition": "binding"
+    },
+    {
       "id": "C-brief-public-boundary",
       "statement": "External consumers can create and identify a world, request bounded regions, observe readiness, query material truth, submit bounded edits, and persist deltas. A consumer must not reach into storage, meshing, or scheduler internals.",
       "source_id": "src-mixed-project-brief",
@@ -225,15 +241,43 @@
       "disposition": "binding"
     },
     {
-      "id": "C-brief-product-one-future",
-      "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region with hills, a dense mixed forest, a river, and a cave. That later game-facing demo may use skeletal animation and a curated cliff-to-cave traversal to communicate the world.",
+      "id": "future-third-person-explorer",
+      "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region.",
       "source_id": "src-mixed-project-brief",
       "source_ids": ["src-mixed-project-brief"],
       "locators": [
         {
           "source_id": "src-mixed-project-brief",
           "heading": "Later consumer vision",
-          "lines": "51-54"
+          "lines": "51-52"
+        }
+      ],
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "future-forest",
+      "statement": "That later Product One region vision includes hills, a dense mixed forest, a river, and a cave.",
+      "source_id": "src-mixed-project-brief",
+      "source_ids": ["src-mixed-project-brief"],
+      "locators": [
+        {
+          "source_id": "src-mixed-project-brief",
+          "heading": "Later consumer vision",
+          "lines": "51-52"
+        }
+      ],
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "C-brief-product-one-future-demo",
+      "statement": "That later game-facing demo may use skeletal animation and a curated cliff-to-cave traversal to communicate the world.",
+      "source_id": "src-mixed-project-brief",
+      "source_ids": ["src-mixed-project-brief"],
+      "locators": [
+        {
+          "source_id": "src-mixed-project-brief",
+          "heading": "Later consumer vision",
+          "lines": "53-54"
         }
       ],
       "disposition": "future_consumer"
