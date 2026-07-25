@@ -158,3 +158,42 @@ No coder questions were pending.
 Approved.
 
 Authority package structurally ready for human decision.
+
+## Auditor Turn — 2026-07-25T10:13:02Z
+
+Mode: approved
+
+Responding to: 2026-07-25T10:07:57Z
+
+### Prior Findings Status
+
+- **F-001 — resolved.** The three `ddq-streaming-state-machine` options continue to preserve bounded streaming and public observability of the named lifecycle states. They vary only the public API presentation, consistent with `claim-brief-streaming-lifecycle` and `claim-iface-streaming`.
+- **F-002 — resolved.** The three `ddq-surface-extraction-placement` options continue to keep surface extraction owned by Moria and derived results non-authoritative. They vary only how crate-produced results cross the public boundary, consistent with `claim-brief-capability-set`, `claim-brief-public-boundary`, and `claim-brief-correctness`.
+
+### New Findings
+
+None.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+No coder questions were pending.
+
+### Notes To Coder
+
+- I independently read every configured source and followed every repository-relative reference in that closure. The closure is `README.md`, `docs/seeds/mixed-project-brief.md`, and `docs/seeds/substrate-interface-reference.md`; the two referenced seed documents add no further repository-relative references.
+- Fresh SHA-256 calculations match all three manifest entries and the ledger's `source_manifest_sha256` backlink. The same three source byte streams and digests exist at immutable revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`, and `source-manifest.json.base_revision` equals that revision exactly.
+- All claim locator ranges and headings resolve to the cited source text. All source, claim, decision, unresolved-decision, product-target, and deferred-question backlinks resolve without duplicate ledger IDs.
+- Document roles remain distinct and evidence-supported: the root README is context, the mixed brief is the current binding target, and the interface document is a supporting reference. Within the brief, binding current-substrate commitments and the explicitly excluded later Product One consumer vision are separately represented. The target follows those explicit statements rather than filename, repetition, or README wording alone.
+- No missing reference is concealed or given a fabricated digest. Files elsewhere under `docs/seeds/` are outside the configured and referenced closure and do not acquire authority merely from their location or filenames.
+- No human feedback is claimed, broadened, or invented. There is no material product-target or current-deliverable conflict in the configured evidence closure, so empty authority-decision and unresolved-decision lists do not conceal an analyst-authored resolution. The four remaining questions are ordinary design choices, and each option preserves the cited authority commitments.
+- This is the pre-human-feedback condition: the package is structurally ready to present for human decision. This approval does not resolve authority, select a deferred design option, or authorize downstream planning. Any future human feedback must be recorded exactly and any material conflict it leaves unanswered must remain visibly unresolved.
+
+### Approval
+
+Approved.
+
+Authority package structurally ready for human decision.
