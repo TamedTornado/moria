@@ -1,0 +1,199 @@
+{
+  "schema_version": "1",
+  "source_manifest_sha256": "2d48c963c2112f2b9d454898296e588bb862f412d537517c2f28bac4a80b4cec",
+  "product_target": {
+    "statement": "Moria is a reusable Rust voxel-world substrate delivered through public crate interfaces and exercised by a minimal public-API validation executable; this repository delivers the substrate, not a game and not the later Product One explorer demo.",
+    "supporting_claim_ids": [
+      "CLM-001",
+      "CLM-002",
+      "CLM-003",
+      "CLM-004",
+      "CLM-005",
+      "CLM-006",
+      "CLM-010",
+      "CLM-011"
+    ],
+    "supporting_decision_ids": []
+  },
+  "documents": [
+    {
+      "source_id": "src-mixed-project-brief",
+      "role": "binding_target",
+      "rationale": "Root README identifies this brief as the definition of the Moria substrate product. The brief states the current product boundary, public consumer surface, correctness and validation commitments, non-goals, and explicitly labels its own Product One paragraphs as future-consumer context rather than current deliverables."
+    },
+    {
+      "source_id": "src-substrate-interface-reference",
+      "role": "supporting_reference",
+      "rationale": "Root README and the reference itself state that it supplies supporting technical context for the program brief and does not expand product scope or add deliverables."
+    },
+    {
+      "source_id": "src-readme",
+      "role": "context",
+      "rationale": "Repository entry document that points at the binding brief and supporting interface reference, restates that only current substrate commitments are deliverables, and does not independently define product scope beyond those sources."
+    }
+  ],
+  "claims": [
+    {
+      "id": "CLM-001",
+      "statement": "Moria is a reusable Rust voxel-world substrate consumed through public crate interfaces by games and by a minimal validation executable; this repository delivers the substrate, not any particular game.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current product; lines:5-7",
+      "disposition": "binding"
+    },
+    {
+      "id": "CLM-002",
+      "statement": "The current product owns deterministic seed-based generation, sparse voxel storage, bounded streaming, mutation, surface extraction, persistence, and read-only diagnostics, and these capabilities must remain useful to multiple downstream consumers.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current product; lines:9-12",
+      "disposition": "binding"
+    },
+    {
+      "id": "CLM-003",
+      "statement": "External consumers can create and identify a world, request bounded regions, observe readiness, query material truth, submit bounded edits, and persist deltas; a consumer must not reach into storage, meshing, or scheduler internals.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current public boundary; lines:16-18",
+      "disposition": "binding"
+    },
+    {
+      "id": "CLM-004",
+      "statement": "The validation executable uses exactly the public interfaces, may provide a free-fly camera and diagnostics sufficient to exercise the crate, but is not a game prototype and owns no privileged world path.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current public boundary; lines:20-22",
+      "disposition": "binding"
+    },
+    {
+      "id": "CLM-005",
+      "statement": "Generation is deterministic for the same versioned parameters and seed; mutation is admitted through a bounded command API and committed atomically; persistence restores the same authoritative material state; derived meshes and diagnostics never become authoritative world state.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current correctness commitments; lines:26-29",
+      "disposition": "binding"
+    },
+    {
+      "id": "CLM-006",
+      "statement": "Streaming must bound resident work and expose observable lifecycle states; background results carry generation identities so stale work cannot replace newer truth; failures remain typed and observable to public consumers.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current correctness commitments; lines:31-33",
+      "disposition": "binding"
+    },
+    {
+      "id": "CLM-007",
+      "statement": "Headless fixtures cover generation, query, mutation, persistence, and lifecycle behavior; a small visual fixture demonstrates that a relocated external consumer can render and edit through the public API; performance is reported with machine identity without a machine-specific correctness threshold from this brief.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current validation commitments; lines:37-41",
+      "disposition": "binding"
+    },
+    {
+      "id": "CLM-008",
+      "statement": "Moria does not implement game rules, combat, inventory, AI, narrative systems, characters, animation, authored levels, or production content; references to possible consumers explain interface pressure only.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current non-goals; lines:45-47",
+      "disposition": "binding"
+    },
+    {
+      "id": "CLM-009",
+      "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region with hills, a dense mixed forest, a river, and a cave, and that later game-facing demo may use skeletal animation and a curated cliff-to-cave traversal.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Later consumer vision; lines:51-54",
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "CLM-010",
+      "statement": "The later Product One paragraphs are future-consumer context embedded in this binding program brief and do not authorize a player controller, character mesh, animation clips, forest population workload, curated route, or game asset in Moria.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Later consumer vision; lines:56-59",
+      "disposition": "binding"
+    },
+    {
+      "id": "CLM-011",
+      "statement": "Moria is the reusable voxel-world substrate defined by docs/seeds/mixed-project-brief.md; the brief deliberately includes a small later-product vision inside an otherwise binding current-product document; only the current substrate commitments are deliverables in this repository.",
+      "source_ids": ["src-readme"],
+      "locator": "heading:# Moria; lines:3-6",
+      "disposition": "supporting"
+    },
+    {
+      "id": "CLM-012",
+      "statement": "docs/seeds/substrate-interface-reference.md supplies supporting technical context without expanding product scope.",
+      "source_ids": ["src-readme"],
+      "locator": "heading:# Moria; lines:8-9",
+      "disposition": "supporting"
+    },
+    {
+      "id": "CLM-013",
+      "statement": "This reference supports the Moria program brief, describes the reusable surface that downstream consumers need, and does not add deliverables.",
+      "source_ids": ["src-substrate-interface-reference"],
+      "locator": "heading:# Substrate interface reference; lines:3-4",
+      "disposition": "supporting"
+    },
+    {
+      "id": "CLM-014",
+      "statement": "World identity combines format version, generation parameters, and seed.",
+      "source_ids": ["src-substrate-interface-reference"],
+      "locator": "heading:# Substrate interface reference; lines:6",
+      "disposition": "supporting"
+    },
+    {
+      "id": "CLM-015",
+      "statement": "Queries return readiness and bounded authoritative material observations.",
+      "source_ids": ["src-substrate-interface-reference"],
+      "locator": "heading:# Substrate interface reference; lines:7",
+      "disposition": "supporting"
+    },
+    {
+      "id": "CLM-016",
+      "statement": "Mutations are commands with explicit bounds, admission failures, and commit revisions.",
+      "source_ids": ["src-substrate-interface-reference"],
+      "locator": "heading:# Substrate interface reference; lines:8-9",
+      "disposition": "supporting"
+    },
+    {
+      "id": "CLM-017",
+      "statement": "Streaming exposes requested, loading, resident, evicted, and failed states.",
+      "source_ids": ["src-substrate-interface-reference"],
+      "locator": "heading:# Substrate interface reference; lines:10",
+      "disposition": "supporting"
+    },
+    {
+      "id": "CLM-018",
+      "statement": "Persistence records authoritative deltas rather than derived meshes.",
+      "source_ids": ["src-substrate-interface-reference"],
+      "locator": "heading:# Substrate interface reference; lines:11",
+      "disposition": "supporting"
+    },
+    {
+      "id": "CLM-019",
+      "statement": "Registered objects can participate in queries without becoming game entities.",
+      "source_ids": ["src-substrate-interface-reference"],
+      "locator": "heading:# Substrate interface reference; lines:12-13",
+      "disposition": "supporting"
+    },
+    {
+      "id": "CLM-020",
+      "statement": "Diagnostics report lifecycle and bounded work without exposing mutable internal handles.",
+      "source_ids": ["src-substrate-interface-reference"],
+      "locator": "heading:# Substrate interface reference; lines:14-15",
+      "disposition": "supporting"
+    }
+  ],
+  "decisions": [],
+  "unresolved_decision_ids": [],
+  "deferred_design_questions": [
+    {
+      "id": "DDQ-001",
+      "question": "What machine-specific performance or correctness thresholds, if any, should apply beyond reporting performance with machine identity?",
+      "evidence_claim_ids": ["CLM-007"],
+      "options": [
+        {
+          "id": "DDQ-001-A",
+          "label": "No numeric machine thresholds in product authority",
+          "description": "Keep the brief's stance: report performance with machine identity only; thresholds are design/ops concerns."
+        },
+        {
+          "id": "DDQ-001-B",
+          "label": "Establish explicit numeric targets later",
+          "description": "Downstream design may add machine-class targets once a validation harness and benchmark suite exist."
+        }
+      ],
+      "rationale": "The binding brief explicitly withholds a machine-specific correctness threshold. Choosing thresholds does not change product identity or current-deliverable scope."
+    }
+  ]
+}
