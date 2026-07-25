@@ -1,173 +1,201 @@
 {
-  "schema_version": "1",
-  "source_manifest_sha256": "2d48c963c2112f2b9d454898296e588bb862f412d537517c2f28bac4a80b4cec",
+  "schema_version": 1,
+  "source_manifest_sha256": "11d65ffd74887214cf051e73cff80be560fffb3ad2425f80ac7d254391d4a498",
   "product_target": {
-    "statement": "Moria is a reusable Rust voxel-world substrate delivered through public crate interfaces and exercised by a minimal public-API validation executable; this repository delivers the substrate, not a game and not the later Product One explorer demo.",
+    "statement": "Moria is a reusable Rust voxel-world substrate delivered through public crate interfaces and exercised by a minimal public-API validation executable; this repository does not deliver a game or the later Product One third-person explorer demo.",
     "supporting_claim_ids": [
-      "CLM-001",
-      "CLM-002",
-      "CLM-003",
-      "CLM-004",
-      "CLM-005",
-      "CLM-006",
-      "CLM-010",
-      "CLM-011"
+      "claim-brief-current-product",
+      "claim-brief-public-boundary",
+      "claim-brief-validation-harness",
+      "claim-brief-non-goals",
+      "claim-brief-later-consumer-excluded",
+      "binding-deterministic-generation",
+      "claim-readme-substrate-definition",
+      "claim-readme-current-only-deliverables"
     ],
     "supporting_decision_ids": []
   },
   "documents": [
     {
+      "source_id": "src-readme",
+      "role": "context",
+      "rationale": "Repository entry point that orients readers to the mixed-project brief as the product definition and labels the interface reference as non-expanding supporting context. It does not itself enumerate product capabilities or public API commitments."
+    },
+    {
       "source_id": "src-mixed-project-brief",
       "role": "binding_target",
-      "rationale": "Root README identifies this brief as the definition of the Moria substrate product. The brief states the current product boundary, public consumer surface, correctness and validation commitments, non-goals, and explicitly labels its own Product One paragraphs as future-consumer context rather than current deliverables."
+      "rationale": "Program brief that claims the current product identity (reusable substrate, not a game), public boundary, correctness and validation commitments, non-goals, and explicitly quarantines the embedded Product One paragraphs as later-consumer context that does not authorize game deliverables in Moria."
     },
     {
       "source_id": "src-substrate-interface-reference",
       "role": "supporting_reference",
-      "rationale": "Root README and the reference itself state that it supplies supporting technical context for the program brief and does not expand product scope or add deliverables."
-    },
-    {
-      "source_id": "src-readme",
-      "role": "context",
-      "rationale": "Repository entry document that points at the binding brief and supporting interface reference, restates that only current substrate commitments are deliverables, and does not independently define product scope beyond those sources."
+      "rationale": "Self-describes as support for the Moria program brief: technical surface detail for consumers without adding deliverables or expanding product scope."
     }
   ],
   "claims": [
     {
-      "id": "CLM-001",
-      "statement": "Moria is a reusable Rust voxel-world substrate consumed through public crate interfaces by games and by a minimal validation executable; this repository delivers the substrate, not any particular game.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": "heading:## Current product; lines:5-7",
-      "disposition": "binding"
-    },
-    {
-      "id": "CLM-002",
-      "statement": "The current product owns deterministic seed-based generation, sparse voxel storage, bounded streaming, mutation, surface extraction, persistence, and read-only diagnostics, and these capabilities must remain useful to multiple downstream consumers.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": "heading:## Current product; lines:9-12",
-      "disposition": "binding"
-    },
-    {
-      "id": "CLM-003",
-      "statement": "External consumers can create and identify a world, request bounded regions, observe readiness, query material truth, submit bounded edits, and persist deltas; a consumer must not reach into storage, meshing, or scheduler internals.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": "heading:## Current public boundary; lines:16-18",
-      "disposition": "binding"
-    },
-    {
-      "id": "CLM-004",
-      "statement": "The validation executable uses exactly the public interfaces, may provide a free-fly camera and diagnostics sufficient to exercise the crate, but is not a game prototype and owns no privileged world path.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": "heading:## Current public boundary; lines:20-22",
-      "disposition": "binding"
-    },
-    {
-      "id": "CLM-005",
-      "statement": "Generation is deterministic for the same versioned parameters and seed; mutation is admitted through a bounded command API and committed atomically; persistence restores the same authoritative material state; derived meshes and diagnostics never become authoritative world state.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": "heading:## Current correctness commitments; lines:26-29",
-      "disposition": "binding"
-    },
-    {
-      "id": "CLM-006",
-      "statement": "Streaming must bound resident work and expose observable lifecycle states; background results carry generation identities so stale work cannot replace newer truth; failures remain typed and observable to public consumers.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": "heading:## Current correctness commitments; lines:31-33",
-      "disposition": "binding"
-    },
-    {
-      "id": "CLM-007",
-      "statement": "Headless fixtures cover generation, query, mutation, persistence, and lifecycle behavior; a small visual fixture demonstrates that a relocated external consumer can render and edit through the public API; performance is reported with machine identity without a machine-specific correctness threshold from this brief.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": "heading:## Current validation commitments; lines:37-41",
-      "disposition": "binding"
-    },
-    {
-      "id": "CLM-008",
-      "statement": "Moria does not implement game rules, combat, inventory, AI, narrative systems, characters, animation, authored levels, or production content; references to possible consumers explain interface pressure only.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": "heading:## Current non-goals; lines:45-47",
-      "disposition": "binding"
-    },
-    {
-      "id": "CLM-009",
-      "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region with hills, a dense mixed forest, a river, and a cave, and that later game-facing demo may use skeletal animation and a curated cliff-to-cave traversal.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": "heading:## Later consumer vision; lines:51-54",
-      "disposition": "future_consumer"
-    },
-    {
-      "id": "CLM-010",
-      "statement": "The later Product One paragraphs are future-consumer context embedded in this binding program brief and do not authorize a player controller, character mesh, animation clips, forest population workload, curated route, or game asset in Moria.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": "heading:## Later consumer vision; lines:56-59",
-      "disposition": "binding"
-    },
-    {
-      "id": "CLM-011",
-      "statement": "Moria is the reusable voxel-world substrate defined by docs/seeds/mixed-project-brief.md; the brief deliberately includes a small later-product vision inside an otherwise binding current-product document; only the current substrate commitments are deliverables in this repository.",
+      "id": "claim-readme-substrate-definition",
+      "statement": "Moria is the reusable voxel-world substrate defined by docs/seeds/mixed-project-brief.md.",
       "source_ids": ["src-readme"],
-      "locator": "heading:# Moria; lines:3-6",
+      "locator": "heading:# Moria; lines:3-4",
       "disposition": "supporting"
     },
     {
-      "id": "CLM-012",
+      "id": "claim-readme-current-only-deliverables",
+      "statement": "The brief deliberately includes a small later-product vision inside an otherwise binding current-product document; only the current substrate commitments are deliverables in this repository.",
+      "source_ids": ["src-readme"],
+      "locator": "heading:# Moria; lines:4-6",
+      "disposition": "supporting"
+    },
+    {
+      "id": "claim-readme-interface-non-expanding",
       "statement": "docs/seeds/substrate-interface-reference.md supplies supporting technical context without expanding product scope.",
       "source_ids": ["src-readme"],
       "locator": "heading:# Moria; lines:8-9",
       "disposition": "supporting"
     },
     {
-      "id": "CLM-013",
-      "statement": "This reference supports the Moria program brief, describes the reusable surface that downstream consumers need, and does not add deliverables.",
+      "id": "claim-brief-current-product",
+      "statement": "Moria is a reusable Rust voxel-world substrate consumed through public crate interfaces by games and by a minimal validation executable; this repository delivers the substrate, not any particular game.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current product; lines:5-7",
+      "disposition": "binding"
+    },
+    {
+      "id": "claim-brief-capability-set",
+      "statement": "The current product owns deterministic seed-based generation, sparse voxel storage, bounded streaming, mutation, surface extraction, persistence, and read-only diagnostics, remaining useful to multiple downstream consumers.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current product; lines:9-12",
+      "disposition": "binding"
+    },
+    {
+      "id": "claim-brief-public-boundary",
+      "statement": "External consumers can create and identify a world, request bounded regions, observe readiness, query material truth, submit bounded edits, and persist deltas; a consumer must not reach into storage, meshing, or scheduler internals.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current public boundary; lines:16-18",
+      "disposition": "binding"
+    },
+    {
+      "id": "claim-brief-validation-harness",
+      "statement": "The validation executable uses exactly the public interfaces; it may provide a free-fly camera and diagnostics sufficient to exercise the crate, but it is not a game prototype and owns no privileged world path.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current public boundary; lines:20-22",
+      "disposition": "binding"
+    },
+    {
+      "id": "binding-deterministic-generation",
+      "statement": "Generation is deterministic for the same versioned parameters and seed.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current correctness commitments; lines:26-26",
+      "disposition": "binding"
+    },
+    {
+      "id": "claim-brief-correctness",
+      "statement": "Mutation is admitted through a bounded command API and committed atomically; persistence restores the same authoritative material state; derived meshes and diagnostics never become authoritative world state.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current correctness commitments; lines:27-29",
+      "disposition": "binding"
+    },
+    {
+      "id": "claim-brief-streaming-lifecycle",
+      "statement": "Streaming must bound resident work and expose observable lifecycle states; background results carry generation identities so stale work cannot replace newer truth; failures remain typed and observable to public consumers.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current correctness commitments; lines:31-33",
+      "disposition": "binding"
+    },
+    {
+      "id": "claim-brief-validation-commitments",
+      "statement": "Headless fixtures cover generation, query, mutation, persistence, and lifecycle behavior; a small visual fixture demonstrates that a relocated external consumer can render and edit through the public API; performance is reported with machine identity without a machine-specific correctness threshold in this brief.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current validation commitments; lines:37-41",
+      "disposition": "binding"
+    },
+    {
+      "id": "claim-brief-non-goals",
+      "statement": "Moria does not implement game rules, combat, inventory, AI, narrative systems, characters, animation, authored levels, or production content; references to possible consumers explain interface pressure only.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Current non-goals; lines:45-47",
+      "disposition": "binding"
+    },
+    {
+      "id": "future-third-person-explorer",
+      "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Later consumer vision; lines:51-53",
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "future-forest",
+      "statement": "That later game-facing demo may include a dense mixed forest (with hills, a river, and a cave) as part of a generated region used by Product One.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Later consumer vision; lines:51-54",
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "claim-brief-later-consumer-vision",
+      "statement": "That later game-facing demo may use skeletal animation and a curated cliff-to-cave traversal to communicate the world.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Later consumer vision; lines:53-54",
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "claim-brief-later-consumer-excluded",
+      "statement": "The later Product One paragraphs are future-consumer context embedded in the binding program brief; they do not authorize a player controller, character mesh, animation clips, forest population workload, curated route, or game asset in Moria.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": "heading:## Later consumer vision; lines:56-59",
+      "disposition": "binding"
+    },
+    {
+      "id": "claim-iface-supports-brief",
+      "statement": "The substrate interface reference supports the Moria program brief, describes the reusable surface downstream consumers need, and does not add deliverables.",
       "source_ids": ["src-substrate-interface-reference"],
       "locator": "heading:# Substrate interface reference; lines:3-4",
       "disposition": "supporting"
     },
     {
-      "id": "CLM-014",
+      "id": "claim-iface-world-identity",
       "statement": "World identity combines format version, generation parameters, and seed.",
       "source_ids": ["src-substrate-interface-reference"],
       "locator": "heading:# Substrate interface reference; lines:6",
       "disposition": "supporting"
     },
     {
-      "id": "CLM-015",
+      "id": "claim-iface-queries",
       "statement": "Queries return readiness and bounded authoritative material observations.",
       "source_ids": ["src-substrate-interface-reference"],
       "locator": "heading:# Substrate interface reference; lines:7",
       "disposition": "supporting"
     },
     {
-      "id": "CLM-016",
+      "id": "claim-iface-mutations",
       "statement": "Mutations are commands with explicit bounds, admission failures, and commit revisions.",
       "source_ids": ["src-substrate-interface-reference"],
       "locator": "heading:# Substrate interface reference; lines:8-9",
       "disposition": "supporting"
     },
     {
-      "id": "CLM-017",
+      "id": "claim-iface-streaming-states",
       "statement": "Streaming exposes requested, loading, resident, evicted, and failed states.",
       "source_ids": ["src-substrate-interface-reference"],
       "locator": "heading:# Substrate interface reference; lines:10",
       "disposition": "supporting"
     },
     {
-      "id": "CLM-018",
+      "id": "claim-iface-persistence",
       "statement": "Persistence records authoritative deltas rather than derived meshes.",
       "source_ids": ["src-substrate-interface-reference"],
       "locator": "heading:# Substrate interface reference; lines:11",
       "disposition": "supporting"
     },
     {
-      "id": "CLM-019",
+      "id": "claim-iface-registered-objects",
       "statement": "Registered objects can participate in queries without becoming game entities.",
       "source_ids": ["src-substrate-interface-reference"],
       "locator": "heading:# Substrate interface reference; lines:12-13",
       "disposition": "supporting"
     },
     {
-      "id": "CLM-020",
+      "id": "claim-iface-diagnostics",
       "statement": "Diagnostics report lifecycle and bounded work without exposing mutable internal handles.",
       "source_ids": ["src-substrate-interface-reference"],
       "locator": "heading:# Substrate interface reference; lines:14-15",
@@ -178,22 +206,91 @@
   "unresolved_decision_ids": [],
   "deferred_design_questions": [
     {
-      "id": "DDQ-001",
-      "question": "What machine-specific performance or correctness thresholds, if any, should apply beyond reporting performance with machine identity?",
-      "evidence_claim_ids": ["CLM-007"],
+      "id": "ddq-crate-packaging",
+      "question": "How should the reusable substrate be packaged as a single Rust crate versus a small family of tightly scoped crates, and how should the validation executable be isolated from crate internals?",
+      "evidence_claim_ids": [
+        "claim-brief-current-product",
+        "claim-brief-public-boundary",
+        "claim-brief-validation-harness"
+      ],
       "options": [
         {
-          "id": "DDQ-001-A",
-          "label": "No numeric machine thresholds in product authority",
-          "description": "Keep the brief's stance: report performance with machine identity only; thresholds are design/ops concerns."
+          "id": "ddq-crate-packaging-A",
+          "label": "Single crate plus validation binary",
+          "description": "Single substrate crate plus a separate validation binary crate."
         },
         {
-          "id": "DDQ-001-B",
-          "label": "Establish explicit numeric targets later",
-          "description": "Downstream design may add machine-class targets once a validation harness and benchmark suite exist."
+          "id": "ddq-crate-packaging-B",
+          "label": "Workspace of scoped crates",
+          "description": "Multiple tightly scoped substrate crates in a Cargo workspace with a validation binary that depends only on public APIs."
+        },
+        {
+          "id": "ddq-crate-packaging-C",
+          "label": "Defer packaging layout",
+          "description": "Defer packaging layout until API surface stabilizes."
         }
       ],
-      "rationale": "The binding brief explicitly withholds a machine-specific correctness threshold. Choosing thresholds does not change product identity or current-deliverable scope."
+      "rationale": "Configured sources establish a public-consumer boundary and a non-privileged validation harness but do not prescribe crate topology. Packaging is an implementation choice that does not change product identity or current-deliverable scope."
+    },
+    {
+      "id": "ddq-interface-surface-detail",
+      "question": "What concrete type and operation shapes implement world identity, bounded queries, mutation commands, streaming lifecycle, persistence deltas, registered objects, and diagnostics?",
+      "evidence_claim_ids": [
+        "claim-brief-public-boundary",
+        "binding-deterministic-generation",
+        "claim-brief-correctness",
+        "claim-brief-streaming-lifecycle",
+        "claim-iface-world-identity",
+        "claim-iface-queries",
+        "claim-iface-mutations",
+        "claim-iface-streaming-states",
+        "claim-iface-persistence",
+        "claim-iface-registered-objects",
+        "claim-iface-diagnostics"
+      ],
+      "options": [
+        {
+          "id": "ddq-interface-surface-detail-A",
+          "label": "Follow interface reference sketch",
+          "description": "Follow the interface reference bullets as the primary API sketch and refine in design."
+        },
+        {
+          "id": "ddq-interface-surface-detail-B",
+          "label": "Illustrative only; redesign under brief",
+          "description": "Treat the interface reference as illustrative only and redesign the surface under the brief's public-boundary constraints."
+        },
+        {
+          "id": "ddq-interface-surface-detail-C",
+          "label": "Subsystem RFCs",
+          "description": "Split public surface design by subsystem (world, stream, mutate, persist, diagnostics) with independent RFCs."
+        }
+      ],
+      "rationale": "The brief binds capability classes and consumer isolation rules; the interface reference elaborates supporting surface language without locking API design. Exact signatures and module layout are design work, not document-authority questions."
+    },
+    {
+      "id": "ddq-performance-reporting",
+      "question": "Which performance metrics and machine-profile fields should the validation and fixture suite report, given that the brief requires machine identity on performance reports but establishes no machine-specific correctness threshold?",
+      "evidence_claim_ids": [
+        "claim-brief-validation-commitments"
+      ],
+      "options": [
+        {
+          "id": "ddq-performance-reporting-A",
+          "label": "Minimal counters plus machine identity",
+          "description": "Minimal latency/memory counters plus machine identity."
+        },
+        {
+          "id": "ddq-performance-reporting-B",
+          "label": "Informational benchmark baselines",
+          "description": "Benchmark suite with comparative baselines that are informational only."
+        },
+        {
+          "id": "ddq-performance-reporting-C",
+          "label": "Thresholds later outside authority",
+          "description": "Define thresholds later outside the authority package."
+        }
+      ],
+      "rationale": "Performance reporting is required; pass/fail thresholds are explicitly not set by the brief. Choosing metrics and baselines is technical design, not product-authority resolution."
     }
   ]
 }
