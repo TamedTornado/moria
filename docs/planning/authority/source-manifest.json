@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "base_revision": "77801dc0dded8df3f3b65f22e779ee5ecc6d3efa",
+  "sources": [
+    {
+      "id": "src-readme",
+      "path": "README.md",
+      "sha256": "1d051ddc0f447e2fd3b4d15a0c0a1763545a48533cedc6e48de0deb73f31bc48",
+      "referenced_paths": [
+        "docs/seeds/mixed-project-brief.md",
+        "docs/seeds/substrate-interface-reference.md"
+      ]
+    },
+    {
+      "id": "src-mixed-project-brief",
+      "path": "docs/seeds/mixed-project-brief.md",
+      "sha256": "365b62b1fb9d465ba18438db38cd869345da626d1634c242cfae68c5e62e1c6b",
+      "referenced_paths": []
+    },
+    {
+      "id": "src-substrate-interface-reference",
+      "path": "docs/seeds/substrate-interface-reference.md",
+      "sha256": "22a0420c735a875f179133edc21824c31252b296a2de4951c43128bc358a57a4",
+      "referenced_paths": []
+    }
+  ],
+  "missing_references": []
+}
