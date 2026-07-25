@@ -71,3 +71,40 @@ Responding to: 2026-07-25T10:00:38Z
 Approved.
 
 Authority package structurally ready for human decision.
+
+## Auditor Turn — 2026-07-25T10:10:12Z
+
+Mode: approved
+
+Responding to: 2026-07-25T10:05:50Z
+
+### Prior Findings Status
+
+- `AUD-001 — configured evidence closure and integrity — resolved`: Independently rehashed the configured graph after commit `c1768d5f886465516297dd3ae681d8315dfb32ab`. Current-worktree and immutable-revision SHA-256 values both remain `1d051ddc0f447e2fd3b4d15a0c0a1763545a48533cedc6e48de0deb73f31bc48` for `README.md`, `365b62b1fb9d465ba18438db38cd869345da626d1634c242cfae68c5e62e1c6b` for `docs/seeds/mixed-project-brief.md`, and `22a0420c735a875f179133edc21824c31252b296a2de4951c43128bc358a57a4` for `docs/seeds/substrate-interface-reference.md`. They match every manifest entry. `base_revision` remains exactly `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`; the independently computed current manifest digest is `11d65ffd74887214cf051e73cff80be560fffb3ad2425f80ac7d254391d4a498`, matching the ledger.
+- `AUD-002 — source roles and legacy material — resolved`: Re-read the complete configured graph and the preserved unconfigured seed directory. The root README at the immutable revision explicitly configures the mixed brief and interface reference rather than the directory index. The ledger separately records `context`, `binding_target`, and `supporting_reference`; within the binding brief, later Product One material is separately classified as `future_consumer`. The old directory index, Product One demo seed, boundary clarification, and architecture reference remain outside the configured closure. The architecture reference's absent `system-substrate-pivot.md` is therefore not a reachable configured reference, so `missing_references: []` is honest rather than concealment.
+- `AUD-003 — product target and authority conflicts — resolved`: The binding brief itself states that this repository delivers the reusable substrate rather than a game, places the explorer in a separate Product One repository after substrate shipment, and expressly says the later paragraphs do not authorize game deliverables in Moria. This classification is source-authored and supported by the current-product, public-boundary, non-goal, and later-consumer locators; it is not inferred from filename, detail, repetition, or README precedence. No material configured product-target conflict exists for an analyst to resolve, so empty `decisions`, `supporting_decision_ids`, and `unresolved_decision_ids` are accurate.
+- `AUD-004 — claims and design separation — resolved`: Revalidated the final 24-claim form. All claim IDs are unique, every `source_id` resolves to a manifested document, every cited line range is in bounds under the named heading, and product-target and deferred-question references contain no dangling IDs. The three deferred items—crate packaging, exact interface shapes, and performance-report contents—remain ordinary downstream design questions and are not attributed to a human or promoted into authority decisions.
+- `AUD-005 — human-feedback boundary — resolved`: The package contains no claimed human feedback and no acceptance-check result presented as an answer. No authority decision was selected or cleared in response to the review harness.
+
+### New Findings
+
+- No new blocking findings.
+- `AUD-006 — final schema normalization — resolved`: The post-review normalization in commit `c1768d5f886465516297dd3ae681d8315dfb32ab` consistently replaced per-claim `source_ids` arrays with singular `source_id` fields and refined the forest claim to the exact source wording. Both JSON files parse, schema versions are numeric `1`, source/document coverage is one-to-one, and the change introduced no evidence, locator, or cross-reference defect.
+
+### Questions For Coder
+
+- None.
+
+### Answers To Coder
+
+- No coder questions were pending.
+
+### Notes To Coder
+
+- This is the pre-human-feedback structural-readiness condition. Approval means the package is complete and honest enough to present to the human; it does not invent or substitute for human feedback, resolve any future authority conflict, or authorize downstream planning. If later configured evidence creates a material product-target or current-deliverable conflict, preserve it unresolved with no selected option until a human actually answers it.
+
+### Approval
+
+Approved.
+
+Authority package structurally ready for human decision.
