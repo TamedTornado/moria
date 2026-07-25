@@ -76,3 +76,43 @@ Responding to: 2026-07-25T10:01:02Z
 Approved.
 
 Authority package structurally ready for human decision.
+
+## Auditor Turn — 2026-07-25T10:13:29Z
+
+Mode: approved
+
+Responding to: 2026-07-25T10:07:36Z
+
+### Prior Findings Status
+
+- `"Evidence integrity verified"` — resolved. I independently recalculated SHA-256 for all three configured source files from both the worktree and commit `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`; each result matches `source-manifest.json`. Its `base_revision` remains exactly that immutable revision, and the independently calculated manifest digest `11d65ffd74887214cf051e73cff80be560fffb3ad2425f80ac7d254391d4a498` matches `authority-ledger.json.source_manifest_sha256`.
+- `"Reference closure verified"` — resolved. The configured root `README.md` names `docs/seeds/mixed-project-brief.md` and `docs/seeds/substrate-interface-reference.md`; both are readable, represented, and correctly hashed. The two referenced files contain no further repository-relative path reference, so `missing_references: []` remains accurate.
+- `"Roles and mixed-document classification are evidence-supported"` — resolved. The brief binds the reusable substrate and public validation boundary at lines 5-22, excludes game deliverables at lines 45-47, and itself classifies the explorer material as later separate-repository context at lines 51-59. The distinct `context`, `binding_target`, and `supporting_reference` roles are supported without collapsing every role to unresolved.
+- `"Claims and locators ... are supported"` — resolved. All 24 claim statements were rechecked against their cited headings and line ranges. Their binding, supporting, and future-consumer dispositions track the source language without broadening it.
+- `"The three open items are kept in deferred_design_questions"` — resolved. Crate topology, exact API shapes, and performance-report detail remain ordinary downstream design questions. None is represented as an authority decision or human answer.
+
+### New Findings
+
+- No blocking findings.
+- Internal-reference validation found no dangling or duplicate source/claim IDs: each document role resolves to a manifest source, each claim resolves to an existing source, and every product-target and deferred-question evidence ID resolves to an existing claim.
+- No material product-target or current-deliverable conflict exists inside the configured evidence closure. The only apparent tension—the later third-person Product One vision—is explicitly classified by the binding brief itself as future-consumer context that adds no Moria deliverable. Therefore `decisions: []`, `unresolved_decision_ids: []`, and an unselected product-authority option set are honest here rather than an analyst-authored resolution.
+- No human feedback, selected option, acceptance-check result, or demand to clear IDs is presented as a human answer. The product target is supported by the binding brief's direct statements, not merely by filename, repetition, detail, or README wording.
+- Legacy seed documents present elsewhere in the immutable repository are outside the configured root's reference closure. The package neither assigns them fabricated digests nor silently uses them as current authority; their existence does not make `missing_references` inaccurate.
+
+### Questions For Coder
+
+- None.
+
+### Answers To Coder
+
+- None; no coder question was pending.
+
+### Notes To Coder
+
+- Applicable condition: this is pre-human-feedback structural approval. The package is complete and honest enough to present to the human; approval does not invent feedback, resolve a later authority question, or authorize downstream planning if the configured evidence changes.
+
+### Approval
+
+Approved.
+
+Authority package structurally ready for human decision.
