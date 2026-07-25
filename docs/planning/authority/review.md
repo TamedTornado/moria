@@ -35,3 +35,39 @@ Responding to: none
 Approved.
 
 Authority package structurally ready for human decision.
+
+## Auditor Turn — 2026-07-25T10:05:50Z
+
+Mode: approved
+
+Responding to: 2026-07-25T10:00:38Z
+
+### Prior Findings Status
+
+- `AUD-001 — configured evidence closure and integrity — resolved`: Rechecked after the generated schema correction in commit `c8077097a63de2fa4dc399e9515ad1d139147e76`. The three configured files still hash to `1d051ddc0f447e2fd3b4d15a0c0a1763545a48533cedc6e48de0deb73f31bc48` (`README.md`), `365b62b1fb9d465ba18438db38cd869345da626d1634c242cfae68c5e62e1c6b` (`docs/seeds/mixed-project-brief.md`), and `22a0420c735a875f179133edc21824c31252b296a2de4951c43128bc358a57a4` (`docs/seeds/substrate-interface-reference.md`). Those bytes equal the files at immutable revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`, every manifest digest matches, and `base_revision` is exact. The current manifest digest is now `11d65ffd74887214cf051e73cff80be560fffb3ad2425f80ac7d254391d4a498` because `schema_version` was corrected from a string to a number; the ledger contains that current digest. This supersedes the prior turn's pre-correction `2d48c963c2112f2b9d454898296e588bb862f412d537517c2f28bac4a80b4cec` digest without changing the evidence graph.
+- `AUD-002 — source roles and legacy material — resolved`: The immutable revision itself replaces the root README's former link to the whole `docs/seeds/` directory with explicit links to the mixed brief and interface reference. The configured graph therefore closes at those two files. The preserved `docs/seeds/README.md`, `product-one-seed.md`, `project-boundary.md`, and `voxel-world-substrate.md` are legacy material outside that graph; I re-read them, including the absent `system-substrate-pivot.md` reference in the unconfigured architecture document. Their product-demo, architecture-reference, boundary-clarification, and stale-index roles remain distinguishable and do not silently become current evidence. Because the absent reference is not reachable from a configured source, `missing_references: []` accurately describes the configured graph.
+- `AUD-003 — product target and authority conflicts — resolved`: The mixed brief directly and explicitly says that the current repository delivers the reusable substrate, not a game; identifies the explorer as a post-substrate consumer in a separate repository; and denies that its later-consumer paragraphs authorize the listed game deliverables. Thus no analyst selected between conflicting current targets. There is no material pre-human authority decision to populate, and empty `decisions`, `unresolved_decision_ids`, and `supporting_decision_ids` are honest.
+- `AUD-004 — claims and design separation — resolved`: Rechecked the post-correction claim set, including the separated deterministic-generation, third-person-explorer, and forest claims. All source IDs and cited line ranges resolve to the asserted text, and all product-target and deferred-question references close. Crate topology, exact interface shapes, and performance-report contents remain properly deferred as design questions rather than invented human decisions.
+
+### New Findings
+
+- No new blocking findings.
+- `AUD-005 — human-feedback boundary — resolved`: The ledger contains no purported human feedback, acceptance-check result, or analyst-authored answer. No unresolved ID was improperly cleared in response to a harness demand; the absence of unresolved IDs follows from the configured brief's explicit current-versus-later classification.
+
+### Questions For Coder
+
+- None.
+
+### Answers To Coder
+
+- No coder questions were pending.
+
+### Notes To Coder
+
+- This approval applies to the pre-human-feedback structural-readiness condition only. The package is complete and honest enough to present to the human, while this approval neither resolves future authority conflicts nor authorizes downstream planning. Any later material authority conflict must remain unresolved with no selected option until actual human feedback answers it.
+
+### Approval
+
+Approved.
+
+Authority package structurally ready for human decision.
