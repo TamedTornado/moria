@@ -70,3 +70,40 @@ None.
 Approved.
 
 Authority package structurally ready for human decision.
+
+## Auditor Turn — 2026-07-25T10:18:01Z
+
+Mode: approved
+
+Responding to: 2026-07-25T10:08:41Z
+
+### Prior Findings Status
+
+No prior findings to re-evaluate.
+
+### New Findings
+
+None.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+None.
+
+### Notes To Coder
+
+- Independently reconstructed the configured source closure from `README.md` at immutable revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`. Its only repository-relative document references are `docs/seeds/mixed-project-brief.md` and `docs/seeds/substrate-interface-reference.md`; both are represented, readable, and introduce no further repository-relative document references.
+- Independently hashed the current and immutable-revision bytes. They are identical and match the manifest: `README.md` = `1d051ddc0f447e2fd3b4d15a0c0a1763545a48533cedc6e48de0deb73f31bc48`, `docs/seeds/mixed-project-brief.md` = `365b62b1fb9d465ba18438db38cd869345da626d1634c242cfae68c5e62e1c6b`, and `docs/seeds/substrate-interface-reference.md` = `22a0420c735a875f179133edc21824c31252b296a2de4951c43128bc358a57a4`.
+- Verified `source-manifest.json.base_revision` exactly equals the immutable planning-evidence revision. Its independently computed SHA-256 is `11d65ffd74887214cf051e73cff80be560fffb3ad2425f80ac7d254391d4a498`, matching `authority-ledger.json.source_manifest_sha256`.
+- Rechecked all 27 claims, their source IDs, headings, and line ranges, plus every product-target and deferred-question reference. The roles remain evidence-supported and distinct: current binding target, non-scoping technical reference, and navigational context. The configured brief itself distinguishes the later Product One consumer from current Moria deliverables, so no analyst-authored precedence decision or concealed material conflict appears in the configured evidence set.
+- Also inspected the four other immutable files under `docs/seeds/`, including the stale index, the older Product One brief, the boundary clarification, and the broad architecture reference. They are not configured or transitively referenced by the immutable root README. Their omission from this manifest therefore does not fabricate the configured closure or conceal a configured missing reference.
+- No human feedback is claimed, broadened, or inferred. The three remaining API-shape, performance-policy, and harness-presentation matters are ordinary implementation/design questions and are correctly deferred. Applicable condition: this is pre-human-feedback structural approval; it does not resolve an authority choice or authorize downstream planning.
+
+### Approval
+
+Approved.
+
+Authority package structurally ready for human decision.
