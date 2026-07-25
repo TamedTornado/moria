@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "source_manifest_sha256": "1f9907b1df3be0ca998711c7737544c9a55e3c9bc3ef9f3c72c26fa824af4bb1",
+  "product_target": {
+    "statement": "Moria is a reusable Rust voxel-world substrate delivered through public crate interfaces, with a minimal public-API validation executable and no particular game as a current repository deliverable. The embedded later Product One third-person explorer vision is future-consumer context only.",
+    "supporting_claim_ids": [
+      "C-brief-product",
+      "C-brief-capabilities",
+      "C-brief-public-boundary",
+      "C-brief-validation-exe",
+      "C-brief-nongoals",
+      "C-brief-later-not-auth",
+      "C-readme-current-only",
+      "C-iface-supports"
+    ],
+    "supporting_decision_ids": []
+  },
+  "documents": [
+    {
+      "id": "src-mixed-brief",
+      "path": "docs/seeds/mixed-project-brief.md",
+      "role": "binding_target",
+      "rationale": "States the current product identity, public consumer boundary, correctness and validation commitments, non-goals, and explicitly demotes the embedded later Product One vision to future-consumer context. No competing configured source claims a different current product."
+    },
+    {
+      "id": "src-interface-ref",
+      "path": "docs/seeds/substrate-interface-reference.md",
+      "role": "supporting_reference",
+      "rationale": "Self-describes as support for the program brief: elaborates the reusable public surface downstream consumers need and states that it does not add deliverables."
+    },
+    {
+      "id": "src-readme",
+      "path": "README.md",
+      "role": "context",
+      "rationale": "Orients readers to the brief and interface reference and restates that only current substrate commitments are deliverables. A README assertion is evidence to weigh, not self-authenticating authority."
+    }
+  ],
+  "claims": [
+    {
+      "id": "C-brief-product",
+      "statement": "Moria is a reusable Rust voxel-world substrate consumed through public crate interfaces by games and by a minimal validation executable; this repository delivers the substrate, not any particular game.",
+      "source_ids": ["src-mixed-brief"],
+      "locator": { "heading": "Current product" },
+      "disposition": "binding"
+    },
+    {
+      "id": "C-brief-capabilities",
+      "statement": "The current product owns deterministic seed-based generation, sparse voxel storage, bounded streaming, mutation, surface extraction, persistence, and read-only diagnostics, remaining useful to multiple downstream consumers.",
+      "source_ids": ["src-mixed-brief"],
+      "locator": { "heading": "Current product" },
+      "disposition": "binding"
+    },
+    {
+      "id": "C-brief-public-boundary",
+      "statement": "External consumers can create and identify a world, request bounded regions, observe readiness, query material truth, submit bounded edits, and persist deltas; a consumer must not reach into storage, meshing, or scheduler internals.",
+      "source_ids": ["src-mixed-brief"],
+      "locator": { "heading": "Current public boundary" },
+      "disposition": "binding"
+    },
+    {
+      "id": "C-brief-validation-exe",
+      "statement": "The validation executable uses exactly the public interfaces, may provide a free-fly camera and diagnostics sufficient to exercise the crate, is not a game prototype, and owns no privileged world path.",
+      "source_ids": ["src-mixed-brief"],
+      "locator": { "heading": "Current public boundary" },
+      "disposition": "binding"
+    },
+    {
+      "id": "C-brief-correctness",
+      "statement": "Generation is deterministic for the same versioned parameters and seed; mutation is admitted through a bounded command API and committed atomically; persistence restores the same authoritative material state; derived meshes and diagnostics never become authoritative world state.",
+      "source_ids": ["src-mixed-brief"],
+      "locator": { "heading": "Current correctness commitments" },
+      "disposition": "binding"
+    },
+    {
+      "id": "C-brief-streaming",
+      "statement": "Streaming must bound resident work and expose observable lifecycle states; background results carry generation identities so stale work cannot replace newer truth; failures remain typed and observable to public consumers.",
+      "source_ids": ["src-mixed-brief"],
+      "locator": { "heading": "Current correctness commitments" },
+      "disposition": "binding"
+    },
+    {
+      "id": "C-brief-validation",
+      "statement": "Headless fixtures cover generation, query, mutation, persistence, and lifecycle behavior; a small visual fixture demonstrates that a relocated external consumer can render and edit through the public API; performance is reported with machine identity; this brief does not establish a machine-specific correctness threshold.",
+      "source_ids": ["src-mixed-brief"],
+      "locator": { "heading": "Current validation commitments" },
+      "disposition": "binding"
+    },
+    {
+      "id": "C-brief-nongoals",
+      "statement": "Moria does not implement game rules, combat, inventory, AI, narrative systems, characters, animation, authored levels, or production content; references to possible consumers explain interface pressure only.",
+      "source_ids": ["src-mixed-brief"],
+      "locator": { "heading": "Current non-goals" },
+      "disposition": "binding"
+    },
+    {
+      "id": "C-brief-later-vision",
+      "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region with hills, a dense mixed forest, a river, and a cave, possibly using skeletal animation and a curated cliff-to-cave traversal.",
+      "source_ids": ["src-mixed-brief"],
+      "locator": { "heading": "Later consumer vision" },
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "C-brief-later-not-auth",
+      "statement": "The later Product One paragraphs are future-consumer context embedded in this binding program brief and do not authorize a player controller, character mesh, animation clips, forest population workload, curated route, or game asset in Moria.",
+      "source_ids": ["src-mixed-brief"],
+      "locator": { "heading": "Later consumer vision" },
+      "disposition": "binding"
+    },
+    {
+      "id": "C-iface-supports",
+      "statement": "This reference supports the Moria program brief, describes the reusable surface that downstream consumers need, and does not add deliverables.",
+      "source_ids": ["src-interface-ref"],
+      "locator": { "heading": "Substrate interface reference" },
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-iface-world-id",
+      "statement": "World identity combines format version, generation parameters, and seed.",
+      "source_ids": ["src-interface-ref"],
+      "locator": { "line_range": [6, 6] },
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-iface-queries",
+      "statement": "Queries return readiness and bounded authoritative material observations.",
+      "source_ids": ["src-interface-ref"],
+      "locator": { "line_range": [7, 7] },
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-iface-mutations",
+      "statement": "Mutations are commands with explicit bounds, admission failures, and commit revisions.",
+      "source_ids": ["src-interface-ref"],
+      "locator": { "line_range": [8, 9] },
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-iface-streaming",
+      "statement": "Streaming exposes requested, loading, resident, evicted, and failed states.",
+      "source_ids": ["src-interface-ref"],
+      "locator": { "line_range": [10, 10] },
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-iface-persistence",
+      "statement": "Persistence records authoritative deltas rather than derived meshes.",
+      "source_ids": ["src-interface-ref"],
+      "locator": { "line_range": [11, 11] },
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-iface-objects",
+      "statement": "Registered objects can participate in queries without becoming game entities.",
+      "source_ids": ["src-interface-ref"],
+      "locator": { "line_range": [12, 13] },
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-iface-diagnostics",
+      "statement": "Diagnostics report lifecycle and bounded work without exposing mutable internal handles.",
+      "source_ids": ["src-interface-ref"],
+      "locator": { "line_range": [14, 15] },
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-readme-product",
+      "statement": "Moria is the reusable voxel-world substrate defined by docs/seeds/mixed-project-brief.md.",
+      "source_ids": ["src-readme"],
+      "locator": { "line_range": [3, 4] },
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-readme-later-embedded",
+      "statement": "The brief deliberately includes a small later-product vision inside an otherwise binding current-product document.",
+      "source_ids": ["src-readme"],
+      "locator": { "line_range": [4, 5] },
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-readme-current-only",
+      "statement": "Only the current substrate commitments are deliverables in this repository.",
+      "source_ids": ["src-readme"],
+      "locator": { "line_range": [6, 6] },
+      "disposition": "supporting"
+    },
+    {
+      "id": "C-readme-interface-role",
+      "statement": "docs/seeds/substrate-interface-reference.md supplies supporting technical context without expanding product scope.",
+      "source_ids": ["src-readme"],
+      "locator": { "line_range": [8, 9] },
+      "disposition": "supporting"
+    }
+  ],
+  "decisions": [],
+  "unresolved_decision_ids": [],
+  "deferred_design_questions": [
+    {
+      "id": "DD-crate-partitioning",
+      "question": "How should the reusable substrate be packaged as one crate versus a small family of tightly scoped crates?",
+      "evidence_claim_ids": ["C-brief-product", "C-brief-public-boundary"],
+      "options": [
+        {
+          "id": "single_crate",
+          "label": "Single public crate"
+        },
+        {
+          "id": "crate_family",
+          "label": "Family of tightly scoped crates"
+        }
+      ],
+      "rationale": "The brief requires public crate interfaces and multi-consumer usefulness but does not fix the Cargo packaging split. That is an implementation boundary, not an authority or product-identity choice."
+    },
+    {
+      "id": "DD-perf-correctness-thresholds",
+      "question": "Should machine-specific performance numbers become correctness thresholds, or only reported benchmarks with machine identity?",
+      "evidence_claim_ids": ["C-brief-validation"],
+      "options": [
+        {
+          "id": "report_only",
+          "label": "Report performance with machine identity; no machine-specific correctness threshold"
+        },
+        {
+          "id": "thresholded",
+          "label": "Adopt machine-specific performance correctness thresholds later"
+        }
+      ],
+      "rationale": "The brief explicitly declines to establish a machine-specific correctness threshold while requiring performance reporting. Choosing thresholds later is a design/ops decision, not a document-authority question."
+    },
+    {
+      "id": "DD-surface-extraction-approach",
+      "question": "Which surface-extraction approach should implement the substrate's non-authoritative mesh derivation commitment?",
+      "evidence_claim_ids": ["C-brief-capabilities", "C-brief-correctness", "C-iface-persistence"],
+      "options": [
+        {
+          "id": "unspecified",
+          "label": "Leave algorithm choice to design; meshes remain non-authoritative derived views"
+        }
+      ],
+      "rationale": "Sources require surface extraction and that derived meshes are never authoritative or persisted as truth, but they do not select a meshing algorithm. Implementation design may choose among known techniques."
+    }
+  ]
+}
