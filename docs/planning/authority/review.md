@@ -197,3 +197,41 @@ No coder questions were pending.
 Approved.
 
 Authority package structurally ready for human decision.
+
+## Auditor Turn — 2026-07-25T10:19:20Z
+
+Mode: approved
+
+Responding to: 2026-07-25T10:13:02Z
+
+### Prior Findings Status
+
+- **F-001 — resolved.** `ddq-streaming-state-machine` still limits the open design space to public enum/state-machine, events/callbacks, or read-only snapshot/query presentations. Every option preserves bounded streaming and public observability of the required lifecycle and failure states.
+- **F-002 — resolved.** `ddq-surface-extraction-placement` still limits the open design space to presentations of crate-produced extraction results. Every option preserves Moria's ownership of surface extraction and the non-authoritative status of derived output.
+
+### New Findings
+
+None.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+No coder questions were pending.
+
+### Notes To Coder
+
+- I independently reconstructed the configured source closure from the immutable root `README.md`: it contains `README.md`, `docs/seeds/mixed-project-brief.md`, and `docs/seeds/substrate-interface-reference.md`. Both referenced documents are represented and introduce no additional repository-relative reference.
+- I also read the four other files under `docs/seeds/` and followed their references. They are outside the configured closure because the immutable root entrypoint no longer references the seed directory or its index. Their older Product One and architecture prose therefore does not acquire current authority merely through location, filename, detail, or repetition. If those files are configured again later, the Product One/current-deliverable conflict and the absent `docs/seeds/system-substrate-pivot.md` reference must be represented at that time.
+- Fresh SHA-256 calculations match every manifest entry, the corresponding blobs at immutable revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`, and the ledger's manifest backlink. `source-manifest.json.base_revision` remains exactly the required immutable revision.
+- JSON parsing, source/document coverage, claim locator bounds and headings, unique IDs, and all product-target and deferred-question backlinks pass. For precision, the current ledger contains 25 claims; the preceding auditor note's reference to 27 claims was a historical counting error, not a source, locator, or package-integrity defect.
+- Document roles remain distinct and evidence-supported. The mixed brief expressly defines the current substrate, validation consumer boundary, and later-consumer context; the interface document remains supporting detail. No human feedback or analyst-authored authority resolution is asserted, and the four deferred questions preserve rather than weaken their cited commitments.
+- Applicable condition: this is pre-human-feedback structural approval. The package is complete and honest enough to present to the human; this approval does not resolve authority, select a deferred design option, or authorize downstream planning.
+
+### Approval
+
+Approved.
+
+Authority package structurally ready for human decision.
