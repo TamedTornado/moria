@@ -1,16 +1,18 @@
 {
-  "schema_version": "1",
-  "source_manifest_sha256": "2d48c963c2112f2b9d454898296e588bb862f412d537517c2f28bac4a80b4cec",
+  "schema_version": 1,
+  "source_manifest_sha256": "11d65ffd74887214cf051e73cff80be560fffb3ad2425f80ac7d254391d4a498",
   "product_target": {
     "statement": "Moria is a reusable Rust voxel-world substrate exposed through public crate interfaces; this repository delivers the substrate and a non-game public-API validation executable, not a particular game or the later Product One explorer demo.",
     "supporting_claim_ids": [
       "C-brief-product-identity",
       "C-brief-repo-delivers-substrate",
       "C-brief-capability-set",
+      "binding-deterministic-generation",
       "C-brief-public-boundary",
       "C-brief-validation-not-game",
       "C-brief-non-goals",
-      "C-brief-product-one-future",
+      "future-third-person-explorer",
+      "future-forest",
       "C-brief-product-one-not-authorized",
       "C-readme-points-to-brief",
       "C-readme-current-only-deliverables",
@@ -89,6 +91,13 @@
       "disposition": "binding"
     },
     {
+      "id": "binding-deterministic-generation",
+      "statement": "Generation is deterministic for the same versioned parameters and seed.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": { "heading": "Current correctness commitments", "lines": "26-26" },
+      "disposition": "binding"
+    },
+    {
       "id": "C-brief-public-boundary",
       "statement": "External consumers can create and identify a world, request bounded regions, observe readiness, query material truth, submit bounded edits, and persist deltas. A consumer must not reach into storage, meshing, or scheduler internals.",
       "source_ids": ["src-mixed-project-brief"],
@@ -129,6 +138,20 @@
       "source_ids": ["src-mixed-project-brief"],
       "locator": { "heading": "Current non-goals", "lines": "45-47" },
       "disposition": "binding"
+    },
+    {
+      "id": "future-third-person-explorer",
+      "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region with hills, a dense mixed forest, a river, and a cave.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": { "heading": "Later consumer vision", "lines": "51-53" },
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "future-forest",
+      "statement": "A later Product One demo may place a third-person explorer in a generated region that includes a dense mixed forest.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": { "heading": "Later consumer vision", "lines": "51-53" },
+      "disposition": "future_consumer"
     },
     {
       "id": "C-brief-product-one-future",
