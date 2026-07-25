@@ -36,6 +36,40 @@ Responding to: none
 
 Not approved.
 
+## Coder Turn — 2026-07-25T10:22:06Z
+
+Mode: continue
+
+Responding to: 2026-07-25T10:18:12Z
+
+### Responses To Findings
+
+- Addressed F1: restored all seven readable evidence sources, their immutable-revision SHA-256 values, and the missing `docs/seeds/system-substrate-pivot.md` reference with reason `not_found`.
+- Addressed F2: removed the analyst-selected product target. The four material conflicts are now explicit unresolved, unselected authority decisions: current deliverable, Product One placement, harness content, and performance gates.
+- Addressed F3: restored `project-boundary.md` and `AD-consumer-public-boundary`. Its exact operator clarification resolves only the separate-game/public-interface boundary.
+- Addressed F4: restored the four authority decisions and six deferred technical-design questions.
+- Addressed F5: restored `C-voxel-reusable-layering` with the corrected `9-12` locator.
+- Addressed F6: restored `docs/seeds/README.md` as `context`, with a provenance-index rationale and no unsupported stale label.
+- Addressed F7: restored `DDQ-multiplayer-readiness-seam` solely as an unimplemented compatibility-seam question.
+- Addressed F8: restored the evidence-complete package described by the prior approved review turn; the earlier three-source artifact was a regression and was not intentional.
+
+### Answers To Auditor
+
+- The replacement was not intentional. No human feedback exists beyond the narrow operator clarification recorded in `docs/seeds/README.md:11-13`; the remaining four material decisions therefore remain unresolved with `selected` and `resolution_source` set to `null`.
+
+### TDD Changes Made
+
+- Parsed both JSON files and validated schema versions, immutable base revision, ledger manifest digest, seven-source/document coverage, evidence references, and exact agreement between unresolved decision objects and `unresolved_decision_ids`.
+- Recomputed every manifest source digest from `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`; all seven match the manifest.
+
+### Questions For Auditor
+
+- None.
+
+### Notes To Auditor
+
+- The restored manifest SHA-256 is `52041edd7b4a354fc512089309d736fb65ef3ef4a18cc5d28fb53e3195ae1797` and is recorded in the ledger.
+
 ## Coder Turn — 2026-07-25T10:10:26Z
 
 Mode: continue
@@ -168,6 +202,83 @@ Responding to: 2026-07-25T10:10:26Z
 
 - Independent validation passes for JSON parsing, immutable `base_revision`, all seven source digests, reference closure, the manifest digest recorded by the ledger, source/document coverage, IDs and cross-references, claim locator bounds and headings, and exact agreement between unresolved decisions and `unresolved_decision_ids`.
 - The coder's confirmation that no human feedback exists beyond the narrow operator clarification is consistent with the package. This is approval of a pre-human-feedback package as structurally ready for human review: the four material authority decisions remain unresolved and unselected. This approval does not resolve them and does not authorize downstream planning.
+- Authority package structurally ready for human decision.
+
+### Approval
+
+Approved.
+
+## Auditor Turn — 2026-07-25T10:18:12Z
+
+Mode: continue
+
+Responding to: 2026-07-25T10:12:57Z
+
+### Prior Findings Status
+
+- **F1 — unresolved (regressed).** The live `source-manifest.json` has reverted to only three sources: `README.md`, `docs/seeds/mixed-project-brief.md`, and `docs/seeds/substrate-interface-reference.md`. The immutable revision also contains `docs/seeds/README.md`, `docs/seeds/product-one-seed.md`, `docs/seeds/voxel-world-substrate.md`, and `docs/seeds/project-boundary.md`; all four are omitted again. Following the omitted seed index and Product One reference reaches those readable documents, and `voxel-world-substrate.md:3` reaches absent `docs/seeds/system-substrate-pivot.md`, but `missing_references` is again empty. Independent SHA-256 recomputation at revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa` gives `35a28c4eb2c13aea52dedf371c5738479dec1faf66e23580a75590d2abed9d80`, `3e5c8541b52bfc64127f821e887f4f0f6b00138b61b7f3f14df6360d1e5e5826`, `6a163831f4f9f8199b8654dd9e6fdfea02ce166eb767168f4d935579ed43cfa8`, and `aa80e721c6ac39cddac7fe63c099628881276d349730715571fcd0f5578f7fbe` for those four readable files respectively.
+- **F2 — unresolved (regressed).** The live ledger again selects the mixed brief's substrate-only account as `product_target.statement` and contains no authority decisions or unresolved IDs. This silently discards the competing current Product One deliverable in `docs/seeds/README.md:6-9` and `product-one-seed.md:1-9,68-89,100-116`. Before human feedback, the current-deliverable, Product One placement, harness-content, and performance-gate conflicts must remain explicit, unresolved, and unselected.
+- **F3 — unresolved (regressed).** `project-boundary.md` and its operator clarification have been removed from both the manifest and ledger. The clarification at lines 3-14 must be restored and applied only to the separate-consumer/public-interface boundary; it does not resolve the conflicting Product One harness content.
+- **F4 — unresolved (regressed).** The live ledger has no `decisions` and no `deferred_design_questions`. It therefore omits both the material authority conflicts and the genuine downstream choices previously identified: precise crate split (`project-boundary.md:12-14`) and voxel size, distant LOD, object-layer acceleration, fluid pressure, and the unimplemented multiplayer-readiness seam (`voxel-world-substrate.md:225-231`).
+- **F5 — unresolved by omission.** The inaccurate `C-voxel-reusable-layering` locator is no longer present only because the entire voxel architecture source and its claims were removed. Restore the source and retain the corrected locator covering line 12, such as lines `9-12`.
+- **F6 — unresolved (regressed).** The seed index is no longer assigned the corrected neutral `context` role; it is omitted entirely. Restore its provenance/context role rather than discounting or concealing it.
+- **F7 — unresolved by omission.** The unsupported multiplayer implementation option is gone only because every deferred design question was deleted. Restore a question limited to preserving or documenting the explicitly unimplemented server-authoritative-readiness seam; do not offer current multiplayer implementation as ordinary design.
+
+### New Findings
+
+- **F8 — unresolved: the live package contradicts its own review history.** The most recent recorded approval says all seven source digests, reference closure, four unresolved decisions, and six deferred design questions were present and validated. They are not present in the files under review. The current manifest SHA-256 is `11d65ffd74887214cf051e73cff80be560fffb3ad2425f80ac7d254391d4a498`, which the live ledger records consistently, but the prior coder turn and approval describe the seven-source manifest digest `fd8b2db4e677fd3cc8ab92451d71b14ba0df615461f30b61dc0d3640fa99ac4f`. Git history confirms the current HEAD replaced that seven-source package with the three-source package. The prior approval is therefore stale and cannot authorize this regressed artifact.
+
+### Questions For Coder
+
+- Was the replacement of the seven-source, unresolved-decision package with the three-source, analyst-selected package intentional? Regardless, restore the evidence-complete package and preserve the review history rather than relying on the now-inaccurate prior approval.
+
+### Answers To Coder
+
+- No unanswered coder questions remain. The earlier question about the narrow operator clarification was already answered at `2026-07-25T10:08:37Z`; that answer still stands.
+
+### Notes To Coder
+
+- The live JSON files parse, `source-manifest.json.base_revision` exactly matches the immutable revision, the three included source digests are correct, and the ledger's recorded manifest digest matches the current manifest. These checks do not cure the concealed source corpus and false target resolution.
+- No human feedback is evidenced beyond the narrow operator clarification previously identified. This remains a pre-human-feedback package and may be approved only as structurally ready for human decision after all evidence is restored and every material conflict is visibly unresolved and unselected. Such approval would not resolve those decisions or authorize downstream planning.
+- Authority package rejected.
+
+### Approval
+
+Not approved.
+
+## Auditor Turn — 2026-07-25T10:25:02Z
+
+Mode: approved
+
+Responding to: 2026-07-25T10:22:06Z
+
+### Prior Findings Status
+
+- **F1 — resolved.** `source-manifest.json` again represents all seven readable documents at immutable revision `77801dc0dded8df3f3b65f22e779ee5ecc6d3efa`. Independent `git show <revision>:<path> | sha256sum` checks reproduce every recorded SHA-256. The manifest follows the exact filename references in the corpus and records absent `docs/seeds/system-substrate-pivot.md` under `missing_references` without a fabricated digest.
+- **F2 — resolved.** `AD-current-deliverable`, `AD-product-one-repository-placement`, `AD-harness-content`, and `AD-performance-gates` explicitly preserve the material conflicts between the mixed brief and Product One evidence. All four remain `unresolved`, with `selected` and `resolution_source` set to `null`; the product-target statement also says the deliverable is unresolved.
+- **F3 — resolved.** `docs/seeds/project-boundary.md` is restored as `binding_constraints`, and `AD-consumer-public-boundary` applies the recorded operator clarification only to the separate-game/public-interface boundary. Product One content, placement, and performance remain unresolved.
+- **F4 — resolved.** Harness content and performance gates remain authority decisions. Precise crate split, voxel size, distant-terrain LOD, object-layer acceleration, fluid pressure, and the unimplemented multiplayer-readiness seam remain distinct deferred technical-design questions.
+- **F5 — resolved.** `C-voxel-reusable-layering` cites lines `9-12`, including the reusable-substrate, game-rules-above, and multiple-consumer evidence at line 12.
+- **F6 — resolved.** `docs/seeds/README.md` is restored with the neutral `context` role and a provenance-index rationale; the package does not invent staleness.
+- **F7 — resolved.** `DDQ-multiplayer-readiness-seam` is limited to retaining or describing an unimplemented compatibility seam. It does not offer current multiplayer implementation as an ordinary design option.
+- **F8 — resolved.** The live manifest and ledger now contain the evidence-complete seven-source package described by the coder's restoration response. The current manifest SHA-256 is `52041edd7b4a354fc512089309d736fb65ef3ef4a18cc5d28fb53e3195ae1797`, and the ledger records that exact digest; the earlier regressed three-source artifact is no longer the package under review.
+
+### New Findings
+
+- None.
+
+### Questions For Coder
+
+- None.
+
+### Answers To Coder
+
+- No coder questions were pending.
+
+### Notes To Coder
+
+- Independent validation passes for JSON parsing; immutable `base_revision`; all seven source digests; exact repo-relative reference closure; the manifest digest recorded in the ledger; source/document coverage; unique IDs and all claim, decision, deferred-question, and product-target cross-references; locator bounds and headings; and exact agreement between unresolved decision objects and `unresolved_decision_ids`.
+- The coder's statement that no human feedback exists beyond the narrow operator clarification is consistent with the evidence. This is pre-human-feedback approval only: the four material authority decisions remain visibly unresolved and unselected. Approval neither resolves those questions nor authorizes downstream planning.
 - Authority package structurally ready for human decision.
 
 ### Approval

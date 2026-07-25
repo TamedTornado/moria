@@ -1,196 +1,52 @@
 {
   "schema_version": 1,
-  "source_manifest_sha256": "11d65ffd74887214cf051e73cff80be560fffb3ad2425f80ac7d254391d4a498",
+  "source_manifest_sha256": "52041edd7b4a354fc512089309d736fb65ef3ef4a18cc5d28fb53e3195ae1797",
   "product_target": {
-    "statement": "Moria is a reusable Rust voxel-world substrate consumed through public crate interfaces by games and a minimal non-game validation executable; this repository delivers the substrate and its public-API validation commitments, not any particular game or the later Product One explorer demo.",
-    "supporting_claim_ids": [
-      "binding-current-product",
-      "binding-substrate-capabilities",
-      "binding-public-boundary",
-      "binding-validation-harness",
-      "binding-deterministic-generation",
-      "binding-non-goals",
-      "binding-later-excluded",
-      "future-third-person-explorer",
-      "future-forest",
-      "supporting-readme-scope",
-      "supporting-interface-no-deliverables"
-    ],
-    "supporting_decision_ids": []
+    "statement": "The current Moria deliverable is unresolved between a reusable substrate with a minimal non-game public-API validation harness and Product One's walkable third-person product-shaped demo; the separate-game/public-interface boundary is resolved narrowly.",
+    "supporting_claim_ids": ["C-mixed-current-product", "C-product-one-product-statement", "C-operator-boundary"],
+    "supporting_decision_ids": ["AD-current-deliverable", "AD-product-one-repository-placement", "AD-harness-content", "AD-performance-gates", "AD-consumer-public-boundary"]
   },
   "documents": [
-    {
-      "id": "src-readme",
-      "path": "README.md",
-      "role": "context",
-      "rationale": "Repository overview that points at the mixed-project brief as the product definition and labels the interface note as supporting context; its editorial framing is evidence, not self-authenticating authority."
-    },
-    {
-      "id": "src-mixed-project-brief",
-      "path": "docs/seeds/mixed-project-brief.md",
-      "role": "binding_target",
-      "rationale": "States the current product boundary, capabilities, public API, validation commitments, non-goals, and explicitly marks embedded Product One paragraphs as future-consumer context that does not authorize game content in Moria."
-    },
-    {
-      "id": "src-substrate-interface-reference",
-      "path": "docs/seeds/substrate-interface-reference.md",
-      "role": "supporting_reference",
-      "rationale": "Describes the reusable consumer-facing surface that supports the program brief and states that it does not add deliverables."
-    }
+    {"id": "src-readme", "path": "README.md", "role": "context", "rationale": "Repository overview; its framing is evidence but does not independently settle conflicts."},
+    {"id": "src-seeds-index", "path": "docs/seeds/README.md", "role": "context", "rationale": "Preserved-source provenance index that identifies the Product One seed, architecture reference, and operator clarification; it is not marked stale by any source."},
+    {"id": "src-mixed-project-brief", "path": "docs/seeds/mixed-project-brief.md", "role": "binding_target", "rationale": "Claims the current substrate-only target and explicitly excludes Product One game content."},
+    {"id": "src-substrate-interface-reference", "path": "docs/seeds/substrate-interface-reference.md", "role": "supporting_reference", "rationale": "Describes the reusable public surface and explicitly says it adds no deliverables."},
+    {"id": "src-product-one-seed", "path": "docs/seeds/product-one-seed.md", "role": "binding_target", "rationale": "Claims a current walkable-world, third-person Product One slice and its measurable milestones."},
+    {"id": "src-voxel-world-substrate", "path": "docs/seeds/voxel-world-substrate.md", "role": "supporting_reference", "rationale": "Architecture reference selected by the Product One seed; it provides reusable-layering and technical-design evidence."},
+    {"id": "src-project-boundary", "path": "docs/seeds/project-boundary.md", "role": "binding_constraints", "rationale": "Records the operator's binding clarification of the separate-game and public-interface boundary."}
   ],
   "claims": [
-    {
-      "id": "supporting-readme-scope",
-      "statement": "Moria is the reusable voxel-world substrate defined by docs/seeds/mixed-project-brief.md; only the current substrate commitments are deliverables in this repository, and the substrate interface reference supplies supporting technical context without expanding product scope.",
-      "source_ids": ["src-readme"],
-      "locator": {
-        "heading": null,
-        "lines": "3-9"
-      },
-      "disposition": "supporting"
-    },
-    {
-      "id": "binding-current-product",
-      "statement": "Moria is a reusable Rust voxel-world substrate consumed through public crate interfaces by games and by a minimal validation executable; this repository delivers the substrate, not any particular game.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Current product",
-        "lines": "5-7"
-      },
-      "disposition": "binding"
-    },
-    {
-      "id": "binding-substrate-capabilities",
-      "statement": "The current product owns deterministic seed-based generation, sparse voxel storage, bounded streaming, mutation, surface extraction, persistence, and read-only diagnostics that must remain useful to multiple downstream consumers.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Current product",
-        "lines": "9-12"
-      },
-      "disposition": "binding"
-    },
-    {
-      "id": "binding-public-boundary",
-      "statement": "External consumers can create and identify a world, request bounded regions, observe readiness, query material truth, submit bounded edits, and persist deltas, and must not reach into storage, meshing, or scheduler internals.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Current public boundary",
-        "lines": "16-18"
-      },
-      "disposition": "binding"
-    },
-    {
-      "id": "binding-validation-harness",
-      "statement": "The validation executable uses exactly the public interfaces, may provide a free-fly camera and diagnostics sufficient to exercise the crate, is not a game prototype, and owns no privileged world path.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Current public boundary",
-        "lines": "20-22"
-      },
-      "disposition": "binding"
-    },
-    {
-      "id": "binding-deterministic-generation",
-      "statement": "Generation is deterministic for the same versioned parameters and seed.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Current correctness commitments",
-        "lines": "26-26"
-      },
-      "disposition": "binding"
-    },
-    {
-      "id": "binding-mutation-persistence",
-      "statement": "Mutation is admitted through a bounded command API and committed atomically; persistence restores the same authoritative material state; derived meshes and diagnostics never become authoritative world state.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Current correctness commitments",
-        "lines": "27-29"
-      },
-      "disposition": "binding"
-    },
-    {
-      "id": "binding-streaming-lifecycle",
-      "statement": "Streaming must bound resident work and expose observable lifecycle states; background results carry generation identities so stale work cannot replace newer truth; failures remain typed and observable to public consumers.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Current correctness commitments",
-        "lines": "31-33"
-      },
-      "disposition": "binding"
-    },
-    {
-      "id": "binding-validation-commitments",
-      "statement": "Headless fixtures cover generation, query, mutation, persistence, and lifecycle behavior; a small visual fixture demonstrates that a relocated external consumer can render and edit through the public API; performance is reported with machine identity and this brief does not establish a machine-specific correctness threshold.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Current validation commitments",
-        "lines": "37-41"
-      },
-      "disposition": "binding"
-    },
-    {
-      "id": "binding-non-goals",
-      "statement": "Moria does not implement game rules, combat, inventory, AI, narrative systems, characters, animation, authored levels, or production content; references to possible consumers explain interface pressure only.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Current non-goals",
-        "lines": "45-47"
-      },
-      "disposition": "binding"
-    },
-    {
-      "id": "future-third-person-explorer",
-      "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region with hills, a dense mixed forest, a river, and a cave, and that later game-facing demo may use skeletal animation and a curated cliff-to-cave traversal to communicate the world.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Later consumer vision",
-        "lines": "51-54"
-      },
-      "disposition": "future_consumer"
-    },
-    {
-      "id": "future-forest",
-      "statement": "A later Product One game-facing demo may include a dense mixed forest in a generated region, but that forest population workload is future-consumer context and is not authorized as a Moria deliverable.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Later consumer vision",
-        "lines": "51-59"
-      },
-      "disposition": "future_consumer"
-    },
-    {
-      "id": "binding-later-excluded",
-      "statement": "The later-consumer paragraphs embedded in this binding program brief do not authorize a player controller, character mesh, animation clips, forest population workload, curated route, or game asset in Moria.",
-      "source_ids": ["src-mixed-project-brief"],
-      "locator": {
-        "heading": "Later consumer vision",
-        "lines": "56-59"
-      },
-      "disposition": "binding"
-    },
-    {
-      "id": "supporting-interface-no-deliverables",
-      "statement": "The substrate interface reference supports the Moria program brief, describes the reusable surface downstream consumers need, and does not add deliverables.",
-      "source_ids": ["src-substrate-interface-reference"],
-      "locator": {
-        "heading": null,
-        "lines": "3-4"
-      },
-      "disposition": "supporting"
-    },
-    {
-      "id": "supporting-interface-surface",
-      "statement": "The reusable surface includes world identity from format version, generation parameters, and seed; readiness and bounded material queries; bounded mutation commands with admission failures and commit revisions; streaming lifecycle states; authoritative-delta persistence; registered objects that are not game entities; and diagnostics without mutable internal handles.",
-      "source_ids": ["src-substrate-interface-reference"],
-      "locator": {
-        "heading": null,
-        "lines": "6-15"
-      },
-      "disposition": "supporting"
-    }
+    {"id": "C-root-overview", "statement": "Moria is the reusable voxel-world substrate defined by docs/seeds/mixed-project-brief.md, and only the current substrate commitments are deliverables in this repository.", "source_ids": ["src-readme"], "locator": {"heading": null, "lines": "3-6"}, "disposition": "supporting"},
+    {"id": "C-seeds-index-product-one", "statement": "product-one-seed.md defines the binding substrate implementation and its walkable-world validation harness, while voxel-world-substrate.md is the substrate architecture reference whose selected portions are required for this milestone.", "source_ids": ["src-seeds-index"], "locator": {"heading": null, "lines": "3-9"}, "disposition": "supporting"},
+    {"id": "C-seeds-index-operator", "statement": "project-boundary.md records the operator's binding clarification that Moria is a reusable crate consumed by a separate game and the included executable is only a public-API validation harness.", "source_ids": ["src-seeds-index"], "locator": {"heading": null, "lines": "11-13"}, "disposition": "supporting"},
+    {"id": "C-mixed-current-product", "statement": "Moria is a reusable Rust voxel-world substrate consumed through public crate interfaces by games and by a minimal validation executable; this repository delivers the substrate, not any particular game.", "source_ids": ["src-mixed-project-brief"], "locator": {"heading": "Current product", "lines": "5-7"}, "disposition": "binding"},
+    {"id": "C-mixed-harness", "statement": "The validation executable uses exactly the public interfaces, may provide a free-fly camera and diagnostics sufficient to exercise the crate, is not a game prototype, and owns no privileged world path.", "source_ids": ["src-mixed-project-brief"], "locator": {"heading": "Current public boundary", "lines": "20-22"}, "disposition": "binding"},
+    {"id": "C-mixed-performance", "statement": "Performance is reported with machine identity; this brief does not establish a machine-specific correctness threshold.", "source_ids": ["src-mixed-project-brief"], "locator": {"heading": "Current validation commitments", "lines": "37-41"}, "disposition": "binding"},
+    {"id": "C-mixed-product-one-future", "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region, and the later paragraphs do not authorize a player controller, character mesh, animation clips, forest population workload, curated route, or game asset in Moria.", "source_ids": ["src-mixed-project-brief"], "locator": {"heading": "Later consumer vision", "lines": "51-59"}, "disposition": "binding"},
+    {"id": "C-interface-support", "statement": "This reference supports the Moria program brief, describes the reusable surface downstream consumers need, and does not add deliverables.", "source_ids": ["src-substrate-interface-reference"], "locator": {"heading": null, "lines": "3-4"}, "disposition": "supporting"},
+    {"id": "C-product-one-product-statement", "statement": "A generated natural world of hills, forest, river, cliffs, and caves can be run through in third person, with continuous smooth voxel truth and a debug key proving mutable matter underneath.", "source_ids": ["src-product-one-seed"], "locator": {"heading": "1. Product Statement", "lines": "7-9"}, "disposition": "binding"},
+    {"id": "C-product-one-harness-content", "statement": "Product One includes a third-person character controller, free-orbit third-person camera, continuous cliff-top-to-cave-floor traversal, and debug dig/place and voxel/streaming visualization controls.", "source_ids": ["src-product-one-seed"], "locator": {"heading": "4. The Player", "lines": "68-73"}, "disposition": "binding"},
+    {"id": "C-product-one-performance", "statement": "Product One calls its performance targets the actual product spec and makes benchmarks with a machine profile part of the deliverable.", "source_ids": ["src-product-one-seed"], "locator": {"heading": "5. Performance Targets (the actual product spec)", "lines": "77-89"}, "disposition": "binding"},
+    {"id": "C-product-one-milestones", "statement": "Product One's milestones include a dressed world, a controller-and-camera continuous run as a playable demo, and streaming, persistence, and benchmark numbers.", "source_ids": ["src-product-one-seed"], "locator": {"heading": "6. Milestones (demoable, in order)", "lines": "100-110"}, "disposition": "binding"},
+    {"id": "C-voxel-reusable-layering", "statement": "The architecture describes a reusable substrate beneath game rules and lists multiple game consumers; game rules live above the substrate while it provides matter, physics, queries, and mutation.", "source_ids": ["src-voxel-world-substrate"], "locator": {"heading": "1. Design Goals", "lines": "9-12"}, "disposition": "supporting"},
+    {"id": "C-voxel-open-questions", "statement": "The architecture leaves voxel size, distant-terrain LOD, object-layer spatial acceleration, fluid pressure behavior, and whether to retain an unimplemented server-authoritative-readiness seam as open questions.", "source_ids": ["src-voxel-world-substrate"], "locator": {"heading": "14. Open Questions", "lines": "225-231"}, "disposition": "supporting"},
+    {"id": "C-operator-boundary", "statement": "Moria's product is the reusable voxel-world substrate exposed as a Rust crate or small family of tightly scoped Rust crates; the actual game is a separate downstream consumer, and any walkable-world executable is a public-interface validation harness without privileged or game-specific paths.", "source_ids": ["src-project-boundary"], "locator": {"heading": null, "lines": "3-10"}, "disposition": "binding"},
+    {"id": "C-operator-crate-split", "statement": "A Cargo workspace boundary between the reusable substrate and validation harness is an immediate concrete consequence, while the precise crate split is a technical-design decision.", "source_ids": ["src-project-boundary"], "locator": {"heading": null, "lines": "12-14"}, "disposition": "binding"}
   ],
-  "decisions": [],
-  "unresolved_decision_ids": [],
-  "deferred_design_questions": []
+  "decisions": [
+    {"id": "AD-current-deliverable", "question": "Which competing account defines the current deliverable?", "evidence_claim_ids": ["C-mixed-current-product", "C-seeds-index-product-one", "C-product-one-product-statement", "C-product-one-milestones"], "options": [{"id": "substrate-minimal-harness", "label": "Reusable substrate with minimal non-game validation harness."}, {"id": "product-one-walkable-demo", "label": "Product One walkable third-person product-shaped demo and its substrate slice."}], "selected": null, "status": "unresolved", "rationale": "The sources directly conflict about current deliverables and no human feedback selects between them.", "resolution_source": null},
+    {"id": "AD-product-one-repository-placement", "question": "Is Product One part of this repository's current milestone or a separate later repository?", "evidence_claim_ids": ["C-seeds-index-product-one", "C-mixed-product-one-future", "C-product-one-milestones"], "options": [{"id": "current-repository-milestone", "label": "Product One is the current in-repository milestone."}, {"id": "separate-later-repository", "label": "Product One belongs in a separate later repository."}], "selected": null, "status": "unresolved", "rationale": "The seed index presents Product One as binding for this milestone while the mixed brief explicitly makes it later and separate; no human answer resolves placement.", "resolution_source": null},
+    {"id": "AD-harness-content", "question": "What content may the public-API validation harness contain?", "evidence_claim_ids": ["C-mixed-harness", "C-mixed-product-one-future", "C-product-one-harness-content", "C-operator-boundary"], "options": [{"id": "minimal-free-fly-diagnostics", "label": "Only a minimal free-fly visual fixture and diagnostics."}, {"id": "third-person-walkable-proof", "label": "A third-person walkable-world proof with Product One traversal and debug controls."}], "selected": null, "status": "unresolved", "rationale": "The operator clarification requires public APIs but does not decide whether Product One's third-person proof belongs in that harness.", "resolution_source": null},
+    {"id": "AD-performance-gates", "question": "Are Product One's numeric performance targets current deliverable gates?", "evidence_claim_ids": ["C-mixed-performance", "C-product-one-performance"], "options": [{"id": "report-only", "label": "Report performance with machine identity and no machine-specific correctness gate."}, {"id": "product-one-numeric-gates", "label": "Treat Product One's stated numeric targets and benchmark scene as deliverable gates."}], "selected": null, "status": "unresolved", "rationale": "The briefs conflict on whether numeric targets are part of the current product spec; no human answer resolves the conflict.", "resolution_source": null},
+    {"id": "AD-consumer-public-boundary", "question": "Is the actual game a separate consumer, and must an in-repository executable use only public substrate interfaces?", "evidence_claim_ids": ["C-seeds-index-operator", "C-operator-boundary", "C-mixed-harness"], "options": [{"id": "separate-game-public-api-harness", "label": "The game is separate and any included harness consumes only public interfaces."}, {"id": "in-repository-game-or-privileged-path", "label": "The repository may contain the game or a privileged game-specific executable path."}], "selected": "separate-game-public-api-harness", "status": "resolved", "rationale": "This is the sole authority issue answered by the recorded operator clarification; it does not settle Product One content, placement, or performance gates.", "resolution_source": "Operator clarification in docs/seeds/README.md:11-13: \"Moria is a reusable crate consumed by a separate game, and the included executable is only a public-API validation harness.\""}
+  ],
+  "unresolved_decision_ids": ["AD-current-deliverable", "AD-product-one-repository-placement", "AD-harness-content", "AD-performance-gates"],
+  "deferred_design_questions": [
+    {"id": "DDQ-crate-split", "question": "What precise Cargo crate split should implement the required substrate/harness boundary?", "evidence_claim_ids": ["C-operator-crate-split"], "options": ["One substrate crate plus one harness crate.", "A small family of tightly scoped substrate crates plus a harness crate."], "rationale": "The boundary is binding, but the source explicitly leaves the precise split to technical design."},
+    {"id": "DDQ-voxel-size", "question": "Should the substrate use 25cm voxels, 12.5cm voxels, or a per-region resolution strategy?", "evidence_claim_ids": ["C-voxel-open-questions"], "options": ["25cm.", "12.5cm.", "Per-region resolution."], "rationale": "Explicit architecture open question."},
+    {"id": "DDQ-distant-lod", "question": "Should distant terrain use chunked marching-cubes LOD or imposter cards from the column index?", "evidence_claim_ids": ["C-voxel-open-questions"], "options": ["Chunked marching-cubes LOD.", "Imposter cards from the column index."], "rationale": "Explicit architecture open question."},
+    {"id": "DDQ-object-layer-acceleration", "question": "When should the object registry receive a dedicated spatial acceleration structure?", "evidence_claim_ids": ["C-voxel-open-questions"], "options": ["Keep the current registry structure until measured pressure.", "Add dedicated spatial acceleration at a measured tree-count threshold."], "rationale": "Explicit architecture open question."},
+    {"id": "DDQ-fluid-pressure", "question": "Does fluid tier 2 need a pressure solve or is momentum-only behavior sufficient?", "evidence_claim_ids": ["C-voxel-open-questions"], "options": ["Pressure solve.", "Momentum-only."], "rationale": "Explicit architecture open question."},
+    {"id": "DDQ-multiplayer-readiness-seam", "question": "How should the unimplemented server-authoritative-readiness seam be retained or described in scope statements?", "evidence_claim_ids": ["C-voxel-open-questions"], "options": ["Document the command/verb boundary as readiness only.", "Preserve compatibility constraints in interfaces without implementing multiplayer."], "rationale": "The source asks about retaining an unimplemented readiness seam; it does not authorize multiplayer implementation."}
+  ]
 }
