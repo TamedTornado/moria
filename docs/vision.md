@@ -2,9 +2,11 @@
 
 ## What we are building now
 
-**Moria** is a reusable, GPU-resident **voxel-world substrate** delivered as a Rust crate (or a small family of tightly scoped Rust crates). It is the matter-and-world foundation for later games: sparse voxel storage, geology-oriented generation with lazy materialization, smooth GPU meshing of mutable voxel truth, public mutation and query APIs (including dig/place), collision against that voxel truth, streaming, and persistence.
+**Moria** is a reusable, GPU-resident **voxel-world substrate** delivered as a Rust crate (or a small family of tightly scoped Rust crates). It is the matter-and-world foundation for later games: sparse voxel storage, geology-oriented generation with lazy materialization, smooth GPU meshing of mutable voxel truth, public mutation and query APIs (including dig/place), and collision against that voxel truth.
 
 It is **not** a game. The in-repo walkable-world executable is a **validation harness** — an adjacent consumer that must exercise the substrate only through the same public interfaces an external game would use. Character control, camera, demo content, presentation, and acceptance scenarios belong to that harness (or to later games), not to the product identity of Moria.
+
+Whether **streaming** and **persistence** are part of the first committed substrate envelope is open (see Q3); the README lists them among harness validation concerns, but Product One schedules them late and this brief does not treat them as settled “now” until review answers.
 
 ## Purpose
 
@@ -17,14 +19,14 @@ The substrate’s job is to make one claim trustworthy for consumers and for val
 | In this product (Moria) | Adjacent / not this product |
 |---|---|
 | Reusable voxel-world substrate (Rust crate or small crate family) | The actual game(s) — separate downstream consumers, not this repository’s product |
-| Public APIs for generation, matter access, meshing-backed presentation data, dig/place and related verbs, queries, events, streaming, and persistence suitable for an external game | Game rules, combat, stats, AI, economy, quests, spells, gas/pricing policy, LLM/System behavior |
+| Public APIs for generation, matter access, meshing-backed presentation data, dig/place and related verbs, queries, and events suitable for an external game | Game rules, combat, stats, AI, economy, quests, spells, gas/pricing policy, LLM/System behavior |
 | GPU-resident brick/matter representation, sparsity, lazy materialization, smooth surface meshing from voxel data | Character controllers, cameras, HUD, demo routes, authored “seed world” scenery inventories, trailer presentation |
 | Validation harness **as a consumer** of those public interfaces (workspace-separated) | Privileged or game-specific paths inside the substrate that only the harness may use |
 | Compatibility **seams** where substrate requirements need them (hooks, registries, extension points) | Implementing System, spell, gas, combat, AI, or full building/fortress **layers** here |
 
 **Workspace rule (product boundary, not crate topology):** keep a Cargo workspace boundary between reusable substrate and validation harness. Exact crate split is a later technical decision; the consumer boundary is not optional.
 
-**Harness rule:** the walkable-world executable validates substrate capabilities (terrain generation, streaming, meshing, editing, collision, persistence, and performance-relevant behavior). Its specific controller, character, content, presentation, route, workload, platform gates, and performance thresholds are **harness-owned** unless a later approved vision change pulls a capability into the substrate itself.
+**Harness rule:** any walkable-world executable is a validation harness that consumes public interfaces only. Seeds list terrain generation, streaming, meshing, editing, collision, persistence, and performance-relevant behavior as harness concerns; which of those are **current substrate product** versus later or harness-only is constrained by the unambiguous core above and by Q1–Q4. Harness-specific controller, character, content, presentation, route, workload, platform gates, and performance thresholds are **not** substrate product scope.
 
 ## Future products and enabling implications
 
@@ -41,8 +43,8 @@ Described consumers and long-horizon modes that **are not current Moria product 
 - Keep the substrate **game-agnostic**: priced verbs and policies inject above matter; nothing above matter touches voxels except through public verbs/queries.
 - Prefer representations that later support **deep dig, natural geology, surface dressing vs voxel objects, fluid bodies, structural integrity, and building stamps** without baking ARPG or fortress rules into the core.
 - Design **metadata / POI / material registry seams** so a future System or hand content pipeline can place and extend without owning geology.
-- Persistence shaped as **generation function + edit deltas** (and object/event journals where needed) so later modes can reclaim or reuse world scars.
-- Streaming/sim **rings** and mirror/command style coupling remain architectural implications for GPU-resident multi-consumer use; exact schemes are design work.
+- If persistence ships, prefer **generation function + edit deltas** (and object/event journals where needed) so later modes can reclaim or reuse world scars.
+- Streaming/sim **rings** and mirror/command style coupling remain architectural implications for GPU-resident multi-consumer use when those capabilities are in scope; exact schemes are design work.
 
 Do **not** import future consumers’ gameplay, content, presentation, controllers, characters, animation, combat, or acceptance scenarios into current Moria scope.
 
@@ -75,11 +77,11 @@ Only constraints explicit in the seeds and appropriate at vision altitude:
 ## Assumptions proposed for approval
 
 1. **Name and identity are settled:** “Moria” refers to this substrate project; renaming or treating the harness as the product would contradict the explicit boundary seed and is not proposed.
-2. **README harness list is capability coverage, not feature design:** the substrate must be *able* to support harness validation of terrain generation, streaming, meshing, editing, collision, persistence, and performance-sensitive behavior — without adopting product-one’s numeric gates or scene script as vision requirements.
-3. **“Editing” at vision altitude includes dig and place** through the public API, because both the boundary/README validation list and the product-one proof claim depend on mutation, not view-only terrain.
-4. **One curated region is enough for first validation** of generation and streaming pressure; infinite world or multi-region shipping is not assumed now.
-5. **Static fluid *bodies* (lakes/river surface as volumes)** may be represented for a natural world read; flowing fluid simulation is not assumed in the current product without an explicit yes in review.
-6. **Surface dressing and voxel-object *support in the substrate*** (instanced clutter driven by matter; placeable voxel-backed objects such as trees/rocks) are treated as likely substrate responsibilities for a reusable world layer, but **which of those ship in the first deliverable** is deferred to Q1 rather than smuggled into committed scope.
+2. **README harness list is a validation concern list, not an automatic “all current” mandate:** generation, meshing, editing, and collision against voxel truth are treated as core; streaming and persistence wait on Q3; performance numerics wait on Q4.
+3. **“Editing” at vision altitude includes dig and place** through the public API, because both the boundary/README validation list and the product-one proof claim depend on mutation, not view-only terrain (building *gameplay* remains out — Q5).
+4. **One curated region is enough for first validation** of generation (and of streaming *if* streaming is in the approved envelope); infinite world or multi-region shipping is not assumed now.
+5. **Static fluid *bodies* (lakes/river surface as volumes)** are not committed in “What we are building now”; they ride with the Product One slice under Q1-A if approved.
+6. **Surface dressing and voxel objects** are not committed in “What we are building now”; they are part of the Product One slice proposed under Q1-A, not smuggled into confirmed scope.
 7. **Dev machine anecdotes** (e.g. M4 Mac Mini limits, specific FPS/resolution tables) inform later design and harness benchmarks; they are not vision-level product identity.
 
 ## Questions for human review
