@@ -1,6 +1,6 @@
 {
-  "schema_version": "1",
-  "source_manifest_sha256": "2d48c963c2112f2b9d454898296e588bb862f412d537517c2f28bac4a80b4cec",
+  "schema_version": 1,
+  "source_manifest_sha256": "11d65ffd74887214cf051e73cff80be560fffb3ad2425f80ac7d254391d4a498",
   "product_target": {
     "statement": "Moria is a reusable Rust voxel-world substrate delivered through public crate interfaces and exercised by a minimal public-API validation executable; this repository does not deliver a game or the later Product One third-person explorer demo.",
     "supporting_claim_ids": [
@@ -9,6 +9,7 @@
       "claim-brief-validation-harness",
       "claim-brief-non-goals",
       "claim-brief-later-consumer-excluded",
+      "binding-deterministic-generation",
       "claim-readme-substrate-definition",
       "claim-readme-current-only-deliverables"
     ],
@@ -85,10 +86,17 @@
       "disposition": "binding"
     },
     {
-      "id": "claim-brief-correctness",
-      "statement": "Generation is deterministic for the same versioned parameters and seed; mutation is admitted through a bounded command API and committed atomically; persistence restores the same authoritative material state; derived meshes and diagnostics never become authoritative world state.",
+      "id": "binding-deterministic-generation",
+      "statement": "Generation is deterministic for the same versioned parameters and seed.",
       "source_ids": ["src-mixed-project-brief"],
-      "locator": { "heading": "Current correctness commitments", "lines": "24-29" },
+      "locator": { "heading": "Current correctness commitments", "lines": "26-26" },
+      "disposition": "binding"
+    },
+    {
+      "id": "claim-brief-correctness",
+      "statement": "Mutation is admitted through a bounded command API and committed atomically; persistence restores the same authoritative material state; derived meshes and diagnostics never become authoritative world state.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": { "heading": "Current correctness commitments", "lines": "27-29" },
       "disposition": "binding"
     },
     {
@@ -113,10 +121,24 @@
       "disposition": "binding"
     },
     {
-      "id": "claim-brief-later-consumer-vision",
-      "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region with hills, a dense mixed forest, a river, and a cave, optionally using skeletal animation and a curated cliff-to-cave traversal.",
+      "id": "future-third-person-explorer",
+      "statement": "After the reusable substrate ships, a separate Product One repository may place a third-person explorer in a generated region.",
       "source_ids": ["src-mixed-project-brief"],
-      "locator": { "heading": "Later consumer vision", "lines": "49-54" },
+      "locator": { "heading": "Later consumer vision", "lines": "51-53" },
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "future-forest",
+      "statement": "That later game-facing demo may include a dense mixed forest (with hills, a river, and a cave) as part of a generated region used by Product One.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": { "heading": "Later consumer vision", "lines": "51-54" },
+      "disposition": "future_consumer"
+    },
+    {
+      "id": "claim-brief-later-consumer-vision",
+      "statement": "That later game-facing demo may use skeletal animation and a curated cliff-to-cave traversal to communicate the world.",
+      "source_ids": ["src-mixed-project-brief"],
+      "locator": { "heading": "Later consumer vision", "lines": "53-54" },
       "disposition": "future_consumer"
     },
     {
@@ -206,6 +228,7 @@
       "question": "What concrete type and operation shapes implement world identity, bounded queries, mutation commands, streaming lifecycle, persistence deltas, registered objects, and diagnostics?",
       "evidence_claim_ids": [
         "claim-brief-public-boundary",
+        "binding-deterministic-generation",
         "claim-brief-correctness",
         "claim-brief-streaming-lifecycle",
         "claim-iface-world-identity",
