@@ -23,7 +23,7 @@ Moria exists so independent consumers can generate, stream, query, mutate, mesh,
 
 ## Required product outcomes
 
-- **Authoritative world through public interfaces.** Consumers can generate, stream, query, mutate, mesh, save, and restore an authoritative voxel world solely through public interfaces; no privileged internal access is required for correct use or for the validation harness.
+- **Authoritative world through public interfaces.** Consumers can generate, stream, query, mutate, mesh, save, and restore an authoritative voxel world through public interfaces; correct use and the validation harness do not require privileged mutable internal access.
 - **Identity and deterministic generation.** A versioned parameter set and seed define world identity. Generation is deterministic and can materialize bounded regions without eagerly allocating the complete world.
 - **Authoritative mutation.** Sparse storage preserves authoritative material truth. Consumers submit bounded mutations through a public command API with explicit admission, commit, and failure states.
 - **Streaming and derived views.** Streaming bounds resident work and rejects stale background results. Meshing is a derived, regenerable view of voxel truth. Registered objects can participate in deterministic world queries without becoming game entities.
