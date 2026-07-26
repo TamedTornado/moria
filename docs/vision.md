@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Moria exists so adventure, fortress, sandbox, and related games can share one material world foundation: a landscape that reads as a normal natural surface world while remaining fully mutable voxel truth all the way down, including deep underground play. Game rules, economy, combat, and AI live above it. The substrate stands alone with no LLM or “System” dependency.
+Moria exists so adventure, fortress, sandbox, and related games can share one material world foundation: a landscape that reads as a normal natural surface world while remaining fully mutable voxel truth all the way down, including deep underground play. Game rules, economy, combat, and AI live above it. The substrate has no LLM or “System” dependency.
 
 ## Product boundary
 
@@ -22,16 +22,16 @@ Moria exists so adventure, fortress, sandbox, and related games can share one ma
 
 - **Reusable Rust substrate with command/mirror access.** External games integrate through public crate APIs. Consumers submit commands and observe a potentially stale query mirror plus events; nothing above the matter layer touches voxels directly. Any validation harness shares that contract with no privileged path.
 - **Natural look, material truth, categorical objects.** Continuous natural terrain with voxels authoritative. Mesh and dressing are regenerated views—never saved truth. Everything that can burn, break, or block is voxel-backed; non-voxel dressing stays matter-anchored so it cannot desync. Physics and world-facing queries run against voxel matter, not the mesh.
-- **Mutable everywhere, deep Z, full generation.** Matter can be destroyed, eroded, or placed with consistent remesh and queries. Underground is content: geology-first generation (strata, caves, ores, aquifers, biomes, lazy materialization, POI metadata)—not a painted heightmap underside.
+- **Mutable everywhere, deep Z, full generation.** Any voxel can be destroyed, moved, or placed, with consistent remesh and queries. Underground is content: geology-first generation (strata, caves, ores, aquifers, biomes, lazy materialization, POI metadata)—not a painted heightmap underside.
 - **Matter behavior and object lifecycle (full substrate).** The complete product includes multi-tier fluids (static bodies, coarser active flow, fine splash coupling), structural support and failure, granular settle, thin ambient time/weather/fire ecology, and physical lifecycles for voxel-backed objects (including growth and falling/rigid conversion). Design, tuning, and delivery sequence are open; exclusion from the first slice does not remove them. Pricing and win conditions stay out of the crate.
 - **Mutation-safe navigation.** Navigation data derived from voxel truth stays valid under mutation and supports multiple continuous-3D movement classes (walk, climb, fly, burrow, swim). Agent AI and path policy remain consumer-owned.
-- **Scale, streaming, durable persistence.** Sparse residency, lazy materialization, and streaming keep large regions practical. Persistence is generation plus voxel edit deltas plus object/entity journals so scars, placements, and durable object/entity state restore across runs, including cross-run reuse of changed worlds. If a walkable validation slice is delivered, that cut restores exactly from seed plus deltas.
+- **Scale, streaming, durable persistence.** Sparse residency, lazy materialization, and streaming keep large regions practical. Persistence is generation plus voxel edit deltas plus object/entity journals so scars, placements, and durable object/entity state restore across runs, including cross-run world reuse. If a walkable validation slice is delivered, that cut restores exactly from seed plus deltas.
 
 ## Future products and enabling implications
 
 Future **consumers** (not current product) include the Moria/System ARPG, a DF-style fortress or colony game, a descent roguelike, and pure sandbox tools. A walkable “product one” demo is a validation and communication artifact, not a second product identity.
 
-**Enabling implications only:** the same public matter, generation, mutation, navigation, streaming, and persistence surface should let those games author content, attach agents, and apply rules without privileged world paths. Multiplayer-ready command/mirror separation is a design posture of that boundary, not a committed shipping milestone. Gameplay, UX, controllers, characters, content, and presentation remain consumer-owned.
+**Enabling implications only:** the same public matter, generation, mutation, navigation, streaming, and persistence surface should let those games author content, attach agents, and apply rules without privileged world paths. Multiplayer-ready command/mirror separation is a design posture, not a committed shipping milestone. Gameplay, UX, controllers, characters, content, and presentation remain consumer-owned.
 
 ## Non-goals
 
@@ -44,7 +44,7 @@ Future **consumers** (not current product) include the Moria/System ARPG, a DF-s
 ## Confirmed vision constraints
 
 - Integration form is a **Rust crate or small family of tightly scoped Rust crates**
-- World representation is **GPU-resident**; load-bearing graphics stay on **wgpu/WGSL** with no native Metal fork, preserving portability toward Vulkan/DX12
+- World representation is **GPU-resident** (matter sim, command/mirror coupling, and related GPU work—not graphics alone); every load-bearing substrate GPU layer stays on **wgpu/WGSL** with no native Metal fork ever, for crate-level Vulkan/DX12 portability
 - **No privileged paths** for any consumer, including a validation harness
 - **Commands in; stale mirror plus events out**; no direct voxel access above the matter layer
 - **Zero LLM/System dependency**; named game layers stay out of implementation scope here
@@ -54,8 +54,8 @@ Future **consumers** (not current product) include the Moria/System ARPG, a DF-s
 
 - Precise crate split and workspace layout (boundary intent is fixed; packaging is design)
 - Voxel resolution, LOD strategy, object-layer capacity, and fidelity/cost tradeoffs
-- Design, tuning, and delivery sequence of full-substrate matter families (not whether those families are product outcomes)
-- Mechanisms for storage, meshing, streaming, delta encoding, and sim scheduling
+- Design, tuning, and delivery sequence of full-substrate matter families (not whether they are product outcomes)
+- Mechanisms for storage, meshing, streaming, delta encoding, sim scheduling
 - Machine-specific performance thresholds, benchmark workloads, and harness acceptance gates
 - Whether a walkable validation executable is part of current delivery (Q1)
 
