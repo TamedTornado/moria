@@ -6,19 +6,21 @@
 
 ## Purpose
 
-Moria exists so adventure, fortress, sandbox, and related games can share one foundation: a natural-looking surface world over fully mutable voxel matter, with deep underground as first-class space. Game rules, economy, combat, AI, and authoring policy stay above the substrate. The substrate supplies matter, generation, presentation of voxel truth, thin ambient ecological behavior, mutation-coherent traversal data, queries, and mutation so each game need not re-implement the world.
+Moria exists so adventure, fortress, sandbox, and related games can share one foundation: a natural-looking surface world over fully mutable voxel matter, with deep underground as first-class space. Game rules, economy, combat, AI, and authoring policy stay above the substrate. The substrate supplies matter, physics, generation, presentation of voxel truth, thin ambient ecology, mutation-coherent traversal data, queries, and mutation.
 
 ## Product boundary
 
 **Belongs to Moria**
 - The reusable world substrate and its public consumer-facing surface (Rust crate(s)).
-- World responsibilities at product altitude: geology-first generation; material voxel truth; smooth non-authoritative presentation of that truth; mutation and query surface; matter-backed interactable objects and matter-driven surface dressing; vegetation growth and voxel-coupled surface response; fluid and solid-matter behavior the world layer owns; thin ambient simulation (time, weather, seasons, fire ecology); world-derived navigation/traversability coherent under voxel mutation; persistence of world generation, edit deltas, and substrate-owned world-object lifecycle state; streaming of large regions.
-- Compatibility seams only where substrate requirements demand them—not implementations of game layers.
+- World responsibilities: geology-first generation; biomes and vegetation placement; material voxel truth; smooth non-authoritative presentation of that truth; mutation and query surface; matter-backed objects and matter-driven dressing; vegetation growth; reactive fluid and solid-matter physics; thin ambient simulation (time, weather, seasons, fire ecology); mutation-coherent navigation/traversability; persistence of generation, edit deltas, and substrate-owned world-object lifecycle state; streaming of large regions.
+- Compatibility seams only where substrate requirements demand them—not game-layer implementations.
+- Extension seams so higher layers author placements, palettes, structures, and materials without owning geology or procedural world behavior.
 
 **Does not belong to Moria**
 - The actual game product(s); they are separate downstream consumers, not this repository’s product.
 - Game rules and the System / LLM, spell, gas, combat, AI, and building **gameplay** layers. Agents and AI stay consumer-owned even when they consume substrate traversal data.
-- Harness- or demo-owned character control, camera, authored routes, curated content, UI/debug presentation, fixture scenarios, workloads, and machine-specific performance or acceptance gates.
+- Consumer-authored game content, presentation policy, and economy—distinct from substrate-owned procedural world generation, biomes, vegetation placement, and voxel-coupled dressing.
+- Harness- or demo-owned character control, camera, authored routes, curated demo content, UI/debug presentation, fixture scenarios, workloads, and machine-specific performance or acceptance gates.
 
 A walkable-world executable **may** exist in-repo as an adjacent validation harness that consumes the substrate only through the same public interfaces available to an external game. Whether that harness is a required repository delivery is open (see Q1). It is not part of product identity and does not import its controls, content, or gates into substrate scope.
 
@@ -26,18 +28,18 @@ A walkable-world executable **may** exist in-repo as an adjacent validation harn
 
 - **Material world truth.** Any voxel can be destroyed, moved, or placed; dig and place are first-class; the world is not decorative geometry outside matter.
 - **Natural look over voxel truth.** Surface worlds read as ordinary terrain, not a cube aesthetic. Presentation is a regenerated view; interaction and queries use voxel truth.
-- **Deep, geology-first world.** Underground is playable space—caves, strata, ore, aquifers, depth. Worlds generate as layered geology so digging reveals true structure; large regions can materialize lazily.
-- **Surface, matter, and ambient ecology.** Interactable vegetation and micro-objects are matter-backed; lighter clutter is voxel-coupled under dig and change; vegetation growth belongs here. Static water and further substrate-owned fluid/solid behavior remain world capabilities. Time, seasons, weather, and fire ecology are thin but present. Simulation depth and sequencing are design-time.
-- **Mutation-coherent traversal.** Moria supplies world-derived navigation/traversability that stays coherent after voxel edits, with continuous-Z data and support for distinct movement classes. Agents, AI, and path presentation stay with games.
-- **Public surface, persistence, streaming.** Consumers use only public verbs, queries, and events. Persistence restores world generation, edit deltas, and substrate-owned world-object lifecycle state (including felled or moved objects)—not consumer game state. Large worlds stream by activity.
+- **Deep, geology-first world.** Underground is playable space—caves, strata, ore, aquifers, depth. Worlds generate as layered geology so digging reveals true structure; biomes and vegetation placement are substrate-owned; large regions can materialize lazily.
+- **Reactive matter and physics.** Fluids respond to breaches and matter state; granular matter settles; unsupported matter collapses; voxel objects can detach, fall, and rejoin world matter. Simulation depth and delivery order are design-time.
+- **Surface ecology and ambient response.** Interactable vegetation and micro-objects are matter-backed; lighter clutter is voxel-coupled under dig and change; vegetation growth belongs here. Time, seasons, weather, and fire ecology are thin but present.
+- **Mutation-coherent traversal and public surface.** World-derived navigation/traversability stays coherent after voxel edits, with continuous-Z data and distinct movement classes. Consumers use only public verbs, queries, and events. Persistence restores generation, edit deltas, and substrate-owned world-object lifecycle state. Large worlds stream by activity. Agents, AI, and path presentation stay with games.
 
 ## Future products and enabling implications
 
-Future consumers (not current product): a System/LLM-driven ARPG, a fortress or colony game, a Moria-style descent experience, and pure sandbox modes. They own gameplay, content, controllers, presentation policy, and economy.
+Future consumers (not current product): a System/LLM-driven ARPG, a fortress or colony game, a Moria-style descent experience, and pure sandbox modes. They own gameplay, controllers, presentation policy, economy, and consumer-authored content—not the substrate’s procedural world generation, biomes, vegetation placement, or matter/physics behavior.
 
-Supported enabling implications (not a committed roadmap): mutability and structural honesty at surface and depth; fluid and integrity behavior for later hydrological and engineering play; object/matter coupling for felling and collapse; ambient ecology games can exploit without owning weather or fire policy; traversal data agents can use without the substrate owning AI; metadata and placement hooks so higher layers author content without owning geology. Multiplayer patterns and room/economy features stay consumer-side or later design unless a thin non-policy seam is required.
+Enabling implications already bound as substrate outcomes above (not a separate roadmap): structural and hydrological honesty for later engineering play; object/matter coupling for felling and collapse; ambient ecology without owning weather or fire policy; traversal data without owning AI; placement hooks so higher layers author game content without owning geology. Multiplayer patterns and room/economy features stay consumer-side or later design unless a thin non-policy seam is required.
 
-Product One is an adjacent demo/harness concept, not Moria’s identity. Its first-slice exclusions (for example weather, seasons, growth, or save-slot limits) do not remove the corresponding substrate responsibilities above.
+Product One is an adjacent demo/harness concept, not Moria’s identity. Its first-slice exclusions do not remove substrate responsibilities above.
 
 ## Non-goals
 
@@ -50,6 +52,7 @@ Product One is an adjacent demo/harness concept, not Moria’s identity. Its fir
 
 - **Ecosystem:** a Rust crate or small family of tightly scoped Rust crates for Rust consumers.
 - **GPU-resident** world substrate as the intended execution model for the matter world.
+- **Cross-backend GPU portability:** load-bearing layers stay on wgpu/WGSL with no machine-specific native graphics forks; portability across backends (including Vulkan/DX12) is part of the crate’s product promise. Machine-specific limits and performance gates stay adjacent.
 - **Strict consumer boundary:** any in-repo harness and any external game use the same public interfaces; adjacent consumers have no privileged internal access.
 - **Zero LLM dependency:** the substrate stands alone; the System is a future game-layer client, not a substrate feature.
 - **Layering force:** game policy is not implemented in Moria; only substrate-demanded compatibility seams may be designed.
@@ -57,8 +60,8 @@ Product One is an adjacent demo/harness concept, not Moria’s identity. Its fir
 ## Deferred design decisions
 
 - Crate split, APIs, algorithms, storage, meshing, voxel size, LOD, streaming policy, and persistence encoding (including object lifecycle journals).
-- How much generation detail, matter simulation, ambient/ecological depth, object-physics coupling, and traversal fidelity ship in which delivery slice.
-- Performance budgets, target hardware, graphics backends, and validation workloads.
+- How much generation detail, matter-simulation depth, ambient/ecological depth, object-physics fidelity, and traversal fidelity ship in which delivery slice.
+- Performance budgets, target hardware, and validation workloads (including machine-specific gates).
 - Exact seams for future fortress/ARPG needs without pulling game layers in-repo.
 
 ## Assumptions proposed for approval
@@ -76,5 +79,5 @@ None.
 
 - **README.md** — Names Moria as the reusable GPU-resident voxel-world Rust substrate and positions the walkable-world executable as a separate validation harness for generation, streaming, meshing, editing, collision, persistence, and performance—not a game layer.
 - **docs/seeds/project-boundary.md** — Binds product identity to the substrate crate(s), excludes the actual game and named game layers (including AI), and requires any harness to use the same public interfaces as external games.
-- **docs/seeds/product-one-seed.md** — Describes an adjacent first demo/harness slice; its narrow exclusions do not redefine substrate identity, while its high-level validation mandate is recoverable if the harness is required.
-- **docs/seeds/voxel-world-substrate.md** — Supplies substrate responsibilities (material truth, natural look, deep Z, generation, surface/matter/ambient ecology, mutation-coherent traversal, persistence including world-object state, streaming, reusable layering) that ground required outcomes without importing game features.
+- **docs/seeds/product-one-seed.md** — Describes an adjacent first demo/harness slice; pins wgpu/WGSL and no native Metal fork for crate load-bearing layers and Vulkan/DX12 portability as product promise; its narrow first-slice exclusions do not redefine substrate identity.
+- **docs/seeds/voxel-world-substrate.md** — Supplies substrate responsibilities (material truth, natural look, deep Z, generation, surface ecology, reactive matter/physics, mutation-coherent traversal, persistence, streaming, reusable layering) that ground required outcomes without importing game features.
