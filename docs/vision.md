@@ -10,7 +10,7 @@ Moria exists so multiple downstream games can share one matter-truth world: a na
 
 ## Product boundary
 
-**In product:** the reusable substrate and its public Rust consumer surface—including mutation verbs; observation via mirrors, queries, and events; object and registry seams; and substrate-owned matter, spatial, and construction-support capabilities.
+**In product:** the reusable substrate and its public Rust consumer surface—including mutation verbs; observation via mirrors, queries, and events; object and registry seams; generation metadata consumers can read and annotate; and substrate-owned matter, spatial, and construction-support capabilities.
 
 **Adjacent, not product identity:** a walkable-world executable may exist as a validation harness for terrain generation, streaming, meshing, editing, collision, persistence, and performance. If present, it must consume the substrate through the same public interfaces available to an external game and must not own privileged or game-specific implementation paths. Whether that harness is a required repository delivery remains open (see Q1).
 
@@ -20,18 +20,18 @@ Moria exists so multiple downstream games can share one matter-truth world: a na
 
 ## Required product outcomes
 
-1. **Reusable public control surface** — expose a GPU-resident voxel world that external games integrate without privileged internal access. All mutations go through verbs; observation goes through mirrors, queries, and events. Provide object and registry seams so materials, structures, and related definitions can be authored without owning geology. Pricing, agents, the System, and game policy remain consumer-owned.
+1. **Reusable public control surface** — expose a GPU-resident voxel world that external games integrate without privileged internal access. External consumers and layers above the matter layer mutate only through verbs; observation goes through mirrors, queries, and events. Internal generation and matter simulation are not required to route through that public verb surface. Provide object and registry seams so materials, structures, and related definitions can be authored without owning geology. Pricing, agents, the System, and game policy remain consumer-owned.
 2. **Natural look, voxel truth** — continuous natural terrain derived from material voxels; the mesh is a regenerated, non-authoritative view; simulation, collision, and queries run against voxel truth.
 3. **Everywhere-mutable matter** — any voxel may be destroyed, moved, or placed through controlled verbs. Voxel-backed objects participate in dynamic matter lifecycles so interactable surface matter is the same material system, not decorative props.
-4. **Deep-Z geology generation** — geology-first procedural generation (strata, caves, ore and aquifer structure, surface biomes) with sparse, lazy materialization so large regions stay tractable.
+4. **Deep-Z geology generation and consumer metadata** — geology-first procedural generation (strata, caves, ore and aquifer structure, surface biomes) with sparse, lazy materialization so large regions stay tractable. Generation produces biome, strata, and POI metadata that consumers can read and annotate to direct placement without modifying geology. The System and authored content remain downstream.
 5. **Living matter and ambient world** — granular behavior; fluid behavior and material reactions; structural integrity and collapse; material-state responses; and thin-but-present ambient fire, weather, time, season, and growth behavior that games may rely on and tune, without embedding game rules.
-6. **Spatial support, construction support, streaming, and continuity** — derived Z and spatial data; mutation-aware navigation; first-class material and structure placement; reusable structure descriptions; structure and room metadata. Stream active regions. Durable truth is the seed-driven generation function plus edit deltas with object and entity journals; reconstruction is deterministic, and substrate-owned edits and object state continue across runs.
+6. **Spatial support, construction support, streaming, and continuity** — derived Z and spatial data; mutation-aware navigation; first-class material and structure placement; reusable structure descriptions; structure and room metadata. Stream active regions. Durable world truth for the generated volume is the seed-driven generation function plus edit deltas, with deterministic reconstruction of that slice. Object and entity journals persist substrate-owned object and entity state for cross-run continuity without claiming the same exact-restoration guarantee as seed-plus-deltas.
 
 ## Future products and enabling implications
 
 Intended future consumers include a System/LLM-backed ARPG, a fortress/colony-style game, a descent/adventure game, and pure sandbox play. An early walkable-region slice can validate the stack; it does not redefine product identity or narrow reusable purpose to that slice’s delivery depth.
 
-Enabling implications (not a committed multi-title roadmap): different games inject different pricing and agent policies over the same verbs; the System, if used, is a game-layer client of the same public surface, not a substrate feature.
+Enabling implications (not a committed multi-title roadmap): different games inject different pricing and agent policies over the same verbs; the System, if used, is a game-layer client of the same public surface and generation metadata, not a substrate feature.
 
 ## Non-goals
 
@@ -47,7 +47,8 @@ Enabling implications (not a committed multi-title roadmap): different games inj
 - Substrate has zero LLM dependency
 - Any adjacent consumer, including a harness if present, uses public interfaces only—no privileged game-specific paths
 - Game policy and rules live above the substrate; the substrate remains reusable across the intended consumer styles
-- Durable world truth is reconstructible from seed-driven generation plus deltas (including substrate-owned object state), not from authoritative mesh or one-off world dumps
+- Layers above the matter layer do not touch voxels directly; they use verbs and queries
+- Durable generated-world truth is reconstructible from seed-driven generation plus edit deltas, not from authoritative mesh or one-off world dumps; object and entity journals provide continuity of related state
 
 ## Deferred design decisions
 
@@ -74,5 +75,5 @@ None.
 
 - **README.md** — Establishes Moria as the reusable GPU-resident Rust voxel substrate and describes a walkable-world executable as a separate validation consumer, not a game layer.
 - **docs/seeds/project-boundary.md** — Binding identity and repository boundary: substrate crate(s); game out of repo; harness permitted under public interfaces; game/System/building layers excluded with seams allowed only where required.
-- **docs/seeds/voxel-world-substrate.md** — Authorizes substrate outcome families: natural look with voxel truth; full mutability including move; deep-Z geology; living matter and thin ambient simulation; verb/mirror/query/event control surface with object and registry seams; spatial and construction support; streaming and deterministic delta persistence; multi-game reuse; zero LLM dependency.
-- **docs/seeds/product-one-seed.md** — Early consumer-shaped walkable-region slice that motivates mutability proof, public control-surface discipline from first use, and continuous-world validation concerns without redefining product identity or importing demo controls, content, or hardware gates into current product scope.
+- **docs/seeds/voxel-world-substrate.md** — Authorizes substrate outcome families: natural look with voxel truth; full mutability including move; deep-Z geology with biome/strata/POI metadata for consumer read/annotate and directed placement; living matter and thin ambient simulation; public verb/mirror/query/event surface for layers above matter; spatial and construction support; streaming; seed-plus-delta durable truth with object/entity journals and cross-run continuity; multi-game reuse; zero LLM dependency.
+- **docs/seeds/product-one-seed.md** — Early consumer-shaped walkable-region slice that motivates mutability proof, public control-surface discipline from first use, full reusable generation including POI metadata, and exact restore for the seed-plus-deltas slice without redefining product identity or importing demo controls, content, or hardware gates into current product scope.
