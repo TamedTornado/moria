@@ -2,7 +2,7 @@
 
 ## What we are building now
 
-**Moria** is a reusable, GPU-resident **voxel-world substrate** exposed as a Rust crate (or a small family of tightly scoped Rust crates). It is an engine-layer foundation for natural, fully material worlds—not a game, not a gameplay demo, and not the future ARPG or fortress products that will sit above it.
+**Moria** is a reusable, GPU-resident **voxel-world substrate** exposed as a Rust crate (or a small family of tightly scoped Rust crates). It is an engine-layer foundation for natural, fully material worlds—not a game, not a gameplay demo, and not the future titles that will sit above it.
 
 ## Purpose
 
@@ -16,7 +16,7 @@ Moria exists so multiple games can share one world stack: a surface that reads a
 
 **Out of product:** the actual game; game rules; System/LLM features; spells; gas policy; combat; AI; and building/gameplay layers. Compatibility seams may be left where substrate outcomes require them; those consumer layers are not implemented here.
 
-**Consumer-owned (even when a harness or future game needs them):** character controllers, cameras, authored demo routes, presentation polish, gameplay UX, content packs, and game-specific policy. A harness may motivate that the substrate expose generation, streaming, meshing, editing, collision-relevant occupancy, persistence, and performance-relevant world services through public APIs; it does not pull harness controls, characters, scenes, platforms, or acceptance gates into substrate scope.
+**Consumer-owned (even when a harness or future game needs them):** character controllers, cameras, authored demo routes, presentation polish, gameplay UX, content packs, and game-specific policy. A harness may motivate public APIs for generation, streaming, meshing, editing, occupancy for collision, and persistence; it does not pull harness controls, characters, scenes, platforms, or acceptance gates into substrate scope.
 
 ## Required product outcomes
 
@@ -26,9 +26,9 @@ Design must make these consumer-visible guarantees true of the substrate (delive
 
 2. **Mutable volume, full depth.** Matter can be destroyed, placed, and reshaped throughout the playable volume, including deep underground. Dig and place are first-class substrate capabilities, not decorative surface tricks.
 
-3. **Geology-first generation.** Worlds are produced as diggable geology (columns, strata, caves, ores, water bodies, lazy materialization of volume), not as a heightmap with rock painted underneath. Deep Z is content: continuous vertical play through surface and subterranean space.
+3. **Geology-first generation.** Worlds are diggable geology—strata, caves, ores, water bodies, and deferred volume fill—not a heightmap with rock painted underneath. Deep Z is content: continuous vertical play through surface and subterranean space.
 
-4. **Matter and world services for games.** The substrate owns reusable world capability for material representation and mutation, surface dressing and voxel-backed objects, static and flowing fluid behavior at the tiers the stack supports, structural support and failure, ambient world behavior at aggregate scale where required, derived navigation-friendly occupancy, persistence of generation-plus-edits, and streaming of large regions—exposed so games can query and command the world without touching internal storage.
+4. **Matter and world services for games.** Reusable capability for material representation and mutation, surface dressing and voxel-backed objects, fluid behavior at supported tiers, structural support and failure, ambient world behavior where needed, navigation-friendly occupancy, generation-plus-edit persistence, and large-region streaming—so games query and command the world without touching internal storage.
 
 5. **Clean integration boundary.** All consumer access goes through public verbs, queries, and events. Nothing above the matter surface reaches voxels by privileged path. Gas/pricing and game rules are policy injected above the substrate, not baked into it. Multiple game types can share the same crate stack.
 
@@ -38,7 +38,7 @@ Design must make these consumer-visible guarantees true of the substrate (delive
 
 Future **consumers** (not this product): a System/LLM-driven ARPG, a Dwarf Fortress–style fortress/colony game, a Moria-style descent adventure, and sandbox modes. They own gameplay, content, presentation, and policy.
 
-Enabling implications already owned at substrate altitude: a material world deep enough for mines and caves; mutability and placement suitable for later building games; seams for game-authored materials, stamps/prefabs, and agents that only speak public commands; persistence and multi-anchor streaming so abandoned sites and large maps can return as data, not special cases. Long-horizon modules (rich fluid engineering, full fire ecology, multiplayer authority) remain design/roadmap choices unless later vision feedback promotes them—they are not a committed delivery catalog here.
+Enabling implications already owned at substrate altitude: a material world deep enough for mines and caves; mutability and placement suitable for later building games; seams for game-authored materials, stamps, and agents that only speak public commands; persistence and streaming so large maps and later sites can return as data. Long-horizon modules remain design/roadmap choices unless later vision feedback promotes them—not a committed delivery catalog here.
 
 A first walkable “product one” region and character demo is a **consumer/harness slice** that can prove the substrate; its milestone depth does not shrink Moria’s identity to that slice.
 
