@@ -51,8 +51,9 @@ Success for the current product means the following are true and demonstrable:
 6. **POI metadata and stamped structure** — generation produces POI metadata, and one stamped structure proves the stamp/prefab path into voxel matter. Exact ruin content is validation design; the path itself is the product outcome.
 7. **Operational honesty at scale for one region** — streaming rings and delta persistence so a region large enough that raw voxels do not all fit in memory remains walkable, savable, and reloadable from seed + edits.
 8. **Credible performance story** — frame-rate, dig-to-remesh, cold-start, memory, and save-size targets are measured on real hardware (including M4/wgpu constraints such as no 64-bit buffer atomics and bandwidth-first design), with regression-friendly benchmarks.
+9. **Public downloadable demo** — the walkable-world harness yields a public, downloadable demo that credibly showcases the substrate.
 
-Milestone order and demo content (specific postcard route, materials set, which ruin is stamped, etc.) are validation design, not separate product identity. They exist to force the outcomes above under real load and camera.
+Milestone order and demo content (specific postcard route, materials set, which ruin is stamped, etc.) are validation design, not separate product identity. They exist to force the outcomes above under real load and camera. Audience posting cadence is not a product outcome.
 
 ---
 
@@ -91,7 +92,7 @@ No seed conflict requires human resolution of *what product is being built now*:
 |---|---|
 | **README.md** | Names the product (Moria), states substrate-as-crate and harness-as-consumer, points at `docs/seeds/`. |
 | **project-boundary.md** | Binding product/consumer boundary: reusable crate(s); game out of repo; harness uses public APIs only; game rules and System/LLM/spell/gas/combat/AI/building layers out of scope. |
-| **product-one-seed.md** | Binding first deliverable: walkable generated world as product-shaped proof; full generation layer including POI metadata and one stamped structure; dig/place as mutability proof; non-goals; performance targets and M4/wgpu constraints; which substrate layers are in vs deferred. Specific seed-world content and milestone list treated as harness/validation design, not imported as permanent product content. |
+| **product-one-seed.md** | Binding first deliverable: walkable generated world as product-shaped proof; full generation layer including POI metadata and one stamped structure; dig/place as mutability proof; non-goals; performance targets and M4/wgpu constraints; which substrate layers are in vs deferred; public downloadable demo as a product-level outcome. Specific seed-world content, milestone list, and audience posting schedule treated as harness/validation design, not imported as permanent product content or process. |
 | **voxel-world-substrate.md** | Architecture reference for capabilities the substrate must eventually support (geology, smooth meshing, sparsity, object vs dressing split, fluid tiers, integrity, building verbs, streaming/persistence, layering rules). Only the capabilities selected by Product One and required for the outcomes above are in current scope; game examples (ARPG, fortress, System-authored content) remain future-consumer context. |
 | **docs/seeds/README.md** *(manifest helper)* | Confirms priority: Product One binds implementation slice; substrate doc is reference; boundary doc is operator clarification that Moria is only the voxel-world substrate. |
 
