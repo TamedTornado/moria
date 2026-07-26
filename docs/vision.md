@@ -34,15 +34,16 @@ Material voxel state is authoritative. Derived meshes and diagnostics never beco
 
 These are consumer-visible guarantees the substrate must make true—not a feature inventory or delivery sequence:
 
-1. **Deterministic generation.** The same versioned parameters and seed produce the same world identity and material results.
-2. **Bounded, observable streaming.** Resident work is bounded; lifecycle states (at least requested, loading, resident, evicted, failed) are visible; background results carry generation identities so stale work cannot replace newer truth.
-3. **Authoritative material queries.** Consumers can observe readiness and bounded material truth without treating meshes or diagnostics as source of truth.
-4. **Bounded, atomic mutation.** Edits enter through an explicit command API with admission failures and commit revisions; committed material state is the authority.
-5. **Durable material deltas.** Persistence records authoritative deltas (not derived meshes) and restores the same material state.
-6. **Hard public boundary.** External consumers—including the in-repo validation executable—use only the public interfaces; failures remain typed and observable.
-7. **Multi-consumer utility.** The surface stays general enough to remain useful to multiple downstream consumers, not a single demo’s private world path.
+1. **Deterministic generation.** Generation is deterministic for the same versioned parameters and seed: the same inputs yield the same material results.
+2. **World identity.** World identity combines format version, generation parameters, and seed. Identity is a distinct composition of those three inputs; generation parameters and seed alone do not determine identity without the format-version input, and generation does not itself produce identity.
+3. **Bounded, observable streaming.** Resident work is bounded; lifecycle states (at least requested, loading, resident, evicted, failed) are visible; background results carry generation identities so stale work cannot replace newer truth.
+4. **Authoritative material queries.** Consumers can observe readiness and bounded material truth without treating meshes or diagnostics as source of truth.
+5. **Bounded, atomic mutation.** Edits enter through an explicit command API with admission failures and commit revisions; committed material state is the authority.
+6. **Durable material deltas.** Persistence records authoritative deltas (not derived meshes) and restores the same material state.
+7. **Hard public boundary.** External consumers—including the in-repo validation executable—use only the public interfaces; failures remain typed and observable.
+8. **Multi-consumer utility.** The surface stays general enough to remain useful to multiple downstream consumers, not a single demo’s private world path.
 
-Supporting interface shape (from the reference seed; not extra scope): world identity combines format version, generation parameters, and seed; registered objects may participate in queries without becoming game entities; diagnostics report lifecycle and bounded work without exposing mutable internal handles.
+Supporting interface shape (from the reference seed; not extra scope): registered objects may participate in queries without becoming game entities; diagnostics report lifecycle and bounded work without exposing mutable internal handles.
 
 ## Required adjacent validation outcomes
 
@@ -56,7 +57,7 @@ These are required current delivery adjacent to the substrate product; they do n
 
 The program brief embeds a **later consumer vision**: after the substrate ships, a separate Product One repository may place a third-person explorer in a generated region (hills, mixed forest, river, cave) with skeletal animation and a curated cliff-to-cave traversal.
 
-That material is **future-consumer context only**. It pressures the substrate toward general generation, streaming, mutation, meshing-for-view, and public-API consumption. It does **not** authorize a player controller, character mesh, animation clips, forest population workload, curated route, or game assets in Moria.
+That material is **future-consumer context only**. It illustrates a possible later consumer of generated regions and environment content via the public API; it does **not** authorize a player controller, character mesh, animation clips, forest population workload, curated route, or game assets in Moria. Bounded streaming, mutation, and related substrate guarantees are **current binding mandates** of the program brief (not pressures established by this future-consumer slice).
 
 ## Non-goals
 
@@ -72,7 +73,7 @@ That material is **future-consumer context only**. It pressures the substrate to
 - Only current substrate commitments are deliverables; later-product paragraphs do not expand scope.
 - Validation uses exactly the public interfaces available to external consumers and is required adjacent delivery, not constitutive of the substrate product.
 - The substrate interface reference is supporting surface context and adds no deliverables.
-- Correctness centers on deterministic generation, atomic bounded mutation, material-authoritative persistence, bounded streaming with generation-aware stale rejection, and typed observable failures.
+- Correctness centers on deterministic generation (same versioned parameters and seed → same material results), world identity as format version plus generation parameters plus seed, atomic bounded mutation, material-authoritative persistence, bounded streaming with generation-aware stale rejection, and typed observable failures.
 
 ## Questions for human review
 
