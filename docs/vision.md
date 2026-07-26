@@ -89,7 +89,5 @@ that game-facing layers are outside this repository.
 
 Other documents under `docs/seeds/` (for example older product demos or
 architecture references) were not part of the prescribed seed manifest and are
-not imported into current product scope. Any high-level capabilities they
-illustrate for future consumers are already covered by the outcomes above;
-their gameplay, content, characters, assets, and implementation detail remain
-out of scope here.
+not imported into current product scope. Their gameplay, content, characters,
+assets, and implementation detail remain out of scope here.
