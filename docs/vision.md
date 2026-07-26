@@ -14,7 +14,7 @@ Provide a shared world foundation that games and a minimal validation executable
 
 **Outside product identity, required as adjacent validation in this program:** headless fixtures that cover generation, query, mutation, persistence, and lifecycle; a small visual fixture that shows a relocated external consumer can render and edit only through the public API. Those artifacts are not the product and own no privileged world path.
 
-**Outside this product entirely:** any particular game; gameplay rules, combat, inventory, AI, narrative, characters, animation, controllers, authored levels, production content, curated routes, and forest or traversal workloads. A free-fly camera or similar exercise UI may live only on an adjacent validation executable, not as substrate scope. General-purpose tools and independent tool-author integration are not current-product mandates.
+**Outside this product entirely:** any particular game; gameplay rules, combat, inventory, AI, narrative, characters, animation, controllers, authored levels, production content, curated routes, and forest or traversal workloads. A free-fly camera or similar exercise UI may live only on an adjacent validation executable, not as substrate scope.
 
 Consumers must not reach into storage, meshing, or scheduler internals. There is no privileged integration path for validation or other callers.
 
@@ -25,7 +25,7 @@ Consumers must not reach into storage, meshing, or scheduler internals. There is
 - **Bounded observation of material truth.** Consumers request bounded regions, observe readiness, and query authoritative material observations. Derived meshes and diagnostics never become authoritative world state.
 - **Bounded, atomic mutation.** Edits enter only as bounded commands with explicit admission failure and atomic commit, with commit revisions observable to callers.
 - **Bounded streaming with honest lifecycle.** Resident work stays bounded. Streaming exposes requested, loading, resident, evicted, and failed states. Background results carry generation identities so stale work cannot replace newer truth. Failures are typed and observable on the public surface.
-- **Authoritative persistence and derived surface.** Persistence records and restores authoritative material deltas (not derived meshes). Surface extraction is available as a derived view of material truth. Registered objects may participate in queries without becoming game entities. Read-only diagnostics report lifecycle and bounded work without exposing mutable internal handles.
+- **Authoritative persistence and derived surface.** Persistence records authoritative material deltas rather than derived meshes, and restores the same authoritative material state. Surface extraction is available as a derived view of material truth. Registered objects may participate in queries without becoming game entities. Read-only diagnostics report lifecycle and bounded work without exposing mutable internal handles.
 
 Adjacent validation must exercise these outcomes through the same public interfaces: headless coverage of generation, query, mutation, persistence, and lifecycle; plus a small visual demonstration that an external-style consumer can render and edit without privileged access. Performance reports include machine identity; this vision does not set machine-specific pass/fail thresholds.
 
@@ -42,7 +42,6 @@ Moria’s enabling implication is only that a later game can generate, stream, q
 - Privileged or internal access for any consumer, including validation
 - Treating meshes, diagnostics, or validation UI as authoritative world state
 - Machine-specific performance correctness gates as part of this product promise
-- General-purpose tool integration as a current-product mandate
 
 ## Confirmed vision constraints
 
@@ -56,8 +55,7 @@ Moria’s enabling implication is only that a later game can generate, stream, q
 ## Deferred design decisions
 
 - Concrete API shapes, crate layout, algorithms, storage layouts, and scheduler design
-- Numeric bounds, timing or memory targets, and benchmark workloads
-- Validation fixture presentation (camera, HUD, platforms) beyond public-API-only exercise
+- Numeric bounds and timing or memory targets for bounded work
 - Depth and sequence of capability delivery within the substrate mandate
 - How registered-object participation is modeled at the API level
 
