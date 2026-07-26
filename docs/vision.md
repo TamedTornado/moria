@@ -17,10 +17,11 @@ keeps world-material capabilities reusable across those consumers.
 
 **In product scope.** Public crate APIs for world creation and world
 identity, sparse voxel storage, bounded region request and streaming,
-readiness and material query, bounded mutation, surface extraction,
-persistence of deltas with restoration of authoritative material state, and
-read-only diagnostics. Correctness properties of generation, mutation,
-streaming, and persistence belong to the substrate.
+readiness and material query (including registered objects that participate
+in queries without becoming game entities), bounded mutation, surface
+extraction, persistence of deltas with restoration of authoritative material
+state, and read-only diagnostics. Correctness properties of generation,
+mutation, streaming, and persistence belong to the substrate.
 
 **Adjacent delivery, not product identity.** Headless fixtures and a small
 visual fixture exercise the public API. They are validation consumers of the
@@ -42,9 +43,10 @@ Product One content and controls remain in a separate consumer repository.
   deterministic for the same versioned parameters and seed. Worlds use
   sparse voxel storage as a substrate property.
 - Consumers request bounded regions, observe streaming lifecycle and
-  readiness, and query bounded authoritative material truth. Resident work
-  stays bounded; background results carry generation identity so stale work
-  cannot replace newer truth.
+  readiness, and query bounded authoritative material truth. Registered
+  objects can participate in those queries without becoming game entities.
+  Resident work stays bounded; background results carry generation identity
+  so stale work cannot replace newer truth.
 - Bounded edit commands admit or fail explicitly, commit atomically with
   revisions, and leave failures typed and observable on the public surface.
 - Surface extraction never becomes authoritative world state. Persistence
@@ -98,8 +100,8 @@ routes into Moria.
 
 - Crate layout, concrete API shapes, algorithms, and streaming or
   persistence encodings.
-- Exact surface-extraction approach, diagnostics payload design, and any
-  registered-object participation model detail.
+- Exact surface-extraction approach, diagnostics payload design, and how
+  registered objects are represented or participate in queries.
 - Fixture workload choices, visual presentation, and any quantitative
   performance targets.
 - Delivery sequence and depth within the substrate outcome set.
@@ -123,6 +125,7 @@ interfaces, and that Product One is a future separate consumer.
   public boundary, correctness and validation commitments, non-goals, and
   the later Product One consumer vision as non-authorizing context.
 - `docs/seeds/substrate-interface-reference.md` supports the brief’s
-  consumer-visible world, query, mutation, streaming, persistence, and
+  consumer-visible world, query (including registered-object participation
+  without game-entity ownership), mutation, streaming, persistence, and
   diagnostics outcomes without adding deliverables or redefining the
   product.
