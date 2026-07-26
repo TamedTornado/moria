@@ -8,7 +8,7 @@
 
 **Moria** is a reusable, GPU-resident **voxel-world substrate**, delivered as a Rust crate (or a small family of tightly scoped crates). Its walkable-world executable is a **validation harness**, not a game: it consumes the substrate only through the same public interfaces an external game would use.
 
-The first product-shaped milestone is **Product One — “The Walkable World”**: one curated generated region, a third-person character that can traverse it, and debug dig/place as proof that the world is fully material voxel truth—not a heightmap with props.
+The first product-shaped milestone is **Product One — “The Walkable World”**: one curated generated region, a third-person character that can traverse it, and debug dig/place as proof that the world is fully material voxel truth—not a heightmap with props. Product One produces a **public downloadable demo/artifact for the X audience**—milestone posts and a playable demo—not an internal-only harness.
 
 ---
 
@@ -45,6 +45,7 @@ Downstream games (sandbox, fortress, descent, ARPG, and others) are separate con
 5. **Consumer-grade crate boundary.** Substrate is usable by an external game through public interfaces. The walkable executable proves that boundary by living outside privileged paths.
 6. **Harness proves traversal and truth.** Third-person run/sprint/jump (and surface swim as needed); collision against voxel occupancy, not the render mesh; a continuous demo route (e.g. cliff-top to deep cave) that exercises Z.
 7. **Credibility under load.** Streaming, delta persistence, and benchmarked performance (frame rate, dig-to-remesh latency, cold start, memory, save size) are part of “done,” not polish after the demo.
+8. **Public artifact for the X audience.** Product One ships a downloadable demo (and milestone clips along the way) that external people can run—not a private validation binary only.
 
 Product One intentionally includes a **partial** matter layer (brick pool, meshing, dressing, voxel-object placement/render, static water) and a **sliver** of API (dig/place + mirror queries as engine API). Full CA, fire, flowing fluids, structural integrity, granular settle, and tree felling/rigid conversion are substrate-direction capabilities, not Product One commitments—except where format/API seams must not foreclose them.
 
@@ -68,7 +69,7 @@ Product One intentionally includes a **partial** matter layer (brick pool, meshi
 |---|---|
 | **README.md** | Names the product (Moria), states crate + harness split, points at seeds as preserved inputs. |
 | **docs/seeds/project-boundary.md** | Binding boundary: substrate is the product; game is external; harness uses public APIs; game/System/LLM/spell/gas/combat/AI/building layers out of scope. |
-| **docs/seeds/product-one-seed.md** | Binding first milestone: walkable world scope, seed-region intent, dig/place as proof, player/harness shape, performance credibility, explicit non-goals and milestones. |
+| **docs/seeds/product-one-seed.md** | Binding first milestone: walkable world scope, seed-region intent, dig/place as proof, player/harness shape, performance credibility, public X-audience downloadable demo/artifact, explicit non-goals and milestones. |
 | **docs/seeds/voxel-world-substrate.md** | Architecture *reference* for the substrate’s long-horizon capabilities (geology, meshing, fluids, integrity, building, entities, layering). Only portions selected by Product One are required for the current product. Future games and System hooks are **context** for seams and outcomes—not imported content or implementation scope. |
 | **docs/seeds/README.md** | Operator index confirming Product One as binding implementation slice, substrate doc as selective reference, and project-boundary as binding clarification. |
 
@@ -83,7 +84,8 @@ Product One intentionally includes a **partial** matter layer (brick pool, meshi
 None that change product identity, purpose, or boundary. Downstream design may still need:
 
 1. Confirmation that Product One remains the sole near-term delivery slice (vs. expanding matter-layer CA/integrity earlier).
-2. Audience/delivery intent for the harness (internal validation only vs. public downloadable demo)—affects packaging polish, not the product’s nature.
-3. Crate packaging preference (monolith vs. small family)—technical design, not vision.
+2. Crate packaging preference (monolith vs. small family)—technical design, not vision.
+
+**Resolved (human review):** Product One produces a public downloadable demo/artifact for the X audience; public vs. internal-only delivery is not open.
 
 If any of the above is wrong as human intent, correct this document before design proceeds.
