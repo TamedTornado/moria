@@ -10,20 +10,20 @@ Moria exists so multiple downstream consumers can create, stream, inspect, edit,
 
 ## Product boundary
 
-**In product:** world creation and identity; deterministic seed-based generation; sparse voxel material truth; bounded region request and streaming with observable readiness; bounded mutation; surface extraction; persistence of authoritative material state; read-only diagnostics exposed to public consumers.
+**In product:** world creation and identity; deterministic seed-based generation; sparse voxel material truth; bounded region request and streaming with observable readiness; bounded mutation; surface extraction; persistence of authoritative material state; diagnostics that report lifecycle and bounded work without exposing mutable internal handles.
 
-**Adjacent repository delivery (not product identity):** a minimal validation executable and fixtures that exercise only the public crate interfaces—headless coverage of substrate behavior and a small visual path showing a relocated external consumer can use the public API. Camera, controls, presentation, fixture content, and workloads remain harness-owned, not Moria product features.
+**Adjacent repository delivery (not product identity):** a minimal validation executable and fixtures that exercise only the public crate interfaces. Required delivery includes headless fixtures covering generation, query, mutation, persistence, and lifecycle behavior, and a small visual fixture proving that a relocated external consumer can render and edit through the public API. Camera, controls, presentation, fixture content, and workloads remain harness-owned, not Moria product features.
 
 **Out of product:** any particular game; game rules, combat, inventory, AI, narrative, characters, animation, authored levels, and production content. Consumers must not reach into storage, meshing, or scheduler internals.
 
 ## Required product outcomes
 
-- Consumers can create and identify a world from versioned parameters and seed; generation is deterministic for the same versioned parameters and seed.
+- Consumers can create a world whose identity combines format version, generation parameters, and seed; generation is deterministic for the same versioned parameters and seed.
 - Consumers can request bounded regions, observe readiness and streaming lifecycle, and rely on bounded resident work; background results carry generation identities so stale work cannot replace newer truth.
-- Consumers can query authoritative material observations and use substrate surface extraction; derived meshes and diagnostics never become authoritative world state.
+- Consumers can obtain readiness and bounded authoritative material observations; registered objects may participate in those queries without becoming game entities; derived meshes and diagnostics never become authoritative world state.
 - Consumers can submit bounded edits through a command API; admitted mutations commit atomically; failures are typed and observable at the public boundary.
 - Consumers can persist and restore the same authoritative material state; persistence records material deltas, not derived meshes.
-- Public consumers, including validation, integrate only through the crate boundary; the repository’s adjacent validation exercises that boundary without a privileged world path.
+- Consumers can use substrate surface extraction and read diagnostics that report lifecycle and bounded work without exposing mutable internal handles; public consumers, including validation, integrate only through the crate boundary without a privileged world path.
 
 ## Future products and enabling implications
 
@@ -43,7 +43,7 @@ Enabling implication at vision altitude: the substrate’s generation, streaming
 - Integration form is public Rust crate interfaces consumed by external games and validation code.
 - Mutation is admitted only through the bounded public command path; consumers have no privileged internal access.
 - Streaming exposes observable lifecycle states; public failures remain typed and observable.
-- Validation that demonstrates relocation uses the public API only; it is not a game and owns no privileged world path.
+- Adjacent validation is a required repository delivery: headless coverage of generation, query, mutation, persistence, and lifecycle, plus a visual fixture that proves render-and-edit through the public API only; it is not a game and owns no privileged world path.
 - Performance reporting includes machine identity; this vision sets no machine-specific correctness threshold.
 
 ## Deferred design decisions
@@ -66,4 +66,4 @@ None.
 
 - `README.md` — Names Moria as the reusable voxel-world substrate, states that only current substrate commitments are repository deliverables, and marks the interface reference as non-expanding support.
 - `docs/seeds/mixed-project-brief.md` — Binding current-product identity, public boundary, correctness and validation commitments, non-goals, and explicit separation of the later Product One consumer vision.
-- `docs/seeds/substrate-interface-reference.md` — Supporting vocabulary for world identity, query/mutation/streaming/persistence/diagnostics semantics already required by the program brief; does not add deliverables.
+- `docs/seeds/substrate-interface-reference.md` — Supporting vocabulary for world identity (format version, parameters, seed), bounded query/mutation/streaming/persistence semantics, registered-object query participation, and diagnostics reporting already required by the program brief; does not add deliverables.
