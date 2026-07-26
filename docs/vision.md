@@ -6,73 +6,102 @@
 
 ## Current product
 
-**Moria** is a reusable, GPU-resident **voxel-world substrate**: a Rust crate (or small family of tightly scoped crates) that owns matter, generation, mutation, queries, meshing, streaming, and persistence for a continuous three-dimensional world.
+**Moria** is a reusable, GPU-resident **voxel-world substrate**: a Rust crate (or small family of tightly scoped crates) that owns the world layer for continuous three-dimensional play. Downstream games consume it through public interfaces; they do not live in this repository.
 
-It is **not a game**. Downstream games consume Moria through public interfaces. This repository may ship a **walkable-world executable**, but only as a **validation harness** that uses the same public APIs an external game would use—not privileged or game-specific paths.
+The substrate’s job is matter, physics-facing world behavior, mutation, observation, events, object behavior, fluids, integrity, granular behavior, meshing, surface dressing, generation, and activity-oriented sparse streaming—exposed so upper layers never touch voxels directly. Consumers issue commands into GPU-resident state and read a mirror plus events out.
 
-**Product One** is the first shippable slice of that substrate: one curated generated region plus a third-person character who can traverse it, with dig/place as proof that the world is fully material voxel truth. The harness makes one claim undeniable: *this is not a heightmap with props—it is a fully material world, and it looks good.*
+This repository may also ship a **walkable-world executable**. That executable is a **separate consumer and validation harness**, not part of the substrate’s owned surface. It must use the same public APIs an external game would use—no privileged or game-specific paths into storage.
+
+**Product One** (“The Walkable World”) is the **first delivery**, not the product identity. It is a substrate capability slice *plus* an adjacent harness that collectively prove the substrate works: one curated generated region, a third-person character who can traverse it, dig/place as mutability proof, and benchmarks. The harness and its demo content are validation fixtures; the long-term product remains the reusable crate stack.
 
 ---
 
 ## Purpose
 
-1. **Prove the substrate.** Deliver a public, playable, measurable artifact that validates smooth meshing, geology-first generation, deep continuous Z, incremental mutation, streaming sparsity, and a clean consumer boundary.
-2. **Be reusable.** Establish crate and API boundaries so future games (ARPG, fortress/colony, descent, pure sandbox) sit above the same matter stack without forking world code.
-3. **Decide with numbers.** Use Product One as the benchmark bed for open substrate questions (voxel size, LOD, object-layer scale) rather than settling them by speculation.
+1. **Own the world layer.** Provide a reusable substrate that any future game mode (sandbox, fortress/colony, descent, ARPG) can sit on without forking matter, generation, or mutation code.
+2. **Prove it with Product One.** Deliver a public, playable, measurable first artifact—substrate slice plus harness—that makes one claim undeniable: *this is not a heightmap with props; it is a fully material world, and it looks good.*
+3. **Keep the consumer boundary honest.** Enforce crate and API separation so the harness never becomes a privileged second product surface.
+4. **Decide open engineering questions with numbers.** Use Product One’s region and benchmarks as the measurement bed (voxel size, LOD, object-layer scale), not as product-identity commitments.
 
 ---
 
 ## Boundary
 
-| In Moria | Out of Moria |
+### Substrate (current product — Moria)
+
+| In the substrate | Out of this repository (consumer / game layers) |
 |---|---|
-| Generation layer (geology pipeline, columns, lazy materialization, POI metadata, material palette) | Game rules, progression, combat, stats, AI |
-| Matter layer (brick pool, sentinels, meshing, surface dressing, voxel objects, static tier-1 water) | The System / LLM, spells, gas pricing, intent |
-| Script/API sliver: dig/place verbs and mirror queries (nothing touches voxels directly) | Building UI, blueprints, mechanisms, work orders |
-| Walkable-world harness consuming public substrate APIs | Fluids flow sim (tier 2+), fire/CA, integrity, granular settle as product features |
-| Persistence as seed + edit deltas; streaming rings | Multiplayer, weather/seasons/growth sims, multi-save versioning |
-| Performance targets and regression benchmarks for the harness | Any concrete game mode, characters, content IP, or campaign |
+| Generation: seed-and-coordinate geology pipeline, columns, lazy independent brick materialization, POI metadata, material palette | Game rules, progression, combat, stats, AI / agent labor |
+| Matter: brick pool, homogeneous sentinels, CA-capable format and sim hooks, multi-tier fluids, integrity, granular settle, particle/rigid coupling, meshing, dressing, voxel objects | The System / LLM, spells, gas pricing policy, intent |
+| Mutation, observation, and events: command path into GPU-resident state; mirror queries and events out; nothing above matter touches voxels directly | Building UI, blueprints, mechanisms, work orders, designation gameplay |
+| Derived navigation data that stays mutation-safe; persistent world and object state (truth = generation + deltas + journals) | Multiplayer as a shipped feature; any concrete game mode, characters, content IP, or campaign |
+| Activity-oriented sparse streaming (rings around anchors) | |
 
 **Cargo workspace** (or equivalent) must separate reusable substrate crates from the harness executable. The precise crate graph is a design decision; the consumer boundary is not.
 
-Future product layers described in the full substrate reference (structural integrity, multi-tier fluids, building verbs, nav/agents, ambient sim, semantic rooms) are **capability context** for what the substrate may eventually provide. Product One only requires the bottom generation and matter layers plus a thin verb/query surface—**not** those higher layers as current deliverables.
+Compatibility seams may be designed where substrate requirements demand them (e.g. gas as an injectable policy plug-in, System as a same-API client). Those layers must not be implemented here.
+
+### First delivery (Product One — substrate slice + adjacent harness)
+
+Product One **narrows what is built first**; it does not redefine what the substrate owns.
+
+**Substrate slice in Product One**
+- Generation layer — full for one curated region (continent pass may be stubbed to region parameters; columns, strata, caves, ore, lazy materialization, POI metadata ship as designed).
+- Matter layer — partial: brick pool, sentinels, lazy materialization, GPU meshing (dirty-brick incremental), grass/clutter dressing, voxel-object placement/registration/rendering, static tier-1 water. **Not** in Product One: CA, fire, fluid flow (tier 2/3), integrity, granular settle, rigid conversion of objects (tree felling is stretch only).
+- Script/API — sliver: dig/place verbs and mirror queries, establishing the no-direct-voxel-touch boundary. The complete substrate still owns the broader mutation, observation, and event contract beyond this first sliver.
+
+**Adjacent harness (not substrate-owned)**
+- Curated seed parameters for one generated region (authored *seed*, not authored *world*).
+- Third-person character, free-orbit camera, traversal route, debug presentation (dig/place keys, visualization toggles, time-of-day slider).
+- Scripted benchmark workload and performance reporting through milestone 6.
+- Tree felling remains **stretch**, not the completion bar.
 
 ---
 
 ## Required product-level outcomes
 
-When Product One is done, the following must be true:
+### Substrate outcomes (product altitude — authorized for Moria)
 
-1. **Material world, not scenery.** Terrain reads as a natural surface world (smooth isosurface / dual-contour style extraction, material blending), yet every visible volume is backed by mutable voxels. Mesh is a view; collision and mutation run against voxel truth.
-2. **Mutable everywhere in the harness.** Dig and place (debug keys are enough) dirty bricks, remesh incrementally, and show cut faces that read as cut earth—proof the world is substrate, not a painted mesh.
-3. **Continuous deep Z.** A player can move continuously from surface/canopy-scale terrain into underground space on the same world representation (no skybox floor).
-4. **Geology-first generation.** Worldgen produces real structure underground (strata, voids/caves, at least one subsurface resource band)—digging down hits *truth*, not filler rock under a heightmap.
-5. **Sparsity and streaming that matter.** A region large enough that the full volume cannot live as raw voxels in memory; homogeneous bricks, lazy materialization, and streaming rings keep idle wilderness cheap and cold-start walkable quickly.
-6. **Public API boundary from day one.** Harness and any external consumer mutate and query only through substrate verbs/mirrors; no game-layer shortcut into storage.
-7. **Measurable performance.** Targets (frame rate, dig-to-remesh latency, cold-start, GPU-resident memory budget, delta save size) are part of the product claim, with a scripted benchmark scene that reports numbers plus machine profile.
-8. **Portable GPU stack.** Load-bearing work stays on portable GPU abstraction (wgpu/WGSL); design respects constraints of the primary dev platform (e.g. no dependence on 64-bit buffer atomics).
+These are what the substrate must be *for*, even where Product One only partially exercises them:
+
+1. **Normal look over voxel truth.** Terrain and structures extract as a smooth mesh view (surface nets / dual contouring class); physics, queries, and gameplay run against voxel truth. Mesh is never authoritative and never saved.
+2. **Matter vs dressing.** Everything that can burn, break, or block is voxel-backed (terrain, structures, voxel objects). Non-voxel dressing (grass, flowers, clutter) is derived from and anchored to voxel state and must stay synchronized with it—not asserted as independent voxel identity for every visible pixel.
+3. **Mutable everywhere, continuous deep Z.** Any voxel can be destroyed, moved, or placed; the underground is first-class content on the same representation, not a skybox floor.
+4. **Deterministic, lazy generation.** Generation is a pure function of world seed and coordinates so any brick can materialize independently and lazily; untouched world stays cheap (column index + coarse maps + homogeneous sentinels).
+5. **GPU-resident consumer contract.** Upper layers issue commands into GPU-resident state and consume mirror queries plus events; they do not touch voxel storage directly. Access need not be synchronous or raw.
+6. **Interactive voxel objects and reactive/ambient matter.** Objects (trees, boulders, and kin) participate in the matter system; the substrate owns fluids, integrity, granular behavior, fire/CA-class ambient rules, and related physics-facing behavior as substrate capabilities (not as game modes).
+7. **Mutation-safe derived navigation and persistent state.** Nav data derives from bricks and invalidates locally on dirties. World truth persists as generation + edit deltas; objects/entities journal as needed. Streaming is activity-oriented and sparse around anchors.
+8. **Reusable without game lock-in.** Same crate stack supports multiple consumer genres; gas and System are policy/client concerns above the substrate, not substrate features.
+
+### First-delivery outcomes (Product One — fused proof)
+
+When Product One is done (through milestone 6; tree felling stretch), the **substrate slice and adjacent harness together** must make the following true. The vision does not restate feature or material inventories; it requires their **combined** proof:
+
+1. **Fused walkable proof.** One curated generated region, traversed in third person, collectively validates: a dressed surface that reads as a normal world; voxel-object density in the field; carved static water bodies; contrasting natural terrain and stamped structure surfaces in one view; real geology underground; continuous deep traversal; sparsity/streaming under a region that cannot live as raw voxels; and dig/place mutation with incremental remesh and cut faces that read as cut earth.
+2. **Collision against voxel truth.** Character collision uses occupancy/matter, not the render mesh, so the mesh remains a view.
+3. **API boundary from the first commit.** Dig/place and mirror queries exist as the harness’s only path into matter, matching the external consumer contract.
+4. **Exact restoration.** Save/load (seed + deltas; single slot is enough for Product One) restores the defaced world **exactly**, not merely a small delta on disk.
+5. **Measurable performance.** Frame rate, dig-to-remesh latency, cold-start to walkable, GPU-resident memory under streaming, and delta-save size are product claims, with a scripted benchmark scene that reports numbers plus machine profile.
+6. **Portable GPU stack.** Load-bearing work stays on portable GPU abstraction (wgpu/WGSL); design respects primary dev-platform constraints (e.g. no dependence on 64-bit buffer atomics).
 
 ---
 
 ## Non-goals
 
 - Shipping a game, combat loop, economy, multiplayer, or LLM-driven content system in this repository.
-- Implementing System/spell/gas layers, CA (fire, wetness rules), fluid *flow*, structural integrity, granular settle, or building/blueprint/mechanism gameplay in Product One—even where formats or seams anticipate them.
-- Authoring production game content (characters, factions, quests, campaign maps). Curated generation parameters for the harness seed world are validation fixtures, not product identity.
-- Treating the walkable executable as the long-term product surface rather than a consumer of the crate.
-- Relitigating the full multi-game roadmap inside Moria; games are separate consumers.
+- Implementing System/spell/gas layers, building UI, blueprints, mechanisms, work orders, agent labor, or other consumer-owned gameplay here—even where the substrate exposes seams those layers will need.
+- Treating Product One’s curated region, character, camera, debug UX, or benchmark scene as substrate-owned product surface rather than harness validation.
+- Treating the walkable executable as the long-term product identity rather than a consumer of the crate.
+- Importing future-game content, characters, or campaign structure into current scope; those remain example consumers the substrate must not preclude.
+- Relitigating open engineering choices (exact voxel size, LOD scheme, fluid pressure depth, object spatial scaling, milestone sequencing tactics) as vision questions—they belong in design after vision approval.
+
+**Product One delivery exclusions** (formats/seams may anticipate; runtime not required for first ship): CA/fire, fluid flow beyond static tier-1 bodies, integrity, granular settle, rigid conversion / tree felling except as stretch, embedded scripting language, multi-save versioning, weather/seasons/growth beyond a fixed time-of-day control in the harness.
 
 ---
 
 ## Unresolved questions for humans
 
-These would materially change identity, purpose, or boundary if answered differently:
-
-1. **Product name vs. fantasy.** Seeds use "Moria" for the substrate and also as a label for a future descent-style *game*. Confirm that **this repository's product is only the substrate**, and that "Moria" here does not imply shipping descent gameplay.
-2. **How far is "done" for Product One?** Binding seed milestones run through a numbers/benchmarks milestone, with tree-felling as stretch. Confirm whether the approval bar is the full ordered milestone set through benchmarks, or a shorter public demo (e.g. continuous run only).
-3. **Harness fidelity of the seed region.** Product One specifies a detailed curated region (feature list, material palette, size). Confirm that this content is **validation fixture**, not a commitment that Moria "is" that postcard world—only that the substrate must be able to host such a world.
-
-No other seed disagreements block a coherent product identity: boundary, Product One, and substrate reference nest cleanly (see below).
+None. Product identity (substrate vs game), Product One completion bar (through benchmarks; tree felling stretch), and authored-seed vs authored-world for the harness region are settled by the supplied seeds.
 
 ---
 
@@ -80,20 +109,20 @@ No other seed disagreements block a coherent product identity: boundary, Product
 
 | Seed | Role in this vision |
 |---|---|
-| **README.md** | Names Moria as reusable GPU-resident voxel substrate; harness is consumer/validation, not game layer. |
-| **project-boundary.md** | Binding scope: crate(s) only; game separate; harness on public APIs; game/System/LLM/spell/gas/combat/AI/building out of scope. Workspace boundary required. |
-| **product-one-seed.md** | Binding *first slice*: walkable demo claims, non-goals, substrate layer cut (gen full, matter partial, API sliver), player traversal as proof of continuous Z, dig/place as proof of mutability, performance targets, milestone order. Specific terrain features, materials, and debug keys treated as fixture/spec for the harness, not as game content to import into product identity. |
-| **voxel-world-substrate.md** | Architecture *reference*: design goals (normal look, mutable everywhere, deep Z, substrate-not-game, GPU-resident), look strategy, storage/gen/vegetation/fluids layering model, future-game support rationale. Only portions selected by Product One are current scope; higher layers and multi-game examples remain context for required seams and capabilities, not current implementation inventory. |
-| **docs/seeds/README.md** (manifest note) | States the binding hierarchy above: Product One selects required substrate portions; boundary clarification is operator-binding. |
+| **README.md** | Names Moria as the reusable GPU-resident substrate; walkable executable is a separate consumer/validation harness for generation, streaming, meshing, editing, collision, persistence, and performance—not a game layer. |
+| **project-boundary.md** | Binding product identity: substrate crate(s) only; game separate; harness on public APIs; game/System/LLM/spell/gas/combat/AI/building out of scope. Workspace boundary required; crate split is design. |
+| **product-one-seed.md** | Binding *first delivery*: Product One statement and non-goals; layer cut (gen full, matter partial, API dig/place + mirror sliver); harness player/camera/debug as proof vehicle; fused seed-region proof points; performance targets and exact save/load restore; milestones through 6 with tree felling stretch; authored seed not authored world. Does **not** redefine the substrate’s full mandate. |
+| **voxel-world-substrate.md** | Binding substrate mandate at product altitude: design goals; matter vs dressing; GPU command/mirror/event contract; generation determinism and lazy materialization; objects, fluids, integrity, granular, ambient matter; mutation-safe nav; persistence and sparse streaming; layering rules (nothing above matter touches voxels; gas policy and System are above). Product One selects a first slice; omitted runtime features remain substrate-owned outcomes, not optional game context. Multi-game examples and low-level engineering open questions stay as rationale and design handoff, not current inventory. |
 
-### Intentionally omitted from current vision (present in seeds as future or example)
+### Intentionally omitted from current vision
 
-- Full CA, fire ecology, multi-tier fluids, integrity/cave-ins, building/blueprints/mechanisms, nav classes, agent labor, rooms/economy hooks, weather/seasons, System attachment authoring, rigid-body tree felling (stretch in Product One only).
 - Concrete future games (System ARPG, DF-style fortress, Moria-style descent) as products of this repo—kept only as consumers the substrate must not preclude.
-- Low-level payload bit layouts, exact meshing algorithm choice, and open engineering questions (LOD strategy, fluid pressure solve, object spatial index)—belong in technical design after vision approval.
+- Game-owned layers: System attachment authoring, spells, gas policy, combat, AI/agent labor, building UI, blueprints, mechanisms, work orders, rooms/economy hooks as gameplay.
+- Low-level payload bit layouts, exact meshing algorithm choice, and open engineering questions (LOD strategy, fluid pressure solve, object spatial index, 25cm vs 12.5cm final call)—belong in technical design after vision approval.
+- Feature/material inventories and debug-key lists from Product One—fixtures for the fused harness proof, not vision identity.
 
 ---
 
 ## Summary sentence
 
-**Moria is the voxel-world engine layer—GPU-resident, mutable, continuous in depth, and cleanly consumable—proven first by a walkable harness that looks like a natural world and digs like matter; games live elsewhere.**
+**Moria is the reusable GPU-resident voxel-world substrate—matter, generation, mutation, observation, and related world behavior behind a command/mirror boundary; Product One is the first proof, a substrate slice plus walkable harness that looks like a natural world and digs like matter, while games live elsewhere.**
