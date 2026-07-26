@@ -6,24 +6,24 @@ Moria is a reusable Rust voxel-world substrate delivered as public crate interfa
 
 ## Purpose
 
-Moria exists so multiple downstream consumers can share a deterministic voxel world: create and identify worlds, stream and observe bounded regions, query authoritative material truth, apply bounded edits, extract derived surfaces, persist and restore material state, and obtain read-only diagnostics—without privileged access to substrate internals.
+Moria exists so multiple downstream consumers can reuse one substrate: create and identify worlds, generate material from versioned parameters and seed, stream and observe bounded regions, query authoritative material truth, apply bounded edits, extract derived surfaces, persist and restore material state, and obtain read-only diagnostics—without privileged access to substrate internals. Determinism is a generation commitment (same versioned parameters and seed yield the same generation), not a claim that every consumer shares one world or that the mutated, streamed, and persisted world as a whole is deterministic.
 
 ## Product boundary
 
-**In product:** world creation and identity; deterministic seed-based generation; voxel material storage and query; bounded streaming with observable lifecycle; bounded mutation; surface extraction as derived (non-authoritative) output; persistence of authoritative material deltas; read-only diagnostics; the public consumer-facing interface contract.
+**In product:** world creation and identity; deterministic seed-based generation; sparse voxel material storage and query; bounded streaming with observable lifecycle; bounded mutation; surface extraction as derived (non-authoritative) output; persistence of authoritative material deltas; read-only diagnostics; the public consumer-facing interface contract.
 
-**Adjacent, not product identity:** a minimal validation executable and fixtures that consume only public interfaces and hold no privileged world path. This repository delivers that adjacent exercise of the public boundary; harness controls, presentation, fixture protocols, workloads, and machine-specific performance gates remain adjacent, not product scope.
+**Adjacent, not product identity:** a minimal validation executable and fixtures that consume only public interfaces and hold no privileged world path. This repository delivers an adjacent validation floor: headless coverage of generation, query, mutation, persistence, and lifecycle; a small visual fixture proving a relocated external consumer can render and edit through the public API; and performance reporting with machine identity. Harness controls, presentation, exact fixture protocols and counts, workloads, and machine-specific performance gates remain adjacent design, not product scope.
 
 **Out of product:** any game, game rules, combat, inventory, AI, narrative systems, characters, animation, authored levels, production content, player controllers, or curated gameplay routes. Possible later games explain interface pressure only.
 
 ## Required product outcomes
 
-- Consumers create and identify a world, request bounded regions, observe readiness, query authoritative material truth, submit bounded edits, and persist deltas through public crate interfaces only; they do not reach into storage, meshing, or scheduler internals.
+- Consumers create and identify a world whose identity combines format version, generation parameters, and seed; request bounded regions; observe readiness; query bounded authoritative material observations with readiness; submit bounded edits; and persist deltas—through public crate interfaces only, without reaching into storage, meshing, or scheduler internals.
 - Generation is deterministic for the same versioned parameters and seed; mutation is admitted through a bounded command API and committed atomically; failures are typed and observable to public consumers.
+- Material is held in sparse voxel storage that remains useful to multiple downstream consumers of the same substrate.
 - Streaming bounds resident work, exposes observable lifecycle states, and keeps background results from replacing newer truth when generation identities show work is stale.
 - Persistence restores the same authoritative material state; derived meshes and diagnostics never become authoritative world state.
-- Surface extraction and read-only diagnostics remain useful, non-authoritative support for multiple downstream consumers of the same substrate.
-- Adjacent validation exercises the public product boundary without a privileged world path.
+- Adjacent validation proves the public boundary: headless coverage of generation, query, mutation, persistence, and lifecycle; a small visual fixture that a relocated external consumer can render and edit through the public API; performance reported with machine identity (no machine-specific correctness threshold).
 
 ## Future products and enabling implications
 
@@ -37,19 +37,22 @@ Enabling implication: Moria’s public world, generation, streaming, mutation, s
 - Treating the validation executable as a game prototype or granting it privileged substrate access.
 - Establishing machine-specific performance correctness thresholds from this vision.
 - Delivering Product One (or any particular game) in this repository.
+- Promising whole-world determinism beyond generation, or that multiple consumers share a single world instance.
 
 ## Confirmed vision constraints
 
 - Integration surface is public Rust crate interfaces; consumers have no privileged access to storage, meshing, or scheduler internals.
-- Adjacent validation uses exactly those public interfaces and holds no privileged world path.
+- Sparse voxel storage is a required product property of material holding (mechanism left to design).
+- World identity combines format version, generation parameters, and seed; material queries provide bounded authoritative observations with readiness.
+- Adjacent validation uses exactly those public interfaces, holds no privileged world path, and meets the delivery floor above.
 - This vision does not set a machine-specific performance correctness bar.
 
 ## Deferred design decisions
 
 - Delivery depth and sequence across substrate capabilities (first slice vs later depth).
-- Algorithms, data layouts, internal module structure, and concrete API shapes.
+- Algorithms, internal module structure, concrete API shapes, and the mechanism that implements sparse storage.
 - Exact streaming residency policy, lifecycle presentation, and generation-identity mechanics beyond the outcome guarantees above.
-- Validation fixture inventory, visual harness UX, workloads, and any performance measurement protocol beyond reporting with machine identity.
+- Exact validation fixture counts, protocols, visual harness UX, workloads, and performance measurement protocol beyond reporting with machine identity and the required proof kinds above.
 
 ## Assumptions proposed for approval
 
@@ -57,10 +60,10 @@ None.
 
 ## Questions for human review
 
-None. The seeds agree that the current product is the reusable substrate; validation is an adjacent public-boundary consumer with repository delivery commitments; Product One is a later separate consumer and does not expand Moria’s scope.
+None. The seeds agree that the current product is the reusable substrate; validation is an adjacent public-boundary consumer with the repository delivery floor above; Product One is a later separate consumer and does not expand Moria’s scope.
 
 ## Seed synthesis
 
 - `README.md` — Names Moria as the reusable voxel-world substrate; only current substrate commitments are repository deliverables; the interface reference is supporting and non-expanding.
-- `docs/seeds/mixed-project-brief.md` — Binding current-product identity, public boundary, correctness, validation delivery, non-goals, and explicit future-consumer (Product One) separation.
-- `docs/seeds/substrate-interface-reference.md` — Supporting vocabulary for world identity, query/mutation/streaming/persistence/diagnostics semantics; does not add deliverables or expand scope.
+- `docs/seeds/mixed-project-brief.md` — Binding current-product identity (including sparse voxel storage), public boundary, generation determinism, validation delivery floor, non-goals, and explicit future-consumer (Product One) separation.
+- `docs/seeds/substrate-interface-reference.md` — Supporting vocabulary for world identity (format version, parameters, seed), bounded query observations with readiness, and related public-surface semantics; does not add deliverables or expand scope.
