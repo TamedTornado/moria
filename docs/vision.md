@@ -30,20 +30,20 @@ External code must not reach into storage, meshing, or scheduler internals. Deri
 
 1. **Reusable public surface** — Consumers can create and identify a world, request bounded regions, observe readiness, query material truth, submit bounded edits, and persist deltas without private hooks.
 2. **Deterministic generation** — Same versioned parameters and seed produce the same authoritative material state.
-3. **Bounded, observable mutation** — Edits enter through a command API with explicit bounds, admission failures, and atomic commit (with revisions).
+3. **Bounded, observable mutation** — Edits enter through a command API with explicit bounds, admission failures, and atomic commit.
 4. **Faithful persistence** — Restored state matches the same authoritative material truth; deltas, not derived meshes, are the source of record.
 5. **Bounded streaming with safe concurrency** — Resident work is bounded; lifecycle states are observable; background results carry generation identities so stale work cannot overwrite newer truth; failures are typed and visible to public consumers.
 6. **Validation without product capture** — Headless and small visual fixtures prove the crate through the same public path a relocated external consumer would use.
 
 ## Non-goals (product identity)
 
-Moria is not a game, demo, or content pipeline. Interface-supporting concepts (e.g. registered objects participating in queries without becoming game entities) remain substrate concerns; they do not import gameplay systems into this repository.
+Moria is not a game, demo, or content pipeline. It does not import gameplay systems into this repository.
 
 ## Unresolved human questions
 
 None from the seed set that would change product identity, purpose, or boundary. Seeds agree: current deliverable is the substrate; later Product One–style material is explicit future-consumer context only.
 
-If product owners later want the validation executable, surface-extraction depth, or “registered objects” semantics to carry more (or less) product weight, that would be a deliberate scope decision—not a conflict already present in the seeds.
+If product owners later want the validation executable or surface-extraction depth to carry more (or less) product weight, that would be a deliberate scope decision—not a conflict already present in the seeds.
 
 ## Seed contributions
 
@@ -51,6 +51,6 @@ If product owners later want the validation executable, surface-extraction depth
 |--------|---------------------|
 | **`README.md`** | Names the product (Moria), states that only substrate commitments are deliverables, and frames the brief’s later-product paragraphs as non-binding embedded context. Points at the interface reference as supporting technical context only. |
 | **`docs/seeds/mixed-project-brief.md`** | Binding definition of current product, public boundary, correctness and validation commitments, non-goals, and the later consumer vision—with an explicit disclaimer that those paragraphs do not authorize game systems or assets in Moria. Primary source for purpose, outcomes, and non-goals. |
-| **`docs/seeds/substrate-interface-reference.md`** | Technical color for the public surface (world identity, readiness/material queries, mutation commands, streaming lifecycle, delta persistence, registered objects, diagnostics). Used to sharpen boundary and outcomes; **does not** add deliverables or expand product scope. |
+| **`docs/seeds/substrate-interface-reference.md`** | Non-binding technical context for the public surface (world identity, readiness/material queries, mutation commands, streaming lifecycle, delta persistence, diagnostics). Used to sharpen boundary and outcomes only; **does not** add deliverables or expand product scope. Mentions of implementation details such as registered objects are reference notes, not product commitments. |
 
 Material **not** imported into current scope: Product One gameplay and presentation (third-person explorer, hills/forest/river/cave scene, skeletal animation, curated cliff-to-cave route, character/content assets). High-level capabilities those consumers would need—deterministic worlds, streaming, mutation, persistence, queryable material truth—remain as substrate outcomes above.
