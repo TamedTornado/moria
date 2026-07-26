@@ -73,14 +73,18 @@ Future games motivate these outcomes; their gameplay, UX, characters, assets, an
 
 ## Unresolved human questions
 
-None that change product identity, purpose, or repository boundary. The seeds agree:
+The seeds agree on product identity and repository boundary:
 
 - **Current product** = reusable GPU-resident voxel-world substrate as Rust crate(s).
 - **Required adjacent first delivery** = walkable-world harness + Product One substrate slice.
 - **Reference, not “now” mandate** = full reactive-matter and multi-game architecture depth in the substrate design seed, except high-level capability families retained above as enduring purpose.
 - **Out of repo** = actual games and listed game/System layers.
 
-Open engineering tradeoffs (voxel size, LOD, object scaling, fluid/integrity fidelity, APIs/encodings, deferred delivery sequence) are design problems after vision approval. Multiplayer implementation remains a non-goal; multiplayer-friendly layering is not a binding readiness promise.
+Multiplayer *implementation* remains a non-goal (see above). One scope question is still open:
+
+1. **Multiplayer-ready architecture as an explicit commitment?** The substrate architecture reference notes that the verb/command layering is “server-authoritative-ready by construction” and asks whether that readiness is worth keeping in scope statements even if multiplayer is not built. Should **server-authoritative-ready / multiplayer-friendly architecture** remain an **explicit product-level scope commitment**, or is it only an incidental property of good layering that design may pursue without vision-level promise?
+
+Open engineering tradeoffs (voxel size, LOD, object scaling, fluid/integrity fidelity, APIs/encodings, deferred delivery sequence) are design problems after vision approval.
 
 ## Seed contribution account
 
