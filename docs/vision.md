@@ -28,13 +28,13 @@ The substrate must stay useful across consumers; any single game’s rules, cont
 - Reaching into storage, meshing, or scheduler internals from outside the public surface.
 
 **Future-consumer context (not current deliverables)**  
-Seeds mention a later “Product One” explorer demo (third-person character, hills/forest/river/cave, skeletal animation, cliff-to-cave route) in a separate repository. That material is later-consumer context only; it pressures interface usefulness toward generation, streaming, mutation, surfaces, and persistence, but does not authorize those gameplay systems, assets, content, or any large-world workload commitment in this repository.
+Seeds mention a later “Product One” explorer demo (third-person character, hills/forest/river/cave, skeletal animation, cliff-to-cave route) in a separate repository. That material is later-consumer context only; it pressures interface usefulness toward generation, streaming, mutation, surfaces, and persistence, but does not authorize those gameplay systems, assets, content, or Product One’s forest-population workload in this repository.
 
 ## Required product-level outcomes
 
-1. **Public consumer surface** — External consumers can create/identify a world, request bounded regions, observe readiness, obtain bounded authoritative material observations, submit bounded edits, and persist/restore authoritative material state—without internal handles or private paths.
+1. **Public consumer surface** — External consumers can create/identify a world, request bounded regions, observe readiness, obtain bounded authoritative material observations, submit bounded edits, and persist authoritative deltas—without internal handles or private paths.
 2. **Deterministic generation** — Same versioned parameters and seed produce the same world material truth.
-3. **Bounded, observable streaming** — Resident work is bounded; lifecycle states (e.g. requested, loading, resident, evicted, failed) are visible; background work carries generation identity so stale results cannot overwrite newer truth.
+3. **Bounded, observable streaming** — Resident work is bounded; lifecycle states (e.g. requested, loading, resident, evicted, failed) are visible; background results carry generation identities so stale results cannot overwrite newer truth.
 4. **Authoritative mutation** — Edits enter through a bounded command API, with explicit admission failures and atomic commits; commit revisions are observable.
 5. **Persistence of material truth** — Persistence records authoritative deltas (not derived meshes); restore yields the same material state.
 6. **Derived data stays non-authoritative** — Meshes and diagnostics never become world truth.
@@ -45,10 +45,10 @@ Seeds mention a later “Product One” explorer demo (third-person character, h
 
 - Implementing or shipping Product One or any other game in this repository.
 - Game systems (rules, combat, inventory, AI, narrative), characters, animation, authored levels, or production content.
+- Product One’s forest-population workload, curated cliff-to-cave route, player controller, character mesh, animation clips, or game assets as Moria deliverables.
 - Treating the validation executable as a prototype game or privileged world path.
 - Expanding product scope from interface-reference detail (it describes needed surface pressure only).
 - Machine-specific performance pass/fail gates as correctness commitments of this brief.
-- Committing to a separate tools consumer class, large-world workload scale, or platform-portable generation beyond the reusable public interfaces and relocated external fixture the seeds authorize.
 
 ## Unresolved human questions
 
@@ -59,11 +59,14 @@ None that change product identity, purpose, or boundary. The seeds agree and set
 | Source | Contribution to this vision |
 | --- | --- |
 | `README.md` | Names Moria as the substrate defined by the program brief; states that only current substrate commitments are deliverables; marks the interface reference as supporting technical context that does not expand scope; flags the later-product vision as embedded but non-binding for this repo. |
-| `docs/seeds/mixed-project-brief.md` | Primary binding source: current product, public boundary, correctness and validation commitments (including that performance is reported with machine identity), non-goals, and explicit separation of later Product One consumer vision from Moria deliverables. |
+| `docs/seeds/mixed-project-brief.md` | Primary binding source: current product, public boundary (consumers persist deltas; restoration is a product-level persistence guarantee), correctness and validation commitments (including that performance is reported with machine identity; background *results* carry generation identities), non-goals, and explicit separation of later Product One consumer vision from Moria deliverables. |
 | `docs/seeds/substrate-interface-reference.md` | Refines the public surface (world identity, readiness and bounded authoritative material observations, bounded mutations, streaming states, delta persistence, registered objects in queries without becoming game entities, diagnostics without mutable internals) without adding deliverables or gameplay. |
 
 **Omitted from current scope (visible in seeds but not imported as product)**  
-Product One setting, explorer fantasy, skeletal animation, forest/river/cave content, and curated cliff-to-cave traversal—retained only as interface-pressure context.
+Product One setting, explorer fantasy, skeletal animation, forest/river/cave content, forest-population workload, and curated cliff-to-cave traversal—retained only as interface-pressure context.
 
 **Conflicts**  
 None among the three manifest seeds regarding which product is current.
+
+**Not settled by seeds (deliberately not constrained here)**  
+Whether tools are a distinct consumer class, general world scale beyond Product One’s excluded forest-population workload, and platform-portable generation. The brief’s unmodified determinism commitment is not qualified by platform constraints in this vision.
