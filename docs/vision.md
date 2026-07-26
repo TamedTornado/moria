@@ -8,7 +8,7 @@
 
 **Moria** is a reusable, GPU-resident **voxel-world substrate**, delivered as a Rust crate (or a small family of tightly scoped crates). It is the engine layer for natural-looking, fully mutable voxel matter—not a game.
 
-A **walkable-world executable** ships in-repo only as a **validation harness**: it exercises generation, streaming, meshing, editing, collision, persistence, and performance through the same public interfaces an external game would use. It is not a privileged game layer and not the product customers ship.
+A **walkable-world executable** ships in-repo only as a **validation harness**: it exercises generation, streaming, meshing, editing, collision, persistence, and performance through the same public interfaces an external game would use. It is also the **public/downloadable proof artifact** for the intended audience. It is not a privileged game layer and not a shippable game product.
 
 ---
 
@@ -54,11 +54,13 @@ These are the outcomes Product One must make true. Detail and implementation liv
 
 7. **Harness proves the API** — Third-person walk/run/jump/swim controller, free-orbit camera, continuous demo route, and debug views (wireframe/bricks, raw voxels, streaming rings, time-of-day). Demo player only—no combat, AI, or game systems.
 
-8. **Credibility numbers** — Deliverables include benchmarks (e.g. target framerate class, dig-to-remesh latency, cold start to walkable, memory with streaming, delta save size) plus a scripted scene and machine profile so later substrate work can regress against Product One.
+8. **Public proof artifact** — The playable harness is released as a public/downloadable proof for the intended audience (e.g. milestone posts and a downloadable demo). It remains a validation consumer of the substrate, not a shippable game product.
 
-9. **Persistence model** — Truth = worldgen function + edit deltas; reload same seed + deltas (single save slot is enough). No save versioning product for this slice.
+9. **Credibility numbers** — Deliverables include benchmarks (e.g. target framerate class, dig-to-remesh latency, cold start to walkable, memory with streaming, delta save size) plus a scripted scene and machine profile so later substrate work can regress against Product One.
 
-10. **Portable GPU path** — wgpu/WGSL load-bearing path; design stays viable on unified-memory (e.g. Apple Silicon) constraints such as no 64-bit buffer atomics, with sparsity treated as load-bearing rather than deferred polish.
+10. **Persistence model** — Truth = worldgen function + edit deltas; reload same seed + deltas (single save slot is enough). No save versioning product for this slice.
+
+11. **Portable GPU path** — wgpu/WGSL load-bearing path; design stays viable on unified-memory (e.g. Apple Silicon) constraints such as no 64-bit buffer atomics, with sparsity treated as load-bearing rather than deferred polish.
 
 ---
 
@@ -82,7 +84,7 @@ Longer substrate reference material (full fluid tiers, integrity, building verbs
 
 ## Unresolved human questions
 
-None that change **product identity** (substrate + public-API harness) or **purpose** (material world proven in a walkable demo). Seeds agree: Moria is only the voxel-world substrate; Product One selects which reference capabilities ship now.
+None that change **product identity** (substrate + public-API harness as validation consumer and public proof) or **purpose** (material world proven in a walkable demo). Seeds agree: Moria is only the voxel-world substrate; Product One selects which reference capabilities ship now. Human review confirmed the harness is a public/downloadable proof artifact while remaining a validation consumer, not a game.
 
 Open technical/design calls already flagged in seeds, for design—not vision blockers:
 
@@ -92,7 +94,7 @@ Open technical/design calls already flagged in seeds, for design—not vision bl
 - Whether later fluid tiers need a pressure solve  
 - Discrete-GPU performance re-baseline when hardware is available  
 
-If the operator intends a different *current* product (e.g. the harness *is* the product, or Product One’s seed-world content is fixed product identity rather than disposable proof bed), that would change this document—say so before design freezes boundary language.
+If the operator intends Product One’s seed-world content as fixed product identity rather than a disposable proof bed, that would change this document—say so before design freezes boundary language.
 
 ---
 
@@ -102,7 +104,7 @@ If the operator intends a different *current* product (e.g. the harness *is* the
 |---|---|
 | **README.md** | Names Moria as reusable GPU-resident voxel substrate crate; walkable executable as consumer/harness; points at seeds. |
 | **project-boundary.md** | Binding identity: crate(s) only; game is external; harness must use public APIs; Cargo workspace consumer boundary; game/System/LLM/spell/gas/combat/AI/building out of scope; seams allowed, layers not. |
-| **product-one-seed.md** | Binding *first* product slice: walkable material-world demo outcomes, non-goals, dig/place as proof, region-scale proof bed, substrate layer slice (gen full / matter partial / API sliver), harness player/camera, performance credibility, milestones as delivery shape—not game content to ship as product IP. |
+| **product-one-seed.md** | Binding *first* product slice: walkable material-world demo outcomes, non-goals, dig/place as proof, region-scale proof bed, substrate layer slice (gen full / matter partial / API sliver), harness player/camera, performance credibility, public/downloadable proof artifact for the audience, milestones as delivery shape—not game content to ship as product IP. |
 | **voxel-world-substrate.md** | Architecture reference for look (smooth mesh over voxel truth), sparsity, geology-first gen, dressing/objects, persistence/streaming, layering diagram, and long-horizon capabilities. Only Product-One-selected portions are current requirements; remainder frames why seams exist. |
 | **docs/seeds/README.md** | Manifest order: Product One binds implementation + harness; substrate doc is reference under that selection; boundary doc is operator clarification. |
 
