@@ -10,7 +10,7 @@ Moria exists so multiple downstream consumers can create, stream, inspect, edit,
 
 ## Product boundary
 
-**In product:** world creation and identity; deterministic seed-based generation; sparse voxel material truth; bounded region request and streaming with observable readiness; bounded mutation; surface extraction; persistence of authoritative material state; diagnostics that report lifecycle and bounded work without exposing mutable internal handles.
+**In product:** world creation and identity; deterministic seed-based generation; sparse voxel storage; bounded region request and streaming with observable readiness; bounded mutation; surface extraction; persistence of authoritative material state; diagnostics that report lifecycle and bounded work without exposing mutable internal handles.
 
 **Adjacent repository delivery (not product identity):** a minimal validation executable and fixtures that exercise only the public crate interfaces. Required delivery includes headless fixtures covering generation, query, mutation, persistence, and lifecycle behavior, and a small visual fixture proving that a relocated external consumer can render and edit through the public API. Camera, controls, presentation, fixture content, and workloads remain harness-owned, not Moria product features.
 
@@ -20,8 +20,8 @@ Moria exists so multiple downstream consumers can create, stream, inspect, edit,
 
 - Consumers can create a world whose identity combines format version, generation parameters, and seed; generation is deterministic for the same versioned parameters and seed.
 - Consumers can request bounded regions, observe readiness and streaming lifecycle, and rely on bounded resident work; background results carry generation identities so stale work cannot replace newer truth.
-- Consumers can obtain readiness and bounded authoritative material observations; registered objects may participate in those queries without becoming game entities; derived meshes and diagnostics never become authoritative world state.
-- Consumers can submit bounded edits through a command API; admitted mutations commit atomically; failures are typed and observable at the public boundary.
+- Consumers can obtain readiness and bounded authoritative material observations; derived meshes and diagnostics never become authoritative world state.
+- Consumers can submit bounded edits through a command API; admitted mutations commit atomically and produce commit revisions; failures are typed and observable at the public boundary.
 - Consumers can persist and restore the same authoritative material state; persistence records material deltas, not derived meshes.
 - Consumers can use substrate surface extraction and read diagnostics that report lifecycle and bounded work without exposing mutable internal handles; public consumers, including validation, integrate only through the crate boundary without a privileged world path.
 
@@ -66,4 +66,4 @@ None.
 
 - `README.md` — Names Moria as the reusable voxel-world substrate, states that only current substrate commitments are repository deliverables, and marks the interface reference as non-expanding support.
 - `docs/seeds/mixed-project-brief.md` — Binding current-product identity, public boundary, correctness and validation commitments, non-goals, and explicit separation of the later Product One consumer vision.
-- `docs/seeds/substrate-interface-reference.md` — Supporting vocabulary for world identity (format version, parameters, seed), bounded query/mutation/streaming/persistence semantics, registered-object query participation, and diagnostics reporting already required by the program brief; does not add deliverables.
+- `docs/seeds/substrate-interface-reference.md` — Supporting vocabulary for world identity (format version, parameters, seed), mutation commit revisions, streaming lifecycle states, persistence of deltas, and diagnostics reporting that clarify outcomes already required by the program brief; does not add deliverables.
