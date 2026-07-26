@@ -29,13 +29,11 @@ Moria exists so multiple games can share one world foundation: natural-looking, 
 Downstream design must make these true for the substrate:
 
 1. **Authoritative mutable matter** — A GPU-resident voxel world is the source of truth; any volume can be destroyed, moved, or placed. Presentation meshes are regenerated views, never saved as authority.
-2. **Reads as a normal world** — Surface landscapes (terrain, vegetation, static water bodies, cliffs, and similar) look continuous and natural while remaining fully material underneath.
-3. **Deep Z is first-class** — Geology, caves, strata, and underground volume are real content, not a decorative floor under a heightmap.
-4. **Geology-first generation at scale** — Worlds are produced as diggable geology with lazy materialization and sparse representation so large regions stay tractable until touched.
-5. **Public mutation and query boundary** — Consumers mutate and inspect the world only through public verbs and queries; nothing above the matter core touches voxels directly. This is the sandbox, multiplayer-readiness, and reuse boundary.
-6. **Streaming, edit persistence, and collision truth** — Large worlds stream around activity; saves are worldgen plus edit deltas; locomotion and interaction can collide against voxel occupancy, not the render mesh alone.
-7. **Matter-consistent dressing and interactables** — Surface dressing and voxel-backed objects stay coupled to matter so fire, dig, and similar changes cannot desync look from truth.
-8. **Reusable across game modes** — The same crate stack can underpin ARPG, fortress/colony, descent, or sandbox consumers by providing matter, physics-relevant world services, queries, and mutation—not by embedding any one game’s rules.
+2. **Natural surface, material truth** — Landscapes read as continuous natural worlds (terrain, vegetation, water bodies, cliffs) while dressing and voxel-backed interactables stay coupled to matter so look cannot desync from dig, burn, or similar change.
+3. **Deep-Z geology at scale** — Underground is first-class content (strata, caves, ores, aquifers), produced by geology-first generation with lazy materialization and sparse representation so large regions stay tractable until touched.
+4. **Public mutation and query boundary** — Consumers mutate and inspect the world only through public verbs and queries; nothing above the matter core touches voxels directly. This is the sandbox, multiplayer-readiness, and reuse boundary.
+5. **Streaming, edit persistence, and collision truth** — Large worlds stream around activity; saves are worldgen plus edit deltas; locomotion and interaction can collide against voxel occupancy, not the render mesh alone.
+6. **Multi-game reusable world services** — The same crate stack underpins ARPG, fortress/colony, descent, or sandbox consumers by providing matter, queries, mutation, and physics-relevant services (including support and fluid behavior the engine owns)—not by embedding any one game’s rules.
 
 ## Future products and enabling implications
 
