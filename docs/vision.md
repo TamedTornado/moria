@@ -69,11 +69,11 @@ These remain **on the repository’s substrate trajectory** unless a later human
 - Weather, seasons, and growth simulation (a fixed time-of-day control is enough for the slice)
 - Richer script/API surface (embedded scripting, fuller priced-verb and event model beyond dig/place + mirror queries)
 - Navigation aggregates and movement-class path data derived from bricks
-- Substrate-side building primitives beyond proof dig/place (grid/stamp placement APIs, blueprint *format* as data)—still without fortress/ARPG building *gameplay*
 - Multi-anchor streaming policies and cross-run delta reuse patterns beyond the slice’s single-save “seed + deltas” model
-- Multiplayer-oriented hardening of the command/mirror boundary (architecture may stay ready; servers are not the product)
 
 The first slice’s job is to prove material world, look, mutation, deep Z, sparsity, and the public API—not to ship the full matter sim stack.
+
+**Not settled as repository roadmap:** substrate-side building primitives beyond proof dig/place (grid/stamp placement APIs, blueprint *format* as data) and multiplayer-oriented hardening of the command/mirror boundary are **not** defaulted onto the trajectory above. Compatibility *seams* for public verbs/queries may still be designed where required; whether fuller building-data primitives or multiplayer hardening belong in Moria at all is an open human question (see below).
 
 ---
 
@@ -115,17 +115,23 @@ These are deferred substrate direction (see Boundary), not permanent exclusions 
 
 ## Unresolved human questions
 
-None that change product identity, purpose, or boundary. The seeds agree on what Moria *is* (substrate + harness), what the first slice must prove, and that broader game/System layers are external. Capabilities deferred from Product One but specified in the substrate architecture are treated as deferred repository roadmap, not as permanently external—matching how the seeds separate “not in product one” from “not in this repo.”
+The seeds agree on what Moria *is* (substrate + harness), what the first slice must prove, and that broader game/System layers are external. Two items appear in the architecture seed as substrate-adjacent but are **not** settled onto the repository roadmap here—human intent is required before treating either as in-scope direction.
 
-Questions left to design and measurement (not vision blockers):
+### Product boundary (need human resolution)
+
+1. **Building primitives / blueprint format beyond proof dig/place** — The architecture seed describes grid/stamp placement APIs and blueprints as sparse voxel stamps + material manifests (data/API, not fortress gameplay). Project boundary puts building *layers* out of scope and allows only compatibility seams. **Question:** Beyond the dig/place proof verbs already in the first slice, should Moria own substrate-side building primitives and a blueprint *format* as data, or should those stay outside Moria entirely (with only thin compatibility seams if needed)? Do not assume either answer from seed plausibility alone.
+
+2. **Multiplayer-oriented hardening of the command/mirror boundary** — The architecture seed notes that verb/command architecture is server-authoritative-ready by construction and may be “worth keeping in scope statements even if not built.” Servers are not the product. **Question:** Should multiplayer-oriented hardening of the command/mirror boundary be part of Moria’s substrate trajectory at all, or is “ready by construction” / seam design enough without roadmap commitment to hardening work?
+
+### Design and measurement (not vision blockers)
 
 - Final voxel size (25 cm vs 12.5 cm or hybrid) for the benchmark region.
 - Distant terrain LOD strategy under the harness camera.
 - How far object-layer scale (trees/clutter counts) needs acceleration in the first slice.
 - Which performance targets remain provisional until discrete-GPU baselines exist.
-- Ordering and prioritization among deferred substrate capabilities after the first slice (integrity vs fluids vs CA, etc.)—implementation sequence, not product identity.
+- Ordering and prioritization among settled deferred substrate capabilities after the first slice (integrity vs fluids vs CA, etc.)—implementation sequence, not product identity.
 
-If product intent ever shifts from “crate + validation harness” to “shipping walkable demo as the primary product,” or from “no game systems” to “include a thin fortress/adventure mode,” that would rewrite this vision and should be an explicit human decision. If any deferred substrate items above should instead be cut from the repository roadmap entirely, that also needs an explicit human decision.
+If product intent ever shifts from “crate + validation harness” to “shipping walkable demo as the primary product,” or from “no game systems” to “include a thin fortress/adventure mode,” that would rewrite this vision and should be an explicit human decision. If any *settled* deferred substrate items in Boundary should instead be cut from the repository roadmap entirely, that also needs an explicit human decision.
 
 ---
 
@@ -136,11 +142,12 @@ If product intent ever shifts from “crate + validation harness” to “shippi
 | **README.md** | Names the product (Moria), states substrate-as-crate and harness-as-consumer, points at seeds as preserved inputs. |
 | **project-boundary.md** | Hard repository boundary: substrate is the product; game is external; harness must use public APIs; game/System/LLM/spell/gas/combat/AI/building *layers* out of scope; workspace split between crate and harness. |
 | **product-one-seed.md** | First deliverable identity (walkable vertical slice), product-level claim, slice non-goals, dig/place as proof not gameplay, performance and platform constraints as product outcomes, milestones as proof order—not imported as a content GDD or game design. Explicitly defers CA, integrity, granular, fluid tiers 2–3, felling physics, weather, and rich scripting while keeping formats ready. Specific seed-world features (ruin, ore types, tree species, etc.) are validation-scenario context for capabilities the substrate and harness must exercise, not current product lore. |
-| **voxel-world-substrate.md** | Capability envelope and layering for the substrate over time (smooth meshing over density, brick sparsity, geology-first gen, lazy materialization, column index, dressing vs voxel objects, tiered fluids, integrity, building verbs as data/API, nav/Z, streaming/persistence). Future games (ARPG, fortress, Moria descent) and System attachment points are context for *why* seams exist; their gameplay, content, characters, and full implementation are **not** current scope and remain outside the repository. Establishes that deferred matter/API work is still substrate direction. |
+| **voxel-world-substrate.md** | Capability envelope and layering for the substrate over time (smooth meshing over density, brick sparsity, geology-first gen, lazy materialization, column index, dressing vs voxel objects, tiered fluids, integrity, nav/Z, streaming/persistence). Future games (ARPG, fortress, Moria descent) and System attachment points are context for *why* seams exist; their gameplay, content, characters, and full implementation are **not** current scope and remain outside the repository. Establishes that deferred matter/API work is still substrate direction. Building-data primitives/blueprint format and multiplayer hardening from this seed are **not** imported as settled roadmap—held as unresolved human questions. |
 
 ### Intentionally omitted or reclassified from seeds
 
-- **Deferred (still substrate / this repo):** full CA, integrity/cave-ins, granular settle, fluid tiers 2–3, tree felling physics, weather/seasons/growth, richer script/API, nav aggregates, substrate building primitives beyond proof dig/place, multi-anchor/cross-run streaming patterns—kept as deferred direction, not first-slice identity and not “external forever.”
+- **Deferred (still substrate / this repo):** full CA, integrity/cave-ins, granular settle, fluid tiers 2–3, tree felling physics, weather/seasons/growth, richer script/API, nav aggregates, multi-anchor/cross-run streaming patterns—kept as deferred direction, not first-slice identity and not “external forever.”
+- **Unresolved (not defaulted onto roadmap):** substrate building primitives / blueprint format beyond proof dig/place; multiplayer-oriented command/mirror hardening—present in the architecture seed, held as open human questions rather than settled trajectory (see Unresolved human questions).
 - **Outside this repository:** game rules, System/LLM products, spells, gas policy, combat/AI, building *gameplay* layers, complete games—from project-boundary and the upper layers of the architecture seed.
 - Demo marketing plan (X thread cadence, viral clips, downloadable demo as *the* product)—useful communication intent; the vision keeps the product as the substrate with a demonstrable harness, not a content release pipeline.
 - Precise crate graph, kernel designs, and open engineering options—belong in technical design after this vision is approved.
