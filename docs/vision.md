@@ -10,18 +10,18 @@ The repository ships substrate crates plus harnesses that exercise only those pu
 
 ## Purpose
 
-Give external consumers a complete, stable substrate for material voxel worlds—deterministic identity and generation, sparse authoritative storage, bounded mutation, streaming of resident work, derived meshing, object-aware world queries, and versioned persistence—so games and tools can be built elsewhere without forking or embedding privileged engine paths.
+Give external consumers a complete substrate for material voxel worlds—deterministic identity and generation, sparse authoritative storage, bounded mutation, streaming of resident work, derived meshing, object-aware world queries, and versioned persistence—so games and tools can be built elsewhere without forking or embedding privileged engine paths.
 
 ## Boundary
 
 | In scope | Out of scope |
 |---|---|
 | Substrate crates and their public command/query surfaces | Game rules, characters, controllers, animation |
-| Deterministic generation from versioned parameters + seed | Authored content, production assets, consumer-specific worlds |
-| Sparse storage of authoritative material truth | Combat, AI, building UI, spells, gas, LLM/System layers |
-| Streaming, meshing as a regenerable derived view | Privileged harness-only mutation or query paths |
+| Deterministic generation from versioned parameters + seed | Authored routes, production assets, consumer-specific content |
+| Sparse storage of authoritative material truth | A game layer (the harness is validation only) |
+| Streaming; meshing as a regenerable derived view | Privileged harness-only mutation or query paths |
 | Persistence of versioned authoritative deltas | Treating meshes or scheduling state as truth |
-| Headless and minimal visual fixtures (e.g. free-fly camera, diagnostics) as public-API validation only | A walkable demo, third-person character, or product-shaped game |
+| Headless and minimal visual fixtures (free-fly camera, diagnostics) as public-API validation only | Mutable internal handles exposed as diagnostics |
 
 The validation harness may look like a thin viewer; it is not a game layer. Anything it does must use the same interfaces available to another repository.
 
@@ -37,11 +37,10 @@ The validation harness may look like a thin viewer; it is not a game layer. Anyt
 
 ## Non-goals
 
-- Implementing any game, demo character, traversal fantasy, or content pack in this repository
-- Importing Product One / walkable-world gameplay, seed-world composition, material palettes, or art direction as current deliverables
-- Embedding System, LLM, spell, gas, combat, AI, or building layers (compatibility seams only where substrate needs demand them)
+- Implementing a game layer, game rules, characters, controllers, animation, authored routes, production assets, or consumer-specific content in this repository
 - Shipping privileged APIs usable only by in-repo harnesses
 - Treating derived views (meshes, scheduling) as authoritative or durable truth
+- Exposing mutable internal handles through diagnostics
 - Fixing portable performance SLAs as correctness requirements
 
 ## Unresolved human questions
@@ -55,5 +54,3 @@ None that change product identity, purpose, or boundary. The clean seeds and roo
 | `README.md` | Names the product (Moria) and points current scope at the clean boundary and substrate-requirements seeds, without a downstream product vision. |
 | `docs/seeds/clean-project-boundary.md` | Defines identity: reusable Rust substrate for external consumers; crates + public-interface validation harness; harness is not a game; lists excluded game/content concerns; requires completeness for generate/stream/query/mutate/mesh/save/restore. |
 | `docs/seeds/clean-substrate-requirements.md` | Supplies product-level capability outcomes: identity & deterministic generation, sparse storage & mutation API, streaming & derived meshing, registered-object queries, versioned persistence, headless/visual fixtures, diagnostics, and performance-as-evidence. |
-
-**Reference only (not current scope):** Older seeds under `docs/seeds/` (`product-one-seed.md`, `voxel-world-substrate.md`, `project-boundary.md`, seeds README) describe a walkable-world milestone, character controller, curated demo region, geology pipeline, and game-adjacent architecture. They inform *why* the substrate must support material mutability, deep continuous space, streaming sparsity, and clean consumer boundaries—but their gameplay, content, characters, assets, and implementation detail are not imported into current product scope. The older `project-boundary.md` agrees that the substrate is the product and any walkable executable is only a validation harness; the clean seeds supersede it for current wording.
