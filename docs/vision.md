@@ -12,11 +12,11 @@ Give downstream games a shared foundation for large, natural-looking worlds that
 
 **This product owns:** the reusable voxel-world substrate and its public integration surface for external Rust games and tools—matter, generation, material and ambient behavior, neutral construction and spatial primitives, navigation data derived from the world, and persistence of world truth across runs.
 
-**Adjacent required delivery (not identity):** a walkable-world executable that validates terrain generation, streaming, meshing, editing, collision, persistence, and related substrate behavior through the same public interfaces available to an external game. It must not own privileged or game-specific substrate paths. Its controller, character, content, presentation, route, workload, platform, and performance gates are harness concerns, not substrate identity.
+**Adjacent required delivery (not identity):** a walkable-world executable that validates terrain generation, streaming, meshing, editing, collision, persistence, and related substrate behavior through the same public interfaces available to an external game. It must not own privileged or game-specific substrate paths. Its controller, character, content, presentation, route, workload, platform, and performance gates are harness concerns, not substrate identity. For that first slice’s single-save (seed plus deltas) path, load restores the saved world exactly; that exactness does not extend to every substrate persistence artifact.
 
 **Downstream / out of repository:** the actual game (or games) that consume Moria.
 
-**Not this product:** game rules; System/LLM features; spells; gas policy; combat; AI; building-as-gameplay layers (work orders, blueprints-as-gameplay, mechanism policy); player controllers; cameras; authored demo content; presentation and UX chosen by a consumer or harness.
+**Not this product:** game rules; System/LLM features; spells; gas policy; combat; AI; building-as-gameplay layers (work orders, blueprints-as-gameplay, mechanism policy); player controllers; cameras; authored demo content; presentation and UX chosen by a consumer or harness; multiplayer gameplay or networking implementation.
 
 Compatibility seams may be designed where substrate requirements demand them; those excluded layers must not be implemented here.
 
@@ -27,7 +27,7 @@ Compatibility seams may be designed where substrate requirements demand them; th
 - **Mutation and bounded observation.** Matter can be destroyed, moved, or placed only through the public command surface. Consumers observe via a stale/coarse mirror plus events—not direct privileged voxel access and not a promise of necessarily current GPU truth.
 - **Material and ambient behavior.** Vegetation and interactable objects stay materially consistent with the matter world; fluids, fire/wetness, granular settle, growth, and structural failure are substrate outcome families. Thin ambient simulation (time-of-day, seasons, weather-driven effects that make the surface world behave) is present on the substrate.
 - **Construction, spatial semantics, and navigation.** Neutral placement and stamp affordances; structure/room metadata over enclosed volumes; mutation-safe 3D navigation data derived from the world. These are substrate primitives, not building gameplay.
-- **Large-world practicality and full persistence.** Sparse residency and streaming around activity keep large regions workable. Persisted truth is generation plus edit deltas, plus object/entity journals, supporting cross-run reuse and exact restoration of a saved world.
+- **Large-world practicality and persistence.** Sparse residency and streaming around activity keep large regions workable. Persisted truth is generation plus edit deltas, plus object/entity journals, supporting cross-run reuse. Exact load restoration is a walkable-world first-slice obligation for its single-save seed-plus-deltas path, not a substrate-wide guarantee on every journaled or persisted artifact.
 
 ## Future products and enabling implications
 
@@ -39,6 +39,7 @@ Described future **consumers** (not this product) include a System/LLM-driven AR
 
 - Shipping the actual game, its rules, or its content pipeline inside this product
 - Implementing System/LLM, spell, gas, combat, AI, or building gameplay layers here
+- Implementing multiplayer gameplay or networking here
 - Treating harness- or demo-specific characters, routes, debug UX, trailer content, platforms, or performance gates as substrate scope
 - Making decorative non-material geometry the authority for collision, queries, or mutation
 
@@ -46,6 +47,7 @@ Described future **consumers** (not this product) include a System/LLM-driven AR
 
 - **Ecosystem:** product is a Rust crate or small family of tightly scoped Rust crates.
 - **Consumer boundary:** the in-repo walkable-world validation executable is a required adjacent first delivery and must consume only public interfaces; privileged game-specific substrate paths are forbidden.
+- **GPU-backend portability:** load-bearing substrate layers must remain portable across Metal, Vulkan, and DX12; a Metal-only fork of those layers is forbidden.
 - **Scope exclusion:** game rules and future System, LLM, spell, gas, combat, AI, and building layers are out of scope for implementation here.
 - **Independence:** the substrate must function with zero LLM dependency.
 
@@ -63,11 +65,14 @@ None.
 
 ## Questions for human review
 
-None.
+**Q1.** Is **server-authoritative multiplayer-readiness** of the command architecture a required current-product constraint even though multiplayer is not built?
+
+- **Proposed answer:** Yes—keep the public command/mirror/event surface multiplayer-ready by construction as a product constraint, without implementing multiplayer gameplay or networking.
+- **If different:** Answering no removes multiplayer-readiness from product identity and constraints; the substrate would only need the command/mirror boundary for sandbox reuse and privileged-access exclusion, not as an explicit multiplayer-ready quality.
 
 ## Seed synthesis
 
 - **`README.md`:** Names Moria as a reusable GPU-resident voxel-world substrate consumed as a Rust crate, and positions the walkable-world executable as a separate validation consumer for generation, streaming, meshing, editing, collision, persistence, and performance—not a game layer.
 - **`docs/seeds/project-boundary.md`:** Binding boundary—substrate crates are the product; the real game is out of repo; the walkable harness remains a non-product consumer of public interfaces; game/System/LLM/spell/gas/combat/AI/building layers stay out of scope.
-- **`docs/seeds/voxel-world-substrate.md`:** Defines substrate purpose and outcome families—natural material worlds; destroy/move/place mutation; command/mirror/event observation; deep Z and geology-first generation; GPU-resident matter; vegetation/objects, fluids, fire/wetness, granular, growth, structural failure; thin ambient sim; placement/stamp, room metadata, mutation-safe nav; full persistence with journals and cross-run reuse; multi-genre consumers above game policy.
-- **`docs/seeds/product-one-seed.md`:** First-slice validation story that settles a concrete walkable-world delivery and exact save/load restoration for that slice; narrows first-slice depth without removing substrate-owned outcome families from product identity.
+- **`docs/seeds/voxel-world-substrate.md`:** Defines substrate purpose and outcome families—natural material worlds; destroy/move/place mutation; command/mirror/event observation; deep Z and geology-first generation; GPU-resident matter; vegetation/objects, fluids, fire/wetness, granular, growth, structural failure; thin ambient sim; placement/stamp, room metadata, mutation-safe nav; persistence via generation plus deltas and journals with cross-run reuse (without substrate-wide exact restoration); multi-genre consumers above game policy; open whether multiplayer-readiness stays in scope statements.
+- **`docs/seeds/product-one-seed.md`:** First-slice validation story that settles a concrete walkable-world delivery and exact save/load restoration for that slice’s single-save seed-plus-deltas path; requires load-bearing layer portability across Metal/Vulkan/DX12 (no Metal-only fork); narrows first-slice depth without removing substrate-owned outcome families from product identity.
