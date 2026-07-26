@@ -18,7 +18,7 @@ Moria exists so other repositories can build on a reusable voxel-world substrate
 
 **Adjacent repository delivery (not product identity)**
 
-- A minimal validation harness that uses only the same public interfaces available to another repository. It may include a free-fly camera and diagnostic overlays. It is not a game layer.
+- A minimal validation harness that uses only the same public interfaces available to another repository. The harness is not a game layer. Its headless fixture exercises generation, streaming, mutation, queries, and persistence. Its minimal visual fixture includes a free-fly camera and exercises meshing through the public interface. Diagnostic overlays may be used.
 
 **Outside this product**
 
@@ -31,7 +31,7 @@ Moria exists so other repositories can build on a reusable voxel-world substrate
 - **Streaming and derived mesh.** Streaming bounds resident work and rejects stale background results. Meshing is a regenerable derived view of voxel truth, not a second source of truth.
 - **Queries.** Registered objects can participate in deterministic world queries without becoming game entities.
 - **Persistence.** Persistence records versioned authoritative deltas and restores identical query behavior. Derived meshes and transient scheduling state are not saved as truth.
-- **Public completeness and validation.** Through public interfaces alone, consumers can generate, stream, query, mutate, mesh, save, and restore the world. A headless fixture exercises generation, streaming, mutation, queries, and persistence; a minimal visual fixture exercises meshing through the public interface. Performance measurements include machine identity and are evidence, not portable correctness thresholds.
+- **Public completeness and validation.** Through public interfaces alone, consumers can generate, stream, query, mutate, mesh, save, and restore the world. A headless fixture exercises generation, streaming, mutation, queries, and persistence. A minimal visual fixture with a free-fly camera exercises meshing through the public interface. Performance measurements include machine identity and are evidence, not portable correctness thresholds.
 
 ## Future products and enabling implications
 
@@ -49,13 +49,13 @@ No named future game or product is in scope. The intended consumers are external
 - The substrate is a Rust library surface for external consumers.
 - Harness and consumers exercise the same public API; no privileged internal access for validation or integration.
 - World generation and the query surface that includes registered objects are deterministic as specified for those outcomes.
-- Authoritative persistence is versioned deltas of material truth; restore must yield identical query behavior.
+- Persistence records versioned authoritative deltas; restore must yield identical query behavior. Derived meshes and transient scheduling state are not saved as truth.
 - Performance figures are machine-identified evidence only, not portable product pass/fail thresholds.
 
 ## Deferred design decisions
 
 - Concrete API shapes, crate layout, storage encoding, streaming and meshing strategies, and mutation admission policy details.
-- Exact diagnostic fields, fixture workloads, and how free-fly or overlay tooling is implemented in the harness.
+- Exact diagnostic fields, fixture workloads, free-fly camera implementation details, and how overlay tooling is implemented in the harness.
 - Depth and sequence of capability delivery within the outcomes above.
 
 ## Assumptions proposed for approval
