@@ -12,17 +12,20 @@ Moria exists so multiple independent consumers can create, stream, inspect, edit
 
 **In product:** the reusable world substrate and its public crate surface—world identity, deterministic generation, sparse voxel material storage, bounded streaming, mutation, surface extraction as derived geometry, persistence of authoritative deltas, and read-only diagnostics.
 
-**Adjacent (outside product identity, still program-delivered):** headless fixtures that cover generation, query, mutation, persistence, and lifecycle behavior; and a small visual fixture that shows a relocated external consumer can render and edit through the public API. Both use exactly those public interfaces, are not a game prototype, and own no privileged world path.
+**Adjacent (outside product identity, still program-delivered):**
+- A minimal validation executable that consumes the substrate only through its public interfaces, may include free-fly camera and diagnostics sufficient to exercise the crate, is not a game prototype, and owns no privileged world path.
+- Headless fixtures that cover generation, query, mutation, persistence, and lifecycle behavior.
+- A small visual fixture that demonstrates a relocated external consumer can render and edit through the public API.
 
 **Out of product:** any particular game, including a later Product One explorer demo in a separate repository. Gameplay systems, controllers, characters, animation, authored levels, production content, and game policy belong to consumers.
 
 ## Required product outcomes
 
-- **Public multi-consumer surface.** Consumers create and identify a world (format version, generation parameters, and seed), request bounded regions, observe readiness, query authoritative material truth, submit bounded edits, and persist deltas—without reaching into storage, meshing, or scheduler internals.
+- **Public multi-consumer surface.** Consumers create and identify a world, request bounded regions, observe readiness, and obtain bounded authoritative material observations through queries; they submit bounded edits and persist deltas—without reaching into storage, meshing, or scheduler internals.
 - **Deterministic generation.** The same versioned parameters and seed produce the same world. The surface remains useful to multiple downstream consumers.
 - **Authoritative material mutation.** Edits enter as bounded commands with admission failures and atomic commit revisions. Material state is authoritative; derived meshes and diagnostics are not.
 - **Bounded streaming with honest lifecycle.** Resident work is bounded; consumers observe requested, loading, resident, evicted, and failed states. Background results carry generation identity so stale work cannot replace newer truth. Failures are typed and observable on the public surface.
-- **Derived surfaces and safe diagnostics.** Surface extraction produces non-authoritative geometry. Diagnostics report lifecycle and bounded work without exposing mutable internal handles. Registered objects may participate in queries without becoming game entities.
+- **Derived surfaces and safe diagnostics.** Surface extraction produces non-authoritative geometry. Diagnostics report lifecycle and bounded work without exposing mutable internal handles.
 - **Persistence of material truth.** Persistence records authoritative deltas rather than derived meshes and restores the same authoritative material state.
 
 ## Future products and enabling implications
@@ -43,7 +46,7 @@ A separate Product One repository may later ship a third-person explorer in a ge
 - Generation determinism for the same versioned parameters and seed.
 - Atomic commit of admitted mutations; typed, observable public failures.
 - Streaming lifecycle states are observable; generation identity prevents stale overwrite.
-- Adjacent validation uses exactly the public interfaces and has no privileged world path.
+- The validation executable uses exactly the public interfaces, is not a game prototype, and owns no privileged world path.
 - Performance reporting includes machine identity; this vision does not establish a machine-specific correctness threshold.
 
 ## Deferred design decisions
@@ -51,7 +54,7 @@ A separate Product One repository may later ship a third-person explorer in a ge
 - Internal algorithms, data layouts, crate splits, and scheduling mechanisms.
 - Exact streaming bounds, revision encodings, and persistence formats.
 - Depth and sequence of capability delivery across releases.
-- Visual-fixture presentation choices (for example free-fly camera detail) and headless fixture workload design.
+- Validation-executable presentation choices (for example free-fly camera detail) and headless or visual fixture workload design.
 - Any performance budgets or target environments beyond reporting machine identity with results.
 
 ## Assumptions proposed for approval
@@ -64,6 +67,6 @@ None. The seeds fix product identity as the Rust voxel-world substrate, settle v
 
 ## Seed synthesis
 
-- `README.md` — Names Moria as the reusable voxel-world substrate, limits this repository to current substrate commitments, and treats the interface reference as non-expanding support.
-- `docs/seeds/mixed-project-brief.md` — Binding current-product identity, public boundary, correctness and validation commitments, non-goals, and embedded later Product One consumer context that must not enter Moria scope.
-- `docs/seeds/substrate-interface-reference.md` — Supporting detail for the same substrate surface (identity, query, mutation, streaming lifecycle, persistence, registered objects, diagnostics), fused here only as outcome-level mandates.
+- `README.md` — Names Moria as the reusable voxel-world substrate, limits this repository to current substrate commitments, and treats the interface reference as supporting context that does not expand product scope or deliverables.
+- `docs/seeds/mixed-project-brief.md` — Binding current-product identity, public boundary, correctness and validation commitments (including the validation executable’s exact-public-interface and non-prototype predicates, plus separate headless and visual fixture commitments), non-goals, and embedded later Product One consumer context that must not enter Moria scope.
+- `docs/seeds/substrate-interface-reference.md` — Supporting technical context for the substrate surface already in the brief; used only to clarify outcome language (for example bounded material observations), not to add deliverables or elevate reference-only inventory into product mandates.
