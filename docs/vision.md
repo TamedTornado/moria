@@ -20,10 +20,11 @@ without each consumer reimplementing world truth or reaching into internals.
   sparse voxel storage, bounded streaming, mutation, surface extraction,
   persistence, and read-only diagnostics as reusable capabilities for many
   consumers.
-- **Public contract.** Consumers create and identify a world, request bounded
-  regions, observe readiness and streaming lifecycle, query authoritative
-  material observations, submit bounded edits, and persist authoritative
-  deltas. Failures are typed and observable. Storage, meshing, and scheduler
+- **Public contract.** Consumers create a world whose identity combines format
+  version, generation parameters, and seed; request bounded regions; observe
+  readiness and streaming lifecycle; query authoritative material
+  observations; submit bounded edits; and persist authoritative deltas.
+  Failures are typed and observable. Storage, meshing, and scheduler
   internals stay private; no consumer has a privileged world path.
 - **Not a game.** Moria does not own game rules, combat, inventory, AI,
   narrative, characters, animation, authored levels, production content,
@@ -43,10 +44,11 @@ without each consumer reimplementing world truth or reaching into internals.
 
 - **Deterministic generation.** The same versioned generation parameters and
   seed produce the same world material truth.
-- **Authoritative material access.** Consumers create and identify a world,
-  request bounded regions, observe readiness, and obtain bounded authoritative
-  material observations. Registered objects may participate in queries without
-  becoming game entities.
+- **World identity and authoritative material access.** A world's identity
+  combines format version, generation parameters, and seed. Consumers create
+  and identify a world, request bounded regions, observe readiness, and obtain
+  bounded authoritative material observations. Registered objects may
+  participate in queries without becoming game entities.
 - **Bounded atomic mutation.** Edits enter only through a bounded command
   surface, with admission failures visible, and commit as atomic revisions.
 - **Bounded streaming with safe lifecycle.** Resident work stays bounded;
@@ -54,8 +56,8 @@ without each consumer reimplementing world truth or reaching into internals.
   background results carry generation identity so stale work cannot replace
   newer truth; failures remain typed and consumer-visible.
 - **Authority-only persistence; non-authoritative derivation.** Persistence
-  records and restores authoritative material deltas—not derived meshes—so
-  restored state matches prior material truth. Surface extraction and
+  records authoritative material deltas rather than derived meshes, and
+  restores the same authoritative material state. Surface extraction and
   diagnostics never become authoritative; diagnostics report lifecycle and
   bounded work without exposing mutable internal handles.
 - **Public-only integration.** Every consumer, including validation, uses only
@@ -89,10 +91,11 @@ excluded gameplay, building, presentation, or policy layers into the substrate.
 ## Confirmed vision constraints
 
 - Form is a reusable Rust substrate consumed via public crate interfaces.
-- Generation is deterministic for the same versioned parameters and seed.
+- World identity combines format version, generation parameters, and seed;
+  generation is deterministic for the same versioned parameters and seed.
 - Mutation is admitted only through the bounded public command surface and
-  commits atomically; persistence restores the same authoritative material
-  state.
+  commits atomically; persistence records authoritative deltas rather than
+  derived meshes, and restores the same authoritative material state.
 - Streaming bounds resident work, exposes observable lifecycle states, and
   prevents stale background results from overwriting newer truth; failures are
   typed and public-observable.
