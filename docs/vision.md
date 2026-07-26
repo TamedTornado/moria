@@ -6,19 +6,19 @@ Moria is a reusable **Rust voxel-world substrate**: a public-crate library that 
 
 ## Purpose
 
-Give game teams and other tools a shared, trustworthy voxel-world foundation they can integrate through public crate interfaces—deterministic enough to share seeds and parameters, bounded enough to stream and edit safely, and strict enough that derived meshes and diagnostics never become world truth—without each consumer reinventing world truth or reaching into engine internals.
+Give game teams a shared, trustworthy voxel-world foundation they can integrate through public crate interfaces—deterministic enough to share seeds and parameters, bounded enough to stream and edit safely, and strict enough that derived meshes and diagnostics never become world truth—without each consumer reinventing world truth or reaching into engine internals. The same public surface must also support a minimal validation executable that exercises the substrate.
 
 ## Product boundary
 
-**In product:** the Moria substrate and its public consumer-facing guarantees (world identity and creation, bounded region request and readiness, bounded material query, bounded edit admission and commit, persistence of material truth, derived surface data, and non-authoritative diagnostics).
+**In product:** the Moria substrate and its public consumer-facing guarantees (world identity and creation, bounded region request and readiness, bounded material query, registered-object query participation without game-entity status, bounded edit admission and commit, persistence of material truth, derived surface data, and non-authoritative diagnostics).
 
-**Adjacent, not product identity:** a minimal validation executable and fixtures that exercise the substrate only through the same public interfaces. They may exist to prove the crate; they are not a game prototype and hold no privileged world path. Presentation choices for that executable (for example a free-fly camera) are adjacent-artifact detail, not substrate identity.
+**Adjacent, not product identity:** a minimal validation executable and fixtures that exercise the substrate only through the same public interfaces. They are required program commitments that prove the crate; they are not a game prototype and hold no privileged world path. Presentation choices for that executable (for example a free-fly camera) remain optional adjacent-artifact detail, not substrate identity.
 
 **Out of product / downstream:** any particular game, including a later third-person explorer demo in a separate repository; gameplay systems, controllers, characters, animation, authored content, production assets, and game-specific policy remain consumer-owned.
 
 ## Required product outcomes
 
-- Expose a public Rust crate surface through which multiple consumers create and identify worlds, request bounded regions, observe readiness, query bounded authoritative material observations, submit bounded edits, and persist deltas—without access to storage, meshing, or scheduler internals.
+- Expose a public Rust crate surface through which multiple consumers create and identify worlds, request bounded regions, observe readiness, query bounded authoritative material observations (including registered objects that participate without becoming game entities), submit bounded edits, and persist deltas—without access to storage, meshing, or scheduler internals.
 - Identify each world by the combination of format version, generation parameters, and seed; generate material worlds deterministically from the same versioned parameters and seed; keep sparse voxel material authoritative for restoration, with derived meshes and diagnostics never becoming world truth.
 - Stream and retain work in bounds: expose observable region lifecycle, carry generation identity on background results so stale work cannot replace newer truth, and surface typed failures consumers can observe.
 - Admit mutations through a bounded command API that commits atomically with observable admission failures and commit revisions; restore the same authoritative material state from persisted material deltas (not from derived meshes).
@@ -37,12 +37,12 @@ A separate **Product One** repository may later ship a third-person explorer dem
 
 ## Confirmed vision constraints
 
-- Delivery ecosystem is **Rust public crates**; intended consumers are games and tools that link those interfaces.
+- Delivery ecosystem is **Rust public crates**; intended consumers are games and the minimal validation executable that link those interfaces, with the substrate remaining useful to multiple downstream consumers.
 - World identity combines format version, generation parameters, and seed; generation is deterministic for the same versioned parameters and seed.
 - Mutation commits are atomic with observable admission failures and commit revisions; persistence round-trips authoritative material; meshes and diagnostics never become world truth.
 - Safety of concurrency and streaming: bounded resident work, observable lifecycle states, generation-tagged background results, typed observable failures.
 - Encapsulation: external consumers must not depend on storage, meshing, or scheduler internals.
-- Validation artifacts that ship with the program must use exactly the public interfaces and own no privileged world path.
+- The required validation executable and fixtures must use exactly the public interfaces and own no privileged world path.
 
 ## Deferred design decisions
 
@@ -62,4 +62,4 @@ None. The seeds agree that the current product is the Rust voxel-world substrate
 
 - `README.md` names Moria as the reusable voxel-world substrate, limits repository deliverables to current substrate commitments, and treats the interface reference as non-expanding support.
 - `docs/seeds/mixed-project-brief.md` binds product identity, public boundary, correctness and validation commitments, non-goals, and marks the embedded Product One explorer as future-consumer context only.
-- `docs/seeds/substrate-interface-reference.md` supports the brief with surface detail (world identity composition, bounded material observations, mutation admission and commit revisions, streaming lifecycle, persistence of material deltas, and non-authoritative diagnostics) as outcome pressure without adding deliverables.
+- `docs/seeds/substrate-interface-reference.md` supports the brief with surface detail (world identity composition, bounded material observations, registered objects participating in queries without becoming game entities, mutation admission and commit revisions, streaming lifecycle, persistence of material deltas, and non-authoritative diagnostics) as outcome pressure without adding deliverables.
