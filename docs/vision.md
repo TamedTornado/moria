@@ -55,7 +55,7 @@ Enabling implications at vision altitude only: the substrate’s mutability, dee
 
 - Crate split, internal layering, storage/meshing/sim algorithms, and API shape beyond the public-consumer boundary.
 - Voxel scale, LOD, object-layer capacity, fluid/integrity/sim depth and sequencing, and which substrate capabilities land in which delivery slice.
-- Whether and how a walkable-world harness is structured, what it demos first, and any performance or platform gates for that artifact.
+- How a walkable-world harness is structured if present, what it demos first, and any performance or platform gates for that artifact (see Q1 for delivery status).
 - Multiplayer, higher semantic layers (rooms, work orders, designation views), and consumer-specific policy tables.
 
 ## Assumptions proposed for approval
