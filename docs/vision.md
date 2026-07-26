@@ -45,7 +45,8 @@ Downstream games and other external repositories are future or adjacent consumer
 
 - The product is a Rust substrate aimed at external consumers and other repositories.
 - Validation must use the same public interfaces available outside this repository.
-- Generation and world queries that participate in world identity are deterministic under the versioned parameter set and seed model.
+- A versioned parameter set and seed define world identity; generation is deterministic.
+- Registered objects can participate in deterministic world queries without becoming game entities.
 - Persistence restores identical query behavior from versioned authoritative deltas; derived meshes and transient scheduling state are not truth.
 - Performance data is machine-identified evidence, not a portable correctness contract.
 
