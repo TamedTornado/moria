@@ -4,6 +4,8 @@
 
 **Moria** is a reusable, GPU-resident voxel-world substrate, delivered as a Rust crate or a small family of tightly scoped Rust crates. It is an engine-layer world foundation: continuous three-dimensional matter consumed through public interfaces—not a game, ARPG shell, or fortress product.
 
+This repository's first slice also delivers a required adjacent walkable-world executable and measured validation that prove the substrate through public APIs only. That executable is not part of product identity; it is the first-slice delivery obligation that pins what gets built first and what "done" means.
+
 ## Purpose
 
 Moria exists so games and validation tools can share one material world layer instead of reimplementing geology, mutability, matter-driven presentation, streaming, and matter services: fully material voxel truth that reads as a natural landscape—not a heightmap with props—while remaining diggable, placeable, movable as matter, and playable through deep underground volume.
@@ -12,7 +14,7 @@ Moria exists so games and validation tools can share one material world layer in
 
 **In product:** the reusable substrate—world generation; sparse GPU-resident matter; smooth voxel-derived surface presentation, material transitions, and matter-coupled dressing; mutation, command, query, and event surfaces; streaming and persistence; collision against voxel truth; mutation-aware spatial and movement affordances; and matter services (structural, fluid, fire, granular, ambient world behavior, interactive object lifecycle).
 
-**Adjacent, not identity:** a walkable-world executable may exist here as a validation harness. Whether it is a required repository delivery is open (see Q1). If present, it must use only public interfaces available to an external game—no privileged substrate paths. Character control, camera, authored demo content and routes, game-specific presentation polish, scripted workloads, device targets, and numeric performance gates are harness-owned. While Q1 is open, the harness is neither required nor optional elsewhere—only adjacent with unresolved delivery status.
+**Required adjacent delivery (not identity):** a walkable-world executable and measured performance validation are required first-slice deliverables of this repository. The harness must consume the substrate only through public interfaces available to an external game—no privileged substrate paths. Character control, camera, authored demo content and routes, game-specific presentation polish, scripted workloads, device targets, and numeric performance gates are harness-owned, not substrate scope.
 
 **Out of repository / downstream:** the actual game and all game rules. Combat, AI, the System/LLM, spells, gas policy, and building/gameplay layers (player building UX, blueprint labor, mechanism-as-game systems, work orders, room economy) are not this product. Seams may be designed where needed; those layers are not implemented here. Future consumers own game-specific presentation, UX, controllers, and policy—not substrate matter-driven surface presentation.
 
@@ -36,21 +38,22 @@ Future consumers (not current Moria): a System/LLM-driven ARPG, a fortress/colon
 
 Enabling implications only: no LLM dependency; pricing and game policy plug in above matter; the same stack supports dig/build, deep descent, and surface adventure over one world. Cross-run delta reuse is a persistence implication, not a shipped mode.
 
-**First validation slice (adjacent, conditional on Q1):** if the harness is required delivery, that obligation is a product-shaped proof—not substrate identity: one generated natural region traversed in third person; continuous surface-to-underground volume; debug dig/place as mutability proof; full generation with deliberately partial matter (static fluid bodies in; full flow, fire, integrity, growth, and object felling out of that slice only); and measured performance validation. Routes, content inventories, workloads, machine targets, and numeric gates remain harness design. Tree felling and richer matter depth stay substrate outcomes deferred only for that first slice.
+**Required first-slice proof (adjacent delivery):** a product-shaped demonstration that the substrate is real—not a redefinition of substrate identity. It must show: one generated natural region; third-person surface-to-underground traversal; dig/place mutability as proof (not gameplay); full generation with deliberately partial first-slice matter (static fluid bodies in; full flow, fire, integrity, growth, and object felling out of that slice only); and measured performance validation. Routes, content inventories, workloads, machine targets, and numeric gates remain harness design. Tree felling and richer matter depth stay substrate outcomes deferred only for that first slice.
 
 ## Non-goals
 
 - Implementing game rules, combat, AI, spells, gas economy, or System/LLM features
 - Building/gameplay layers (building UX, blueprint labor, game mechanisms)
 - Shipping a finished game as this product
-- Committing harness demo content, controls, routes, platforms, or performance numbers as substrate requirements
+- Importing harness demo content, controls, routes, platforms, or performance numbers as substrate requirements
 - Treating first-slice demo limits as narrowing substrate product identity
 
 ## Confirmed vision constraints
 
 - Product form: Rust crate or small family of tightly scoped Rust crates
 - GPU-resident substrate with command-in / lagged-mirror-and-events-out observation
-- Strict consumer boundary: external games and any in-repo harness share the same public interface; no privileged harness paths
+- Strict consumer boundary: external games and the in-repo harness share the same public interface; no privileged harness paths
+- Required adjacent first-slice delivery: walkable-world executable and measured validation, without absorbing harness-owned controls, content, routes, workloads, platforms, or numeric gates into substrate identity
 - Standalone without LLM/System dependency; excluded game and building layers not implemented here
 - Required matter and ambient families are binding; only fidelity, mechanism, and sequence within them are design
 
@@ -61,7 +64,7 @@ Enabling implications only: no LLM dependency; pricing and game policy plug in a
 - Fidelity, mechanisms, and sequence within binding matter and ambient families
 - Streaming policy, persistence encoding, and command/mirror synchronization implementation
 - How early multiplayer-oriented authority is pursued, if at all
-- Harness demo content, controls, platforms, and performance targets if delivered
+- Harness demo content, controls, routes, platforms, workloads, and numeric performance targets
 
 ## Assumptions proposed for approval
 
@@ -69,15 +72,11 @@ None.
 
 ## Questions for human review
 
-**Q1.** Is the walkable-world validation executable a **required current delivery** of this repository, or only a **permitted** adjacent artifact?
-
-*Proposed safe answer:* Permitted only—the product promise is the substrate crate(s). A harness may exist to exercise public APIs, but identity does not require that executable here.
-
-*If answered differently:* Requiring the harness leaves substrate identity unchanged but adds a repository delivery obligation: an adjacent walkable-world executable validating the fused first-slice proof (generated natural region, third-person traversal, continuous surface-to-underground volume, debug dig/place, full generation with partial matter, measured performance) strictly through public interfaces—still excluding game layers and harness-owned content, routes, workloads, platforms, and numeric gates from substrate scope.
+None.
 
 ## Seed synthesis
 
 - **README.md** — Names Moria as a reusable GPU-resident voxel-world Rust substrate and distinguishes the walkable-world executable as a non-game validation consumer.
-- **docs/seeds/project-boundary.md** — Locks identity to the substrate crate boundary, places the real game outside the repository, permits a public-API-only harness, and excludes game/System/building layers.
-- **docs/seeds/product-one-seed.md** — Motivates the adjacent first proof (walkable natural region, dig/place, generation vs partial matter, measured validation) and first-slice exclusions without redefining identity.
+- **docs/seeds/project-boundary.md** — Locks identity to the substrate crate boundary, places the real game outside the repository, requires any harness to use public APIs only, and excludes game/System/building layers.
+- **docs/seeds/product-one-seed.md** — Defines the required first-slice delivery (substrate plus generated region and traversable character, playable demo, and measured validation) and first-slice exclusions without redefining substrate identity.
 - **docs/seeds/voxel-world-substrate.md** — Authorizes substrate outcome families (natural look, mutability and object lifecycle, deep Z, geology, binding matter and ambient services, mutation-safe movement queries, command/mirror/events, exact persistence) and multi-game reuse without importing mechanism inventory or game layers.
