@@ -24,12 +24,12 @@ The substrate exists so future games (adventure, fortress/colony, sandbox, or ot
 
 | In this repository | Outside this repository |
 |---|---|
-| Generation, matter storage, smooth meshing, dressing, static fluid bodies, dig/place verbs, mirror queries, streaming, persistence deltas | Any finished game, rules, combat, stats, AI, economy |
-| Walkable-world harness (controller, camera, debug tools) as consumer of public APIs | System / LLM layer, spells, gas metering, intent |
-| Compatibility *seams* where substrate requirements demand them | Building UI, blueprints, mechanisms, work orders as product features |
+| Generation (incl. column index, POI metadata, strata, caves, ore, lazy materialization), matter storage, smooth meshing, dressing, static fluid bodies, dig/place verbs, mirror queries, streaming, persistence deltas | Any finished game, rules, combat, stats, AI, economy |
+| Walkable-world harness (controller, camera, debug tools) as consumer of public APIs | System / LLM layer, spells, gas metering, intent; System-directed placement that would *consume* POI metadata |
+| Compatibility *seams* where substrate requirements demand them | Building UI, blueprints, mechanisms, work orders; fortress-style Z-slice *gameplay* that would *consume* the column index |
 | Cargo workspace separation of reusable substrate vs harness | Privileged harness-only paths into voxel internals |
 
-**Layering intent (high level):** generation and matter are substrate; a thin script/API surface (verbs + queries) is established early so nothing above touches voxels directly. Semantic and game layers live above and are not implemented here.
+**Layering intent (high level):** generation and matter are substrate; a thin script/API surface (verbs + queries) is established early so nothing above touches voxels directly. Semantic and game layers live above and are not implemented here. Product One ships the **generation layer as a reusable asset**—including column index and POI metadata alongside strata, caves, ore, and lazy materialization—not a stub that later products must replace.
 
 **Dev-platform constraint that shapes the product identity of the crate:** load-bearing GPU work stays on portable **wgpu/WGSL** (no native Metal fork in those layers), with 32-bit counters/allocators where required by Apple GPU limits.
 
@@ -44,11 +44,12 @@ These are outcomes the current product must make true—not a content checklist 
 3. **Continuous deep Z.** Surface-to-underground traversal in one continuous volume—caves, strata, and subsurface materials are real content, not a painted floor under a skybox.
 4. **Collision and queries against voxel truth.** Character motion and interaction prove the mesh is a regenerated view, not the authority.
 5. **Sparsity, streaming, and lazy materialization.** A region large enough that raw full-volume residency is not the strategy; homogeneous bricks / sentinels and streaming rings are load-bearing, not deferred polish.
-6. **Persistence as seed + deltas.** Reload the same world with player scars restored; saves stay compact after defacement.
-7. **Consumer-safe public API.** Harness and future games share the same interfaces; the workspace boundary makes that enforceable.
-8. **Credible, comparable performance.** Product One’s numerical bar (frame rate on mid discrete + M4-class unified memory, dig-to-remesh latency, cold start, GPU memory under streaming, save size) and a benchmark path that records machine profile so regressions are comparable across hardware.
+6. **Reusable generation layer, not a one-off demo gen.** Product One’s generation ships as designed for reuse: columns, strata, caves, ore, lazy materialization, and **POI metadata**. Column index and POI metadata are first-class generation outputs in this milestone—not deferred hooks. Future consumers (fortress-style Z-slice views, System-directed placement) remain **out of scope**; the substrate provides the data those layers would later read.
+7. **Persistence as seed + deltas.** Reload the same world with player scars restored; saves stay compact after defacement.
+8. **Consumer-safe public API.** Harness and future games share the same interfaces; the workspace boundary makes that enforceable.
+9. **Credible, comparable performance.** Product One’s numerical bar (frame rate on mid discrete + M4-class unified memory, dig-to-remesh latency, cold start, GPU memory under streaming, save size) and a benchmark path that records machine profile so regressions are comparable across hardware.
 
-**Capabilities preserved for later products (substrate must not preclude them):** priced or policy-pluggable verbs; brick-level aggregates for future CA/fluids/integrity; object-layer vegetation that can later rigidify; column/index and POI metadata for fortress-style views and System-directed placement; multiplayer-ready command/mirror shape. Product One does **not** implement those game or sim layers—it leaves format and API room.
+**Capabilities preserved for later products (substrate must not preclude them):** priced or policy-pluggable verbs; brick-level aggregates for future CA/fluids/integrity; object-layer vegetation that can later rigidify; multiplayer-ready command/mirror shape. Product One does **not** implement those game or sim layers—it leaves format and API room. Column index and POI metadata are **not** in this “later” set; they ship now as part of the generation layer (outcome 6), while fortress/System use of them does not.
 
 ---
 
@@ -89,8 +90,8 @@ None of these change the product’s identity, purpose, or repository boundary. 
 |---|---|
 | **README.md** | Names the product (Moria), crate-vs-harness split, and that seeds live under `docs/seeds/`. |
 | **project-boundary.md** | Binding operator boundary: reusable substrate only; game layers out of scope; harness must consume public APIs; Cargo workspace as immediate expression of that boundary. |
-| **product-one-seed.md** | Binding first-slice scope: product statement, non-goals, dig/place as proof, player/harness role, performance targets, milestone spirit, and what Product One buys. Seed-world content (specific 1 km route, material list, ruin, etc.) is treated as **validation intent and proof points**, not imported here as fixed game content or a feature inventory. |
-| **voxel-world-substrate.md** | Architecture reference for look strategy, storage, geology-first generation, layering, and future-facing capabilities. Only portions selected by Product One are current-scope requirements; broader matter sim, building, weather, entities, and game modes are context for seams and non-goals. |
+| **product-one-seed.md** | Binding first-slice scope: product statement, non-goals, dig/place as proof, player/harness role, performance targets, milestone spirit, and what Product One buys. Explicitly requires the **generation layer full**—columns, strata, caves, ore, lazy materialization, POI metadata—as the reusable asset. Seed-world content (specific 1 km route, material list, ruin, etc.) is treated as **validation intent and proof points**, not imported here as fixed game content or a feature inventory. |
+| **voxel-world-substrate.md** | Architecture reference for look strategy, storage, geology-first generation (including column index and POI metadata purposes), layering, and future-facing capabilities. Only portions selected by Product One are current-scope requirements; broader matter sim, building, weather, entities, fortress/System consumers of columns/POI, and game modes are context for seams and non-goals. |
 | **docs/seeds/README.md** *(manifest note)* | Confirms the priority order: Product One binding for this milestone; substrate doc partial; boundary as operator clarification. |
 
 **Omitted from vision on purpose (still in seeds):** milestone schedules and week estimates; exact material palette and region feature tables; meshing algorithm bake-offs and bit layouts; full fluids/integrity/building/entity designs; System attachment recipes; viral-clip / marketing milestone framing beyond “public demo artifact”; stretch timber felling.
