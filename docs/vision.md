@@ -19,7 +19,7 @@ Downstream products need a shared, trustworthy world layer they can integrate wi
 **Adjacent delivery (repository, not product identity):**
 
 - Headless fixtures covering generation, query, mutation, persistence, and lifecycle behavior.
-- A minimal validation executable and small visual fixture that use only the public interfaces (for example free-fly camera and diagnostics). They prove an external consumer can render and edit through the API; they are not a game prototype and own no privileged world path.
+- A minimal validation executable and small visual fixture that use only the public interfaces (for example free-fly camera and diagnostics). The visual fixture demonstrates that a relocated external consumer can render and edit through the public API; these fixtures are not a game prototype and own no privileged world path.
 
 **Outside product:**
 
@@ -27,13 +27,13 @@ Downstream products need a shared, trustworthy world layer they can integrate wi
 
 ## Required product outcomes
 
-- **Integrable substrate:** Independent consumers create and identify worlds and drive them only through versioned public crate interfaces.
+- **Integrable substrate:** Independent consumers create and identify worlds and drive them only through public crate interfaces.
 - **Deterministic generation:** The same versioned parameters and seed produce the same authoritative material world.
 - **Bounded, observable streaming:** Consumers request bounded regions and observe readiness and lifecycle (requested, loading, resident, evicted, failed). Background results carry generation identities so stale work cannot replace newer truth; failures remain typed and visible to public consumers.
 - **Authoritative material truth:** Queries expose readiness and bounded material observations. Registered objects may participate in queries without becoming game entities. Derived meshes and diagnostics never become world truth.
 - **Safe mutation and restore:** Bounded edit commands are admitted or rejected explicitly, commit atomically with revisions, and persistence restores the same authoritative material state from deltas—not from derived meshes.
 - **Consumer-visible diagnostics:** Lifecycle and bounded work are reportable without exposing mutable internal handles.
-- **Honest validation:** Headless and small visual validation exercise the public API from an external-consumer stance. Performance reporting is a required validation outcome and must include machine identity; this vision does not establish machine-specific pass/fail thresholds.
+- **Honest validation:** Headless fixtures cover generation, query, mutation, persistence, and lifecycle behavior. A small visual fixture demonstrates that a relocated external consumer can render and edit through the public API. Performance reporting is a required validation outcome and must include machine identity; this vision does not establish machine-specific pass/fail thresholds.
 
 ## Future products and enabling implications
 
