@@ -2,68 +2,65 @@
 
 ## What we are building now
 
-**Moria** is a reusable, **GPU-resident voxel-world substrate** exposed as a **Rust crate** (or a small family of tightly scoped Rust crates). It is an engine-layer world foundation: matter, generation, mutation, and queries that downstream games consume. It is **not** a game, not a demo product identity, and not a System/LLM stack.
+**Moria** is a reusable, **GPU-resident voxel-world substrate** exposed as a **Rust crate** (or a small family of tightly scoped Rust crates). It is an engine-layer world foundation: generation, matter, physical material behavior, mutation, queries, derived presentation of voxel truth, and persistence for downstream games. It is **not** a game, not a demo product identity, and not a System/LLM stack.
 
 ## Purpose
 
-Moria exists so multiple games can share one continuous material world that **reads as a natural surface world** while remaining **fully diggable voxel truth**—including deep underground—without each title reimplementing geology, matter, streaming, and edit persistence. The substrate must stand alone with **zero LLM dependency**; game rules and presentation live above it.
+Moria exists so multiple games can share one continuous material world that **reads as a natural surface world** while remaining **fully diggable voxel truth**—including deep underground—without each title reimplementing geology, matter simulation, streaming, edit persistence, and the public command/observation boundary. The substrate stands alone with **zero LLM dependency**. Game rules, presentation policy, and gameplay live above it; derived meshing, material look of voxel truth, and voxel-responsive dressing remain substrate-owned.
 
 ## Product boundary
 
 **This product owns**
 
-- The reusable voxel-world substrate and its public consumer surface (Rust library integration).
-- World-generation and matter responsibilities that make a natural, mutable, deep-Z world reusable: material truth, derived presentation of that truth, dig/place-class mutation, collision against voxel truth, streaming of active regions, and persistence of edits against generated baseline.
-- Compatibility seams only where substrate requirements demand them—not implementations of game layers.
+- The reusable voxel-world substrate and its public Rust consumer surface.
+- Generation, material truth, active-region physical/environmental matter behavior, dig/place-class mutation (including placement and engine-level stamps/mechanism objects), collision against voxel truth, derived presentation of matter, streaming, and persistence that regenerates baseline and restores edits plus substrate-owned object lifecycle state.
+- Compatibility seams where substrate requirements demand them—not game-layer implementations.
 
 **Adjacent or downstream (not this product’s identity)**
 
-- The actual game(s), including ARPG/System, fortress/colony, descent, or pure sandbox titles.
-- Game rules, UX, controllers, cameras, authored demo routes, characters, and presentation policy.
-- System/LLM, spells, gas/pricing policy, combat, AI, and building-as-gameplay layers.
-- A walkable-world executable, if present, is only an **adjacent validation consumer** of the substrate; it is not the product. Whether shipping that harness is part of current repository delivery is **unresolved (Q1)**. While open, treat it only as an artifact that **may** exist, and only through the same public interfaces an external game would use—no privileged or game-specific substrate paths.
+- Actual games (ARPG/System, fortress/colony, descent, sandbox) and their rules, UX, controllers, cameras, characters, demo routes/content, and **presentation policy**.
+- System/LLM, spells, gas/pricing, combat, AI, and **building-as-gameplay** (labor, economy, designations, work-order blueprints, fortress semantics)—not the policy-neutral placement/mutation primitives those layers consume.
+- A walkable-world executable is only an **adjacent validation consumer**, not the product. Whether shipping it is current repository delivery is **unresolved (Q1)**. While open, it **may** exist and must use only public interfaces—no privileged substrate paths.
 
 ## Required product outcomes
 
-Downstream design must make these true for the substrate product:
-
-1. **Natural material world.** Consumers get a world that reads as ordinary outdoor terrain (hills, forest, water, cliffs, meadows) while everything visible is backed by mutable voxel matter—not decorative geometry outside the material world, and not a cube-aesthetic primary look.
-2. **Mutable everywhere, deep Z first-class.** Any material volume can be destroyed, altered, or placed; underground (caves, strata, buried materials) is content, not a false floor.
-3. **Geology-first generation.** Generation produces true layered ground and voids so digging reveals honest materials and spaces; the world is not a heightmap with rock painted underneath.
-4. **Mesh as view.** Collision, queries, and gameplay-facing truth run on voxels; visual mesh is regenerated, non-authoritative, and not the save source of truth.
-5. **Public mutation and query surface.** Nothing above the matter core touches voxels directly; external games and any in-repo harness use the same public verbs/queries/events. Adjacent consumers have no privileged access.
-6. **Streamable, edit-persistent world.** Untouched generated volume stays cheap; player/system scars persist as edits against generation; active regions can be streamed for presence without treating the whole region as always-resident dense truth.
-7. **GPU-resident substrate.** The world substrate is designed to live and work as a GPU-resident engine layer consumable from Rust.
+1. **Natural, fully material world with dressing contract.** Outdoor terrain that reads as ordinary (hills, forest, water, cliffs, meadows) while everything that can burn, break, or block is mutable voxel matter—not props outside the material world, and not a cube-aesthetic primary look. Interacting vegetation and micro-objects participate as voxel-backed matter objects; passive dressing need not have individual voxel identity but must stay anchored to and responsive to voxel state.
+2. **Mutable everywhere, deep Z, placement first-class.** Any volume can be destroyed, altered, or placed; underground is content, not a false floor. Placement is a first-class engine verb; stamps and mechanism objects that occupy voxel footprints are substrate facilities, not game UX.
+3. **Deterministic geology-first generation.** Layered ground and voids so digging reveals honest materials; stages are pure functions of coordinates and world seed so regions materialize independently and lazily.
+4. **Active-region matter behavior.** Materials support environmental and physical behavior in active regions—fluid response, fire/wetness ecology, structural failure/integrity, and granular or other dynamic matter—so the world behaves as shared matter. Mechanisms and delivery sequence are design’s problem; the outcome is required.
+5. **Derived presentation as view; asymmetric command/observation.** Collision and truth run on voxels; mesh and material presentation are derived, non-authoritative, and not save truth. Consumers issue **commands in** and observe via **stale mirror + events**—verbs and queries only, no direct or synchronously exact voxel access. Games and any harness share that public surface with no privileged access.
+6. **Streamable, exactly restorable world; GPU-resident.** Untouched volume stays cheap; saved truth is generation plus edit deltas, with journals for substrate-owned moved objects and related state so scars and object lifecycle restore exactly and support cross-run reuse. Active regions stream without always-resident dense truth. The substrate lives as a GPU-resident engine layer under the command/mirror contract.
 
 ## Future products and enabling implications
 
-Future **consumers** (not current product scope) include a System/LLM ARPG, a Dwarf Fortress–style fortress/colony game, a Moria-style descent experience, and a pure sandbox. They own gameplay, content, controls, economy, and presentation.
+Future **consumers** (not current scope) include a System/LLM ARPG, fortress/colony, Moria-style descent, and pure sandbox. They own gameplay, content, controls, economy, agents, and presentation policy.
 
-**Enabling implications** (substrate remains the owner of engine capability; delivery depth is design’s problem): the same matter, generation, mutation, and query foundation should be reusable across those modes; gas/pricing and LLM direction attach as **game-layer policy/clients**, not substrate features; richer matter behaviors (multi-tier fluids, structural integrity, fire/ecology-style aggregate sim, voxel-backed vegetation objects, building stamps/mechanisms as engine verbs) are motivated so those games can sit on one stack—without importing their UX, combat, agents, or content into Moria now.
+**Enabling implications:** the same matter, generation, mutation, object, and query foundation is reusable across modes; gas/pricing and LLM attach as **game-layer policy/clients**; semantic fortress tooling and work orders sit above. First-consumer slice limits (deferred felling, static-only fluids in an early harness) do not narrow these product outcomes.
 
 ## Non-goals
 
-- Implementing the actual game, its rules, combat, stats, AI, or player-facing building/crafting UX.
-- System/LLM features, spells, gas metering/pricing, or any LLM dependency in the substrate.
-- Treating the walkable demo’s character, camera, seed route, debug keys, or trailer content as product requirements.
-- Shipping game layers (semantic fortress tooling, economy, designations) inside this repository’s product scope.
-- Primary “Minecraft cube world” aesthetic as the intended surface look.
+- The actual game, rules, combat, stats, AI, or player-facing building/crafting UX.
+- System/LLM, spells, gas metering/pricing, or LLM dependency in the substrate.
+- Demo character, camera, seed route, debug keys, trailer content, harness save/size/timing gates, or consumer platform performance targets as product requirements.
+- Game layers (fortress tooling, economy, designations, work-order blueprint semantics) in this product’s scope.
+- Primary “Minecraft cube world” aesthetic for the surface look.
 
 ## Confirmed vision constraints
 
-- **Rust library product:** exposed as a crate or small family of tightly scoped crates for game consumers.
-- **GPU-resident** voxel-world substrate.
-- **Consumer isolation:** any validation harness or external game uses only public substrate interfaces; no privileged in-repo game paths.
-- **Standalone:** zero LLM dependency; the System is not a substrate feature.
-- **Out of implementation here:** game rules and future System, spell, gas, combat, AI, and building layers (seams only if required).
+- **Rust library:** crate or small family of tightly scoped crates.
+- **GPU-resident** substrate with **commands in / stale mirror + events out**; observation is not direct synchronous voxel access.
+- **Consumer isolation:** harness or external game uses only public interfaces.
+- **Standalone:** zero LLM dependency; System is not a substrate feature.
+- **Out of implementation here:** game rules and System, spell, gas, combat, AI, and building-as-gameplay layers (seams only if required). Engine dig/place, stamps, and mechanism-object facilities stay in product scope as policy-neutral primitives.
+- **Presentation ownership:** substrate owns derived meshing, material presentation of voxel truth, and voxel-responsive dressing; games own presentation policy.
 
 ## Deferred design decisions
 
-- Exact crate split and internal module boundaries (consumer boundary is fixed; packaging shape is not).
-- First delivery depth and sequence among generation, meshing, mutation, streaming, persistence, and richer matter sim.
-- Voxel resolution, LOD/impostors, object-layer scaling, and meshing/representation technique choices.
-- Performance budgets, benchmark scenes, and target hardware baselines (consumer/harness seeds do not define product identity).
-- How far multiplayer-ready command authority is taken in early deliveries.
+- Exact crate split and internal module boundaries (consumer boundary is fixed).
+- Delivery depth and sequence for matter behaviors, generation richness, streaming, and persistence encodings.
+- Voxel resolution, LOD/impostors, object-layer scaling, and meshing technique choices.
+- Performance budgets, benchmark scenes, and target hardware baselines.
+- Multiplayer deployment depth beyond the required command/observation boundary.
 
 ## Assumptions proposed for approval
 
@@ -74,11 +71,11 @@ None.
 **Q1.** Is a walkable-world validation executable a **required current repository delivery**, or only a **permitted adjacent artifact**?
 
 - **Proposed safe answer:** Permitted adjacent artifact only—not part of Moria’s product identity; if present, it must consume solely public substrate interfaces.
-- **If answered differently:** A “required delivery” answer keeps product identity as the substrate but adds a settled obligation to ship a harness beside it; a “not in repo” answer allows substrate-only delivery with validation left entirely outside this repository.
+- **If answered differently:** A “required delivery” answer keeps product identity as the substrate but adds a settled obligation to ship a harness beside it; a “not in repo” answer allows substrate-only delivery with validation entirely outside this repository.
 
 ## Seed synthesis
 
-- **`README.md`:** Names Moria as the reusable GPU-resident voxel-world Rust substrate and positions the walkable-world executable as a separate consumer/validation harness, not a game layer.
-- **`docs/seeds/project-boundary.md`:** Binding boundary—substrate crate(s) only; game out of repo; harness if any is public-API-only validation; game/System/spell/gas/combat/AI/building layers out of scope.
-- **`docs/seeds/product-one-seed.md`:** First consumer-shaped demo slice and validation motivations (natural mutable world, dig proof, performance curiosity); does not redefine product identity or import controller/content/platform gates into substrate scope.
-- **`docs/seeds/voxel-world-substrate.md`:** Substrate purpose and engine-layer responsibilities (natural look, full mutability, deep Z, geology generation, reusable layering, GPU-resident matter world) and future-game enabling surface without making those games current product.
+- **`README.md`:** Names Moria as the reusable GPU-resident voxel-world Rust substrate; walkable-world executable is a separate validation harness, not a game layer.
+- **`docs/seeds/project-boundary.md`:** Substrate crate(s) only; game out of repo; harness if any is public-API-only; game/System/spell/gas/combat/AI/building layers out of scope (gameplay, not engine primitives).
+- **`docs/seeds/product-one-seed.md`:** First consumer demo slice; partial first-slice limits do not redefine substrate identity; retains command/mirror as product-level contract.
+- **`docs/seeds/voxel-world-substrate.md`:** Engine responsibilities—natural look, mutability, deep Z, geology, matter physics, voxel-backed objects/dressing, placement/stamps/mechanisms, deterministic gen + delta/journal persistence, GPU command/mirror, derived presentation—without making future games current product.
