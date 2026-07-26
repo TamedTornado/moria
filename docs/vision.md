@@ -13,18 +13,21 @@ meshing, mutation, streaming, and persistence of a continuous 3D material
 world.
 
 That substrate is the product of this repository. **Product One** (“the
-walkable world”) is its first delivery slice: the generation and matter depth
-needed to host one curated generated region, plus the public interfaces a
-consumer needs to traverse, query, and mutate that world as proof. Product
-One limits *what is built first*; it does not redefine the product as a demo
-game.
+walkable world”) is its first delivery: the substrate slice needed to host
+**one curated generated region**, the public interfaces a consumer needs to
+traverse, query, and mutate that world as proof, **and** a **required
+adjacent** walkable-world **validation harness** that exercises those
+interfaces. Product One limits *what is built first*; it does not redefine
+the substrate product as a demo game.
 
-The repository may ship a **walkable-world executable**. That binary is a
-**separate consumer and validation harness**. It must use the same public
-interfaces available to an external game; it is not a game layer and owns no
-privileged or game-specific implementation paths. Third-person control,
-camera, traversal presentation, and debug presentation live in that harness,
-not as product-owned features.
+The **walkable-world executable is a required adjacent delivery of Product
+One**, not an optional nice-to-have. It is a **separate consumer and
+validation harness** outside the substrate product: it must use the same
+public interfaces available to an external game; it is not a game layer and
+owns no privileged or game-specific implementation paths. Third-person
+control, camera, traversal presentation, debug presentation, and
+benchmark-workload orchestration live in that harness, not as substrate
+features.
 
 Future games (ARPG, fortress/colony, descent/roguelike, pure sandbox) and
 higher layers (System/LLM, spells, gas policy, combat, AI, building gameplay)
@@ -42,32 +45,38 @@ Make one claim undeniable and reusable:
 
 The substrate exists so later products start from a walkable, diggable,
 streamed world with measured performance — not from a whiteboard. Product
-One proves that claim with a curated generated seed and a public-API
-harness: dig and place are *proof of matter*, not game systems.
+One proves that claim with a curated generated seed **and** its required
+adjacent public-API validation harness (playable continuous-Z run plus
+measured credibility): dig and place are *proof of matter*, not game systems.
 
 ---
 
 ## Boundary
 
-| In product (substrate) | Adjacent (not product-owned) | Out of product |
+| In product (substrate) | Adjacent (required Product One delivery; not substrate-owned) | Out of product |
 |---|---|---|
-| Generation, matter storage, meshing/dressing, dig/place and related matter verbs, collision against voxel truth, streaming, delta persistence | Walkable-world **validation harness**: third-person controller, camera, traversal presentation, debug controls — consumes public APIs only | Game rules, combat, stats, AI, entities beyond harness needs |
-| Public script/API surface (verbs + mirror queries): **nothing above the matter layer touches voxels directly** | First-slice validation consumer that exercises those interfaces | The System / LLM, spells, gas metering, pricing policy |
+| Generation, matter storage, meshing/dressing, dig/place and related matter verbs, collision against voxel truth, streaming, delta persistence | Walkable-world **validation harness** (required with Product One): third-person controller, camera, traversal presentation, debug controls, benchmark scene orchestration — consumes public APIs only | Game rules, combat, stats, AI, entities beyond harness needs |
+| Public script/API surface (verbs + mirror queries): **nothing above the matter layer touches voxels directly** | Playable validation consumer that exercises those interfaces (continuous-Z route, dig/place proof, measured numbers) | The System / LLM, spells, gas metering, pricing policy |
 | Compatibility *seams* only where substrate requirements demand them | — | Building UI, blueprints-as-gameplay, work orders, mechanisms-as-play, room-assignment behavior |
 | Substrate outcome families beyond the first slice (fluids tiers, integrity, granular response, ambient material state, interactive objects, etc.) as later deliveries of **this same product** | — | Implementing those game layers or importing their content here |
 
 **Cargo workspace** separates reusable substrate crates from the validation
 harness. The precise crate split is a technical-design decision; the
-consumer boundary is not optional.
+consumer boundary is not optional. Ownership of the harness is adjacent to
+the substrate product: required for Product One proof, never privileged over
+external consumers.
 
 **Substrate vs. first slice.** The substrate owns a broad capability envelope
-over the life of the product (see required outcomes). Product One explicitly
-excludes from the *first* delivery: fluid flow beyond static bodies, CA
-(fire, granular settle, integrity), felling/rigid conversion of voxel
-objects, weather/seasons/growth sims, embedded scripting language, and rich
-persistence. Format and layering may anticipate later substrate work without
-shipping it in Product One. None of that imports System, game rules, AI, or
-building-gameplay behavior across the project boundary.
+over the life of the product (see required outcomes). Product One is the
+first delivery of that substrate **plus** its required adjacent harness. It
+explicitly excludes from the *first* delivery: fluid flow beyond static
+bodies, CA (fire, granular settle, integrity), felling/rigid conversion of
+voxel objects, weather/seasons/growth sims, embedded scripting language, and
+rich persistence. Format and layering may anticipate later substrate work
+without shipping it in Product One. None of that imports System, game rules,
+AI, or building-gameplay behavior across the project boundary, nor does it
+move controller, camera, debug presentation, or benchmark orchestration into
+the substrate.
 
 ---
 
@@ -127,6 +136,11 @@ must-ships.
 
 ### Product One — fused validation delivery (first slice)
 
+Product One’s first delivery is **substrate slice + required adjacent
+harness**. Outcomes 9–10 are one fused playable/public proof: the seed is
+what must be true in the world; the harness is how that truth is walked,
+mutated, and measured without becoming substrate itself.
+
 9. **One curated generated seed as consumer-visible proof.** Not an authored
    world: generation parameters are curated so a single region reliably
    presents, together, the proof points that make the material-world claim
@@ -143,12 +157,15 @@ must-ships.
    These are validation content for the first delivery, not permanent game
    identity or a component inventory of forever content.
 
-10. **Public interfaces the harness validates.** Dig/place verbs, mirror
-    queries, collision against voxel occupancy (not the render mesh),
-    streaming and persistence surfaces — proven by the adjacent harness
-    using only public APIs. The harness’s third-person character, camera,
-    and debug presentation are how validation is performed; they are not
-    themselves product-level outcomes.
+10. **Required adjacent walkable-world validation harness.** Product One
+    ships a separate public-API consumer that proves the substrate slice:
+    dig/place verbs, mirror queries, collision against voxel occupancy (not
+    the render mesh), streaming and persistence surfaces, continuous-Z
+    walkability, and machine-profiled performance evidence. The harness is
+    **required** for the first delivery’s playable/public proof; it is
+    **not** the substrate product. Its third-person character, camera, debug
+    presentation, and benchmark-workload orchestration are validation
+    mechanisms owned by the harness, not substrate-level outcomes.
 
 ---
 
@@ -159,8 +176,11 @@ must-ships.
 - Building gameplay (blueprints, work orders, mechanisms, room assignment)
   as product features — a stamped POI validates generation/stamp paths, not
   fortress mode
-- Treating the walkable executable as a player-facing product rather than a
-  validation harness
+- Treating the walkable executable as a player-facing product, game, or
+  privileged substrate layer rather than a required adjacent validation
+  harness
+- Omitting the walkable-world harness from Product One’s first delivery, or
+  treating it as optional while still claiming public walkable proof
 - Product One behavior for full fluid simulation, fire CA, structural
   integrity, granular settle, or weather/growth (later substrate outcomes;
   formats and seams may anticipate them)
@@ -179,9 +199,10 @@ must-ships.
 ## Unresolved questions for humans
 
 The seeds agree on product identity: the **reusable substrate** is the
-product; Product One is the **first delivery slice**; the walkable
-executable is a **validation harness**, not a game. No identity, purpose, or
-boundary conflict requires a guess.
+product; Product One is the **first delivery** of a substrate slice plus a
+**required adjacent** walkable-world **validation harness** (not a game, not
+optional, not substrate-owned). No identity, purpose, or boundary conflict
+requires a guess.
 
 Open items that design may resolve later without changing *what product this
 is* (voxel size final call, distant LOD strategy, object-layer scaling,
@@ -196,8 +217,8 @@ currently block vision approval.
 | Source | What it contributed to this vision |
 |---|---|
 | **README.md** | Product name and one-line identity: GPU-resident voxel substrate crate; walkable executable as harness, not game. |
-| **project-boundary.md** | Binding scope: substrate crate(s) vs. external game; harness must use public APIs; **Cargo workspace** consumer boundary (crate split is design); explicit exclusion of System/LLM/spell/gas/combat/AI/building layers. |
-| **product-one-seed.md** | First delivery slice and “done” shape: material-world claim; dig/place as proof; generation/matter/API depth for the milestone; **fused seed validation** (landscape, vegetation density, static water, geology, ore/aquifer, voxel objects, stamped POI, continuous Z route); harness-owned controller/camera/debug; product-level performance and persistence outcomes (numbers and machine-profiled evidence, not device-specific rules as identity). |
+| **project-boundary.md** | Binding ownership: substrate crate(s) vs. external game; walkable executable is a **separate public-API consumer** (not game, not privileged product layer); **Cargo workspace** consumer boundary (crate split is design); exclusion of System/LLM/spell/gas/combat/AI/building layers. |
+| **product-one-seed.md** | First delivery **binding scope** (one generated region + character) and “done” shape: material-world claim; dig/place as proof; generation/matter/API depth; **fused seed validation** (landscape, vegetation density, static water, geology, ore/aquifer, voxel objects, stamped POI, continuous-Z walkability); **required** harness milestones (playable run + numbers) and playable validation artifact; harness-owned controller/camera/debug/benchmarks; product-level performance and persistence outcomes (numbers and machine-profiled evidence, not device-specific rules as identity). |
 | **voxel-world-substrate.md** | Enduring substrate outcome families and layering: smooth meshing vs. cube look; bricks/sparsity; geology pipeline; dressing vs. voxel objects; fluid tiers; integrity/granular/ambient sim; mutation-safe queries; streaming/deltas; **nothing above the matter layer touches voxels directly**. These are required later outcomes of the same product, filtered by Product One for the first slice — not imported game design. |
 | **docs/seeds/README.md** *(manifest note)* | Authority order: Product One binds the first milestone; substrate doc is architecture reference filtered by that seed for the milestone; project boundary clarifies Moria is only the substrate (game/System/etc. out of scope). |
 
