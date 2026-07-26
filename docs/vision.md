@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Give independent repositories a reusable world foundation so they can own gameplay, presentation, and content without reimplementing world identity, authority, mutation, or persistence. The substrate makes deterministic, queryable world truth available through a public contract suitable for external consumers and for validation that uses only that same contract.
+Give independent repositories a reusable world foundation so they can own gameplay, characters, controllers, animation, authored routes, production assets, and consumer-specific content without reimplementing world identity, authority, mutation, meshing, or persistence. The substrate makes deterministic, queryable world truth and regenerable derived meshing available through a public contract suitable for external consumers and for validation that uses only that same contract.
 
 ## Product boundary
 
@@ -37,7 +37,7 @@ No first-party game or named downstream title is in current scope. Future consum
 
 - External games and tools can own mutable voxel worlds without reimplementing generation, authority, streaming, meshing, queries, or save/restore.
 - Independent repositories can integrate and validate against the same public interfaces the harness uses.
-- Gameplay, characters, controllers, animation, presentation, and authored content remain fully outside Moria.
+- Game rules, characters, controllers, animation, authored routes, production assets, and consumer-specific content remain outside Moria; derived meshing and its public visual-fixture exercise stay substrate-owned.
 
 ## Non-goals
 
@@ -70,7 +70,7 @@ None.
 
 ## Questions for human review
 
-None. The supplied seeds fix product identity (reusable Rust voxel-world substrate), repository delivery (substrate crates plus minimal public-interface validation harness), outcome families (generate, stream, query, mutate, mesh, save/restore with the constraints above), and consumer ownership (gameplay, characters, controllers, content, presentation). Platform targets, performance budgets, architecture, and acceptance workloads remain downstream design.
+None. The supplied seeds fix product identity (reusable Rust voxel-world substrate), repository delivery (substrate crates plus minimal public-interface validation harness), outcome families (generate, stream, query, mutate, mesh, save/restore with the constraints above), and consumer ownership limited to game rules, characters, controllers, animation, authored routes, production assets, and consumer-specific content—not presentation as a whole. Platform targets, performance budgets, architecture, and acceptance workloads remain downstream design.
 
 ## Seed synthesis
 
