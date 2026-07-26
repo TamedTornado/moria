@@ -12,7 +12,7 @@ Moria exists so multiple independent consumers can rely on one reusable authorit
 
 **In product.** The substrate owns deterministic seed-based generation, sparse voxel storage, bounded streaming, mutation, surface extraction, persistence of authoritative material deltas, and read-only diagnostics. Its public surface lets consumers create and identify a world, request bounded regions, observe readiness, query material truth, submit bounded edits, and persist deltas. Consumers must not reach into storage, meshing, or scheduler internals.
 
-**Adjacent, not identity.** A minimal validation executable, headless fixtures, and a small visual fixture are current program deliveries that exercise the substrate. They are not a game prototype. The validation executable and the visual fixture (as a relocated external public-API consumer) use exactly the public interfaces and own no privileged world path; free-fly viewing, diagnostic presentation, and similar harness choices stay with those artifacts, not with substrate identity. Headless fixtures cover generation, query, mutation, persistence, and lifecycle behavior through the public surface without the same executable-level harness mandate.
+**Adjacent, not identity.** A minimal validation executable, headless fixtures, and a small visual fixture are current program deliveries that exercise the substrate. They are not a game prototype. The validation executable uses exactly the public interfaces and owns no privileged world path; free-fly viewing and diagnostic presentation stay with that artifact, not with substrate identity. Headless fixtures cover generation, query, mutation, persistence, and lifecycle behavior. A small visual fixture demonstrates that a relocated external consumer can render and edit through the public API.
 
 **Out of product.** Game rules, combat, inventory, AI, narrative systems, characters, animation, authored levels, production content, player controllers, curated routes, and any particular game’s presentation or policy remain consumer-owned. A later explorer demo (Product One) is a separate future consumer, not a Moria deliverable.
 
@@ -42,7 +42,7 @@ After the substrate ships, a separate Product One repository may present a third
 - Generation is deterministic for the same versioned parameters and seed.
 - Mutation is admitted through the bounded public command path and commits atomically; persistence restores authoritative material state while meshes and diagnostics remain non-authoritative.
 - Streaming bounds resident work, exposes the states requested, loading, resident, evicted, and failed, carries generation identities against stale replacement, and surfaces typed observable failures.
-- The validation executable and the visual fixture (relocated external public-API consumer) use exactly the public interfaces and own no privileged world path.
+- The validation executable uses exactly the public interfaces and owns no privileged world path. A small visual fixture demonstrates that a relocated external consumer can render and edit through the public API.
 - Performance reporting carries machine identity; this brief does not establish a machine-specific correctness threshold.
 
 ## Deferred design decisions
