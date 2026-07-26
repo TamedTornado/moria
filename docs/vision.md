@@ -26,17 +26,54 @@ The substrate exists so multiple future game modes (adventure, fortress/colony, 
 
 ## Boundary
 
-| In this repository | Outside this repository |
-|---|---|
-| Voxel matter representation (bricks, sparsity, materials) | Game rules, combat, stats, AI, entities beyond a harness player |
-| Geology-first generation and lazy materialization | The System / LLM layer and content authoring products |
-| GPU meshing and surface dressing as a *view* of voxel truth | Spells, gas/economy policy, intent systems |
-| Mutation and query API (dig/place and mirror-style reads) | Building UI, blueprints-as-gameplay, mechanisms as game systems |
-| Collision against voxel occupancy | Full fluid simulation beyond static bodies (tier-1 lakes/river surface) |
-| Streaming rings, edit-delta persistence, harness benchmarks | Weather/seasons/growth sims; multi-save versioning |
-| Cargo workspace separation: substrate crate(s) vs harness | Any complete game on top of the substrate |
+Two different boundaries matter. Conflating them would either shrink Moria to only the first slice forever, or import whole games into this repository.
+
+### Outside this repository (permanently external)
+
+These are not Moria’s product and must not be implemented here:
+
+| Outside this repository |
+|---|
+| Game rules, combat, stats, AI, entities beyond a harness player |
+| The System / LLM layer and content-authoring products |
+| Spells, gas/economy policy, intent systems |
+| Building *gameplay* layers: blueprints-as-gameplay, work orders, mechanisms as game systems, room/economy semantics |
+| Any complete game (ARPG, fortress/colony, descent roguelike, sandbox product) on top of the substrate |
 
 Compatibility *seams* may be designed where substrate requirements demand them (e.g. verb/query boundaries that future gas policy or multiplayer can plug into). Those layers must not be implemented here.
+
+### Inside this repository
+
+| In scope for the repository | Role |
+|---|---|
+| Voxel matter representation (bricks, sparsity, materials) | Core substrate |
+| Geology-first generation and lazy materialization | Core substrate |
+| GPU meshing and surface dressing as a *view* of voxel truth | Core substrate |
+| Mutation and query API (dig/place and mirror-style reads) | Core substrate |
+| Collision against voxel occupancy | Core substrate |
+| Streaming rings, edit-delta persistence, harness benchmarks | Core substrate + validation |
+| Cargo workspace separation: substrate crate(s) vs harness | Structural boundary |
+| Further matter/API capabilities deferred from the first slice | Deferred substrate direction (below) |
+
+### Outside the current slice (deferred substrate direction)
+
+The Product One seed deliberately ships only the bottom generation layer, a partial matter layer, and a sliver of verb/query API. The architecture seed still describes additional substrate capabilities as *engine* work—not as game products. Format and API may anticipate them now; full behavior is not required for the first vertical slice.
+
+These remain **on the repository’s substrate trajectory** unless a later human decision removes them. They are **not** “outside this repository”:
+
+- Cellular automata and ambient matter rules (fire, wetness propagation, related state consumption)
+- Structural integrity / support graphs and cave-in behavior
+- Granular settle (sand, gravel, snow as matter rules)
+- Fluid simulation beyond static tier-1 bodies (coarse brick flow, fine splash/particles)
+- Tree/object felling and rigid-body conversion (placement and rendering of voxel objects stay in the first slice; physics coupling is deferred)
+- Weather, seasons, and growth simulation (a fixed time-of-day control is enough for the slice)
+- Richer script/API surface (embedded scripting, fuller priced-verb and event model beyond dig/place + mirror queries)
+- Navigation aggregates and movement-class path data derived from bricks
+- Substrate-side building primitives beyond proof dig/place (grid/stamp placement APIs, blueprint *format* as data)—still without fortress/ARPG building *gameplay*
+- Multi-anchor streaming policies and cross-run delta reuse patterns beyond the slice’s single-save “seed + deltas” model
+- Multiplayer-oriented hardening of the command/mirror boundary (architecture may stay ready; servers are not the product)
+
+The first slice’s job is to prove material world, look, mutation, deep Z, sparsity, and the public API—not to ship the full matter sim stack.
 
 ---
 
@@ -57,18 +94,28 @@ When this product is “done” for its first slice, the following hold at the p
 
 ## Non-goals
 
-- Implementing any game layer: combat, AI, NPC entities, ARPG lock-camera fantasy, fortress labor, spells, gas pricing, LLM “System” behavior.
-- Full multiphase fluid CA, fire ecology, structural integrity cave-ins, granular settle, tree felling as rigid bodies—except where the *format* or API already anticipates them for later products.
-- Building/mechanism gameplay, room semantics, work orders, multiplayer servers.
-- Authored “one true world” content as product identity; the seed region is a curated validation route, not a shipping campaign.
-- Native Metal (or other platform) forks in load-bearing layers for short-term gain.
+### Non-goals of this repository
+
+- Implementing any game layer: combat, AI, NPC entities, ARPG camera fantasy, fortress labor, spells, gas pricing, LLM “System” behavior.
+- Shipping a complete game product (adventure, fortress, descent, or sandbox) from this codebase.
 - Treating the walkable harness as the long-term product surface or giving it private substrate hooks.
+- Native Metal (or other platform) forks in load-bearing layers for short-term gain.
+
+### Non-goals of the current slice only
+
+These are deferred substrate direction (see Boundary), not permanent exclusions from Moria:
+
+- Running full multiphase fluid CA, fire ecology, structural integrity cave-ins, granular settle, or tree-felling rigid bodies in the first deliverable—formats/APIs may anticipate them.
+- Weather/seasons/growth sims beyond a simple time-of-day control.
+- Building/mechanism *gameplay*, room semantics, work orders, multiplayer servers.
+- Authored “one true world” content as product identity; the seed region is a curated validation route, not a shipping campaign.
+- Persistence beyond reload-the-same-seed-plus-deltas (single save slot, no versioning) for the first slice.
 
 ---
 
 ## Unresolved human questions
 
-None that change product identity, purpose, or boundary. The seeds agree on what Moria *is* (substrate + harness) and what it is *not* (the game).
+None that change product identity, purpose, or boundary. The seeds agree on what Moria *is* (substrate + harness), what the first slice must prove, and that broader game/System layers are external. Capabilities deferred from Product One but specified in the substrate architecture are treated as deferred repository roadmap, not as permanently external—matching how the seeds separate “not in product one” from “not in this repo.”
 
 Questions left to design and measurement (not vision blockers):
 
@@ -76,8 +123,9 @@ Questions left to design and measurement (not vision blockers):
 - Distant terrain LOD strategy under the harness camera.
 - How far object-layer scale (trees/clutter counts) needs acceleration in the first slice.
 - Which performance targets remain provisional until discrete-GPU baselines exist.
+- Ordering and prioritization among deferred substrate capabilities after the first slice (integrity vs fluids vs CA, etc.)—implementation sequence, not product identity.
 
-If product intent ever shifts from “crate + validation harness” to “shipping walkable demo as the primary product,” or from “no game systems” to “include a thin fortress/adventure mode,” that would rewrite this vision and should be an explicit human decision.
+If product intent ever shifts from “crate + validation harness” to “shipping walkable demo as the primary product,” or from “no game systems” to “include a thin fortress/adventure mode,” that would rewrite this vision and should be an explicit human decision. If any deferred substrate items above should instead be cut from the repository roadmap entirely, that also needs an explicit human decision.
 
 ---
 
@@ -86,14 +134,15 @@ If product intent ever shifts from “crate + validation harness” to “shippi
 | Seed | What it contributed to this vision |
 |---|---|
 | **README.md** | Names the product (Moria), states substrate-as-crate and harness-as-consumer, points at seeds as preserved inputs. |
-| **project-boundary.md** | Hard boundary: substrate is the product; game is external; harness must use public APIs; game/System/LLM/spell/gas/combat/AI/building layers out of scope; workspace split between crate and harness. |
-| **product-one-seed.md** | First deliverable identity (walkable vertical slice), product-level claim, non-goals for slice one, dig/place as proof not gameplay, performance and platform constraints as product outcomes, milestones as proof order—not imported as a content GDD or game design. Specific seed-world features (ruin, ore types, tree species, etc.) are treated as validation-scenario context for capabilities the substrate and harness must exercise, not as current product lore. |
-| **voxel-world-substrate.md** | Capability envelope the substrate must eventually support for reuse (smooth meshing over density, brick sparsity, geology-first gen, lazy materialization, column index, dressing vs voxel objects, tiered fluids, integrity, building verbs, nav/Z, streaming/persistence, layering rules). Future games (ARPG, fortress, Moria descent) and System attachment points are context for *why* seams exist; their gameplay, content, characters, and full implementation are **not** current scope. Only the bottom layers (generation + matter + a sliver of verb/query API) are implied for the first product slice. |
+| **project-boundary.md** | Hard repository boundary: substrate is the product; game is external; harness must use public APIs; game/System/LLM/spell/gas/combat/AI/building *layers* out of scope; workspace split between crate and harness. |
+| **product-one-seed.md** | First deliverable identity (walkable vertical slice), product-level claim, slice non-goals, dig/place as proof not gameplay, performance and platform constraints as product outcomes, milestones as proof order—not imported as a content GDD or game design. Explicitly defers CA, integrity, granular, fluid tiers 2–3, felling physics, weather, and rich scripting while keeping formats ready. Specific seed-world features (ruin, ore types, tree species, etc.) are validation-scenario context for capabilities the substrate and harness must exercise, not current product lore. |
+| **voxel-world-substrate.md** | Capability envelope and layering for the substrate over time (smooth meshing over density, brick sparsity, geology-first gen, lazy materialization, column index, dressing vs voxel objects, tiered fluids, integrity, building verbs as data/API, nav/Z, streaming/persistence). Future games (ARPG, fortress, Moria descent) and System attachment points are context for *why* seams exist; their gameplay, content, characters, and full implementation are **not** current scope and remain outside the repository. Establishes that deferred matter/API work is still substrate direction. |
 
-### Intentionally omitted or deferred from seeds
+### Intentionally omitted or reclassified from seeds
 
-- Full CA (fire, wetness propagation), integrity/cave-ins, granular settle, fluid tiers 2–3, tree felling physics, weather/seasons/growth, blueprints/mechanisms/rooms, entity pathfinding classes, gas policy, multiplayer—preserved as substrate-direction context, not first-slice product identity.
-- Demo marketing plan (X thread cadence, viral clips, downloadable demo as *the* product) — useful communication intent; the vision keeps the product as the substrate with a demonstrable harness, not a content release pipeline.
+- **Deferred (still substrate / this repo):** full CA, integrity/cave-ins, granular settle, fluid tiers 2–3, tree felling physics, weather/seasons/growth, richer script/API, nav aggregates, substrate building primitives beyond proof dig/place, multi-anchor/cross-run streaming patterns—kept as deferred direction, not first-slice identity and not “external forever.”
+- **Outside this repository:** game rules, System/LLM products, spells, gas policy, combat/AI, building *gameplay* layers, complete games—from project-boundary and the upper layers of the architecture seed.
+- Demo marketing plan (X thread cadence, viral clips, downloadable demo as *the* product)—useful communication intent; the vision keeps the product as the substrate with a demonstrable harness, not a content release pipeline.
 - Precise crate graph, kernel designs, and open engineering options—belong in technical design after this vision is approved.
 
 ---
