@@ -6,40 +6,49 @@
 
 ## Purpose
 
-Voxel worlds only work when several hard systems agree as explicit contracts: deterministic generation, sparse material truth, bounded inspection, mutation admission, streaming lifecycle, collision against matter rather than presentation, persistence of generated truth plus edits, and measurable presentation derived from that truth. Moria exists so natural, fully material worlds can be consumed without each game rebuilding those contracts, and without hiding them behind a single privileged demo.
+Voxel worlds only work when several hard systems agree as explicit contracts: deterministic generation, sparse material truth, bounded inspection, mutation admission, streaming lifecycle, collision against matter rather than presentation, persistence of generated truth plus edits, and measurable presentation derived from that truth. Moria exists so material worlds can be consumed without each game rebuilding those contracts, and without hiding them behind a single privileged demo.
 
-The product’s claim is infrastructural: a consumer can obtain a continuous three-dimensional material world—surface and deep underground—inspect and mutate it only through supported interfaces, and trust that what they see and collide with is a view of the same authoritative matter.
+The product’s claim is infrastructural: a consumer can obtain a continuous three-dimensional material world, inspect and mutate it only through supported interfaces, and trust that what they see and collide with is a view of the same authoritative matter.
 
 ## Product boundary
 
 **This product owns** the reusable substrate and its public facade:
 
-- Deterministic world generation suitable for natural geology and sparse material worlds.
+- Deterministic world generation suitable for sparse material worlds.
 - Sparse storage and lazy materialization of voxel truth.
 - Bounded world inspection and telemetry for consumers.
 - Mutation admission (dig, place, and related world-edit verbs) so nothing touches voxels outside the contract.
 - Streaming and lifecycle so large regions do not require full raw-voxel residency.
 - Collision and occupancy truth against voxel matter, not against disposable meshes.
 - Persistence model of reproducible generation plus edit deltas.
-- Presentation support that derives smooth (or appropriately sharp) surfaces and surface dressing from material truth, without serializing derived geometry as authority.
+- Presentation support that derives surfaces and surface dressing from material truth, without serializing derived geometry as authority.
 - Object and clutter registration hooks so vegetation and micro-objects can be matter-backed without baking them into terrain.
 
 **Adjacent, not the product identity** are curation, benchmark, and visual-validation executables (`moria-curate`, `moria-bench`, `moria-demo` and similar). They may exist to curate content parameters, exercise contracts, capture evidence, and visually validate the substrate, but they must consume the same public interfaces available to an external game. Controllers, characters, cameras, authored demo routes, presentation polish, and acceptance scenarios belong to those consumers—not to substrate identity.
 
 **Downstream, not this repository** are actual games and game layers: player control, characters, skeletal animation, game-specific presentation, combat, AI, economy, building policy, the System / LLM layer, spells, gas pricing, and other gameplay rules. Compatibility seams may be designed where substrate requirements demand them; those layers are not implemented here.
 
-## Required product-level outcomes
+## Product-level outcomes
+
+### Required outcomes
 
 These are outcomes the substrate must enable, not a feature inventory or implementation plan:
 
-1. **Material natural world.** Generated terrain can read as ordinary landscape (hills, strata, water bodies, caves, vegetation-scale density) while remaining fully material—not a heightmap with disconnected props.
+1. **Truth vs view.** Occupancy, queries, collision, and persistence run against voxel matter; meshes, dressing, and debug geometry are derived and disposable.
+2. **Contracted consumption.** External consumers install the facade, inspect through public reads, mutate through admitted edits, and never require privileged internal paths.
+3. **Sparse scale.** Large regions remain tractable: untouched homogeneous volume stays cheap; only the interesting shell and active edits pay detailed cost.
+4. **Reproducible base, cheap scars.** World identity is generation parameters (seed and curation) plus edit deltas—not a dump of every brick.
+5. **Measurable substrate quality.** Benchmarks and harnesses can evidence generation, mutation response, streaming, memory behavior, and related contracts without redefining the product as a game.
+
+### Proposed outcomes (pending human decision)
+
+The following outcome set is drawn from the walkable-world seed and the voxel-world architecture reference. It is **proposed, not required**, until **Q2** is answered. Until then, design and delivery must not treat these as binding current Moria obligations:
+
+1. **Natural-looking material terrain.** Generated terrain can read as ordinary landscape (hills, strata, water bodies, caves, vegetation-scale density) while remaining fully material—not a heightmap with disconnected props.
 2. **Mutable everywhere.** Any material cell the contract exposes can be destroyed or placed; cut faces and scars remain honest matter, and presentation rebuilds from truth.
 3. **Deep Z is first-class.** Underground content (caves, strata, ore, aquifers as material bands) is real three-dimensional world, not a painted floor under a skybox.
-4. **Truth vs view.** Occupancy, queries, collision, and persistence run against voxel matter; meshes, dressing, and debug geometry are derived and disposable.
-5. **Contracted consumption.** External consumers install the facade, inspect through public reads, mutate through admitted edits, and never require privileged internal paths.
-6. **Sparse scale.** Large regions remain tractable: untouched homogeneous volume stays cheap; only the interesting shell and active edits pay detailed cost.
-7. **Reproducible base, cheap scars.** World identity is generation parameters (seed and curation) plus edit deltas—not a dump of every brick.
-8. **Measurable substrate quality.** Benchmarks and harnesses can evidence generation, mutation response, streaming, memory behavior, and related contracts without redefining the product as a game.
+
+If Q2 affirms them as binding, they become required product-level outcomes. If not, they remain motivating context for future consumers or optional capability direction, not current product definition.
 
 ## Non-goals
 
@@ -49,12 +58,13 @@ These are outcomes the substrate must enable, not a feature inventory or impleme
 - Full fluid simulation, cellular automata (fire, wetness, growth), granular settling, structural integrity / cave-ins, tree felling or rigid-body conversion—these may appear as future consumer concepts or format hooks; they are not current product scope unless later selected explicitly.
 - Web / wasm as a Product One or substrate target platform.
 - Claiming a released, finished visual engine before feasibility and visual-acceptance gates are met.
+- Treating the proposed natural-world outcome set (natural look, everywhere mutation, first-class deep Z) as binding until Q2 is resolved.
 
 ## Future consumers (context only)
 
-Reference material describes possible later products: a System-driven ARPG, a fortress / colony game, a descent-style roguelike, and pure sandboxes. Those motivate the substrate outcomes above—normal-looking natural worlds, mutability all the way down, first-class deep underground, and a clean matter / query / mutation boundary. Their gameplay, characters, assets, content palette, and presentation are **not** current Moria scope.
+Reference material describes possible later products: a System-driven ARPG, a fortress / colony game, a descent-style roguelike, and pure sandboxes. Those motivate reusable material-world capabilities—normal-looking natural worlds, mutability all the way down, first-class deep underground, and a clean matter / query / mutation boundary. Their gameplay, characters, assets, content palette, and presentation are **not** current Moria scope.
 
-The “walkable world” seed describes a third-person proof shape (curated region, forest, ruin, dig-as-demo) that a validation consumer might use to make substrate claims undeniable. That seed’s content, controls, milestones, and performance tables are **context for what the substrate must support**, not the definition of the product itself.
+The “walkable world” seed describes a third-person proof shape (curated region, forest, ruin, dig-as-demo) that a validation consumer might use to make substrate claims undeniable. That seed’s content, controls, milestones, and performance tables are **context for what the substrate might support**, not the definition of the product itself. Whether its core world-shape claims bind Moria now is **Q2**.
 
 ## Confirmed vision constraints
 
@@ -74,7 +84,12 @@ The “walkable world” seed describes a third-person proof shape (curated regi
 - **Proposed answer:** Permitted adjacent artifact. Product identity and “done” for Moria are the reusable substrate and its public contracts; a walkable harness may be built to validate them but is not required to define the product.
 - **If answered differently:** Making the harness mandatory keeps it outside product identity but adds a required adjacent deliverable (still without importing its controls, content palette, or acceptance numbers into the substrate). Treating it as optional leaves harness work non-blocking for substrate completion.
 
-No other seed conflicts change product identity: seeds README, project boundary, and repository README agree that Moria is the substrate and that Product One’s character, route, and demo targets are not Moria requirements. Older planning docs that still title the effort as “Product One — The Walkable World” should be read as superseded on identity by the boundary and this vision once approved.
+**Q2.** Are **natural-looking, fully material terrain**, **everywhere mutation**, and **first-class deep Z** binding **current Moria product outcomes**, or only motivating context from the walkable-world seed and architecture reference?
+
+- **Proposed answer:** Binding current outcomes. Project boundary names a reusable voxel-world substrate; the architecture reference’s design goals and Product One’s proof claims describe what that substrate is for—without importing demo content, characters, or machine targets. Leaving them optional would leave “what worlds Moria must enable” underspecified for design handoff.
+- **If answered differently:** Affirming them as nonbinding keeps Moria as contract infrastructure only (storage, generation hooks, mutation admission, streaming, persistence, presentation seams) without requiring natural-landscape quality, universal mutability proof, or underground-first content as current product success criteria. Affirming a subset (for example mutation and truth/view without natural look or deep Z) would require restating the required outcomes explicitly.
+
+No other seed conflicts change product identity: seeds README, project boundary, and repository README agree that Moria is the substrate and that Product One’s character, route, and demo targets are not Moria requirements. Older planning docs that still title the effort as “Product One — The Walkable World” should be read as superseded on identity by the boundary and this vision once approved. **Q2** is the remaining open identity-adjacent question: whether the natural-world capability set is required of the substrate now, or only illustrated by nonbinding seeds.
 
 ## Seed synthesis
 
@@ -82,7 +97,7 @@ No other seed conflicts change product identity: seeds README, project boundary,
 | --- | --- |
 | **README.md** | Names Moria as a Rust/Bevy voxel-world substrate consumed as a crate; executables curate, exercise, benchmark, and visually validate; player controllers, characters, and game-specific presentation are outside the substrate boundary; status is active engineering, not a released engine. Workspace crate roles and evidence detail stay subordinate engineering input. |
 | **docs/seeds/project-boundary.md** | **Binding product target:** reusable substrate (crate family); games are separate consumers; any walkable executable is a public-interface validation harness only; System / LLM / spell / gas / combat / AI / building layers are out of scope. Cargo workspace split is motivated but left as technical design. |
-| **docs/seeds/product-one-seed.md** | **Downstream / validation example:** supplies the “fully material walkable world” proof shape and explicit non-goals (no combat, System, CA, building UI, dynamic fluids). Motivates substrate outcomes (smooth material truth, dig/place proof, geology, sparse streaming, seed+delta save, measurable quality). Does **not** import third-person character, curated 1 km postcard, content palette, performance tables, or milestone schedule into product identity. |
-| **docs/seeds/voxel-world-substrate.md** | **Architecture reference:** long-horizon goals (reads as a normal world; mutable everywhere; deep Z; substrate not game; GPU-resident direction). Layering diagram and many extensions (fluids tier 2+, integrity, weather, building verbs, nav, multiplayer readiness) remain context or future seams unless selected. Game examples (ARPG, fortress, Moria descent) motivate reusability only. |
+| **docs/seeds/product-one-seed.md** | **Downstream / validation example:** supplies the “fully material walkable world” proof shape and explicit non-goals (no combat, System, CA, building UI, dynamic fluids). Motivates the proposed natural-world outcome set (smooth material truth, dig/place proof, geology, sparse streaming, seed+delta save, measurable quality). Does **not** import third-person character, curated 1 km postcard, content palette, performance tables, or milestone schedule into product identity. Whether its world-shape claims bind Moria is **Q2**. |
+| **docs/seeds/voxel-world-substrate.md** | **Architecture reference:** long-horizon goals (reads as a normal world; mutable everywhere; deep Z; substrate not game; GPU-resident direction)—treated here as proposed outcomes pending Q2, not silently required. Layering diagram and many extensions (fluids tier 2+, integrity, weather, building verbs, nav, multiplayer readiness) remain context or future seams unless selected. Game examples (ARPG, fortress, Moria descent) motivate reusability only. |
 
 Authority among seeds (from `docs/seeds/README.md`): project boundary first; supporting architecture second; broad voxel reference third; Product One seed last as validation example. Conflicts resolve toward the boundary without silent expansion of scope.
