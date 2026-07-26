@@ -33,7 +33,7 @@ Downstream products need a shared, trustworthy world layer they can integrate wi
 - **Authoritative material truth:** Queries expose readiness and bounded material observations. Registered objects may participate in queries without becoming game entities. Derived meshes and diagnostics never become world truth.
 - **Safe mutation and restore:** Bounded edit commands are admitted or rejected explicitly, commit atomically with revisions, and persistence restores the same authoritative material state from deltas—not from derived meshes.
 - **Consumer-visible diagnostics:** Lifecycle and bounded work are reportable without exposing mutable internal handles.
-- **Honest validation:** Headless and small visual validation exercise the public API from an external-consumer stance. Performance may be reported with machine identity; this vision does not establish machine-specific pass/fail thresholds.
+- **Honest validation:** Headless and small visual validation exercise the public API from an external-consumer stance. Performance reporting is a required validation outcome and must include machine identity; this vision does not establish machine-specific pass/fail thresholds.
 
 ## Future products and enabling implications
 
@@ -52,7 +52,7 @@ Moria enables such consumers by remaining a multi-consumer world substrate. Enab
 - Delivery form is a **Rust crate / public crate interface** substrate, not a game-first product.
 - Correctness: seed-and-parameter determinism; atomic bounded mutation commit; persistence restores authoritative material state; meshes and diagnostics are non-authoritative.
 - Streaming bounds resident work, exposes lifecycle, and protects against stale background replacement via generation identity.
-- Adjacent validation is required repository delivery and must exercise only public interfaces; it does not redefine product identity.
+- Adjacent validation is required repository delivery and must exercise only public interfaces; it does not redefine product identity. Performance reports must include machine identity; no machine-specific correctness threshold is established.
 - References to later consumers pressure the interface only; they do not authorize game systems in Moria.
 
 ## Deferred design decisions
@@ -60,7 +60,7 @@ Moria enables such consumers by remaining a multi-consumer world substrate. Enab
 - Concrete API shapes, data layouts, algorithms, crate splits, and internal scheduling or storage mechanisms.
 - Exact streaming bounds, lifecycle machinery detail, and persistence encoding.
 - Validation fixture contents beyond the mandate that they exist, stay public-API-only, and cover the named behavior families; visual fixture presentation beyond the non-game stance.
-- How performance reporting is collected or displayed (beyond optional machine identity on reports).
+- How performance reporting is collected or displayed (beyond the requirement that reports include machine identity).
 
 ## Assumptions proposed for approval
 
