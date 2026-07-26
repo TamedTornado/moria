@@ -46,21 +46,23 @@ These are the outcomes Product One must make true. Detail and implementation liv
 
 3. **Deep Z is real** — Continuous vertical play from surface (and cliff tops) into walkable underground (caves, strata, ore/aquifer bands in cuts). Underground is content volume, not a painted floor.
 
-4. **Geology-first generation** — Worldgen produces columns, strata, caves, materials, and lazy brick materialization—not a heightmap with rock painted underneath. One curated seed/region is enough for the harness; the generation layer remains the reusable asset.
+4. **Geology-first generation** — Worldgen produces columns, strata, caves, materials, POI metadata, and lazy brick materialization—not a heightmap with rock painted underneath. One curated seed/region is enough for the harness; the generation layer remains the reusable asset.
 
-5. **Sparse GPU-resident substrate** — Brick pool, homogeneous sentinels, and streaming so a region large enough that raw voxels do not all fit still runs. Meshing is incremental over dirty bricks; the mesh is never authoritative or saved.
+5. **POI / stamp path exercised** — The generated proof region must exercise POI metadata through at least one stamped structure (e.g. a hand-stamped ruin/blueprint placed via POI). This proves the stamp/prefab placement path once and shows sharp masonry against organic terrain in the same frame. It is a required product-level proof, not optional content.
 
-6. **Dressing tied to matter** — Grass/clutter as data-driven instances; trees/boulders as voxel-backed objects for placement and rendering (felling/rigid conversion is stretch, not required). Static water bodies (tier-1 surfaces/channels) yes; flow simulation no for this slice.
+6. **Sparse GPU-resident substrate** — Brick pool, homogeneous sentinels, and streaming so a region large enough that raw voxels do not all fit still runs. Meshing is incremental over dirty bricks; the mesh is never authoritative or saved.
 
-7. **Harness proves the API** — Third-person walk/run/jump/swim controller, free-orbit camera, continuous demo route, and debug views (wireframe/bricks, raw voxels, streaming rings, time-of-day). Demo player only—no combat, AI, or game systems.
+7. **Dressing tied to matter** — Grass/clutter as data-driven instances; trees/boulders as voxel-backed objects for placement and rendering (felling/rigid conversion is stretch, not required). Static water bodies (tier-1 surfaces/channels) yes; flow simulation no for this slice.
 
-8. **Public proof artifact** — The playable harness is released as a public/downloadable proof for the intended audience (e.g. milestone posts and a downloadable demo). It remains a validation consumer of the substrate, not a shippable game product.
+8. **Harness proves the API** — Third-person walk/run/jump/swim controller, free-orbit camera, continuous demo route, and debug views (wireframe/bricks, raw voxels, streaming rings, time-of-day). Demo player only—no combat, AI, or game systems.
 
-9. **Credibility numbers** — Deliverables include benchmarks (e.g. target framerate class, dig-to-remesh latency, cold start to walkable, memory with streaming, delta save size) plus a scripted scene and machine profile so later substrate work can regress against Product One.
+9. **Public proof artifact** — The playable harness is released as a public/downloadable proof for the intended audience (e.g. milestone posts and a downloadable demo). It remains a validation consumer of the substrate, not a shippable game product.
 
-10. **Persistence model** — Truth = worldgen function + edit deltas; reload same seed + deltas (single save slot is enough). No save versioning product for this slice.
+10. **Credibility numbers** — Deliverables include benchmarks (e.g. target framerate class, dig-to-remesh latency, cold start to walkable, memory with streaming, delta save size) plus a scripted scene and machine profile so later substrate work can regress against Product One.
 
-11. **Portable GPU path** — wgpu/WGSL load-bearing path; design stays viable on unified-memory (e.g. Apple Silicon) constraints such as no 64-bit buffer atomics, with sparsity treated as load-bearing rather than deferred polish.
+11. **Persistence model** — Truth = worldgen function + edit deltas; reload same seed + deltas (single save slot is enough). No save versioning product for this slice.
+
+12. **Portable GPU path** — wgpu/WGSL load-bearing path; design stays viable on unified-memory (e.g. Apple Silicon) constraints such as no 64-bit buffer atomics, with sparsity treated as load-bearing rather than deferred polish.
 
 ---
 
@@ -78,7 +80,7 @@ Explicitly **not** current product:
 - Multiplayer, cross-run fortress reclaim loops, or any full game mode  
 - Implementing future game layers “while we’re here”
 
-Longer substrate reference material (full fluid tiers, integrity, building verbs, weather ecology, nav/labor, System attachment) is **capability context** for seams and future milestones—not imported gameplay or scope for the current product.
+Longer substrate reference material (full fluid tiers, integrity, building verbs, weather ecology, nav/labor, System attachment) is **capability context** for seams and future milestones—not imported gameplay or scope for the current product. Stamp/prefab placement for the harness POI proof is in scope as substrate capability; building UI and blueprints-as-gameplay remain out.
 
 ---
 
@@ -104,10 +106,10 @@ If the operator intends Product One’s seed-world content as fixed product iden
 |---|---|
 | **README.md** | Names Moria as reusable GPU-resident voxel substrate crate; walkable executable as consumer/harness; points at seeds. |
 | **project-boundary.md** | Binding identity: crate(s) only; game is external; harness must use public APIs; Cargo workspace consumer boundary; game/System/LLM/spell/gas/combat/AI/building out of scope; seams allowed, layers not. |
-| **product-one-seed.md** | Binding *first* product slice: walkable material-world demo outcomes, non-goals, dig/place as proof, region-scale proof bed, substrate layer slice (gen full / matter partial / API sliver), harness player/camera, performance credibility, public/downloadable proof artifact for the audience, milestones as delivery shape—not game content to ship as product IP. |
-| **voxel-world-substrate.md** | Architecture reference for look (smooth mesh over voxel truth), sparsity, geology-first gen, dressing/objects, persistence/streaming, layering diagram, and long-horizon capabilities. Only Product-One-selected portions are current requirements; remainder frames why seams exist. |
+| **product-one-seed.md** | Binding *first* product slice: walkable material-world demo outcomes, non-goals, dig/place as proof, region-scale proof bed including POI-stamped structure, substrate layer slice (gen full / matter partial / API sliver), harness player/camera, performance credibility, public/downloadable proof artifact for the audience, milestones as delivery shape—not game content to ship as product IP. |
+| **voxel-world-substrate.md** | Architecture reference for look (smooth mesh over voxel truth), sparsity, geology-first gen, POI metadata, dressing/objects, persistence/streaming, layering diagram, and long-horizon capabilities. Only Product-One-selected portions are current requirements; remainder frames why seams exist. |
 | **docs/seeds/README.md** | Manifest order: Product One binds implementation + harness; substrate doc is reference under that selection; boundary doc is operator clarification. |
 
-**Omitted from current scope (kept as context only):** System/LLM authoring model, full CA and fluid toybox, structural integrity, building/blueprints/mechanisms, weather ecology, multi-mode game layering, fortress/ARPG/Moria-descent fantasies, stretch timber clip, and detailed material/POI inventory except as harness proof points design may thin or substitute.
+**Omitted from current scope (kept as context only):** System/LLM authoring model, full CA and fluid toybox, structural integrity, building/blueprints/mechanisms as gameplay, weather ecology, multi-mode game layering, fortress/ARPG/Moria-descent fantasies, stretch timber clip, and detailed material inventory beyond what the harness needs to prove the material/render pipeline. The POI metadata + at-least-one stamped structure proof is **not** omitted—it is a required product-level outcome above.
 
 **No material conflict** among seeds: boundary sets identity; Product One sets the first vertical slice; substrate doc supplies depth without expanding Product One into a game.
