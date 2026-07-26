@@ -47,11 +47,12 @@ Success for the current product means the following are true and demonstrable:
 2. **Material world you can traverse** — a generated region with continuous 3D space: surface terrain, dressed nature (grass, voxel-backed vegetation/objects, static water bodies), and a walkable underground route. A third-person character collides with voxel occupancy, not the render mesh.
 3. **Look without lying** — smooth isosurface meshing (surface nets / dual contouring class) over dirty bricks so hills, cut faces, and geology read as intended; mesh is always a disposable view of voxel data.
 4. **Mutability as proof** — dig and place (debug-driven is enough) dirties bricks, remeshes promptly, and shows honest cut earth/stone — so the demo is not interchangeable with a static terrain scene.
-5. **Geology-first generation** — columns, strata, caves, ore/aquifer bands, and lazy brick materialization from seed parameters; untouched world stays cheap via homogeneous sentinels and sparsity.
-6. **Operational honesty at scale for one region** — streaming rings and delta persistence so a region large enough that raw voxels do not all fit in memory remains walkable, savable, and reloadable from seed + edits.
-7. **Credible performance story** — frame-rate, dig-to-remesh, cold-start, memory, and save-size targets are measured on real hardware (including M4/wgpu constraints such as no 64-bit buffer atomics and bandwidth-first design), with regression-friendly benchmarks.
+5. **Geology-first generation** — full generation layer for the product slice: columns, strata, caves, ore/aquifer bands, and lazy brick materialization from seed parameters; untouched world stays cheap via homogeneous sentinels and sparsity.
+6. **POI metadata and stamped structure** — generation produces POI metadata, and one stamped structure proves the stamp/prefab path into voxel matter. Exact ruin content is validation design; the path itself is the product outcome.
+7. **Operational honesty at scale for one region** — streaming rings and delta persistence so a region large enough that raw voxels do not all fit in memory remains walkable, savable, and reloadable from seed + edits.
+8. **Credible performance story** — frame-rate, dig-to-remesh, cold-start, memory, and save-size targets are measured on real hardware (including M4/wgpu constraints such as no 64-bit buffer atomics and bandwidth-first design), with regression-friendly benchmarks.
 
-Milestone order and demo content (specific postcard route, materials set, ruin stamp, etc.) are validation design, not separate product identity. They exist to force the outcomes above under real load and camera.
+Milestone order and demo content (specific postcard route, materials set, which ruin is stamped, etc.) are validation design, not separate product identity. They exist to force the outcomes above under real load and camera.
 
 ---
 
@@ -61,7 +62,7 @@ Explicitly out of current product scope:
 
 - Combat, stats, NPCs/AI, multiplayer play, and full game loops
 - System / LLM integration, spells, gas, pricing, and intent layers
-- Building as gameplay (blueprints UI, mechanisms, work orders, room semantics) — stamp/prefab *paths* may be exercised only as harness proof if needed
+- Building as gameplay (blueprints UI, mechanisms, work orders, room semantics) — the stamp/prefab placement path itself is in scope as a product outcome (see outcomes); player-facing building systems are not
 - Fluids beyond static bodies (no flow sim, pressure, or particle splash as product requirements)
 - Weather simulation, seasons, growth, fire CA, structural integrity, granular settle, tree felling / rigid conversion (format and seams may anticipate them; they do not run as product-one outcomes)
 - Rich persistence (versioning, multi-slot, cross-mode fortress reclaim) beyond reload of the same seed plus edit deltas
@@ -90,7 +91,7 @@ No seed conflict requires human resolution of *what product is being built now*:
 |---|---|
 | **README.md** | Names the product (Moria), states substrate-as-crate and harness-as-consumer, points at `docs/seeds/`. |
 | **project-boundary.md** | Binding product/consumer boundary: reusable crate(s); game out of repo; harness uses public APIs only; game rules and System/LLM/spell/gas/combat/AI/building layers out of scope. |
-| **product-one-seed.md** | Binding first deliverable: walkable generated world as product-shaped proof; dig/place as mutability proof; non-goals; performance targets and M4/wgpu constraints; which substrate layers are in vs deferred. Specific seed-world content and milestone list treated as harness/validation design, not imported as permanent product content. |
+| **product-one-seed.md** | Binding first deliverable: walkable generated world as product-shaped proof; full generation layer including POI metadata and one stamped structure; dig/place as mutability proof; non-goals; performance targets and M4/wgpu constraints; which substrate layers are in vs deferred. Specific seed-world content and milestone list treated as harness/validation design, not imported as permanent product content. |
 | **voxel-world-substrate.md** | Architecture reference for capabilities the substrate must eventually support (geology, smooth meshing, sparsity, object vs dressing split, fluid tiers, integrity, building verbs, streaming/persistence, layering rules). Only the capabilities selected by Product One and required for the outcomes above are in current scope; game examples (ARPG, fortress, System-authored content) remain future-consumer context. |
 | **docs/seeds/README.md** *(manifest helper)* | Confirms priority: Product One binds implementation slice; substrate doc is reference; boundary doc is operator clarification that Moria is only the voxel-world substrate. |
 
