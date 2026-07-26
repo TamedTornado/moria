@@ -9,7 +9,7 @@
 
 ## Purpose
 
-Give multiple downstream consumers a shared, trustworthy world foundation they can create, stream, query, edit, mesh, and persist—without each game reimplementing voxel storage, generation, or world lifecycle. Correctness and a stable public boundary matter more than any single demo experience.
+Give multiple downstream consumers a shared, trustworthy world foundation they can create, stream, query, edit, and persist—while the substrate itself owns surface extraction into render-consumable form—without each game reimplementing voxel storage, generation, or world lifecycle. Correctness and consumption only through a public boundary matter more than any single demo experience.
 
 ## Boundary
 
@@ -27,13 +27,14 @@ External consumers must not reach into storage, meshing, or scheduler internals.
 
 1. **Deterministic generation** — Same versioned parameters and seed produce the same world.
 2. **Authoritative material truth** — Queries expose readiness and bounded material observations; derived meshes and diagnostics never become authoritative state.
-3. **Bounded mutation** — Edits enter through a bounded command API, admit or fail explicitly, and commit atomically with observable revisions.
+3. **Bounded mutation** — Edits enter through a bounded command API, admit or fail explicitly, and commit atomically; commits carry revisions.
 4. **Bounded streaming** — Resident work is bounded; lifecycle states (requested, loading, resident, evicted, failed) are observable; background results carry generation identity so stale work cannot overwrite newer truth.
-5. **Persistence of authority** — Persistence records and restores authoritative material deltas (not derived meshes).
-6. **Public-only consumption** — Worlds are created and identified (format version, generation parameters, seed); consumers request regions, query, edit, and persist only through the public surface.
-7. **Observable failure and diagnostics** — Failures are typed and visible to public consumers; diagnostics report lifecycle and bounded work without exposing mutable internal handles.
-8. **Multi-consumer usefulness** — Registered objects may participate in queries without becoming game entities; capabilities remain useful to more than one downstream product.
-9. **Validation without a game** — Headless fixtures cover generation, query, mutation, persistence, and lifecycle; a small visual fixture shows that an external consumer can render and edit through the public API. Performance may be reported with machine identity; no machine-specific correctness threshold is established by the seeds.
+5. **Persistence of authority** — Persistence restores the same authoritative material state. Persistence records authoritative deltas rather than derived meshes.
+6. **Substrate-owned surface extraction** — The substrate produces render-consumable surface results for consumers; consumers do not implement or reach into meshing internals.
+7. **Public-only consumption** — Worlds are created and identified (format version, generation parameters, seed); consumers request regions, query, edit, and persist only through the public surface.
+8. **Observable failure and diagnostics** — Failures are typed and visible to public consumers; diagnostics report lifecycle and bounded work without exposing mutable internal handles.
+9. **Multi-consumer usefulness** — Substrate capabilities remain useful to more than one downstream product.
+10. **Validation without a game** — Headless fixtures cover generation, query, mutation, persistence, and lifecycle; a small visual fixture demonstrates that a relocated external consumer can render and edit through the public API. Performance is reported with machine identity; no machine-specific correctness threshold is established by the seeds.
 
 ## Non-goals
 
@@ -43,6 +44,7 @@ External consumers must not reach into storage, meshing, or scheduler internals.
 - Exposing or depending on storage, meshing, or scheduler internals for external consumers
 - Treating derived geometry or diagnostics as source of truth
 - Establishing machine-specific performance pass/fail gates as product correctness
+- Promising stability or compatibility of the public boundary beyond requiring consumption through it and prohibiting internal access
 
 ## Unresolved human questions
 
@@ -55,8 +57,7 @@ If humans later need to decide optional scope (e.g. how far the validation execu
 | Seed | Contribution to this vision |
 | --- | --- |
 | `README.md` | Names the product (Moria), states that only current substrate commitments are repository deliverables, and frames the interface reference as supporting context that does not expand scope. |
-| `docs/seeds/mixed-project-brief.md` | Binding definition of current product, public boundary, correctness and validation commitments, non-goals, and the embedded later Product One paragraphs as non-authorizing consumer context. Primary source for purpose, outcomes, and boundary. |
-| `docs/seeds/substrate-interface-reference.md` | Supporting detail on the reusable consumer surface (world identity, readiness/material queries, mutation commands, streaming states, delta persistence, registered objects, diagnostics). Informs required outcomes; adds no new deliverables. |
+| `docs/seeds/mixed-project-brief.md` | Binding definition of current product, public boundary, correctness and validation commitments, non-goals, and the embedded later Product One paragraphs as non-authorizing consumer context. Primary source for purpose, outcomes, and boundary—including state-restoring persistence, surface extraction ownership, relocated visual fixture, and performance reported with machine identity. |
+| `docs/seeds/substrate-interface-reference.md` | Supporting detail on the reusable consumer surface (world identity, readiness/material queries, mutation commands with commit revisions, streaming states, delta-vs-mesh persistence recording, registered objects, diagnostics). Informs wording of outcomes; adds no new deliverables. Registered-object querying is reference-only and is not elevated to a required product outcome. |
 
-**Omitted from current scope (present only as future or reference pressure):** Product One’s third-person explorer, terrain vignette (hills, forest, river, cave), skeletal animation, and curated cliff-to-cave route. High-level substrate capabilities those consumers would need (generation, streaming, query, mutation, meshing, persistence, public API) are retained; gameplay, content, characters, assets, and game implementation are not.
-)
+**Omitted from current scope (present only as future or reference pressure):** Product One’s third-person explorer, terrain vignette (hills, forest, river, cave), skeletal animation, and curated cliff-to-cave route. High-level substrate capabilities those consumers would need (generation, streaming, query, mutation, surface extraction, persistence, public API) are retained; gameplay, content, characters, assets, and game implementation are not. Interface-reference-only functions (e.g. registered-object query participation) are not imported as current deliverables.
