@@ -40,7 +40,7 @@ The substrate exists so future games (adventure, fortress/colony, sandbox, or ot
 These are outcomes the current product must make true—not a content checklist or implementation plan.
 
 1. **Reads as a normal world.** Generated natural terrain (hills, forest, water, cliffs, caves, surface dressing and voxel-backed props) that does not present a blocky “Minecraft aesthetic” as the primary look: the voxel grid is truth; smooth extraction (or equivalent) is the view.
-2. **Mutable everywhere that matters for the demo.** Dig and place exist as first-class substrate verbs (debug-driven in the harness). Cut faces read as cut matter; remesh is incremental and hitch-resistant on modest carves. Without this, the demo is interchangeable with ordinary terrain scenes.
+2. **Mutable throughout the generated region.** Dig and place apply as first-class substrate verbs anywhere in the generated volume (debug-driven in the harness)—not only along a demo route. Cut faces read as cut matter; remesh is incremental and hitch-resistant on modest carves. Without this, the demo is interchangeable with ordinary terrain scenes.
 3. **Continuous deep Z.** Surface-to-underground traversal in one continuous volume—caves, strata, and subsurface materials are real content, not a painted floor under a skybox.
 4. **Collision and queries against voxel truth.** Character motion and interaction prove the mesh is a regenerated view, not the authority.
 5. **Sparsity, streaming, and lazy materialization.** A region large enough that raw full-volume residency is not the strategy; homogeneous bricks / sentinels and streaming rings are load-bearing, not deferred polish.
@@ -57,7 +57,7 @@ These are outcomes the current product must make true—not a content checklist 
 
 - Combat, RPG stats, entities beyond the player, AI/agents
 - The System / LLM, spells, gas, intent pricing
-- Building gameplay: blueprints, work orders, mechanisms, room semantics (stamp/prefab may be exercised once as a generation/API path in the seed world, not as a player building product)
+- Building gameplay: blueprints, work orders, mechanisms, room semantics. The stamp/prefab path is exercised once as a generation/API path in the seed world, not as a player building product.
 - Fluids beyond static bodies (lakes / river channel with surface); no flow simulation
 - Weather, seasons, growth sims (a fixed time-of-day control is enough)
 - Cellular automata (fire, wetness propagation, granular settle), structural integrity / cave-ins
