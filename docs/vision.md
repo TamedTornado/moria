@@ -12,14 +12,14 @@ Moria exists so multiple independent consumers can share one correct foundation 
 
 **In product (Moria):** world create/identify; deterministic seed-based generation; sparse voxel material authority; bounded streaming with observable lifecycle; mutation admission and commit; surface extraction as derived output; persistence of authoritative material deltas; read-only diagnostics—all only through public crate APIs, kept useful to multiple consumers.
 
-**Adjacent, not product identity:** a minimal validation executable and fixtures that exercise the substrate solely via those public interfaces, with no privileged world path. Headless fixtures covering generation, query, mutation, persistence, and lifecycle behavior, plus a small visual fixture that can render and edit through the public API, are current program deliveries outside the product identity. That visual fixture may include a free-fly camera and diagnostics sufficient to exercise the crate; it is not a game prototype. Validation reports performance with machine identity without defining a correctness threshold.
+**Adjacent, not product identity:** a minimal validation executable and fixtures that exercise the substrate solely via those public interfaces, with no privileged world path. Headless fixtures covering generation, query, mutation, persistence, and lifecycle behavior, plus a small visual fixture that demonstrates a relocated external consumer can render and edit through the public API, are current program deliveries outside the product identity. That visual fixture may include a free-fly camera and diagnostics sufficient to exercise the crate; it is not a game prototype. Performance is reported with machine identity; the program establishes no machine-specific correctness threshold.
 
 **Out of product:** any game, gameplay systems, player controllers, characters, animation, authored levels, production content, presentation policy, and consumer-chosen environments or performance gates. Consumers must not reach into storage, meshing, or scheduler internals.
 
 ## Required product outcomes
 
 - **World identity and generation.** Consumers create and identify worlds whose identity combines format version, generation parameters, and seed. Generation is deterministic for the same versioned parameters and seed.
-- **Bounded observe and stream.** Consumers request bounded regions, observe readiness, and obtain bounded authoritative material observations. Streaming bounds resident work, exposes observable lifecycle states, and protects newer truth from stale background results via generation identities. Registered objects may participate in queries without becoming game entities.
+- **Bounded observe and stream.** Consumers request bounded regions, observe readiness, and obtain bounded authoritative material observations. Streaming bounds resident work, exposes observable lifecycle states, and protects newer truth from stale background results via generation identities.
 - **Bounded mutation.** Consumers submit edits only as bounded commands; admission may fail observably; accepted mutations commit atomically and yield commit revisions.
 - **Authoritative persistence.** Consumers persist authoritative material deltas and restore the same authoritative material state. Derived meshes and diagnostics never become authoritative world state.
 - **Derived surfaces and diagnostics.** The substrate provides surface extraction from material truth as non-authoritative derived results, and read-only diagnostics that report lifecycle and bounded work without exposing mutable internal handles. Failures are typed and observable on the public surface.
@@ -37,7 +37,7 @@ After the reusable substrate ships, a separate **Product One** repository may ho
 - Shipping any particular game or game prototype in this repository.
 - Elevating meshes, diagnostics, or other derived data to authoritative world state.
 - Privileged validation or game access into storage, meshing, or scheduler internals.
-- Machine-specific performance correctness thresholds for the substrate.
+- Establishing a machine-specific performance correctness threshold.
 
 ## Confirmed vision constraints
 
@@ -46,7 +46,7 @@ After the reusable substrate ships, a separate **Product One** repository may ho
 - Mutation commits are atomic; streaming bounds resident work; failures are typed and consumer-observable.
 - Only material truth (including restored deltas) is authoritative; meshes and diagnostics are not.
 - Validation consumers own no privileged world path and must use the public interfaces exactly.
-- The program does not establish a machine-specific performance correctness threshold for the substrate.
+- Performance reporting includes machine identity; no machine-specific correctness threshold is established.
 
 ## Deferred design decisions
 
@@ -54,7 +54,7 @@ After the reusable substrate ships, a separate **Product One** repository may ho
 - Streaming, generation, surface-extraction, and persistence mechanisms and encodings.
 - Delivery depth and sequence of substrate capabilities within the product identity.
 - Validation presentation details (for example camera and on-screen diagnostics) beyond public-API-only exercise of the crate.
-- Any portable performance targets or benchmark workloads.
+- Performance targets (portable or otherwise), benchmark workloads, and whether any non-machine-specific threshold is adopted.
 
 ## Assumptions proposed for approval
 
@@ -68,4 +68,4 @@ None. The seeds define one current product (the Moria substrate), settle adjacen
 
 - **`README.md`:** Names Moria as the reusable voxel-world substrate in this repository, limits deliverables to current substrate commitments, and treats the interface reference as non-expanding context.
 - **`docs/seeds/mixed-project-brief.md`:** Binding current-product identity, public boundary, correctness and validation commitments, non-goals, and embedded later Product One consumer context that does not enlarge Moria.
-- **`docs/seeds/substrate-interface-reference.md`:** Supports outcome-level public-surface mandates (identity, query, mutation, streaming lifecycle, persistence authority, registered objects, diagnostics) without adding deliverables or redefining product identity.
+- **`docs/seeds/substrate-interface-reference.md`:** Supports outcome-level public-surface detail (identity, material query, mutation, streaming lifecycle, persistence authority, diagnostics) without adding deliverables or redefining product identity; reference-only details such as registered-object query participation are not mandatory product scope.
