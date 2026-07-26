@@ -178,6 +178,15 @@ systems remain consumer-owned.
   portions of the architecture reference are required; the reference does not
   silently expand first-delivery scope.
 
+## Product One harness governance
+
+Harness-specific decisions already bound by Product One—controls, demo content
+and seed inventory, presentation, character/camera, platforms, benchmarks, and
+acceptance thresholds—stay outside this vision’s main narrative. They are
+**not** deferred open questions. They remain governed by
+`docs/seeds/product-one-seed.md` for the first delivery and its validation
+harness.
+
 ## Deferred design decisions
 
 - Crate split, API surface shape, and internal layering within the substrate
@@ -187,10 +196,8 @@ systems remain consumer-owned.
 - Capability depth and delivery sequence after the Product One slice (including
   when and how reactive-matter families grow)
 - Whether and how far multiplayer-authoritative deployment is pursued later
-- Harness-only detail: controls, content, presentation, platforms, benchmarks,
-  and acceptance thresholds for the walkable-world executable
-- Open technical questions left for measurement (voxel size, LOD strategy,
-  object-layer scaling, and similar)
+- Open technical questions left for measurement under the Product One
+  benchmark bed (voxel size, LOD strategy, object-layer scaling, and similar)
 
 ## Assumptions proposed for approval
 
@@ -223,7 +230,7 @@ be stated explicitly.
 |---|---|---|
 | **`README.md`** | Names Moria as the reusable GPU-resident voxel-world Rust substrate; identifies the walkable-world executable as a separate consumer and validation harness (generation, streaming, meshing, editing, collision, persistence, performance)—not a game layer. | Harness implementation, content, and numbers. |
 | **`docs/seeds/project-boundary.md`** | Binding product identity: substrate crate(s) only; game is downstream; harness must use public interfaces; workspace boundary required; game rules and System/LLM/spell/gas/combat/AI/building **layers** out of scope (seams allowed, implementations not). | Crate graph details; full matter roadmap. |
-| **`docs/seeds/product-one-seed.md`** | Binding first delivery: substrate slice depth; dig/place as mutability proof; curated-region validation spirit; portable wgpu/WGSL and M4-oriented engineering notes as design pressure; milestone arc (hill → carve → geology → dress → traverse → numbers). | Character/camera/seed inventory, performance tables, clip goals, and milestone schedule as **product identity**—kept as harness/design detail. Demo content (specific biomes, ruin, material list) does not define the crate’s public product identity. |
+| **`docs/seeds/product-one-seed.md`** | Binding first delivery: substrate slice depth; dig/place as mutability proof; curated-region validation spirit; portable wgpu/WGSL and M4-oriented engineering notes as design pressure; milestone arc (hill → carve → geology → dress → traverse → numbers). Also binds harness decisions (controls, content, presentation, platforms, benchmarks, thresholds) that this vision keeps outside its main narrative—see **Product One harness governance**. | Character/camera/seed inventory, performance tables, clip goals, and milestone schedule—not product identity, and not deferred; governed by this seed as harness detail. Demo content (specific biomes, ruin, material list) does not define the crate’s public product identity. |
 | **`docs/seeds/voxel-world-substrate.md`** | Architecture reference: purpose (normal-looking mutable world, deep Z, substrate-not-game); layering; voxel truth vs mesh view; sparsity/lazy materialization; multi-game rationale; enabling families (fluids tiers, integrity, building verbs, nav, persistence model); zero LLM dependency; GPU command/mirror pattern. | Mechanism inventory (brick size, bit layouts, algorithms), full reactive stack as current-milestone requirements, and future-game content/fantasy. Per seed manifest: only portions selected by Product One are required for this milestone. |
 | **`docs/seeds/README.md` (manifest)** | Authority order: Product One binds implementation + harness for this milestone; architecture doc is reference; boundary doc is operator clarification; broader game intent deliberately out of scope. | — |
 
