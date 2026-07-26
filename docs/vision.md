@@ -50,7 +50,7 @@ No named downstream game is in current scope. Future products are external consu
 
 - Integration form is a reusable Rust substrate for external consumers (library crates), not an ecosystem-neutral or game-ship product.
 - Consumers and the validation harness share the same public interfaces; adjacent consumers have no privileged access to internals.
-- World behavior that must match across generate, mutate, query, and restore is deterministic under the versioned identity model.
+- Generation is deterministic under the versioned parameter set and seed that define world identity. Registered objects can participate in deterministic world queries without becoming game entities. Persistence restoration reproduces identical query behavior. Determinism is not required of mutation behavior, and these mandates do not establish one shared deterministic behavior across generate, mutate, query, and restore.
 - Authoritative truth is material/voxel state and versioned persistence deltas; meshes and transient scheduling are not truth.
 - Mutation outcomes expose explicit admission, commit, and failure states.
 - Performance evidence is machine-identified and non-portable as correctness thresholds.
