@@ -46,7 +46,7 @@ Described **future consumers** (separate products, not this repository’s ident
 - Owning consumer controllers, cameras, characters, demo narratives, seed-content inventories, or harness acceptance scenarios as product identity.
 - Treating validation-harness content, presentation, workloads, platforms, or performance numbers as substrate requirements.
 - Implementing building-game layers (blueprints-as-work-orders, mechanism-entity gameplay, room/economy policy) or making the substrate depend on an LLM.
-- Treating any one consumer’s first vertical slice as the ceiling of substrate identity or outcome families.
+- Treating a consumer’s first vertical slice as the ceiling of substrate identity or outcome families.
 
 ## Confirmed vision constraints
 
