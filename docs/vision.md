@@ -42,6 +42,8 @@ These are outcomes the substrate must enable, not a feature inventory or impleme
 
 ### Proposed outcomes (pending human decision)
 
+#### Pending Q2 — natural-world capability set
+
 The following outcome set is drawn from the walkable-world seed and the voxel-world architecture reference. It is **proposed, not required**, until **Q2** is answered. Until then, design and delivery must not treat these as binding current Moria obligations:
 
 1. **Natural-looking material terrain.** Generated terrain can read as ordinary landscape (hills, strata, water bodies, caves, vegetation-scale density) while remaining fully material—not a heightmap with disconnected props.
@@ -49,6 +51,16 @@ The following outcome set is drawn from the walkable-world seed and the voxel-wo
 3. **Deep Z is first-class.** Underground content (caves, strata, ore, aquifers as material bands) is real three-dimensional world, not a painted floor under a skybox.
 
 If Q2 affirms them as binding, they become required product-level outcomes. If not, they remain motivating context for future consumers or optional capability direction, not current product definition.
+
+#### Pending Q3 — GPU-resident / async-GPU-capable direction
+
+The following outcome is drawn from the voxel-world architecture reference and its companion GPU-resident architecture note. It is **proposed, not required**, until **Q3** is answered. Until then, design and delivery must not treat GPU-resident storage, GPU-primary simulation/meshing, or asynchronous GPU work as binding current Moria obligations:
+
+1. **GPU-resident, asynchronous-GPU-capable architecture.** Sparse brick storage and a command/query boundary that can keep world representation GPU-resident and support asynchronous GPU work without changing the consumer contract.
+
+If Q3 affirms this as binding, it becomes a required product-level direction (specific kernels and simulations still selected by milestone). If not, it remains nonbinding architectural context: portable presentation and measurable GPU memory behavior may still matter as engineering constraints without requiring a GPU-resident substrate identity.
+
+Required outcomes above (truth vs view, contracted APIs, sparsity, seed+delta identity, measurable quality) do **not** by themselves mandate GPU residency; they remain required regardless of Q3.
 
 ## Non-goals
 
@@ -59,12 +71,15 @@ If Q2 affirms them as binding, they become required product-level outcomes. If n
 - Web / wasm as a Product One or substrate target platform.
 - Claiming a released, finished visual engine before feasibility and visual-acceptance gates are met.
 - Treating the proposed natural-world outcome set (natural look, everywhere mutation, first-class deep Z) as binding until Q2 is resolved.
+- Treating GPU-resident storage, asynchronous GPU execution, or GPU-primary meshing/simulation as binding current product direction until Q3 is resolved.
 
 ## Future consumers (context only)
 
 Reference material describes possible later products: a System-driven ARPG, a fortress / colony game, a descent-style roguelike, and pure sandboxes. Those motivate reusable material-world capabilities—normal-looking natural worlds, mutability all the way down, first-class deep underground, and a clean matter / query / mutation boundary. Their gameplay, characters, assets, content palette, and presentation are **not** current Moria scope.
 
 The “walkable world” seed describes a third-person proof shape (curated region, forest, ruin, dig-as-demo) that a validation consumer might use to make substrate claims undeniable. That seed’s content, controls, milestones, and performance tables are **context for what the substrate might support**, not the definition of the product itself. Whether its core world-shape claims bind Moria now is **Q2**.
+
+GPU-resident sparse storage and an async-capable command/query boundary appear in architecture seeds as a long-horizon direction. Whether that direction binds current Moria is **Q3**, independent of which natural-world outcomes Q2 selects.
 
 ## Confirmed vision constraints
 
@@ -89,7 +104,12 @@ The “walkable world” seed describes a third-person proof shape (curated regi
 - **Proposed answer:** Binding current outcomes. Project boundary names a reusable voxel-world substrate; the architecture reference’s design goals and Product One’s proof claims describe what that substrate is for—without importing demo content, characters, or machine targets. Leaving them optional would leave “what worlds Moria must enable” underspecified for design handoff.
 - **If answered differently:** Affirming them as nonbinding keeps Moria as contract infrastructure only (storage, generation hooks, mutation admission, streaming, persistence, presentation seams) without requiring natural-landscape quality, universal mutability proof, or underground-first content as current product success criteria. Affirming a subset (for example mutation and truth/view without natural look or deep Z) would require restating the required outcomes explicitly.
 
-No other seed conflicts change product identity: seeds README, project boundary, and repository README agree that Moria is the substrate and that Product One’s character, route, and demo targets are not Moria requirements. Older planning docs that still title the effort as “Product One — The Walkable World” should be read as superseded on identity by the boundary and this vision once approved. **Q2** is the remaining open identity-adjacent question: whether the natural-world capability set is required of the substrate now, or only illustrated by nonbinding seeds.
+**Q3.** Is a **GPU-resident / asynchronous-GPU-capable architecture** a binding **current Moria product direction**, or only **nonbinding architectural context** from the voxel-world and GPU-resident architecture seeds?
+
+- **Proposed answer:** Nonbinding context for current product identity. Project boundary and repository README define Moria as a reusable Rust/Bevy substrate with public contracts, sparsity, and measurable presentation—not as a GPU-resident engine. Seeds README ranks the GPU-resident note as supporting architecture that does not add features to the current milestone; specific simulations remain nonbinding until selected. Portable Bevy/wgpu presentation and honest GPU-memory measurement can still be engineering constraints without making GPU residency a product outcome.
+- **If answered differently:** Affirming it as binding elevates sparse GPU-resident storage and an async-capable command/query boundary to required product direction (kernels and simulations still milestone-selected). That would reframe “presentation support” and measurable quality around GPU ownership of matter or mesh work, and would need explicit reconciliation with any current CPU-authoritative / upload-based implementation path. Affirming a narrower subset (for example async-safe consumer boundary without GPU-resident truth) would require restating the outcome explicitly.
+
+No other seed conflicts change product identity: seeds README, project boundary, and repository README agree that Moria is the substrate and that Product One’s character, route, and demo targets are not Moria requirements. Older planning docs that still title the effort as “Product One — The Walkable World” should be read as superseded on identity by the boundary and this vision once approved. Remaining open identity-adjacent questions are **Q2** (whether the natural-world capability set is required of the substrate now) and **Q3** (whether GPU-resident / async-GPU-capable architecture is current direction or nonbinding context). **Q1** remains open for delivery obligation of the validation harness without changing product identity.
 
 ## Seed synthesis
 
@@ -97,7 +117,7 @@ No other seed conflicts change product identity: seeds README, project boundary,
 | --- | --- |
 | **README.md** | Names Moria as a Rust/Bevy voxel-world substrate consumed as a crate; executables curate, exercise, benchmark, and visually validate; player controllers, characters, and game-specific presentation are outside the substrate boundary; status is active engineering, not a released engine. Workspace crate roles and evidence detail stay subordinate engineering input. |
 | **docs/seeds/project-boundary.md** | **Binding product target:** reusable substrate (crate family); games are separate consumers; any walkable executable is a public-interface validation harness only; System / LLM / spell / gas / combat / AI / building layers are out of scope. Cargo workspace split is motivated but left as technical design. |
-| **docs/seeds/product-one-seed.md** | **Downstream / validation example:** supplies the “fully material walkable world” proof shape and explicit non-goals (no combat, System, CA, building UI, dynamic fluids). Motivates the proposed natural-world outcome set (smooth material truth, dig/place proof, geology, sparse streaming, seed+delta save, measurable quality). Does **not** import third-person character, curated 1 km postcard, content palette, performance tables, or milestone schedule into product identity. Whether its world-shape claims bind Moria is **Q2**. |
-| **docs/seeds/voxel-world-substrate.md** | **Architecture reference:** long-horizon goals (reads as a normal world; mutable everywhere; deep Z; substrate not game; GPU-resident direction)—treated here as proposed outcomes pending Q2, not silently required. Layering diagram and many extensions (fluids tier 2+, integrity, weather, building verbs, nav, multiplayer readiness) remain context or future seams unless selected. Game examples (ARPG, fortress, Moria descent) motivate reusability only. |
+| **docs/seeds/product-one-seed.md** | **Downstream / validation example:** supplies the “fully material walkable world” proof shape and explicit non-goals (no combat, System, CA, building UI, dynamic fluids). Motivates the proposed natural-world outcome set (smooth material truth, dig/place proof, geology, sparse streaming, seed+delta save, measurable quality). Does **not** import third-person character, curated 1 km postcard, content palette, performance tables, or milestone schedule into product identity. Whether its world-shape claims bind Moria is **Q2**. GPU memory numbers and GPU meshing language in that seed inform **Q3** but do not settle it. |
+| **docs/seeds/voxel-world-substrate.md** | **Architecture reference:** long-horizon goals include reads as a normal world; mutable everywhere; deep Z; substrate not game; and GPU-resident direction. Natural-world goals are proposed pending **Q2**; GPU-resident / async-GPU-capable direction is proposed pending **Q3**—neither is silently required. Layering diagram and many extensions (fluids tier 2+, integrity, weather, building verbs, nav, multiplayer readiness) remain context or future seams unless selected. Game examples (ARPG, fortress, Moria descent) motivate reusability only. Companion `gpu-resident-substrate.md` (supporting architecture per seeds README) is the detailed source for the Q3 claim, not a separate product target. |
 
-Authority among seeds (from `docs/seeds/README.md`): project boundary first; supporting architecture second; broad voxel reference third; Product One seed last as validation example. Conflicts resolve toward the boundary without silent expansion of scope.
+Authority among seeds (from `docs/seeds/README.md`): project boundary first; GPU-resident architecture note second as supporting principles without automatic milestone features; broad voxel reference third; Product One seed last as validation example. Conflicts resolve toward the boundary without silent expansion of scope.
