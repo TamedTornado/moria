@@ -73,6 +73,6 @@ None.
 ## Seed synthesis
 
 - **README.md** — Names Moria as the GPU-resident Rust substrate and positions the walkable-world executable as a separate validation consumer, not a game layer.
-- **docs/seeds/project-boundary.md** — Binding identity and boundary: reusable Rust substrate; game out of repo; optional harness via public APIs only; game/System/building layers excluded.
+- **docs/seeds/project-boundary.md** — Binding identity and boundary: reusable Rust substrate; game out of repo; harness (if present) via public APIs only; game/System/building layers excluded.
 - **docs/seeds/voxel-world-substrate.md** — Authorizes substrate outcome families (natural look vs. voxel truth, full mutability, deep Z, geology-first gen, matter/physics/queries/mutation, GPU-resident, multi-game reuse, no LLM dependency) without making design inventory the vision.
 - **docs/seeds/product-one-seed.md** — Describes a first walkable-world demo/harness slice that motivates and validates substrate capabilities; its controllers, content, milestones, and platform gates remain consumer-owned and do not redefine current product identity.
