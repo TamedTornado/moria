@@ -26,16 +26,40 @@ Product One proves that claim with a runnable artifact and measurable performanc
 
 ## Boundary
 
-| In this repository | Outside this repository |
+### In current Product One scope (this repository, first slice)
+
+| In scope now | Notes |
 |---|---|
-| Generation, matter storage, meshing/dressing, dig/place verbs, collision against voxel truth, streaming, delta persistence | Any full game title or game rules layer |
-| Public substrate API and the validation harness that exercises it | System / LLM, spells, gas/pricing policy, combat, AI agents, building gameplay UI |
-| Compatibility *seams* only where substrate requirements demand them | Fluids beyond static bodies, CA (fire/wetness/granular settle), structural integrity, weather/seasons/growth sims |
-| Seed-curated one-region world as demo content | Multi-region continents, multiplayer, scripted content pipelines beyond what’s needed to demo the substrate |
+| Generation, matter storage, meshing/dressing, dig/place verbs, collision against voxel truth, streaming, delta persistence | Substrate core for the walkable demo |
+| Public substrate API and the validation harness that exercises it | Harness uses the same interfaces as an external game |
+| Compatibility *seams* only where substrate requirements demand them | Seams, not implementations of game layers |
+| Seed-curated one-region world as demo content | Proof points for material world, deep Z, mutability |
+
+### Outside current Product One scope (deferred substrate capabilities)
+
+These appear in the architecture reference as substrate-layer work. They are **not** part of Product One’s “done” bar. Whether they remain on Moria’s future roadmap as substrate expansions (vs. never built here) is an open human question below.
+
+| Deferred capability | Architecture-seed role (context only) |
+|---|---|
+| Fluids beyond static tier-1 bodies | Coarse flow, fine splash, active hydrology |
+| CA (fire, wetness, granular settle) | Aggregate-driven ambient matter rules |
+| Structural integrity / cave-ins | Support graph and failure cascades |
+| Weather, seasons, growth sims | Thin ambient simulation over aggregates |
+| Multi-region continents | Beyond the curated one-region demo |
+| Multiplayer | Verb/command architecture is ready-by-construction; not built |
+| Scripted content pipelines beyond demo needs | Full registries, System-authored packages, etc. |
+| Tree felling / rigid-body object conversion | Stretch clip only; not required for Product One acceptance |
+
+### Outside this repository (not Moria’s product)
+
+| Never in this repository | Why |
+|---|---|
+| Any full game title or game rules layer | Separate downstream consumers |
+| System / LLM, spells, gas/pricing policy, combat, AI agents, building gameplay UI | Game layers; compatibility seams only if substrate requirements demand them |
 
 The consumer boundary is non-optional: a Cargo workspace (or equivalent) must separate reusable crates from the harness. Game-specific implementation paths must not live under privileged substrate internals.
 
-Future games and systems described in the substrate architecture seed are **context for capability ambition**, not current scope. Preserve the high-level outcomes those products would need (mutable matter, deep Z, clean layering, GPU residency, public verbs/queries). Do **not** import their gameplay, content, characters, assets, or implementation into Moria now.
+Future games and systems described in the substrate architecture seed are **context for capability ambition**, not current Product One scope. Preserve the high-level outcomes those products would need (mutable matter, deep Z, clean layering, GPU residency, public verbs/queries). Do **not** import their gameplay, content, characters, assets, or implementation into Moria now.
 
 ---
 
@@ -77,6 +101,7 @@ Seeds align on **what** the product is (substrate + Product One harness). These 
 2. **Crate packaging** — one crate vs. a small family: consumer boundary is required; exact split is deferred to technical design. Confirm no preference that would change the public product shape.
 3. **Discrete-GPU performance targets** — stated as provisional until a Linux/discrete baseline is available; M4/unified is the verified dev constraint. Confirm whether public “done” claims may rest on M4 + provisional discrete numbers.
 4. **Stretch milestone (timber/felling)** — explicitly optional. Confirm it stays non-blocking for Product One acceptance.
+5. **Deferred substrate roadmap** — CA, multi-tier fluids, integrity, weather/growth, multi-region streaming depth, multiplayer, and similar architecture-seed capabilities are outside Product One. Do they remain on Moria’s future substrate roadmap in this repository, or should the vision treat them only as external reference for seams and not as planned Moria deliverables?
 
 No seed conflict requires guessing which product is current: the operator boundary and Product One seed bind implementation; the full substrate design is reference architecture, not the current milestone backlog.
 
@@ -94,7 +119,7 @@ No seed conflict requires guessing which product is current: the operator bounda
 
 ### Omitted or de-scoped source material (visible on purpose)
 
-From the substrate architecture seed, **not** current vision scope except as future-facing seams: weather/fire ecology, multi-tier fluids, structural integrity, building/mechanisms/rooms, entity labor and pathfinding classes, multiplayer, System-authored content, full CA rule tables, and complete multi-game layer diagrams.
+From the substrate architecture seed, **outside Product One** (deferred substrate list above; roadmap status open): weather/fire ecology, multi-tier fluids, structural integrity, multiplayer, full CA rule tables, multi-region depth. **Outside this repository** (game layers): building/mechanisms/rooms as gameplay, entity labor and pathfinding classes, System-authored content, and complete multi-game layer diagrams—except as seams where substrate requirements demand them.
 
 From Product One: **concrete** material palettes, exact region dimensions, keybind lists, milestone week estimates, and per-metric numeric tables belong in design/spec follow-ons; this vision keeps only the product-level claims those details serve.
 
