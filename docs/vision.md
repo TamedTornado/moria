@@ -25,12 +25,13 @@ embedding consumer-specific gameplay, content, or assets in this repository.
 | Versioned world identity (parameters + seed) | Authored routes, production assets, consumer-specific content |
 | Deterministic generation of bounded regions without whole-world eager allocation | Treating derived meshes or scheduling state as truth |
 | Sparse authoritative voxel storage | Mutable internal handles in diagnostics |
-| Bounded mutation command API with explicit admit/commit/fail | Performance numbers as portable correctness gates |
+| Bounded mutation command API with explicit admit/commit/fail | Performance measurements as portable correctness thresholds |
 | Streaming that bounds resident work and rejects stale work | Shipping a playable product from this repo |
 | Regenerable meshing as a derived view of voxel truth | |
 | Registered objects that can participate in deterministic world queries without becoming game entities | |
 | Versioned delta persistence that restores identical query behavior | |
 | Headless and minimal visual validation fixtures | |
+| Performance measurements that include machine identity (as evidence) | |
 
 ## Required product-level outcomes
 
@@ -52,8 +53,9 @@ embedding consumer-specific gameplay, content, or assets in this repository.
    camera exercises meshing via the public interface; diagnostics expose
    lifecycle, revision, and bounded-work observations without mutable internal
    handles.
-6. **Performance evidence** — Measurements include machine identity and serve as
-   evidence, not portable pass/fail thresholds.
+6. **Performance evidence** — Measurements include machine identity and are
+   evidence, not portable correctness thresholds. This does not preclude
+   machine-local or non-correctness performance or delivery gates.
 
 ## Non-goals
 
@@ -61,7 +63,8 @@ embedding consumer-specific gameplay, content, or assets in this repository.
 - Encoding game rules, characters, controllers, animation, authored routes,
   production assets, or consumer-specific content into the substrate
 - Treating meshes, scheduling state, or harness UI as authoritative world truth
-- Using harness-only performance numbers as cross-machine correctness criteria
+- Treating performance measurements as portable correctness thresholds (while
+  still requiring machine identity on those measurements)
 - Exposing mutable internal handles through diagnostics
 
 ## Unresolved questions for humans
@@ -76,9 +79,8 @@ content outside this repository.
 | --- | --- |
 | `README.md` | Names the product **Moria**, states it is a reusable voxel-world substrate, and points current scope at the two clean seed docs (not a separate product vision). |
 | `docs/seeds/clean-project-boundary.md` | Fixes identity and boundary: reusable substrate for external consumers; crates plus minimal public-API validation harness; harness is not a game layer; complete enough for generate/stream/query/mutate/mesh/save/restore through public interfaces. |
-| `docs/seeds/clean-substrate-requirements.md` | Supplies product-level outcomes for identity/generation (including generation determinism and bounded materialization), storage/mutation, streaming/derived views (including query determinism for registered objects), persistence, validation/diagnostics, and performance-as-evidence. |
+| `docs/seeds/clean-substrate-requirements.md` | Supplies product-level outcomes for identity/generation (including generation determinism and bounded materialization), storage/mutation, streaming/derived views (including query determinism for registered objects), persistence, validation/diagnostics, and performance measurements as evidence with machine identity (not portable correctness thresholds). |
 
-Other files under `docs/seeds/` (for example product-one and architecture
-reference seeds) were not part of this manifest’s binding set. They are treated
-as historical or reference context only; their gameplay, content, and
-implementation detail are not imported into current scope.
+Other files under `docs/seeds/` were outside the supplied binding set for this
+vision and were not used to define current product identity, purpose, or
+boundary.
