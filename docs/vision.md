@@ -15,10 +15,11 @@ keeps world-material capabilities reusable across those consumers.
 
 ## Product boundary
 
-**In product scope.** Public crate APIs for world identity and creation,
-bounded region request and streaming, readiness and material query, bounded
-mutation, surface extraction, persistence of authoritative material state,
-and read-only diagnostics. Correctness properties of generation, mutation,
+**In product scope.** Public crate APIs for world creation and world
+identity, sparse voxel storage, bounded region request and streaming,
+readiness and material query, bounded mutation, surface extraction,
+persistence of deltas with restoration of authoritative material state, and
+read-only diagnostics. Correctness properties of generation, mutation,
 streaming, and persistence belong to the substrate.
 
 **Adjacent delivery, not product identity.** Headless fixtures and a small
@@ -36,19 +37,21 @@ Product One content and controls remain in a separate consumer repository.
 - Consumers integrate only through public Rust crate interfaces; they must
   not reach storage, meshing, or scheduler internals. Capabilities remain
   useful to multiple downstream consumers.
-- Worlds are created and identified from format version, generation
-  parameters, and seed; generation is deterministic for the same versioned
-  parameters and seed.
+- Consumers can create worlds and identify them. World identity combines
+  format version, generation parameters, and seed. Generation is
+  deterministic for the same versioned parameters and seed. Worlds use
+  sparse voxel storage as a substrate property.
 - Consumers request bounded regions, observe streaming lifecycle and
-  readiness, and query bounded authoritative material truth, including
-  registered objects that participate in queries without becoming game
-  entities. Resident work stays bounded; background results carry generation
-  identity so stale work cannot replace newer truth.
+  readiness, and query bounded authoritative material truth. Resident work
+  stays bounded; background results carry generation identity so stale work
+  cannot replace newer truth.
 - Bounded edit commands admit or fail explicitly, commit atomically with
   revisions, and leave failures typed and observable on the public surface.
-- Surface extraction and diagnostics are available without becoming
-  authoritative world state; persistence records and restores authoritative
-  material deltas, not derived meshes.
+- Surface extraction never becomes authoritative world state. Persistence
+  records authoritative deltas rather than derived meshes and restores the
+  same authoritative material state. Read-only diagnostics report lifecycle
+  and bounded work without exposing mutable internal handles, and never
+  become authoritative world state.
 - Adjacent validation delivery covers generation, query, mutation,
   persistence, and lifecycle via headless fixtures, plus a small visual
   fixture that renders and edits only through the public API as a relocated
@@ -77,23 +80,26 @@ routes into Moria.
 ## Confirmed vision constraints
 
 - Delivery form is a Rust crate surface consumed by external programs.
+- Sparse voxel storage is a mandatory substrate property alongside generation,
+  streaming, mutation, surface extraction, persistence, and diagnostics.
 - Generation determinism is keyed to versioned parameters and seed.
 - Mutation is bounded, admitted through a command API, and committed
   atomically; streaming exposes observable lifecycle states and bounds
   resident work.
-- Persistence restores the same authoritative material state; meshes and
-  diagnostics never authoritatively redefine that state.
+- Persistence records authoritative deltas rather than derived meshes and
+  restores the same authoritative material state; meshes and diagnostics
+  never authoritatively redefine that state.
 - Stale background results must not overwrite newer truth; public failures
-  are typed and observable.
-- Validation performance reporting includes machine identity and does not
-  establish machine-specific correctness thresholds.
+  are typed and observable. Validation performance reporting includes
+  machine identity and does not establish machine-specific correctness
+  thresholds.
 
 ## Deferred design decisions
 
-- Crate layout, concrete API shapes, algorithms, data layouts, and streaming
-  or persistence encodings.
-- Exact surface-extraction approach, diagnostics payloads, and registered-
-  object model detail.
+- Crate layout, concrete API shapes, algorithms, and streaming or
+  persistence encodings.
+- Exact surface-extraction approach, diagnostics payload design, and any
+  registered-object participation model detail.
 - Fixture workload choices, visual presentation, and any quantitative
   performance targets.
 - Delivery sequence and depth within the substrate outcome set.
@@ -117,6 +123,6 @@ interfaces, and that Product One is a future separate consumer.
   public boundary, correctness and validation commitments, non-goals, and
   the later Product One consumer vision as non-authorizing context.
 - `docs/seeds/substrate-interface-reference.md` supports the brief’s
-  consumer-visible world, query, mutation, streaming, persistence, object,
-  and diagnostics outcomes without adding deliverables or redefining the
+  consumer-visible world, query, mutation, streaming, persistence, and
+  diagnostics outcomes without adding deliverables or redefining the
   product.
