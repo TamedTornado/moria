@@ -34,7 +34,7 @@ Moria exists so games and validation tools can share one material world layer in
 
 Future consumers (not current Moria): a System/LLM-driven ARPG, a fortress/colony game, a descent-style adventure, and pure sandbox modes. They own gameplay, UX, controllers, authored content, game-specific presentation, pricing policy, and game rules.
 
-Enabling implications only: no LLM dependency; pricing and game policy plug in above matter; the same stack supports dig/build, deep descent, and surface adventure over one world. Cross-run reuse of edit deltas is a persistence implication, not a shipped mode.
+Enabling implications only: no LLM dependency; pricing and game policy plug in above matter; the same stack supports dig/build, deep descent, and surface adventure over one world. Cross-run delta reuse is a persistence implication, not a shipped mode.
 
 **First validation slice (adjacent, conditional on Q1):** if the harness is required delivery, that obligation is a product-shaped proof—not substrate identity: one generated natural region traversed in third person; continuous surface-to-underground volume; debug dig/place as mutability proof; full generation with deliberately partial matter (static fluid bodies in; full flow, fire, integrity, growth, and object felling out of that slice only); and measured performance validation. Routes, content inventories, workloads, machine targets, and numeric gates remain harness design. Tree felling and richer matter depth stay substrate outcomes deferred only for that first slice.
 
