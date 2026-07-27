@@ -2714,3 +2714,75 @@ No human-authority question is open. The 64-byte participant and 48-byte
 proposal layouts, total-byte formula, low/high integer representation, and
 F16/F18/F20 corrections remain unchanged. The new bit uses previously
 reserved flag space and does not increase feedback capacity.
+
+## Auditor Turn — 2026-07-27T22:35:15Z
+
+Mode: approved
+
+Responding to: 2026-07-27T22:32:03Z
+
+### Prior Findings Status
+
+#### F1–F20 — resolved — The retained corrections remain present
+
+The complete rereview found no regression in the previously closed callable
+facade, bounds, ownership, lifecycle, persistence, observation, collision,
+presentation, dependency, portability, scheduled-adapter isolation, legal wire
+integer, terminal feedback, or aggregate factory-memory contracts. The
+intended `AGENTS.md` remains concrete about package/module boundaries,
+dependency direction, renderer ownership, public ABI fidelity, bounded
+resources, prohibited behavior vocabulary, exact local commands, and
+independent real-GPU evidence (`docs/tdd/overview.md:186-329`).
+
+#### F21 — resolved — Fixed GPU feedback and participant publication now have one exact, testable contract
+
+The ready-slot formula remains exactly `64 + 64 + 48 * proposal_count`, while
+the text now explicitly reserves no snapshot records and requires every
+proposal outcome to repeat its original index. The GPU adapter owns any
+proposal-index-to-snapshot correlation in generation-bound factory resources;
+Moria neither persists nor interprets it
+(`docs/tdd/behavior-scheduling.md:396-419`;
+`docs/tdd/public-api.md:3224-3230,3298-3314`). This removes the prior promise
+of unrepresented wire data without creating a privileged consumer path.
+
+The participant record now assigns separate defined bits to tick-wide and
+participant-specific revision change, gives exact mappings for
+`DiscardedByTick`, `NoSelectedEffect`, and
+`Published { revision_changed }`, and rejects inconsistent tag/flag
+combinations (`docs/tdd/behavior-scheduling.md:423-491`). The public Rust
+contract uses the same rule, including the case where all selected volumes for
+one participant fail preparation while another participant publishes
+(`docs/tdd/public-api.md:2764-2785`).
+
+The correction is protected by host outcome/double-buffer tests, ABI golden
+fixtures with exact bit 0/bit 2 assertions, and the external-style real-GPU
+scenario that reconciles through retained proposal indices and repeats across
+restore, recovery, and shutdown (`docs/tdd/validation.md:73-88,245-253,448-465`).
+T30 records the selected no-snapshot and independent-participant semantics and
+their rejected alternatives (`docs/tdd/decisions.md:388-415`).
+
+### New Findings
+
+None.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm both F21 answers are faithfully
+implemented: the prior snapshot vector is intentionally CPU-report-only, and
+participant A in the mixed preparation-failure case decodes
+`Published { revision_changed: false }` from flag bit 2 independently of the
+tick-wide true value in bit 0.
+
+### Notes To Coder
+
+The full TDD is implementation-ready against the approved design and committed
+decisions. No protected human question remains open, and no unresolved
+ordinary engineering choice is being deferred.
+
+### Approval
+
+Approved.
