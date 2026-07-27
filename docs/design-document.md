@@ -1,288 +1,1001 @@
-# Moria Product One — The Walkable World
+# Moria product design
+
+Standalone product design for the Moria voxel-world substrate. This document
+turns the approved product vision into consumer-facing systems, interactions,
+rules, states, content boundaries, behavior, failure behavior, and validation
+experience. It does not choose implementation technology, storage formats,
+algorithms, crate layout, APIs, deployment topology, or delivery milestones.
+
+**Authority.** `docs/product-vision.md` is the complete product boundary. This
+design preserves its requirements and non-goals in meaning. It does not reopen
+seed documents or redefine product identity from harness content.
+
+---
+
+## 1. Overview
+
+### 1.1 Product
+
+**Moria** is reusable **voxel-world infrastructure**. Game and tool authors
+install it and drive continuous three-dimensional **material volumes** through a
+single public consumer contract.
+
+The product is engine-shaped world infrastructure, not a shipped game. Its job
+is to make hard world systems agree as **explicit, shareable contracts**: sparse
+material truth, bounded inspection, mutation admission, streaming lifecycle,
+collision against matter rather than presentation, persistence of matter plus
+edits, GPU-resident representation of that matter, measurable presentation
+derived from truth, and seams so a physics engine can plug in without privileged
+access to voxel storage.
+
+### 1.2 Core claim
+
+A consumer can obtain a continuous three-dimensional material world—including
+movable, damageable voxel volumes such as players and enemies—inspect and mutate
+it only through supported interfaces, keep authoritative matter **GPU-resident**
+for scale and gameplay-enabling work, and trust that what they see and collide
+with is a view of the **same** authoritative matter.
+
+Gravity, force, material strength, and related physical response are
+**supportable through exposed bindings**. The substrate does not own a physics
+simulator. How a game fills or seeds sparse material volumes is a consumer
+concern that runs **on top of** the substrate.
+
+### 1.3 What success looks like for consumers
+
+| Need | Success |
+| --- | --- |
+| One material world | Occupancy, queries, collision truth, persistence, and (when present) physics plug-ins all read the same authoritative matter. |
+| Contracted access only | Install the facade; inspect through public reads; mutate through admitted edits; never require privileged internal paths. |
+| Scale without full residency | Untouched homogeneous volume stays cheap; the interesting shell and active edits pay detailed cost. |
+| Everywhere mutation | Any exposed material cell can be destroyed or placed; cut faces and scars remain honest matter; presentation rebuilds from truth. |
+| Genuine volumetric depth | Depth along the full third axis is real material content, not a painted underside of a heightmap floor. |
+| Movable material volumes | Dynamic voxel volumes move and take damage under the same truth contracts as static geometry. |
+| Physics without ownership | Strength, gravity parameters, force, and related fields are exposable so an external engine can attach. |
+| Tractable scars | Edits and related world-state scars persist without dumping every cell of untouched volume. |
+| GPU-scale work | Sparse representation and a command/query boundary keep matter GPU-resident and allow asynchronous GPU work without changing the consumer contract. |
+| Measurable quality | Harnesses can evidence mutation response, streaming, GPU memory behavior, collision-truth honesty, and physics-binding readiness when exercised. |
+| Content ownership | Consumers inject or drive world content through seams; no particular generator is substrate law. |
+| Domain-appropriate look | Fully material volumes can present as coherent for the consumer’s domain; no single overworld aesthetic is mandated. |
+
+### 1.4 Primary consumers
+
+1. **Game and tool authors** who need continuous material volumes with honest
+   mutation, inspection, collision truth, streaming, and persistence.
+2. **Adjacent in-repo harnesses** (curation, benchmark, visual validation,
+   optional walkable proof) that exercise the **same** public interfaces an
+   external game would use. They prove contracts; they do not redefine product
+   identity or “done.”
+
+---
+
+## 2. Product boundary (owned vs adjacent vs out)
+
+### 2.1 This product owns
+
+User-visible substrate systems and their public facade:
+
+1. Sparse storage and lazy materialization of voxel truth.
+2. GPU-resident sparse representation and a command/query boundary that can
+   complete work asynchronously without changing the consumer contract.
+3. Bounded world inspection and telemetry.
+4. Mutation admission (dig, place, and related world-edit verbs).
+5. Streaming and lifecycle so large regions need not keep full raw-voxel
+   residency.
+6. Collision and occupancy truth against voxel matter (not disposable meshes).
+7. Physics plug-in bindings: material strength, gravity parameters, applied
+   force, and related supportable fields—without baking in a physics engine.
+8. Support for dynamic voxel volumes that move and can take damage.
+9. Persistence of material truth plus edit deltas (and related world-state
+   scars), without requiring a full-volume dump.
+10. Presentation support that derives surfaces and surface dressing from
+    material truth, without serializing derived geometry as authority.
+11. Object and clutter registration hooks for matter-backed assemblies
+    (vegetation, micro-objects, similar).
+12. Content-injection seams so consumers drive how base volume is produced.
+13. Volume-general contracts that do not encode planetary heightmap or
+    gravity-aligned terrain as the only legal world shape.
+
+### 2.2 Adjacent (not product identity)
+
+- Curation, benchmark, and visual-validation executables and similar harnesses.
+  Controllers, characters, cameras, authored demo routes, presentation polish,
+  acceptance scenarios, and game-specific generation algorithms belong to those
+  consumers.
+- A walkable-world harness is a **permitted** adjacent artifact, not a mandatory
+  definition of “done.”
+- Any physics engine (hand-rolled or third-party) that integrates through
+  bindings. A simple proof engine may demonstrate seams; shipping or owning one
+  is not required. Gravity response, contact resolution as a simulation loop,
+  and force-driven crumbling dynamics remain plug-in / consumer concerns.
 
-## Overview
+### 2.3 Downstream (not this product)
 
-Moria Product One is a reusable voxel-world substrate demonstrated through a downloadable, third-person walkable world. It generates a natural-looking region containing hills, meadow, forest, a river and lake, cliffs, caves, geology, and a ruin. The visible landscape is a smooth presentation of an underlying material world rather than a heightmap decorated with disconnected props.
+Actual games and game layers, including but not limited to: player control,
+characters, skeletal animation, game-specific presentation, combat rules, AI
+behavior, economy, building policy, the System / LLM layer, spells, gas
+pricing, agent labor, building UI / blueprints as gameplay, mechanisms as game
+entities—and **which** generation pipeline and **which** physics engine a game
+chooses.
 
-The product exists to prove one claim: the world is continuous, three-dimensional, and materially true. A user can travel from a canopy-level cliff top to a cave floor roughly 40 metres below the surface, then dig into or place material in the terrain and see the affected surfaces update immediately. The validation demo must use only the same supported world operations and queries available to an external consumer; it must not contain privileged or game-specific world behavior.
+Freeform ship and station games are **future-consumer examples**. They motivate
+volume-general contracts; they are not current delivery or validation targets.
 
-The primary users are:
+---
 
-- Creators of future games who need a measured, reusable foundation for mutable surface and underground worlds.
-- The project team, which needs a benchmark bed for fidelity, distance rendering, streaming, persistence, and vegetation-scale decisions.
-- A public audience evaluating the project through milestone images, clips, benchmark results, and the playable demo.
+## 3. User-visible systems
 
-Product One is not itself a game. Combat, stats, non-player characters, AI, spells, the System or any language-model behavior, gas or pricing rules, construction gameplay, mechanisms, dynamic ecology, and broader game loops are outside its scope.
+These systems are the product’s surface for consumers. They are described by
+what they guarantee and how they behave, not by implementation.
 
-## Core Functionality
+### 3.1 Material truth system
 
-### Generate the curated seed region
+**Role.** Holds authoritative occupancy and material of continuous
+three-dimensional volumes.
 
-The product generates one deterministic region from one authored seed and a curated set of generation parameters. The world itself is not hand-authored. Regenerating the seed must recreate the same base terrain, geology, cave, water bodies, vegetation placement, and point of interest.
+**Consumer-visible guarantees:**
 
-The region is 1 km by 1 km by 256 m. Its typical surface is around 64 m, leaving about 64 m of playable sky above and about 190 m of geology below. The generated route must reliably include:
+- Continuous material volumes are representable without full raw-voxel residency
+  of untouched regions.
+- Homogeneous emptiness and solid remain cheap; detail cost concentrates on
+  interesting shell (surfaces, voids, structures) and active edits.
+- Deep volume along the full third axis is first-class material content (caves,
+  strata, ore, aquifers as material bands, buried structure, and freeform
+  interiors expressible as volume).
+- Contracts remain volume-general: planetary heightmap and gravity-aligned
+  terrain are not the only legal world shapes.
 
-- A rolling meadow with grass dressing.
-- A dense mixed forest with two tree species and bushes.
-- A river occupying a genuinely carved channel and a lake with static water surfaces.
-- A cliff or rocky outcrop that visibly exposes tilted geological strata.
-- A karst cave that is walkable from a surface entrance to approximately -40 m.
-- An aquifer band and one iron-ore vein crossing the cave route.
-- Boulders, stumps, and scattered rocks.
-- One small cut-stone ruin placed from point-of-interest metadata, with an intact staircase.
+**Not owned:** any particular world generator, overworld palette, or ship/station
+content pack.
 
-The generation process must define surface columns, strata, caves, ore, aquifer material, and point-of-interest placement for any requested location without requiring the entire region to be expanded into raw voxels in advance. The larger-scale continent context may be limited to the curated parameters needed by this region.
+### 3.2 Lazy materialization system
 
-### Present smooth material truth
+**Role.** Makes regions detailed on demand rather than all at once.
 
-The world uses 25 cm voxels for Product One, grouped into 16 × 16 × 16 voxel bricks for diagnostics, updates, and streaming. Terrain, caves, cliffs, cuts, and the ruin must be displayed as smooth or sharp surfaces appropriate to their material: soil and natural terrain read organically, while cliff edges, newly cut faces, and masonry retain convincing definition. Material transitions use the underlying voxel materials, and the visible surface is always disposable, derived presentation rather than saved world truth.
+**Consumer-visible guarantees:**
 
-Repeated grass and clutter are dressing anchored to eligible upward-facing soil or grass surfaces. Digging away their supporting surface removes the dressing with it. Trees, bushes, boulders, and stumps are registered material objects rather than disconnected scenery. Product One includes their placement and display at forest scale, but not felling, growth, burning, rolling, splitting, or conversion into moving bodies.
+- Approaching, inspecting, or mutating a location can cause required detail to
+  appear for that work.
+- Areas that remain uniform need not expand into full detail solely because they
+  exist in the world bounds.
+- Materialization does not invent a second occupancy model; expanded detail is
+  still the same material truth.
 
-Only the parts of the region needed for nearby display, traversal, mutation, or inspection become fully active. Uniform untouched air, water, and geology remain compact so idle wilderness consumes negligible detailed-world memory. Moving through the region changes the active distance bands without changing the deterministic underlying world.
+### 3.3 Inspection system
 
-### Support traversal
+**Role.** Bounded public reads of world state and substrate health.
 
-The validation demo provides one third-person player who can run, sprint, jump, and paddle at the surface of water. Movement and collision are evaluated against voxel occupancy, not against the displayed terrain surface. This preserves the rule that the voxel world is authoritative even when the presentation is being rebuilt.
+**Consumer-visible guarantees:**
 
-The camera freely orbits the player and avoids passing through terrain. Underground, a simple player-attached light makes the cave traversable. The curated route must exercise verticality through a cliff top, jumpable rock shelves, the ruin staircase, the cave mouth, and the cave floor in one continuous journey.
+- Consumers inspect through public reads, queries, snapshots, telemetry, or
+  events.
+- Inspection never requires privileged internal storage paths.
+- Bounds and result shapes are finite and contract-defined so large worlds remain
+  queryable without dumping the entire volume.
 
-### Prove mutation through debug operations
+**Typical inspection classes (product altitude):**
 
-Keyboard-driven debug operations provide:
+- Occupancy / material at a location or bounded region.
+- Streaming / residency / lifecycle status of regions under contract.
+- Telemetry useful for harnesses and games (work pending, memory-class
+  observations, mutation and presentation readiness signals as defined by the
+  public boundary).
+- Collision / occupancy query results (see §3.6).
 
-- A spherical dig operation that erodes and removes matter.
-- A spherical place operation using a selected material.
-- A wireframe or brick-boundary view.
-- A raw-voxel view toggle.
-- A streaming-distance visualizer.
-- A fixed time-of-day slider.
+Exact query catalogs beyond these classes remain an implementation concern so
+long as the public boundary is sufficient for harnesses and external games to
+share one contract.
 
-Digging and placement are proof and validation tools, not a player progression or construction system. A representative 3 m-radius hillside carve must expose credible cut earth, update only affected world areas, become traversable, and cause no visible hitch. The signature demonstration is a player running through the forest, stopping to carve a tunnel into a hillside, and then walking through it.
+### 3.4 Mutation admission system
 
-All world inspection and mutation, including the debug tools, uses defined world queries and dig/place operations. No consumer directly edits the voxel truth. Product One includes no embedded scripting language.
+**Role.** Sole path by which material truth changes.
 
-### Save and restore edits
+**Consumer-visible guarantees:**
 
-The base seed is reproducible and is not duplicated in a save. A single save slot records only changes from the generated base world. Reloading the same seed plus its saved changes must restore every edit exactly. Save version migration, multiple slots, and persistence of future game systems are not included.
+- Dig, place, and related world-edit verbs are admitted only through the public
+  contract.
+- Any material cell the contract exposes can be destroyed or placed under the
+  same rules (mutation is universal within the contract).
+- Cut faces and scars remain honest matter; presentation and collision rebuild
+  from the changed truth.
+- Decorative-only solid geometry that cannot be edited under the same rules is
+  not the product model for exposed material.
 
-### Produce comparable benchmarks
+**Not owned:** building policy, construction UI, blueprints as gameplay, dig as
+progression, or game-mode rules about who may edit what.
 
-The deliverable includes a scripted flythrough and a carve-storm benchmark. Each run reports frame rate, mutation-to-surface-update latency, cold-start time, active graphics memory, and save size together with a machine profile. Later substrate changes can be evaluated against the Product One baseline, and results from different machines remain identifiable rather than being compared without hardware context.
+### 3.5 Streaming and lifecycle system
 
-## Entities and Data Model
+**Role.** Keep large worlds tractable by bounding what is actively resident in
+detail.
 
-### World Seed
+**Consumer-visible guarantees:**
 
-- **Attributes:** stable seed value; curated regional generation parameters.
-- **Relationships:** deterministically produces one Base Region and all of its columns, geology, caves, objects, water bodies, and point-of-interest metadata.
+- Active and cold regions remain manageable; large worlds do not require
+  permanent full raw-voxel residency of an entire region.
+- Moving focus (camera, player proxy, harness focus, or consumer-driven interest)
+  changes which regions are active without changing underlying material truth.
+- Streaming lifecycle is observable enough for harnesses to evidence scale
+  behavior without privileged internals.
 
-### Base Region
+### 3.6 Collision and occupancy truth system
 
-- **Attributes:** 1 km × 1 km × 256 m bounds; typical surface elevation around 64 m; 25 cm voxel scale; active distance bands; generated feature locations.
-- **Relationships:** contains Columns, Voxel Bricks, Water Bodies, Voxel Objects, Dressing, and the Ruin Point of Interest. It combines with an Edit Delta Set to produce the current World State.
+**Role.** Provide contacts and occupancy answers against material authority.
 
-### Column
+**Consumer-visible guarantees:**
 
-- **Attributes:** horizontal location; surface height; ordered runs of air, soil, stone, water, and cave gaps; local strata and feature metadata.
-- **Relationships:** summarizes the vertical composition of the Base Region and provides the source for surface placement and lazy creation of detailed matter.
+- Occupancy and collision truth read voxel matter, not disposable meshes.
+- Consumers and physics plug-ins share one material world; they must not invent a
+  parallel mesh world for contact.
+- Newly mutated openings and fills affect occupancy truth so traversal and
+  contact proofs remain honest after edits.
 
-### Voxel Brick
+**Not owned:** character controllers, movement feel, full contact-resolution
+simulation loops, or a baked-in physics engine.
 
-- **Attributes:** world coordinate; 16 × 16 × 16 voxel extent, equivalent to a 4 m cube at the Product One voxel scale; uniform or detailed state; dirty/clean surface status; active distance band.
-- **Relationships:** contains Voxels when detail is required. A mutation dirties the affected brick and neighboring surface boundaries. Untouched uniform bricks represent air, water, or stone without allocating every voxel individually.
+### 3.7 Physics plug-in binding surface
 
-### Voxel
+**Role.** Expose material properties and world seams a physics engine needs.
 
-- **Attributes:** material; density from empty through full; reserved material-state value.
-- **Relationships:** belongs to a detailed Voxel Brick. Its density and Material determine occupancy, collision, and the derived visible surface. Product One preserves the state field but does not run wetness, burning, growth, settling, or other state-driven behavior.
+**Consumer-visible guarantees:**
 
-### Material
+- Material strength, gravity parameters, applied force, and related supportable
+  fields are exposable.
+- An external engine (hand-rolled or third-party) can attach without privileged
+  voxel storage access.
+- Physics engines are guests: they consume truth and bindings; they do not own
+  voxel storage.
+- Runtime physics simulation is **not** a substrate deliverable. A simple
+  engine is an acceptable **proof** of the seams when a harness or consumer
+  chooses to exercise them.
 
-- **Attributes:** name/identifier; hardness; granular flag; visual blending and surface properties.
-- **Seed palette:** air, water, topsoil, subsoil, sand, gravel, limestone, sandstone, shale, granite, iron ore, wood, leaf, and cut stone.
-- **Relationships:** assigned to Voxels and Voxel Objects. Sand and gravel are identified as granular, but granular settling is not active in Product One.
+**Not owned:** gravity response as a mandatory simulation, structural integrity /
+cave-in simulation, span tables, force-driven crumbling as substrate product, or
+shipping any particular physics engine.
 
-### Geological Feature
+### 3.8 Dynamic material volume system
 
-- **Attributes:** type; three-dimensional extent; host material; depth; orientation.
-- **Types in Product One:** topsoil and subsoil layers, tilted sedimentary/rock strata, karst cave, aquifer band, and iron-ore vein.
-- **Relationships:** contributes material and voids to Columns and Voxels. The cave, aquifer, and ore vein intersect the curated traversal route.
+**Role.** Support matter that moves and can take damage under the same contracts
+as static world geometry.
 
-### Water Body
+**Consumer-visible guarantees:**
 
-- **Attributes:** kind (lake or river); surface level; occupied columns/volume; static state.
-- **Relationships:** occupies real carved terrain rather than overlaying a heightmap. It supports surface paddling. Flow, flooding, draining, pressure, waterfalls, and fine splashes are absent.
+- Movable, damageable voxel volumes (for example combatants treated as material)
+  share the same truth contracts as static world matter.
+- Movement and damage to those volumes remain subject to inspection, mutation
+  admission, collision truth, and presentation-from-truth rules as applicable.
+- Dynamic volumes are not a disconnected overlay that only pretends to be matter.
 
-### Voxel Object
+**Not owned:** character animation, combat rules, AI, hit-point systems, or
+game-specific entity models beyond the material-volume class.
 
-- **Attributes:** object identity; object type; voxel-backed material shape; position and orientation; species where applicable.
-- **Types in Product One:** two tree species, bushes, boulders, stumps, scattered rocks, and the cut-stone ruin stamp.
-- **Relationships:** placed from terrain, biome, or point-of-interest data and displayed with the region. These objects do not gain felling, physics, growth, fire, or other simulation behavior in the required scope.
+### 3.9 Persistence system
 
-### Surface Dressing
+**Role.** Save and restore material truth plus edit scars tractably.
 
-- **Attributes:** dressing type; anchor position; source surface/material; density.
-- **Relationships:** derived from eligible terrain surfaces and local vegetation density. It disappears or relocates when its supporting surface changes and is never independent world truth.
+**Consumer-visible guarantees:**
 
-### Ruin Point of Interest
+- Edit deltas and related world-state scars persist without a dump of every cell
+  of untouched volume.
+- Reload reconstructs the same authoritative matter for saved scars; derived
+  presentation is rebuilt from restored truth, not loaded as authority.
+- How the *base* volume is produced (generation function, authored fill, import)
+  is the consumer’s concern; the substrate persists the material result and the
+  scars, not a particular generator identity as product law.
 
-- **Attributes:** metadata location; hand-authored sparse cut-stone shape; intact staircase.
-- **Relationships:** places one Voxel Object into the generated region. It demonstrates one reusable stamp path and provides sharp masonry beside organic terrain.
+**Not owned:** multi-slot save UX as a game feature, account systems, or
+persistence of excluded game systems.
 
-### Player
+### 3.10 Derived presentation system
 
-- **Attributes:** position; movement intent; run/sprint state; jump state; swim state; collision volume; attached underground light.
-- **Relationships:** moves and collides against voxel occupancy, anchors nearby display/streaming activity, controls the Camera, and invokes Debug Operations.
+**Role.** Surfaces and surface dressing derived from material truth.
 
-### Camera
+**Consumer-visible guarantees:**
 
-- **Attributes:** orbit angle; distance; collision-adjusted position.
-- **Relationships:** follows the Player, determines the visible region, and must not pass through voxel terrain.
+- Visible surfaces rebuild from truth; meshes, dressing, and debug geometry are
+  **derived and disposable**.
+- Derived geometry is never serialized as world authority.
+- Vegetation and clutter presentation stays derived from matter—not a
+  disconnected prop layer that desyncs from material truth when supporting
+  matter changes.
+- Fully material volumes can present as coherent for the consumer’s domain
+  (geology, masonry, interiors, and similar). No single natural-overworld
+  aesthetic is mandated.
+- Ship bulkheads and similar freeform-hull presentation remain future-consumer
+  context, not current validation targets.
 
-### Debug Operation
+**Not owned:** a finished visual game engine claim, game art direction, polished
+demo lighting as substrate requirement, or a mandated Minecraft-style cube look.
 
-- **Attributes:** operation type; target position; spherical radius where applicable; selected placement material where applicable.
-- **Types:** dig, place, brick/wireframe view, raw-voxel view, streaming visualization, and time-of-day adjustment.
-- **Relationships:** reads or changes the World State through the supported operations. Dig and place create Edit Deltas and trigger surface and dressing refreshes.
+### 3.11 Object and clutter registration system
 
-### Edit Delta Set
+**Role.** Register matter-backed assemblies without baking them into a single
+terrain slab.
 
-- **Attributes:** changed brick coordinates; exact material/density differences from the seed; single-slot identity.
-- **Relationships:** overlays the deterministic Base Region to reconstruct the current World State. Unchanged matter is not saved.
+**Consumer-visible guarantees:**
 
-### Benchmark Run
+- Vegetation, micro-objects, and similar assemblies can register as matter-backed
+  objects or clutter.
+- Registration hooks support consumer content without requiring one fixed terrain
+  palette.
+- Presentation of registered objects remains consistent with material truth
+  rules (derived views, honest mutation when those objects are exposed material).
 
-- **Attributes:** scenario name; machine profile; resolution; frame rate; cold-start time; edit-to-surface-update latency; active graphics memory; saved-delta size.
-- **Relationships:** executes against the curated Base Region and records comparable acceptance evidence for the product.
+**Not owned:** tree felling, rigid-body conversion of vegetation, growth systems,
+fire, or other future consumer simulation concepts.
 
-## Interactions
+### 3.12 Content injection seams
 
-### World generation and activation
+**Role.** Let consumers inject or drive world content, including their own
+generation algorithms.
 
-1. The World Seed establishes the region's broad terrain and climate parameters.
-2. Columns define surface height, material bands, cave gaps, water, and placement metadata.
-3. When the player approaches, inspects, or changes a location, the system derives the required detailed Voxels for that location.
-4. Uniform areas remain compact; detailed areas produce the visible terrain surface and eligible Dressing.
-5. As the player moves, nearby display areas become active and distant areas return to compact or saved representations without changing their truth.
+**Consumer-visible guarantees:**
 
-### Dig or place
+- Consumers own how base volume is produced.
+- The substrate provides seams for fill, injection, and drive of material truth
+  without embedding any particular generator as substrate law.
+- Harness-side generation used only to exercise contracts remains a harness
+  concern and does not reclassify generation as substrate product.
 
-1. The user selects a debug dig or place operation and targets a spherical area.
-2. The operation changes density and/or material in the affected Voxels. Digging erodes density before matter becomes empty; placement adds the chosen material into available space.
-3. Affected brick areas and shared boundaries are marked as changed.
-4. Collision reflects the new voxel occupancy, while the visible terrain and anchored dressing refresh from the changed truth.
-5. The differences from the seed are added to the Edit Delta Set.
-6. The visible update completes within two rendered frames for the representative 3 m-radius carve, without a hitch.
+### 3.13 GPU-resident command / query boundary
 
-### Traversal
+**Role.** Keep authoritative matter GPU-resident and allow asynchronous GPU work
+while preserving one consumer contract.
 
-1. Player input produces run, sprint, jump, paddle, and camera-orbit intent.
-2. The player collision volume tests the current voxel occupancy and resolves movement against solid matter.
-3. The camera follows and orbits while avoiding terrain; the attached light illuminates underground traversal.
-4. Player and camera position drive which portions of the world are displayed and held active.
-5. A freshly carved opening becomes traversable because both movement and presentation derive from the changed voxel state.
+**Consumer-visible guarantees:**
 
-### Save and load
+- Authoritative matter can live GPU-resident for scale and gameplay-enabling
+  work—a deliberate product distinction from CPU-driven voxel engines.
+- Consumers interact through commands and queries (and related public events),
+  not through direct ownership of internal buffers.
+- GPU work may complete asynchronously; consumers must not depend on synchronous
+  ownership of internal storage or privileged buffer access.
+- Implementation ownership of work may move between CPU and GPU without changing
+  the consumer contract.
 
-1. Saving compares current changed matter with the deterministic base seed and records only the deltas in the single slot.
-2. Loading regenerates the same base region, applies every saved delta at its coordinate, and restores the exact edited state.
-3. Derived surfaces and dressing are recreated from the restored truth rather than stored as authoritative data.
+Specific kernels and simulations remain design-selected later; residency and the
+async-capable boundary do not.
 
-### Benchmarking
+---
 
-1. The scripted flythrough exercises the meadow, dense forest, water, cliff, ruin, surface-to-cave route, and active distance bands.
-2. The carve storm repeatedly changes material to stress surface refresh and persistence.
-3. The run emits the required measurements and machine profile.
-4. Results become the baseline used to decide voxel fidelity, distant-world presentation, and object-layer scaling.
+## 4. Interactions
 
-## User Experience
+### 4.1 Install and drive the facade
 
-### Entering the world
+1. A consumer installs the substrate facade into its application.
+2. The consumer configures or injects world content through content seams (its
+   own generation, authored fill, or harness parameters).
+3. The consumer inspects through public reads and mutates through admitted
+   edits only.
+4. Adjacent harnesses follow the same path; no privileged install path exists
+   for validation.
 
-Launching the validation demo begins loading the fixed seed. Within five seconds, the player is in control in a walkable part of the generated region. No game account, character creation, mission, inventory, or narrative setup is present.
+### 4.2 Inspect material truth
 
-### Exploring the postcard world
+1. The consumer issues a bounded inspection request (point, region, snapshot, or
+   telemetry class exposed by the contract).
+2. The substrate returns answers from authoritative matter (or lifecycle /
+   telemetry observations), not from disposable meshes as authority.
+3. If detail is not yet resident for that work, lazy materialization and
+   streaming lifecycle bring needed detail into play without inventing a second
+   world model.
 
-The default view is free-orbit third person. The user runs or sprints through a meadow into a dense mixed forest, seeing grass, bushes, boulders, stumps, two tree species, the river and lake, exposed cliffs, and the ruin as parts of one coherent natural scene. The terrain should read as a conventional attractive world rather than a field of cubes.
+### 4.3 Mutate matter (dig / place / related verbs)
 
-The user can jump across climbable rock shelves and use the ruin staircase. At water, the player paddles on the surface; there is no dynamic current simulation or underwater swimming requirement.
+1. The consumer submits an admitted edit (destroy material, place material, or
+   related world-edit verb) against cells the contract exposes.
+2. Material truth updates for the affected volume.
+3. Collision / occupancy truth reflects the new matter.
+4. Derived presentation and dressing refresh from the changed truth for affected
+   surfaces.
+5. Edit scars become first-class candidates for persistence.
+6. Consumers observe completion through the public command/query boundary,
+   including when GPU work finishes asynchronously.
+
+**Honesty test.** After dig or place, cut faces and openings are real matter and
+real occupancy—not a painted hole in a mesh that still collides as solid, and
+not solid scenery that cannot be edited.
+
+### 4.4 Stream and focus lifecycle
+
+1. Consumer focus (or harness focus) moves through the world.
+2. Nearby or requested regions become active in detail as needed.
+3. Distant or idle homogeneous regions remain compact / cold without changing
+   truth.
+4. Harnesses can evidence that large regions remain tractable under this
+   lifecycle.
+
+### 4.5 Query collision and occupancy
 
-### Making the continuous-depth run
-
-The designed route takes the user from a canopy-level cliff top to the surface cave mouth and down to roughly -40 m without a level transition. Underground, the camera avoids cave walls and the player light keeps the route legible. Exposed strata, an aquifer band, and an iron-ore vein make the subterranean volume visibly geological rather than empty space under a surface shell.
-
-### Proving material truth
-
-At any point, the user can invoke debug dig or place shortcuts. The intended proof moment occurs at a hillside: a spherical carve opens a smooth tunnel with convincing cut faces, the view updates within two frames, and the user immediately walks through the new opening. Placement can add a sphere of a selected seed material and produces the corresponding surface and collision.
-
-The user can switch to raw-voxel and brick-boundary views to reveal the underlying representation, turn on the streaming-distance visualizer while moving, and adjust a fixed time-of-day slider to inspect the world under different lighting. These are keyboard-driven diagnostics; Product One does not add a building palette, settings flow, or polished debug interface.
-
-### Reviewing evidence
-
-The scripted benchmark is a separate validation experience rather than gameplay. It flies through representative areas, performs a carve storm, and presents or records the required performance values with the machine profile. Milestone outputs also support a public sequence: a first terrain image, a tunnel-carving clip, a geology cutaway, a dressed-world shot, the playable run, and the benchmark results.
-
-## Constraints and Requirements
-
-### Acceptance targets
-
-| Area | Requirement |
-|---|---|
-| Frame rate | 60 fps at 1440p on a 3060-class mid-range discrete graphics machine; 60 fps at 1080p–1440p on the 32 GB M4 Mac Mini development machine. |
-| Mutation latency | Changed terrain surfaces update within two rendered frames; a 3 m-radius carve causes no hitch. |
-| Cold start | The world becomes walkable in under 5 seconds. |
-| Graphics memory | The full region remains below approximately 2 GB resident graphics memory with active distance bands; untouched uniform wilderness has near-zero detailed voxel cost. |
-| Persistence | A heavily defaced world produces a delta save below 50 MB and reloads exactly. |
-| Benchmark evidence | The flythrough and carve-storm scenarios output every listed metric plus a machine profile. |
-
-The discrete-graphics frame-rate target is provisional until it can be verified on the Linux test machine and must then be re-baselined. Results without a machine profile are not considered comparable evidence.
-
-### Platform and portability
-
-- The primary development target is an M4 Mac Mini with 32 GB unified memory.
-- Load-bearing graphics work must stay portable across Apple, Vulkan-class, and DirectX-class targets; Product One must not depend on an Apple-only graphics path.
-- Graphics counters, allocation indices, and propagation labels must fit within 32-bit atomic operations because the Apple development target does not support the required 64-bit atomic operations.
-- The design must treat memory traffic as the primary development-machine limit. Sparse untouched matter and compact uniform regions are required from the first milestone, not optional later optimizations.
-- The world product and validation demo remain separate deliverables. The demo validates the same supported operations and observations available to a future external game and may not introduce privileged world access.
-
-### Required scope boundaries
-
-- Static lake and river surfaces are included; fluid flow, pressure, floods, draining, splashes, and other dynamic fluid tiers are excluded.
-- Material data reserves state for future wetness, burning, growth, or damage, but Product One runs none of those behaviors.
-- Sand and gravel are tagged as granular, but they do not settle or collapse.
-- Voxel objects are placed, registered, and displayed, but they do not fall, grow, burn, break, or become dynamic bodies.
-- No structural-integrity or cave-in simulation is included.
-- No weather, seasons, growth, or ambient ecology is included. A manually controlled fixed time of day is sufficient.
-- No dynamic navigation, agents, labor, room detection, blueprints, construction interface, mechanisms, or semantic building systems are included. The ruin uses one predefined stamp solely to validate generated placement.
-- No combat, stats, autonomous characters, AI, System/language-model behavior, spells, gas, pricing, or intent systems are included.
-- No multiplayer behavior is included.
-- Persistence is one seed plus edit deltas in one slot, with no save versioning.
-
-### Delivery sequence
-
-The required product is demonstrated in this order:
-
-1. **Hill that looks like a hill:** smooth terrain and material treatment over minimal generation.
-2. **Carve a smooth tunnel:** dig/place behavior and incremental surface refresh.
-3. **True geology:** strata, cave, ore, and aquifer visible in a cutaway diagnostic.
-4. **Dressed world:** meadow, grass, forest objects, boulders, water, and ruin form the postcard scene.
-5. **The run:** player and camera complete the continuous cliff-top-to-cave-floor route.
-6. **Numbers:** streaming behavior, exact delta persistence, and benchmark output meet the acceptance targets.
-
-A seventh **Timber** milestone—felling one tree and letting it fall as a moving body—is a stretch goal only and cannot delay or broaden the six required milestones. The source estimate is two to three weeks through milestone six, with the principal delivery risks concentrated in the two-frame terrain-refresh target and the memory target.
-
-## Open Questions
-
-1. **Final voxel scale.** Should later use retain 25 cm voxels or adopt 12.5 cm voxels for greater fidelity at approximately eight times the raw cost? The proposed Product One default is **25 cm throughout the seed region**. The benchmark must supply the measurements for the final decision; mixed per-region fidelity is only a possible later option.
-
-2. **Distant terrain representation.** Should distant terrain use progressively simplified extracted surfaces or column-derived impostors, and how much can the intended camera distance conceal? **No final default is stated in the planning source.** Product One should keep this as a measured decision and use the simplest option that meets the visual and frame-rate targets.
-
-3. **Voxel-object scaling.** At what number and density of trees and other voxel objects does the object layer need additional spatial acceleration? **No threshold or default is stated.** The curated dense two-species forest is the required measurement scene; added complexity is deferred until that scene demonstrates a need.
-
-4. **Dynamic-fluid fidelity.** If a later product adds coarse fluid flow, will momentum-only behavior be adequate or will pressure behavior be required? The Product One default is **defer the decision and ship static lake and river bodies only**.
-
-5. **Multiplayer scope statement.** Should multiplayer readiness remain an explicit design concern even though multiplayer is not being built? The proposed default is **preserve the controlled operation/query boundary and describe it as future-ready, but implement no multiplayer behavior in Product One**.
-
-6. **Discrete-graphics baseline.** What performance does Product One achieve on the unavailable Linux/discrete-graphics test machine? The proposed default is **treat the 3060-class target as provisional, retain machine profiles with all results, and re-baseline when that machine is available**.
-
-7. **Timber stretch milestone.** Is one tree-felling and rigid fall cheap enough to include after the required benchmark milestone? The proposed default is **exclude it from the committed scope unless milestones one through six are complete and the added coupling is demonstrably small**.
+1. A consumer or physics plug-in asks occupancy or contact questions against
+   material authority.
+2. Answers come from voxel matter, not from presentation meshes.
+3. After mutation, subsequent queries reflect the new truth so movement and
+   contact proofs stay honest.
+
+### 4.6 Attach a physics plug-in (optional for a given consumer)
+
+1. The consumer binds an external physics engine through the plug-in surface.
+2. The engine reads supportable fields (strength, gravity parameters, force, and
+   related bindings) and material truth through public seams.
+3. The engine never gains privileged voxel storage access.
+4. Simulation results that should affect matter re-enter through admitted
+   mutation or other public world verbs—not by writing private storage.
+
+If no physics engine is attached, the substrate still provides collision /
+occupancy truth; runtime force/gravity simulation simply does not run as a
+substrate feature.
+
+### 4.7 Move and damage dynamic material volumes
+
+1. A consumer drives a dynamic voxel volume’s pose or damage under the same
+   matter contracts as static geometry.
+2. Occupancy, inspection, presentation-from-truth, and (when used) physics
+   bindings treat that volume as material, not as a disconnected billboard.
+3. Damage that removes or alters matter uses admitted mutation semantics so
+   scars and presentation stay honest.
+
+### 4.8 Persist and restore scars
+
+1. The consumer requests persistence of material truth changes and related
+   world-state scars.
+2. The substrate records scars without dumping untouched homogeneous volume.
+3. On restore, the consumer re-establishes base volume by its own strategy
+   (regenerate, reload authored base, etc.) and the substrate reapplies scars so
+   authoritative matter matches the saved edits.
+4. Presentation rebuilds from restored truth; derived geometry is not the
+   save format for authority.
+
+### 4.9 Register objects and clutter
+
+1. The consumer registers matter-backed assemblies (vegetation, micro-objects,
+   stamps, similar) through registration hooks.
+2. Presentation and, where exposed as material, mutation and collision remain
+   consistent with truth-vs-view rules.
+3. Supporting-surface changes remove or refresh derived dressing so props do not
+   float as a desynced layer.
+
+### 4.10 Present the world
+
+1. The consumer (or harness) requests or enables presentation for active
+   regions.
+2. Surfaces and dressing derive from current material truth.
+3. Domain look is consumer-driven; the substrate supports coherent material
+   presentation rather than mandating one postcard aesthetic.
+4. Debug or diagnostic geometry, when used, is explicitly disposable and never
+   confusable with authority.
+
+---
+
+## 5. Rules and invariants
+
+These must remain true for the product to be Moria as approved.
+
+1. **Matter is authority; views are disposable.** Presentation, dressing, and
+   debug geometry never become truth.
+2. **One consumer contract.** Harnesses and external games use the same public
+   facade. Privileged harness paths invalidate proof.
+3. **No second world for collision.** Occupancy and collision truth are
+   material.
+4. **Mutation is universal within the contract.** Exposed material is editable
+   under the same rules; decorative-only uneditable solid is not the model.
+5. **Depth is volume, not paint.** Underground and freeform interiors are
+   expressible as real material volume.
+6. **Homogeneous emptiness and solid are cheap.** Scale depends on not paying
+   full detail cost for untouched volume.
+7. **Scars are first-class persistence.** Edits survive without full dumps.
+8. **Residency does not break contracts.** GPU-resident work and async
+   completion remain behind the public command/query boundary.
+9. **Physics engines are guests.** They attach through bindings; they do not own
+   voxel storage.
+10. **Content algorithms are guests.** Generators and fill strategies run on
+    seams; they are not substrate law.
+11. **Volume-general contracts.** Substrate contracts must not assume
+    gravity-aligned planetary terrain as the only legal world shape—even though
+    ship/station content is not current delivery or validation.
+12. **Dynamic voxel volumes are first-class matter.** Movable, damageable volumes
+    share truth contracts with static geometry.
+13. **Substrate first.** Moria is world infrastructure, not a finished visual
+    game engine claimed before feasibility and visual-acceptance gates are met.
+
+---
+
+## 6. States
+
+Product-level states consumers and harnesses can reason about. Names are
+conceptual, not implementation enums.
+
+### 6.1 World material states
+
+| State | Meaning |
+| --- | --- |
+| **Homogeneous compact** | Untouched uniform empty or solid volume represented cheaply without full raw detail. |
+| **Detailed active** | Region expanded as needed for inspection, presentation, mutation, or contact work. |
+| **Scarred** | Material differs from the consumer’s base volume strategy because of admitted edits or related world-state scars. |
+| **Pending presentation** | Material truth has changed (or newly activated) and derived surfaces/dressing are not yet ready for the current truth. |
+| **Presentation current** | Derived views match current material truth for the active concern. |
+
+Truth transitions (compact ↔ detailed, clean base ↔ scarred) do not create a
+second occupancy model. Presentation readiness may lag truth when work is
+asynchronous; consumers observe readiness through the public boundary rather than
+by owning internal buffers.
+
+### 6.2 Region lifecycle states
+
+| State | Meaning |
+| --- | --- |
+| **Cold / inactive** | Not held in detailed active residency; truth remains reconstructible when needed. |
+| **Activating** | Streaming / materialization work is bringing the region into detailed use. |
+| **Active** | Available for the consumer’s current inspection, presentation, mutation, or contact needs. |
+| **Deactivating** | Leaving detailed residency while preserving truth and scars as required by contract. |
+
+### 6.3 Mutation work states
+
+| State | Meaning |
+| --- | --- |
+| **Edit admitted** | A public mutation command has been accepted. |
+| **Truth updated** | Authoritative matter reflects the edit. |
+| **Occupancy current** | Collision / occupancy queries reflect the edit. |
+| **Presentation refreshed** | Derived surfaces/dressing for affected volume match new truth. |
+| **Scar durable** | Edit is included in persistence candidates / durable scar set as applicable. |
+
+Asynchronous GPU completion may separate these observations in time. The product
+guarantee is that consumers can discover readiness through the contract—not that
+every side effect is synchronous.
+
+### 6.4 Dynamic volume states
+
+| State | Meaning |
+| --- | --- |
+| **Static material** | World matter not currently driven as a moving volume. |
+| **Dynamic pose** | Material volume whose placement can move under consumer (or plug-in) drive. |
+| **Damaged / altered** | Material of the volume has been reduced or changed through admitted damage or mutation semantics. |
+
+### 6.5 Physics binding states
+
+| State | Meaning |
+| --- | --- |
+| **Bindings available** | Supportable fields and seams are exposable regardless of whether a plug-in is attached. |
+| **Plug-in attached** | An external engine is consuming bindings and material truth through public seams. |
+| **No plug-in** | Substrate still provides material and occupancy truth; runtime physics simulation is simply not running as a guest. |
+
+### 6.6 Persistence states
+
+| State | Meaning |
+| --- | --- |
+| **Base only** | No durable scars beyond the consumer’s base volume strategy. |
+| **Scar set present** | Edit deltas / related scars exist and can be saved. |
+| **Restored** | Base strategy plus applied scars reconstruct authoritative matter; presentation rebuilds from that truth. |
+
+---
+
+## 7. Content boundaries
+
+### 7.1 In content scope (substrate-supported)
+
+- Continuous three-dimensional material volumes of any consumer domain the
+  contracts can express (natural landscapes, underground geology, constructed
+  interiors among them).
+- Material cells that can be inspected and, when exposed, mutated.
+- Deep volumetric features as real matter (voids, strata, bands, buried
+  structure).
+- Static or dynamic material volumes under the same truth contracts.
+- Matter-backed object and clutter registration (placement and derived
+  presentation; not vegetation simulation systems).
+- Domain-coherent presentation support without a mandated single palette.
+- Consumer-owned base content production via injection seams.
+- Supportable material fields for physics guests (strength, gravity parameters,
+  force, related).
+
+### 7.2 Explicitly out of content / product scope
+
+From the approved vision’s non-goals and exclusions (preserved in meaning):
+
+- Shipping a game, game mode, progression loop, or game-rules stack.
+- Treating validation-harness content, third-person controllers, demo routes,
+  content palettes, or machine-specific demo targets as substrate requirements
+  or as mandatory delivery for product completion.
+- Baking deterministic or procedural world generation into the substrate as
+  product identity.
+- Baking in a hand-rolled or third-party physics engine as product identity.
+- System / LLM, spells, gas / pricing policy, combat rules / AI behavior, agent
+  labor, building UI / blueprints as gameplay, mechanisms as game entities.
+- Delivering or specifically validating freeform ships, stations, or other
+  multi-deck freeform hulls as current product work.
+- Full fluid simulation and cellular automata (fire, wetness, growth) as current
+  product requirements.
+- Tree felling or rigid-body conversion of vegetation as current product
+  requirements.
+- Web / wasm as a Product One or substrate target platform.
+- Claiming a released, finished visual engine before feasibility and
+  visual-acceptance gates are met.
+- Limiting identity to a Minecraft-style cube aesthetic, a single
+  natural-overworld palette, static scenery without movable material volumes, or
+  heightmap terrain that only pretends to have depth.
+- Assuming gravity-aligned planetary terrain as the only legal world shape in
+  contracts.
+- Structural integrity / cave-in simulation, span tables, fortress engineering
+  UI, navigation graphs, multiplayer services, weather simulation, seasons,
+  growth systems, and fine splash / particle matter layers as current substrate
+  product.
+
+### 7.3 Future-consumer context only
+
+Possible later products motivate reusable capabilities but do not import fiction,
+UI, missions, or delivery into current scope:
+
+- System-driven ARPG on a continuous natural world.
+- Fortress / colony engineering and designation play.
+- Descent-style roguelike through deep geology.
+- Pure sandboxes.
+- Games whose players and enemies are voxel volumes that move and take damage
+  under the same matter contracts, with physics engines plugged in through
+  bindings.
+- Freeform ship and station volumes that motivate everywhere mutation, deep
+  multi-deck volume, GPU-resident matter at combat/design scale, physics-ready
+  bindings under force, and honest damage/salvage—without importing that fiction
+  into Moria.
+
+---
+
+## 8. Behavior
+
+### 8.1 Truth vs view
+
+Occupancy, queries, collision truth, and persistence run against voxel matter.
+Meshes, surface dressing, and debug geometry are derived and disposable. Physics
+engines, when present, also consume material truth through public bindings rather
+than a private mesh world. Derived geometry is never serialized as world
+authority.
+
+### 8.2 Contracted consumption
+
+External consumers install the facade, inspect through public reads, mutate
+through admitted edits, and never require privileged internal paths. Adjacent
+harnesses and external game crates share the same public boundary. GPU work may
+complete asynchronously; consumers must not depend on direct buffer access or
+synchronous ownership of internal storage.
+
+### 8.3 Sparse scale
+
+Large regions remain tractable: untouched homogeneous volume stays cheap; only
+the interesting shell and active edits pay detailed cost. Streaming and lifecycle
+keep residency bounded without requiring full raw-voxel presence for an entire
+region.
+
+### 8.4 Mutable everywhere
+
+Any material cell the contract exposes can be destroyed or placed. Cut faces and
+scars remain honest matter; presentation rebuilds from truth. Mutation is a
+first-class product proof—not optional scenery decoration outside the material
+world.
+
+### 8.5 Deep Z is first-class
+
+Volume along the full depth axis is real content—genuine volumetric depth, not a
+heightmap floor with painted underground. Contracts stay volume-general so
+non-planetary freeform volumes remain expressible; ship and station interiors are
+future-consumer motivation, not a required current deliverable shape.
+
+### 8.6 Dynamic voxel volumes
+
+The world is not static geometry alone. The substrate supports voxel volumes that
+move and can take damage so games can treat combatants as matter under the same
+truth contracts rather than as overlays disconnected from the world.
+
+### 8.7 Physics-ready bindings, not a baked-in engine
+
+The substrate exposes bindings and material data a physics engine needs—whether
+the consumer hand-rolls an engine or adopts one. Runtime physics simulation is
+not substrate-owned product. Collision and occupancy truth against voxel matter
+remains a substrate concern so plug-ins and consumers share one material world.
+
+### 8.8 Cheap scars over full dumps
+
+Persistence keeps material edits and related scars tractable. A consumer may
+choose a reproducible generation function as its base-world strategy; that choice
+is game-dependent and is not a substrate deliverable.
+
+### 8.9 GPU-resident architecture
+
+Sparse representation and a command/query boundary keep world matter
+GPU-resident and support asynchronous GPU work. This is a product distinction
+from CPU-driven voxel engines. Specific kernels and simulations remain
+later choices; residency and the async-capable boundary do not.
+
+### 8.10 World-dependent presentation
+
+How a world “looks natural” depends on the consumer’s world—landscape geology,
+fortress masonry, and other material styles. The substrate supports fully
+material volumes that read as coherent for their domain; it does not mandate a
+single overworld aesthetic or a heightmap-with-props look.
+
+### 8.11 Supporting consumption principles
+
+- Consumers must not receive privileged access to internal voxel storage.
+- Mutations enter through explicit public commands.
+- Inspection uses bounded public interfaces.
+- The same public boundary must serve validation harnesses and external game
+  crates.
+- Implementation ownership of work may move between CPU and GPU without changing
+  the consumer contract.
+- Vegetation and clutter presentation stays derived from matter—not a
+  disconnected prop layer that desyncs from material truth.
+
+---
+
+## 9. Failure behavior
+
+Product-level failure and degradation rules (what consumers should experience
+when things go wrong or are incomplete). These are behavioral contracts, not
+error-code designs.
+
+### 9.1 Contract violations
+
+- Attempts to inspect or mutate through non-public paths are not supported
+  product behavior. Harnesses that require privileged access fail as product
+  proofs even if they appear to “work.”
+- Edits outside admitted verbs or against cells the contract does not expose
+  must not silently rewrite internal storage.
+
+### 9.2 Incomplete readiness (async / streaming)
+
+- If truth has updated but presentation is not yet current, consumers must be
+  able to observe that distinction through the public boundary rather than by
+  reading internal buffers.
+- Collision / occupancy answers must not permanently diverge into a mesh-only
+  world while presentation catches up; honesty of matter remains the rule.
+  Transient lag is acceptable only if the contract makes readiness observable
+  and eventual consistency with truth is guaranteed.
+- Requests against regions still activating may block, queue, or return
+  explicitly incomplete results as defined by the public contract—but must not
+  invent occupancy that contradicts material truth.
+
+### 9.3 Scale pressure
+
+- When regions exceed what full raw-voxel residency would reasonably allow, the
+  product continues via sparsity and streaming rather than requiring the entire
+  volume detailed at once.
+- Failure to keep homogeneous volume cheap is a product quality failure for the
+  sparse-scale claim, not a consumer problem to solve with private mesh worlds.
+
+### 9.4 Persistence failures
+
+- A successful restore must reapply scars so edited matter matches what was
+  saved; partial silent drop of scars is a product failure.
+- Derived meshes must not be required as the authority needed to restore a
+  world. If presentation assets are missing, truth and scars still restore and
+  views rebuild.
+
+### 9.5 Physics guest failures
+
+- If a physics plug-in misbehaves, crashes, or is absent, the substrate’s
+  material truth, inspection, mutation, and occupancy truth remain well-defined.
+- A missing or broken physics engine does not remove the requirement that
+  bindings be exposable; it only means runtime simulation is not running.
+
+### 9.6 Content guest failures
+
+- A consumer generator failure is a consumer failure. The substrate does not
+  substitute a baked-in world generator to “save” the session as product
+  behavior.
+- Invalid or empty injection still must not open privileged storage paths as a
+  workaround.
+
+### 9.7 Presentation desync
+
+- If dressing or object presentation remains after its supporting matter is
+  gone, or collides differently from occupancy truth, the product has failed the
+  truth-vs-view claim for that case.
+- Debug visualizations that are mistaken for authority in save/load or collision
+  paths are product failures.
+
+### 9.8 Premature finished-engine claims
+
+- Marketing or acceptance language that claims a released, finished visual engine
+  before feasibility and visual-acceptance gates are met is out of product
+  posture. Validation may prove contracts without redefining identity as a
+  finished game engine.
+
+---
+
+## 10. Validation experience
+
+How the product proves itself without turning harness content into product
+requirements.
+
+### 10.1 Principles
+
+- **Contracts over spectacle.** Evidence shows inspection, mutation, streaming,
+  collision truth, persistence, GPU-resident behavior, and (when exercised)
+  physics bindings hold—not that a particular forest postcard or character
+  controller exists.
+- **Same-interface proof.** Harnesses must use the public facade available to
+  external games. Privileged internal paths invalidate the proof.
+- **Mutation is the honesty test.** Dig and place (or equivalent admitted edits)
+  must leave honest cut faces and rematerialized presentation from truth; a
+  world that only looks good until edited has failed the material claim.
+- **Collision against truth.** Movement and contact proofs read voxel matter, not
+  disposable meshes.
+- **Sparse scale is real.** Regions large enough that full raw-voxel residency is
+  unreasonable must remain tractable under streaming and homogeneous cheap
+  storage.
+- **Deep volume is exercisable.** Depth content must be reachable as material
+  volume (for example caves, strata, buried structure), not as skybox or painted
+  floors.
+- **Measurable substrate quality.** Benchmarks and evidence capture mutation
+  response, streaming, GPU memory behavior, collision-truth honesty, and
+  physics-binding readiness when exercised—with machine context so results are
+  comparable. Specific performance numbers, demo routes, and acceptance scenes
+  belong to harness/TDD design, not this product design’s identity.
+- **Optional physics proof.** A simple physics plug-in may demonstrate bindings;
+  shipping or owning that engine is not required for product completeness.
+- **Optional walkable harness.** A walkable third-person proof may make claims
+  undeniable to humans; its controls, characters, assets, curated routes, content
+  palettes, and generation pipelines are harness particulars, not substrate
+  requirements.
+- **No premature finished-engine claim.** Do not claim a released, finished
+  visual engine before feasibility and visual-acceptance gates are met.
+
+### 10.2 Adjacent validation artifacts (permitted, not identity)
+
+Consumers may include:
+
+| Artifact | Purpose | Must not become |
+| --- | --- | --- |
+| Curation tooling | Parameters and content injection for exercises | Substrate generator identity |
+| Benchmark harness | Comparable evidence for mutation, streaming, memory, honesty metrics | Game-mode definition of “done” |
+| Visual validation | Human-reviewable presentation of material truth | Mandated overworld postcard as product law |
+| Optional walkable harness | Make continuous material claims undeniable via traversal | Character controller / demo route as substrate requirement |
+| Optional simple physics plug-in | Prove binding readiness | Baked-in physics engine as product |
+
+All of the above, when present, use the same public consumer contract.
+
+### 10.3 Evidence classes the product must be able to show
+
+Without fixing numeric thresholds here:
+
+1. **Mutation honesty** — admitted dig/place leaves real cut faces; presentation
+   and occupancy follow truth.
+2. **Streaming / sparse scale** — large regions remain tractable; homogeneous
+   volume stays cheap.
+3. **Deep volume** — reachable material depth, not painted underside.
+4. **Collision-truth honesty** — contacts/occupancy against matter.
+5. **Scar persistence** — edits restore without full-volume dumps; derived
+   geometry not required as authority.
+6. **GPU-resident / async boundary** — work and residency remain behind the
+   public command/query contract.
+7. **Physics-binding readiness (when exercised)** — a guest engine can attach
+   through bindings without privileged storage.
+8. **Dynamic volume class** — movable/damageable material volumes under the same
+   contracts can be exercised.
+9. **Same-interface discipline** — harnesses do not need privileged paths.
+
+Machine context must accompany quantitative evidence so results remain
+comparable across hardware.
+
+### 10.4 What validation must not require
+
+- A specific third-person character, camera feel, or demo route as substrate
+  completion criteria.
+- A fixed natural-overworld content palette or Minecraft-style cube aesthetic as
+  product identity.
+- Ship/station freeform hull delivery or validation as current work.
+- Ownership of a physics engine or world generator as product completeness.
+- Web / wasm platform targeting.
+
+---
+
+## 11. Non-goals
+
+Explicitly out of product scope (preserved from the approved vision):
+
+- Shipping a game, game mode, progression loop, or game-rules stack.
+- Treating validation-harness content, third-person controllers, demo routes,
+  content palettes, or machine-specific demo targets as substrate requirements
+  or as mandatory delivery for product completion.
+- Baking deterministic or procedural world generation into the substrate as
+  product identity. Generation algorithms are game-dependent and run on top of
+  the substrate; consumers own them.
+- Baking in a hand-rolled or third-party physics engine as product identity.
+  Material strength, gravity, force, and related fields must be *supportable*
+  via plug-in bindings; the engine that consumes them is adjacent. A simple
+  proof engine is optional demonstration, not required delivery.
+- Implementing excluded layers here: System / LLM, spells, gas / pricing policy,
+  combat rules / AI behavior, agent labor, building UI / blueprints as gameplay,
+  mechanisms as game entities.
+- Delivering or specifically validating freeform ships, stations, or other
+  multi-deck freeform hulls as current product work—those remain future-consumer
+  examples that motivate volume-general contracts.
+- Full fluid simulation and cellular automata (fire, wetness, growth) as current
+  product requirements—these may appear as future consumer concepts or format
+  hooks unless later selected explicitly.
+- Tree felling or rigid-body conversion of vegetation as current product
+  requirements (future consumer concepts unless later selected).
+- Web / wasm as a Product One or substrate target platform.
+- Claiming a released, finished visual engine before feasibility and
+  visual-acceptance gates are met.
+- Limiting substrate identity to a Minecraft-style cube aesthetic, a single
+  natural-overworld content palette, static scenery without movable material
+  volumes, or heightmap terrain that only pretends to have depth.
+- Assuming gravity-aligned planetary terrain as the only legal world shape in
+  substrate contracts.
+- Structural integrity / cave-in simulation, span tables, fortress engineering
+  UI, navigation graphs, multiplayer services, weather simulation, seasons,
+  growth systems, and fine splash / particle matter layers as current substrate
+  product (possible future consumer or plug-in concerns unless later selected).
+
+Any later design choice that would reclassify substrate vs consumer ownership
+(for example promoting full fluid CA, tree felling, structural collapse
+simulation, freeform-hull delivery, or a baked-in physics engine into substrate
+product) requires an **explicit human scope decision**—not silent expansion.
+
+---
+
+## 12. Resolved product decisions
+
+Closed by the approved vision. Do not reopen without a new human decision.
+
+| Topic | Decision |
+| --- | --- |
+| Product identity | Reusable voxel-world substrate / public consumer contract—not a shipped game. |
+| Walkable-world visual validation harness | Adjacent artifact. May exist for validation; does not define product identity or “done.” |
+| Everywhere mutation | Binding. |
+| First-class deep Z | Binding. Genuine volumetric depth, not heightmap terrain. |
+| Natural-looking presentation | Depends on the consumer’s world—coherent material presentation for that domain, not a single natural-overworld mandate. |
+| GPU-resident / async-capable architecture | Binding product direction and a core distinction from CPU-driven voxel engines. Specific simulations remain later choices. |
+| Multi-world freeform volumes (ships / stations) | Contracts are volume-general. Delivering or specifically validating ships and stations is not current scope. |
+| Dynamic (moving, damageable) voxel volumes | Yes. Substrate must support that class of matter. |
+| Deterministic / procedural world generation | No as substrate product. Generation runs on top and is game-dependent. |
+| Matter physics | Bindings yes; engine no. Collision/occupancy truth against voxel matter remains substrate concern. |
+| Older “Product One — The Walkable World” identity language | Superseded on identity by the product vision. Harness content does not redefine the product. |
+
+---
+
+## 13. Open questions for the human
+
+The approved vision currently records **no open product-boundary questions** that
+would change identity, purpose, or boundary. Engineering and milestone
+sequencing remain intentionally undecided there.
+
+The following items cannot be fully resolved from the vision alone at product
+design altitude. They are recorded as questions rather than guessed defaults.
+They do **not** reopen closed identity decisions above.
+
+1. **Minimum public material property set for physics bindings.** Which supportable
+   fields beyond strength, gravity parameters, and applied force must be present
+   for the first binding surface to count as “physics-ready,” and which may wait?
+   (Vision requires the class of bindings; it does not rank the first property
+   set.)
+
+2. **Gravity parameterization for non-planetary volumes.** How should gravity
+   parameters be expressed so volume-general contracts remain honest for
+   freeform hulls later, without delivering ship/station content now?
+
+3. **Dynamic volume damage semantics at the substrate boundary.** When a dynamic
+   material volume “takes damage,” which outcomes are substrate mutation verbs
+   versus consumer/combat policy (partial cell erosion, whole-volume removal,
+   material substitution)?
+
+4. **Presentation coherence bar without a mandated aesthetic.** What evidence is
+   sufficient that “coherent for the consumer’s domain” is met when no single
+   overworld postcard is required—purely contract/harness-defined scenes, or a
+   small set of named domain samples?
+
+5. **Async readiness visibility.** At product altitude, which readiness
+   distinctions must consumers always observe (truth updated vs occupancy
+   current vs presentation refreshed vs scar durable), and which may remain
+   harness telemetry only?
+
+If answering any of these would reclassify substrate vs consumer ownership, treat
+that answer as a scope decision requiring explicit human approval.
+
+---
+
+## 14. Provenance note
+
+This design is synthesized solely from the approved `docs/product-vision.md`.
+Seed documents and superseded Product One walkable-world planning language were
+not treated as authoritative product boundary. Implementation, crate structure,
+algorithms, storage layouts, numeric acceptance thresholds, demo routes, and
+task breakdowns remain outside this document’s scope.
