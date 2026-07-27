@@ -327,6 +327,35 @@ behavior phases.
 
 ---
 
+## T28. Scheduled adapters use isolated exports, restricted GPU handles, and bounded transport
+
+**Decision.** Each participant receives a filtered `S_i` from one pinned
+frontier, including cell size and finite local domain. GPU adapters create and
+use only generation-bound opaque resources through a Moria-enforced restricted
+factory and counted encoder; no `RenderDevice`, raw wgpu resource, queue, or
+encoder enters the public seam. Ordering edges may carry one pre-reserved
+opaque handoff through explicit CPU/GPU upload/map/copy stages. GPU feedback is
+double-buffered and becomes read-only input on the next tick. CPU collision
+helpers reuse a pre-reserved exact sink and return borrowed facts.
+
+**Outcome contract.** Every tick that enters planning returns a closed completed
+report. Tick-wide aborts give every discarded valid proposal a typed cause and
+`revision_changed = false`; a post-publication report-hook failure is reported
+without undoing or relabeling publication.
+
+**Reason.** A shared readable union defeats per-adapter authorization, raw
+renderer handles defeat encoder/resource enforcement, and prose-only
+processor transitions cannot move consumer stimuli. Isolated exports and
+Moria-owned opaque transport preserve one committed truth while making access,
+allocation, synchronization, feedback lifetime, and failure evidence
+implementable.
+
+**Rejected.** Trust-only GPU byte reports, adapter-owned raw buffers crossing
+processor edges, collision `Vec` returns, same-tick feedback, and treating a
+post-publication notification panic as a no-publication abort.
+
+---
+
 ## Human review entry — external-behavior boundary
 
 ### Verbatim feedback
@@ -363,11 +392,10 @@ Please revise the architecture, lifecycle/schedule, public API, decisions, and v
 The scheduled coordinator in T27 and
 [behavior-scheduling.md](behavior-scheduling.md) is the primary external
 behavior seam. It serializes a consumer-triggered tick around an ordinary-
-command frontier, pins one committed material/placement view for all adapters,
-and publishes composed effects before releasing post-frontier work. CPU
-adapters receive a direct borrowed view after scheduler-owned bounded staging.
-GPU adapters own their pipelines and state on Bevy's renderer device and
-encode through a counted Moria-controlled encoder wrapper; the authoritative
+Each adapter receives only its separately authorized filtered export from that
+frontier. GPU adapters own their algorithms/state in resources created through
+the restricted renderer-backed factory and encode through a counted
+Moria-controlled encoder wrapper; the authoritative
 validation/composition/publication path remains GPU-resident.
 
 Access, view bytes/records, proposals, transaction resources, and feedback are

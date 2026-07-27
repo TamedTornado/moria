@@ -141,8 +141,9 @@ Telemetry reads counters and summaries; it exposes no storage handle.
 ### `gpu`
 
 Owns shader layouts, device-generation resources, dispatch encoding, staging
-pools, validation error scopes, completion callbacks, scheduled behavior view/
-proposal/feedback buffers, asynchronous extension packets, and layout
+pools, validation error scopes, completion callbacks, scheduled
+per-participant behavior view/proposal/handoff/prior-feedback buffers, the
+restricted behavior resource factory, asynchronous extension packets, and layout
 assertions. It is the only module allowed to turn storage transactions into GPU
 work.
 
@@ -191,12 +192,21 @@ Render-world order:
 4. Root `RenderGraph`: execute camera-independent Moria compute in explicit
    order:
    `materialize -> prepare_mutation -> validate_mutation -> publish_revision
-   -> behavior_export -> ordered_gpu_behavior -> behavior_validate_compose
+   -> behavior_export_participants -> ordered_gpu_behavior_and_handoffs
+   -> behavior_validate_compose
    -> behavior_publish -> query/collision -> async_extension_packet
    -> presentation`.
 5. Renderer cleanup: register queue-completion callbacks, map submitted
    readbacks asynchronously, and retire resources whose last submission is
    complete.
+
+A behavior tick containing alternating CPU/GPU batches may span several Bevy
+updates and renderer submissions. The root graph runs only the currently ready
+GPU batch, a GPU-to-CPU handoff completes through renderer cleanup and the next
+main-world `First`/`PreUpdate`, and a later CPU-to-GPU handoff is frozen again
+in `PostUpdate`/`ExtractSchedule`. The pinned frontier and post-frontier command
+barrier remain held across those updates; Moria never blocks a render schedule
+waiting for a map or CPU callback.
 
 Work that does not fit the extraction batch remains queued; it is not silently
 dropped. `extraction_records` and `extraction_bytes` are the exact per-frame
@@ -209,12 +219,15 @@ telemetry. Configuration must fit one maximum enabled patch, behavior
 transition record, or asynchronous extension input packet plus inline state,
 while larger queue contents drain across later frames.
 
-CPU behavior adapters run from the main-world coordinator only after the
-matching stable-view staging map completes. This callback is a scheduled tick
+CPU behavior adapters run from the main-world coordinator only after their
+filtered stable-view staging map completes. This callback is a scheduled tick
 stage, not an ordinary query/receipt cycle. Consecutive GPU adapters remain in
-the render-world command stream. A declared CPU/GPU ordering edge creates an
-explicit queue-completion, bounded map, or bounded upload transition; GPU-only
-chains do not read material or proposals back to CPU before publication.
+the render-world command stream and bind only their own filtered export.
+A declared CPU/GPU handoff edge uses Moria-owned exact host/device/staging
+slots: CPU-to-GPU performs an ordered upload, GPU-to-CPU performs completion,
+copy, map, decode, view-drop, and unmap before the successor callback.
+Ordering-only edges allocate no payload. GPU-only chains do not read material
+or proposals back to CPU before publication.
 Details and tick serialization are normative in
 [behavior-scheduling.md](behavior-scheduling.md).
 
@@ -327,8 +340,9 @@ World construction has two phases.
 - presentation artifact/dirty/mesh/instance pools can represent their stated
   fixed maximum artifact, and dirty records reserve one marker for every live
   volume in addition to the job/exact-key partition; and
-- behavior registration/order/view/proposal/feedback limits can hold every
-  builder adapter and one declared maximum active tick; and
+- behavior registration/order/per-participant-view/collision/handoff/proposal/
+  double-feedback limits can hold every builder adapter and one declared
+  maximum active tick; and
 - asynchronous extension registration count/bytes can hold every
   startup/runtime descriptor within its per-descriptor WGSL and entry-point
   caps.
@@ -417,8 +431,11 @@ corruption; it does not claim process isolation from malicious native code.
 
 Scheduled GPU adapters are ordinary trusted in-process Rust integrations, not
 shader sandboxes. Their authority is still structurally limited: Moria owns
-submission and exposes only a read-only exported view, write-only proposal and
-feedback targets, and a counted encoder wrapper. A malicious adapter can misuse
-the shared process/device, so this is not a security boundary; qualification
-must still prove that conforming adapters cannot obtain authoritative storage
-or publish around Moria's validation gate.
+submission and the resource registry and exposes only a participant-filtered
+read-only export, write-only proposal/outgoing-handoff targets, read-only
+incoming handoff/prior feedback, a restricted opaque resource factory, and a
+counted encoder wrapper. A malicious native application can misuse its shared
+process/device through unrelated Bevy access, so this is not a security
+boundary; qualification must still prove that the scheduled public surface
+cannot yield raw resources, another participant's export, authoritative
+storage, or a publication path around Moria's validation gate.

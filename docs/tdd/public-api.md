@@ -14,7 +14,9 @@ pub struct MoriaPlugin { /* Bevy Plugin */ }
 pub struct CommandPermit { /* owned queue reservation */ }
 pub struct QueryPermit { /* owned queue reservation */ }
 pub struct CheckpointPermit { /* owned queue reservation */ }
-pub struct BehaviorTickPermit { /* one tick + aggregate view/effect reservation */ }
+pub struct BehaviorTickPermit {
+    /* one tick + all isolated views/collision/handoffs/effects/feedback */
+}
 pub struct ExtensionPermit { /* owned queue/job reservation */ }
 pub struct EffectBatchPermit { /* owned child-command batch reservation */ }
 
@@ -407,6 +409,11 @@ pub struct ResourceLimits {
     pub behavior_view_cells: u32,
     pub behavior_cpu_view_bytes: u64,
     pub behavior_gpu_view_bytes: GpuCapacityLimit,
+    pub behavior_collision_calls: u32,
+    pub behavior_collision_contacts: u32,
+    pub behavior_collision_bytes: u64,
+    pub behavior_handoff_maps: u32,
+    pub behavior_handoff_bytes: GpuCapacityLimit,
     pub behavior_proposal_records: u32,
     pub behavior_proposal_bytes: u64,
     pub behavior_effect_cells: u32,
@@ -414,6 +421,10 @@ pub struct ResourceLimits {
     pub behavior_directory_effects: u32,
     pub behavior_conflict_checks: u64,
     pub behavior_feedback_bytes: GpuCapacityLimit,
+    pub behavior_gpu_buffers: u32,
+    pub behavior_gpu_pipelines: u32,
+    pub behavior_gpu_bind_groups: u32,
+    pub behavior_gpu_wgsl_bytes: u64,
     pub behavior_gpu_dispatches: u32,
     pub behavior_gpu_workgroups: u64,
     pub extension_jobs: u32,
@@ -466,13 +477,16 @@ maximum legal operation, or violates a cross-limit.
 | `dressing_styles` / `dressing_instances: GpuCapacityLimit` | 256 / 1,048,576 desired, 65,536 minimum | 4,096 styles / adapter allocation and `u32` instances; instances cover one descriptor's `max_instances_per_artifact`; both may be zero together to disable dressing only |
 | `behavior_engines` / `behavior_order_edges` | 16 / 64 | 256 / 4,096; zero together only when behavior hooks are disabled; order DAG storage is fixed at validation |
 | `behavior_scopes_per_engine` | 8 | 256; bounds each host planning result |
-| `behavior_view_volumes` / `behavior_view_bricks` / `behavior_view_cells` | 256 / 8,192 / 262,144 | fixed v1 maxima 256 / 65,536 / 1,048,576 for the aggregate stable tick view |
-| `behavior_cpu_view_bytes` | 8 MiB | 256 MiB; covers the largest configured CPU participant view, is `<= staging_bytes.effective`, and is zero only when no CPU adapter is registered |
-| `behavior_gpu_view_bytes: GpuCapacityLimit` | 32 MiB desired / 8 MiB minimum | `min(256 MiB, max_storage_buffer_binding_size)`; one ABI v1 view binding covers the aggregate export |
-| `behavior_proposal_records` / `behavior_proposal_bytes` | 1,024 / 64 MiB | 65,536 / 1 GiB aggregate; each GPU participant's effect+feedback allocation fits one storage binding, aggregate declared maxima fit, and command/transaction completion capacity covers the same tick |
+| `behavior_view_volumes` / `behavior_view_bricks` / `behavior_view_cells` | 256 / 8,192 / 262,144 | fixed v1 maxima 256 / 65,536 / 1,048,576; counts the sum of per-participant filtered exports, not a shared readable union |
+| `behavior_cpu_view_bytes` | 8 MiB | 256 MiB; covers aggregate live CPU participant exports, is `<= staging_bytes.effective`, and is zero only when no CPU adapter is registered |
+| `behavior_gpu_view_bytes: GpuCapacityLimit` | 32 MiB desired / 8 MiB minimum | `min(256 MiB, adapter allocation)` aggregate; every participant ABI v1 view independently fits `max_storage_buffer_binding_size` |
+| `behavior_collision_calls` / `behavior_collision_contacts` / `behavior_collision_bytes` | 128 / 4,096 / 320 KiB | 4,096 / fixed 4,096 / 320 KiB; calls are aggregate per tick, while one reusable exact 80-byte slot per contact structurally bounds CPU helper output |
+| `behavior_handoff_maps` / `behavior_handoff_bytes: GpuCapacityLimit` | 4 / 24 MiB desired, 3 MiB minimum | 256 maps / 1 GiB and adapter allocation; startup reserves at most three times every declared edge capacity for host/device/staging representations, and every individual device binding fits the adapter binding limit |
+| `behavior_proposal_records` / `behavior_proposal_bytes` | 1,024 / 64 MiB | 65,536 / 1 GiB aggregate; each GPU participant's effect allocation fits one storage binding, aggregate declared maxima fit, and command/transaction completion capacity covers the same tick |
 | `behavior_effect_cells` / `behavior_effect_bricks` / `behavior_directory_effects` | 262,144 / 4,096 / 16 | 1,048,576 / 65,536 / 1,024 aggregate per tick; each proposal still obeys ordinary command maxima and aggregate declared adapter maxima must fit |
 | `behavior_conflict_checks` | 1,048,576 | 4,294,967,296 candidate whole-proposal overlap comparisons per tick; overflow fails before publication |
-| `behavior_feedback_bytes: GpuCapacityLimit` | 1 MiB desired / 64 KiB minimum | 64 MiB and adapter allocation; fixed outcome record for every maximum proposal plus every participant |
+| `behavior_feedback_bytes: GpuCapacityLimit` | 1 MiB desired / 64 KiB minimum | 64 MiB and adapter allocation; holds two fixed feedback slots for every GPU participant, each with one participant and its maximum proposal records |
+| `behavior_gpu_buffers` / `behavior_gpu_pipelines` / `behavior_gpu_bind_groups` / `behavior_gpu_wgsl_bytes` | 256 / 64 / 256 / 4 MiB | 65,536 handles each / 64 MiB borrowed cumulative pipeline source per device creation; descriptor maxima must sum within them |
 | `behavior_gpu_dispatches` / `behavior_gpu_workgroups` | 256 / 1,048,576 | 65,536 / 4,294,967,296 aggregate scheduled adapter dispatches/workgroups per tick; each dimension also obeys the adapter device limit |
 | `extension_jobs` | 64 | 4,096; zero only when extensions disabled |
 | `extension_registrations` / `extension_registry_bytes` | 32 / 4 MiB | 1,024 / 64 MiB; owns all registered WGSL and entry-point bytes |
@@ -485,7 +499,8 @@ bricks and 65,536 candidate cells per collision traversal, 4,096 collision
 hits, 256 world-scope volumes, 2,048 vertices/12,288 indices per brick artifact,
 13,824 unique halo invalidations per matter command, 4,096 dressing instances
 per artifact, 256 scheduled behavior engines, 4,096 declared behavior order
-edges, 65,536 view bricks, 1,048,576 view cells, 65,536 behavior proposals,
+edges, 1 MiB per behavior handoff edge, 65,536 view bricks,
+1,048,576 view cells, 65,536 behavior proposals,
 96 UTF-8 bytes for every debug name, 1 MiB WGSL and 128 UTF-8 bytes for one
 extension entry point, and 256 candidate effects. They are exported in
 `contract_limits`; they are not independently configurable.
@@ -528,14 +543,18 @@ enabled operation below its fixed public maximum; such an adapter fails
 startup instead.
 
 Enabling scheduled behavior hooks requires one active-tick record, nonzero
-behavior registration/view/proposal/feedback limits, aggregate declared
+behavior registration/view/proposal/feedback/collision/handoff limits,
+aggregate declared
 adapter maxima within those limits, enough command/page/scar/directory
 transaction capacity for the aggregate worst-case proposal set, and enough
 extraction capacity for one maximum transition record. CPU-view bytes may be
 zero only when every registered adapter is GPU. GPU-view bytes may be zero only
-when every adapter is CPU. The behavior ordering graph and all maximum access
-envelopes are validated before startup; runtime planning may narrow but never
-expand them.
+when every adapter is CPU. Handoff maps/bytes may be zero only when no registered
+edge declares a payload. Feedback capacity includes current and prior slots.
+GPU buffer/pipeline/bind-group/WGSL pools may be zero only when every adapter
+is CPU; otherwise their aggregate descriptor maxima must fit.
+The behavior ordering graph and all maximum access envelopes are validated
+before startup; runtime planning may narrow but never expand them.
 
 Metadata registration reserves both one material record and its exact retained
 metadata bytes. Exhausting `material_metadata_bytes` returns
@@ -716,8 +735,10 @@ impl WorldHandle {
 
 A command/query/checkpoint permit reserves one record and the declared bytes in
 that operation's queue. A behavior tick permit reserves the single active tick
-record and the aggregate registered view, proposal, transaction, completion,
-and feedback maxima before any adapter runs. An extension permit reserves one
+record and all registered per-participant views, reusable CPU collision
+scratch/calls, handoff host/device/staging/maps, proposal, transaction,
+completion, and current/prior feedback maxima before any adapter runs. An
+extension permit reserves one
 job and the complete job allocation (header, packet, two state ranges,
 candidates, diagnostics, and effect payload); it must fit the configured
 packet/state and descriptor effect bounds. An `EffectBatchPermit` reserves
@@ -2165,6 +2186,11 @@ pub enum ResourceKind {
     BehaviorViewCells,
     BehaviorCpuViewBytes,
     BehaviorGpuViewBytes,
+    BehaviorCollisionCalls,
+    BehaviorCollisionContacts,
+    BehaviorCollisionBytes,
+    BehaviorHandoffMaps,
+    BehaviorHandoffBytes,
     BehaviorProposalRecords,
     BehaviorProposalBytes,
     BehaviorEffectCells,
@@ -2172,6 +2198,10 @@ pub enum ResourceKind {
     BehaviorDirectoryEffects,
     BehaviorConflictChecks,
     BehaviorFeedbackBytes,
+    BehaviorGpuBuffers,
+    BehaviorGpuPipelines,
+    BehaviorGpuBindGroups,
+    BehaviorGpuWgslBytes,
     BehaviorGpuDispatches,
     BehaviorGpuWorkgroups,
     ExtensionJobs,
@@ -2513,10 +2543,17 @@ pub struct BehaviorEngineDescriptor {
     pub maximum_effect_cells: u32,
     pub maximum_effect_bricks: u32,
     pub maximum_directory_effects: u32,
+    pub maximum_collision_calls: u32,       // zero for GPU
+    pub maximum_collision_contacts: u32,    // zero for GPU
+    pub handoffs_to: Vec<BehaviorHandoffDescriptor>,
     pub readiness: BehaviorReadiness,
     pub failure: BehaviorFailurePolicy,
     pub conflict: BehaviorConflictPolicy,
     pub maximum_owned_gpu_bytes: u64,
+    pub maximum_gpu_buffers: u32,             // zero for CPU
+    pub maximum_gpu_pipelines: u32,           // zero for CPU
+    pub maximum_gpu_bind_groups: u32,         // zero for CPU
+    pub maximum_gpu_wgsl_bytes: u64,           // zero for CPU
     pub maximum_gpu_dispatches: u32,          // zero for CPU
     pub maximum_gpu_workgroups: u64,          // zero for CPU
 }
@@ -2525,6 +2562,11 @@ pub enum BehaviorExecution { Cpu, Gpu }
 pub enum BehaviorReadiness { RequireReady, Materialize }
 pub enum BehaviorFailurePolicy { AbortTick, SkipParticipant }
 pub enum BehaviorConflictPolicy { RejectLater, ReplaceEarlier, FailTick }
+
+pub struct BehaviorHandoffDescriptor {
+    pub successor: BehaviorEngineKey,
+    pub maximum_bytes: u32,                 // 1..=1 MiB; opaque to Moria
+}
 
 pub struct BehaviorAccessEnvelope {
     pub allowed_volumes: BoundedVolumeFilter,
@@ -2557,20 +2599,64 @@ pub struct BehaviorTickRequest {
     pub correlation: Correlation,
 }
 
-pub type BehaviorTickReceipt = Receipt<BehaviorTickApplied>;
+pub type BehaviorTickReceipt = Receipt<BehaviorTickCompleted>;
 
-pub struct BehaviorTickApplied {
+pub struct BehaviorTickCompleted {
     pub tick: BehaviorTickId,
     pub correlation: Correlation,
     pub snapshot: Vec<VolumeSnapshotRef>,
+    pub disposition: BehaviorTickDisposition,
+    pub revision_changed: bool,
     pub participants: Vec<BehaviorParticipantOutcome>,
     pub proposals: Vec<BehaviorProposalOutcome>,
     pub published: Vec<(VolumeId, VolumeRevision)>,
 }
 
-pub enum BehaviorParticipantOutcome {
-    Completed { engine: BehaviorEngineId },
-    Skipped { engine: BehaviorEngineId, failure: BehaviorEngineFailure },
+pub enum BehaviorTickDisposition {
+    Published,
+    NoPublication { cause: BehaviorTickAbortCause },
+    PublishedWithNotificationFailure { failed_hooks: u32 },
+}
+
+pub enum BehaviorTickAbortCause {
+    ParticipantAbort { engine: BehaviorEngineId },
+    ConflictFailTick {
+        earlier_engine: BehaviorEngineId,
+        earlier_proposal: u32,
+        later_engine: BehaviorEngineId,
+        later_proposal: u32,
+    },
+    TransitionFailure {
+        predecessor: BehaviorEngineId,
+        successor: BehaviorEngineId,
+        stage: BehaviorTransitionStage,
+    },
+    DeviceLost { generation: DeviceGeneration },
+    PreparationFailure,
+}
+
+pub struct BehaviorParticipantOutcome {
+    pub engine: BehaviorEngineId,
+    pub execution: BehaviorParticipantExecution,
+    pub publication: BehaviorParticipantPublication,
+    pub notification: BehaviorNotificationOutcome,
+}
+
+pub enum BehaviorParticipantExecution {
+    Completed,
+    Skipped { failure: BehaviorEngineFailure },
+}
+
+pub enum BehaviorParticipantPublication {
+    Published { revision_changed: bool },
+    NoSelectedEffect,
+    DiscardedByTick { cause: BehaviorTickAbortCause },
+}
+
+pub enum BehaviorNotificationOutcome {
+    Delivered,
+    NotApplicable,
+    FailedAfterTerminalDecision { publication_was_complete: bool },
 }
 
 pub enum BehaviorProposalOutcome {
@@ -2598,6 +2684,8 @@ pub enum BehaviorProposalRejection {
     ReplacedByLater { engine: BehaviorEngineId, proposal: u32 },
     Invalid,
     ParticipantFailed,
+    PreparationFailed { volume: VolumeId },
+    TickAborted { cause: BehaviorTickAbortCause },
 }
 
 pub enum BehaviorEngineFailure {
@@ -2608,9 +2696,23 @@ pub enum BehaviorEngineFailure {
     InvalidProposal,
     Panicked,
     GpuValidation,
+    Transition {
+        predecessor: BehaviorEngineId,
+        successor: BehaviorEngineId,
+        stage: BehaviorTransitionStage,
+    },
     DeviceLost { generation: DeviceGeneration },
     NotReadyForGeneration { generation: DeviceGeneration },
     Shutdown,
+}
+
+pub enum BehaviorTransitionStage {
+    CpuWrite,
+    Upload,
+    GpuValidate,
+    GpuCopy,
+    Map,
+    Decode,
 }
 
 #[repr(C)]
@@ -2640,19 +2742,38 @@ pub struct BehaviorDiagnostic {
 `BehaviorDiagnostic::try_from_str` accepts at most 192 UTF-8 bytes and rejects
 193 rather than truncating; reserved is always zero. The diagnostic is exactly
 196 bytes and `BehaviorAdapterError` is exactly 200 bytes.
-`BehaviorResourceReport` is a fixed-layout by-value return. Planning writes
-scopes only into the preallocated sink; a failed, incomplete, or
-over-capacity plan transfers no collection ownership.
+`BehaviorResourceReport` is a fixed-layout registry snapshot computed by
+Moria's restricted factory; it is never an adapter-supplied capacity claim.
+Planning writes scopes only into the preallocated sink; a failed, incomplete,
+or over-capacity plan transfers no collection ownership.
+
+Once a tick enters `Planning`, its receipt resolves successfully with
+`BehaviorTickCompleted` even when `disposition` is `NoPublication`; this keeps
+every participant/proposal discard outcome observable. In that variant
+`revision_changed` is false and every otherwise valid discarded proposal is
+`TickAborted` with the same closed cause. Generic receipt failure remains only
+for loss/cancellation before planning or a broken coordinator that cannot
+produce the required report. `on_tick_report` is post-decision: its returned
+error or panic changes only `notification` after the terminal decision and,
+when publication completed, the disposition to
+`PublishedWithNotificationFailure`; it never applies `AbortTick`
+retroactively or replaces an existing no-publication cause.
 
 `BehaviorEngineDescriptor` is copied into exact bounded registration storage.
 The builder rejects duplicate keys, unresolved ordering keys, cycles, an
 execution/trait mismatch, access outside configured maxima, or aggregate
 proposal/transaction capacity above configured pools.
+Every `handoffs_to` key must also be a direct `runs_after` predecessor edge of
+the named successor, each capacity is `1..=1 MiB`, duplicate edge handoffs are
+rejected, and the worst-case three-copy byte charge plus required mixed-edge
+map slots must fit the configured handoff pools before startup.
 Topological ties use stable key byte order.
 No named behavior phase exists.
-CPU descriptors require all GPU maxima to be zero. GPU reports must remain
-within `maximum_owned_gpu_bytes`, and every counted dispatch/copy plus total
-workgroups must remain within both descriptor and configured tick maxima.
+CPU descriptors require all GPU maxima to be zero and declare collision calls/
+contacts within the configured sink. GPU descriptors set collision maxima to
+zero. Factory allocation must remain within `maximum_owned_gpu_bytes`, and
+every counted dispatch/copy plus total workgroups must remain within both
+descriptor and configured tick maxima.
 
 Every adapter has a main-world access planner. A GPU-resident engine may use a
 constant conservative planner and filter the exported view on GPU, so it does
@@ -2664,12 +2785,6 @@ pub trait BehaviorAccessPlanner: Send + 'static {
         &mut self,
         context: &BehaviorPlanContext,
         access: &mut BehaviorAccessSink<'_>,
-    ) -> Result<(), BehaviorAdapterError>;
-
-    fn predecessor_complete(
-        &mut self,
-        predecessor: BehaviorEngineId,
-        processor: BehaviorExecution,
     ) -> Result<(), BehaviorAdapterError>;
 }
 ```
@@ -2684,10 +2799,15 @@ pub trait CpuBehaviorEngine: Send + 'static {
         &mut self,
         context: &BehaviorCpuTickContext<'_>,
         view: &CpuBehaviorView<'_>,
+        collision: &mut BehaviorCollisionSink<'_>,
+        handoffs: &mut BehaviorCpuHandoffs<'_>,
         effects: &mut BehaviorEffectSink<'_>,
     ) -> Result<(), BehaviorAdapterError>;
 
-    fn on_tick_report(&mut self, report: &BehaviorParticipantReport);
+    fn on_tick_report(
+        &mut self,
+        report: &BehaviorParticipantReport<'_>,
+    ) -> Result<(), BehaviorAdapterError>;
     fn on_shutdown(&mut self);
 }
 
@@ -2706,6 +2826,11 @@ pub struct BehaviorVolumeRecordV1 {
     pub key: [u8; 16],
     pub translation: [f32; 4],
     pub rotation_xyzw: [f32; 4],
+    pub cell_size: f32,
+    pub flags: u32,                  // v1 zero
+    pub local_domain_min: [i32; 4],  // xyz + zero
+    pub local_domain_max: [i32; 4],  // exclusive xyz + zero
+    pub reserved: [u32; 2],          // v1 zero
 }
 
 #[repr(C)]
@@ -2737,8 +2862,12 @@ pub enum BehaviorCollisionRequest {
     },
 }
 
-pub struct BehaviorCollisionFacts {
-    pub contacts: Vec<ContactFact>,
+pub struct BehaviorCollisionSink<'a> {
+    /* Moria-owned exact-capacity reusable 80-byte contact slots */
+}
+
+pub struct BehaviorCollisionFacts<'a> {
+    pub contacts: &'a [ContactFact],
     pub inspected_bricks: u32,
     pub inspected_cells: u32,
 }
@@ -2747,6 +2876,9 @@ pub enum BehaviorViewError {
     OutsideAuthorizedView,
     TraversalLimit { requested: u64, limit: u64 },
     InvalidRequest,
+    CallLimit { requested: u32, limit: u32 },
+    ResultOverflow { required: u32, capacity: u32 },
+    Poisoned,
 }
 
 impl CpuBehaviorView<'_> {
@@ -2757,10 +2889,28 @@ impl CpuBehaviorView<'_> {
         volume: VolumeId,
         cell: CellCoord,
     ) -> Result<MaterialSample, BehaviorViewError>;
-    pub fn collision(
+    pub fn collision<'result>(
         &self,
         request: BehaviorCollisionRequest,
-    ) -> Result<BehaviorCollisionFacts, BehaviorViewError>;
+        sink: &'result mut BehaviorCollisionSink<'_>,
+    ) -> Result<BehaviorCollisionFacts<'result>, BehaviorViewError>;
+}
+
+pub struct BehaviorCpuHandoffs<'a> { /* exact registered edge slots */ }
+
+impl BehaviorCpuHandoffs<'_> {
+    pub fn incoming(&self, predecessor: BehaviorEngineId) -> Option<&[u8]>;
+    pub fn outgoing(
+        &mut self,
+        successor: BehaviorEngineId,
+    ) -> Result<BehaviorHandoffWriter<'_>, BehaviorAdapterError>;
+}
+
+pub struct BehaviorHandoffWriter<'a> { /* zeroed exact-capacity slot */ }
+
+impl BehaviorHandoffWriter<'_> {
+    pub fn capacity(&self) -> usize;
+    pub fn write(&mut self, bytes: &[u8]) -> Result<(), BehaviorAdapterError>;
 }
 
 pub struct BehaviorEffectSink<'a> { /* Moria-owned exact-capacity sink */ }
@@ -2808,10 +2958,31 @@ impl BehaviorEffectSink<'_> {
 }
 ```
 
+Each outgoing CPU writer is zeroed and one-shot. `write` accepts
+`0..=capacity` bytes, copies them, records the initialized prefix, and rejects/
+poisons a second or oversized write. Calling `write(&[])` explicitly marks a
+valid empty payload; returning without one write leaves `Empty` and fails the
+successor transition. A successor sees only the initialized prefix.
+GPU handoffs use the equivalent header `written_bytes` validation. Handoff
+storage is Moria-owned transport; payload meaning and any durable copy remain
+consumer-owned.
+
+`BehaviorVolumeRecordV1` is exactly 112 bytes with offsets
+`0, 8, 16, 32, 48, 64, 68, 72, 88, 104` in field order above.
+`BehaviorCellRecordV1` is exactly 24 bytes with offsets
+`0, 4, 8, 12, 16, 20`. The finite positive cell size and half-open local
+domain are part of every CPU/GPU export, including a volume created after
+adapter registration. Reserved/flags words are zero in v1.
+
 `CpuBehaviorView` is valid only for the callback and contains every cell in the
 accepted scopes, including empty cells.
-Its collision helper debits the descriptor traversal authorization and uses
-material occupancy, never a mesh.
+Its collision helper debits the descriptor traversal authorization and
+`maximum_collision_calls`, uses material occupancy rather than a mesh, clears
+and reuses the Moria-owned exact sink on every call, and returns a borrow that
+ends before the next call. Overflow returns no partial contacts and poisons an
+ignored-error sink. The aggregate call counter and one maximum 80-byte contact
+slot array are pre-reserved; no `Vec`, capacity, or other result ownership
+crosses the callback.
 Moria invokes the callback directly when the scheduler-owned view is ready;
 the adapter does not submit or poll a query receipt.
 The sink copies or borrows only these fixed/bounded values into its already
@@ -2833,7 +3004,7 @@ pub trait GpuBehaviorEngine: Send + 'static {
     fn create_device_state(
         &mut self,
         context: &mut moria::bevy::behavior::BehaviorGpuDeviceContext<'_>,
-    ) -> Result<BehaviorResourceReport, BehaviorAdapterError>;
+    ) -> Result<(), BehaviorAdapterError>;
 
     fn encode_tick(
         &mut self,
@@ -2846,9 +3017,115 @@ pub trait GpuBehaviorEngine: Send + 'static {
 
 #[repr(C)]
 pub struct BehaviorResourceReport {
+    pub generation: DeviceGeneration,
     pub owned_gpu_bytes: u64,
     pub buffers: u32,
     pub pipelines: u32,
+    pub bind_groups: u32,
+}
+
+pub struct BehaviorGpuBuffer { /* opaque, generation-bound registered handle */ }
+pub struct BehaviorGpuPipeline { /* opaque, generation-bound registered handle */ }
+pub struct BehaviorGpuBindGroup { /* opaque, generation-bound registered handle */ }
+pub struct BehaviorGpuBindGroupLayout { /* opaque registered handle */ }
+
+pub struct BehaviorGpuResourceFactory<'a> {
+    /* restricted renderer-device facade; no raw device/queue/encoder access */
+}
+
+pub struct BehaviorGpuBufferDescriptor {
+    pub bytes: u64,
+    pub usage: BehaviorGpuBufferUsage,
+    pub debug_name: BehaviorDiagnostic,
+}
+
+pub enum BehaviorGpuBufferUsage {
+    StorageRead,
+    StorageReadWrite,
+    Uniform,
+    CopyStaging,
+}
+
+pub struct BehaviorGpuBindingDescriptor {
+    pub binding: u32,
+    pub access: BehaviorGpuBindingAccess,
+    pub minimum_bytes: u64,
+}
+
+pub enum BehaviorGpuBindingAccess {
+    UniformRead,
+    StorageRead,
+    StorageReadWrite,
+}
+
+pub struct BehaviorGpuBinding<'a> {
+    pub binding: u32,
+    pub buffer: &'a BehaviorGpuBuffer,
+    pub offset: u64,
+    pub bytes: u64,
+}
+
+pub struct BehaviorGpuPipelineDescriptor<'a> {
+    pub wgsl: &'a str,
+    pub entry_point: &'a str,
+    pub groups_1_plus: &'a [BehaviorGpuBindGroupLayout],
+}
+
+impl BehaviorGpuResourceFactory<'_> {
+    pub fn create_buffer(
+        &mut self,
+        descriptor: &BehaviorGpuBufferDescriptor,
+    ) -> Result<BehaviorGpuBuffer, BehaviorAdapterError>;
+    pub fn initialize_buffer(
+        &mut self,
+        destination: &BehaviorGpuBuffer,
+        offset: u64,
+        bytes: &[u8],
+    ) -> Result<(), BehaviorAdapterError>;
+    pub fn create_bind_group_layout(
+        &mut self,
+        entries: &[BehaviorGpuBindingDescriptor],
+    ) -> Result<BehaviorGpuBindGroupLayout, BehaviorAdapterError>;
+    pub fn create_bind_group(
+        &mut self,
+        layout: &BehaviorGpuBindGroupLayout,
+        entries: &[BehaviorGpuBinding<'_>],
+    ) -> Result<BehaviorGpuBindGroup, BehaviorAdapterError>;
+    pub fn create_compute_pipeline(
+        &mut self,
+        descriptor: &BehaviorGpuPipelineDescriptor<'_>,
+    ) -> Result<BehaviorGpuPipeline, BehaviorAdapterError>;
+    pub fn usage(&self) -> BehaviorResourceReport;
+}
+
+pub struct BehaviorGpuDeviceContext<'a> {
+    generation: DeviceGeneration,
+    resources: BehaviorGpuResourceFactory<'a>,
+}
+
+impl<'device> BehaviorGpuDeviceContext<'device> {
+    pub fn generation(&self) -> DeviceGeneration;
+    pub fn resources(&mut self) -> &mut BehaviorGpuResourceFactory<'device>;
+}
+
+pub struct BehaviorGpuTickContext<'a> {
+    /* opaque group-0 views and coordinator-owned encoder */
+}
+
+impl BehaviorGpuTickContext<'_> {
+    pub fn tick(&self) -> BehaviorTickId;
+    pub fn generation(&self) -> DeviceGeneration;
+    pub fn view_counts(&self) -> (u32, u32);
+    pub fn prior_feedback(&self) -> BehaviorPriorFeedback;
+    pub fn incoming_handoff_count(&self) -> u32;
+    pub fn outgoing_handoff_count(&self) -> u32;
+    pub fn encoder(&mut self) -> &mut BehaviorGpuEncoder<'_>;
+}
+
+pub enum BehaviorPriorFeedback {
+    NoneYet,
+    Ready { tick: BehaviorTickId, proposals: u32 },
+    UnavailablePreviousGeneration,
 }
 
 pub struct BehaviorGpuEncoder<'a> {
@@ -2858,26 +3135,27 @@ pub struct BehaviorGpuEncoder<'a> {
 impl BehaviorGpuEncoder<'_> {
     pub fn dispatch(
         &mut self,
-        pipeline: &wgpu::ComputePipeline,
-        bind_groups_1_plus: &[&wgpu::BindGroup],
+        pipeline: &BehaviorGpuPipeline,
+        bind_groups_1_plus: &[&BehaviorGpuBindGroup],
         workgroups: [u32; 3],
     ) -> Result<(), BehaviorAdapterError>;
     pub fn copy_owned_buffer(
         &mut self,
-        source: &wgpu::Buffer,
+        source: &BehaviorGpuBuffer,
         source_offset: u64,
-        destination: &wgpu::Buffer,
+        destination: &BehaviorGpuBuffer,
         destination_offset: u64,
         bytes: u64,
     ) -> Result<(), BehaviorAdapterError>;
 }
 
-pub struct BehaviorParticipantReport {
+pub struct BehaviorParticipantReport<'a> {
     pub tick: BehaviorTickId,
     pub engine: BehaviorEngineId,
-    pub snapshot: Vec<VolumeSnapshotRef>,
-    pub status: BehaviorParticipantOutcome,
-    pub proposals: Vec<BehaviorProposalReport>,
+    pub snapshot: &'a [VolumeSnapshotRef],
+    pub execution: &'a BehaviorParticipantExecution,
+    pub publication: &'a BehaviorParticipantPublication,
+    pub proposals: &'a [BehaviorProposalReport],
 }
 
 pub struct BehaviorProposalReport {
@@ -2889,21 +3167,44 @@ pub struct BehaviorProposalReport {
 }
 ```
 
-`BehaviorGpuDeviceContext` contains Bevy's `RenderDevice` and a
-Moria-controlled initialization `BehaviorGpuEncoder`, but no `RenderQueue`.
-`BehaviorGpuTickContext` contains a counted `BehaviorGpuEncoder`, the read-only
-`BehaviorGpuViewV1` bind group, write-only fixed
-`BehaviorGpuEffectTargetV1` and feedback targets, record counts, tick ID, and
-device generation.
-It contains no raw command encoder, authoritative Moria buffer, or submission
-method. Dispatch calls automatically bind the Moria group 0 view/effect pair,
-accept only adapter-owned groups 1 and above, validate dimensions, and debit
-the descriptor/configured dispatch and total-workgroup budgets. Buffer copies
-may address only resources registered as adapter-owned during device-state
-creation; each copy debits one dispatch-operation slot and aggregate copy bytes
-cannot exceed `maximum_owned_gpu_bytes`. The wrapper rejects a Moria authority
-buffer as source or destination.
-The adapter owns all other GPU resources and working state.
+Factory usage variants map to fixed safe unions:
+`StorageRead = STORAGE | COPY_SRC`,
+`StorageReadWrite = STORAGE | COPY_SRC | COPY_DST`,
+`Uniform = UNIFORM | COPY_DST`, and
+`CopyStaging = COPY_SRC | COPY_DST`. No factory-created adapter buffer is
+`MAP_READ`, `MAP_WRITE`, or `INDIRECT`; cross-processor mapping belongs only to
+Moria's handoff pool and indirect dispatch is not exposed in scheduled v1.
+New buffers are zero-initialized. `initialize_buffer` copies only a borrowed
+slice, validates the registered range and cumulative initialized bytes against
+`maximum_owned_gpu_bytes`, chunks through the configured Moria staging pool,
+and keeps the adapter not-ready until the renderer submission completes. It
+does not expose a queue or retain consumer ownership.
+
+`BehaviorGpuDeviceContext` contains only a
+`BehaviorGpuResourceFactory`, the current generation, and fixed scheduled
+group-0 layout metadata. It contains no `RenderDevice`, `wgpu::Device`,
+`RenderQueue`, raw resource handle, or encoder constructor. Borrowed WGSL and
+entry points are charged to `maximum_gpu_wgsl_bytes` and the aggregate
+`behavior_gpu_wgsl_bytes` before parsing; creation
+validates group 0 exactly and only permits declared groups 1 and above.
+Opaque handles are usable only with the factory generation that created them.
+Every create/drop and last-use completion updates the registry, so
+`maximum_owned_gpu_bytes` (the sum of requested live buffer sizes) and the
+buffer/pipeline/bind-group count limits are enforced rather than trusted
+telemetry. Backend-private pipeline memory is not observable and is bounded by
+the pipeline count, not invented byte accounting.
+
+`BehaviorGpuTickContext` contains a counted `BehaviorGpuEncoder`, this
+participant's read-only filtered `BehaviorGpuViewV1`, write-only fixed
+`BehaviorGpuEffectTargetV1`, read-only incoming/write-only outgoing handoff
+tables, read-only prior feedback, record counts, tick ID, and device
+generation. It contains no raw command encoder, aggregate cross-participant
+view, authoritative Moria buffer, or submission method. Dispatch calls
+automatically bind Moria group 0, accept only factory-created groups 1 and
+above, validate dimensions, and debit descriptor/configured dispatch and
+workgroup budgets. Buffer copies accept only registered opaque handles; each
+copy debits one operation slot and byte budget. The wrapper rejects a
+generation mismatch or Moria authority resource.
 
 CPU and GPU proposal records have identical logical meanings.
 GPU ABI v1 supports fill, run patch, move, and retire against a supplied
@@ -2913,11 +3214,22 @@ whole-proposal conflicts, prepare copy-on-write transactions, and publish
 without material or proposal readback.
 Outcome metadata is made CPU-visible later for typed receipts.
 
-`BehaviorParticipantReport` and GPU feedback records contain only tick,
+`BehaviorParticipantReport` borrows coordinator-owned snapshot/proposal arrays;
+no capacity-bearing report collection crosses the callback. It and GPU
+feedback records contain only tick,
 snapshot revision, participant status, proposal selection/rejection, command
 ID, published revision, and failure category.
 Moria does not roll back adapter-owned state when a proposal is rejected.
 Adapters reconcile from this report/feedback according to their own policy.
+
+Current GPU feedback is finalized only after the terminal publication decision
+and CPU report hooks, then retained in one of two Moria-owned per-participant
+slots. The next `encode_tick` receives
+the completed slot as binding 4 until that submission completes. The first
+tick receives `NoneYet`; device recovery receives
+`UnavailablePreviousGeneration`. Neither state is an empty successful report.
+The ABI, layout, retention, and handoff rules are normative in
+[behavior-scheduling.md](behavior-scheduling.md).
 
 ## Asynchronous WGSL inspection/effect jobs
 
@@ -3334,8 +3646,9 @@ were aggregate pools.
 - presentation state and truth-to-view revision lag;
 - checkpoint frontier/progress/dirty coverage;
 - scheduled behavior tick frontier/stage/latency, adapter order and outcomes,
-  CPU/GPU transitions, view/proposal/feedback bytes, conflicts, skipped/failed
-  participants, and adapter-reported external GPU bytes;
+  CPU/GPU handoff maps/bytes, isolated view/collision/proposal/feedback bytes,
+  conflicts, skipped/failed participants, and factory-enforced external GPU
+  bytes/counts;
 - extension registration/registry bytes, packet/state/effect bytes, stale state
   IDs, and candidate/diagnostic readback bytes;
 - resource-pressure decisions.

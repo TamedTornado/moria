@@ -16,8 +16,10 @@ It does not record runtime IDs, physical slots, page-table shape, occupancy
 acceleration, mesh/dressing data, cameras, scheduled or asynchronous external
 behavior state, generation code, or other consumer state.
 
-CPU behavior objects, GPU solver buffers, stimuli, and behavior feedback
-history remain consumer-owned. A consumer that needs a coherent combined save
+CPU behavior objects, factory-created GPU solver resources, and the semantic
+contents of stimuli remain consumer-owned. Moria-owned handoff staging and
+prior-feedback transport slots are ephemeral coordination records and are
+never checkpointed. A consumer that needs a coherent combined save
 waits for a `BehaviorTickReceipt`, checkpoints the returned substrate
 revisions through Moria, and checkpoints each adapter's own state through its
 own store/protocol. Moria does not claim atomic durability across those stores.

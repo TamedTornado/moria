@@ -294,8 +294,9 @@ queued
   -> waiting for captured command frontier
   -> planning bounded access in declared adapter order
   -> waiting/materializing authorized matter
-  -> exporting and pinning one stable committed view
+  -> exporting per-participant filtered views from one pinned commit frontier
   -> running ordered CPU/GPU adapters
+  -> transferring declared bounded opaque handoffs
   -> validating participant batches
   -> resolving whole-proposal conflicts
   -> publishing at most one transaction/revision per affected volume
@@ -303,15 +304,20 @@ queued
 ```
 
 Only one tick is active per world in v1. The tick permit pre-reserves every
-registered participant's maximum view, proposal, transaction, completion, and
+registered participant's maximum view, proposal, collision scratch/calls,
+handoff host/device/staging/maps, transaction, completion, and double-buffered
 feedback capacity before the first adapter runs. A CPU adapter is invoked
 directly with the mapped borrowed stable view; it never enters the query
 lifecycle. A GPU adapter encodes against the exported read-only view on the
 renderer-owned command stream; validation, composition, preparation, and
 publication require no CPU readback.
 
-Every participant observes the same pinned snapshot. `runs_after` orders
-callbacks/dispatches and consumer-owned stimulus visibility, not Moria truth.
+Every participant observes only its own planned cells/volumes, but every
+record refers to the same pinned commit frontier. `runs_after` orders
+callbacks/dispatches and optional Moria-transported opaque handoffs, not Moria
+truth. CPU-to-GPU uploads and GPU-to-CPU staging maps have explicit bounded
+milestones; loss/cancellation cannot expose a partial or old-generation
+handoff.
 Conflicts resolve in stable adapter/proposal order by the later adapter's
 declared `RejectLater | ReplaceEarlier | FailTick` policy, always for a whole
 proposal. Selected effects for one volume publish together at one revision or
@@ -320,11 +326,16 @@ all fail for that volume; independent volumes remain independently published.
 `AbortTick` discards every proposal when that participant fails.
 `SkipParticipant` discards only that participant and lets remaining adapters
 continue unless another aborting participant failed. A running adapter is not
-automatically retried. Scheduled engine state is never Moria state: rejection
-produces CPU report/GPU feedback, checkpoint excludes it, restore requires the
-adapter to become ready independently, and device loss invalidates GPU engine
-resources while leaving CPU engine state consumer-owned. The complete
-contract is [behavior-scheduling.md](behavior-scheduling.md).
+automatically retried. A tick-wide abort still resolves a typed completed tick
+with `revision_changed = false`, participant discard outcomes, and
+`TickAborted` proposal reasons. A report-hook panic after publication is
+`PublishedWithNotificationFailure`; it never retroactively invokes
+`AbortTick`. Scheduled engine state is never Moria state: rejection produces a
+borrowed CPU report or a retained prior-feedback GPU binding, checkpoint
+excludes it, restore requires the adapter to become ready independently, and
+device loss invalidates GPU engine resources/feedback while leaving CPU engine
+state consumer-owned. The complete contract is
+[behavior-scheduling.md](behavior-scheduling.md).
 
 ## Asynchronous GPU extension lifecycle
 
@@ -421,8 +432,9 @@ count (default 1).
 | Lineage/fingerprint mismatch | Restore | IncompatibleBase | Nothing restored |
 | Device loss, durable scars | World | Submitted work fails; Recovering | Unavailable until rebuilt |
 | Device loss, volatile dirty scars | World | UnrecoverableDirtyState | Terminal, no false rollback |
-| Scheduled adapter failure | Behavior participant/tick | Skip or abort per declared policy | No invalid participant effect; abort publishes no behavior effect |
+| Scheduled adapter/transition failure before publication | Behavior participant/tick | Skip or typed `NoPublication` abort per declared policy | No invalid participant effect; abort publishes no behavior effect |
 | Scheduled proposal conflict | Proposal/tick | Whole proposal rejected/replaced or tick failed | Never partial proposal application |
+| Scheduled report-hook failure after publication | Behavior notification | `PublishedWithNotificationFailure` | Already published effects and receipts remain valid |
 | External shader failure | Asynchronous extension request | Extension error | Only earlier ordinary commits remain |
 
 ## Time and determinism

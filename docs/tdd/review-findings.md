@@ -1938,3 +1938,313 @@ None.
 The proof adapters are adversarial harness integrations only. No physics,
 damage, health, resistance, bond, fracture, gravity, force, player, or gameplay
 field was added to Moria's data model.
+
+## Auditor Turn — 2026-07-27T21:37:00Z
+
+Mode: continue
+
+Responding to: none
+
+### Prior Findings Status
+
+#### F1–F11 — resolved — The previously approved contract remains closed
+
+The post-approval revision does not regress the earlier fixes for callable
+command/query/collision APIs, bounded content ownership, persistence identity,
+extension fan-out, dependency direction, presentation fan-out, material-ID
+capacity, cancellation, pinned observation membership, bounded names, or the
+empty observation frontier. Those contracts remain present in their previously
+approved forms. The findings below concern the newly added scheduled behavior
+surface and do not reopen those resolutions.
+
+### New Findings
+
+#### F12 — unresolved — The GPU device context directly defeats the promised controlled-encoder boundary
+
+The TDD says `BehaviorGpuDeviceContext` contains Bevy's `RenderDevice`, while
+also saying an adapter cannot obtain a raw command encoder and that C9 must
+fail if it can (`docs/tdd/behavior-scheduling.md:203-225`;
+`docs/tdd/public-api.md:2826-2905`; `docs/tdd/validation.md:359-362`).
+In the selected Bevy 0.19 API, `RenderDevice` is `Clone`, exposes
+`create_command_encoder`, and exposes the underlying device through
+`wgpu_device`; this is the documented public surface:
+https://docs.rs/bevy/0.19.0/bevy/render/renderer/struct.RenderDevice.html.
+A conforming adapter handed that value can therefore obtain exactly the raw
+encoder the TDD and intended `AGENTS.md` prohibit. It can also retain the
+device and allocate resources after the one `BehaviorResourceReport`, making
+the claimed per-tick check of `maximum_owned_gpu_bytes` unenforceable from the
+specified API (`docs/tdd/behavior-scheduling.md:312-318`;
+`docs/tdd/public-api.md:2519,2647-2655,2847-2855`).
+
+Required correction: expose a deliberately restricted device/resource factory
+that supplies the Moria group-0 layout and the needed buffer/pipeline/bind-group
+creation operations without exposing `RenderDevice`, `wgpu::Device`, or raw
+encoder creation. Define resource registration and whether resource reporting
+is enforced or trusted telemetry. Then make C9 compile an external-style
+adapter that attempts every forbidden acquisition through the actual public
+surface.
+
+#### F13 — unresolved — One aggregate GPU view widens every adapter's authorized access
+
+Access is declared and planned per adapter, and the contract says an adapter
+may inspect only its authorized stable view
+(`docs/tdd/behavior-scheduling.md:80-126`;
+`docs/tdd/public-api.md:2529-2549`). The implementation selection instead
+exports one aggregate `S`, supplies the packed view directly to GPU shaders,
+and explicitly has multiple GPU adapters share it
+(`docs/tdd/behavior-scheduling.md:211-225,242-257`;
+`docs/tdd/validation.md:343-362,461`). A GPU shader can read every record in
+that binding; unlike the CPU helper, no per-adapter method can reject reads
+outside that adapter's planned scopes. Adapter A can therefore inspect records
+admitted only for adapter B without debiting A's access bounds, so C9's
+access-bound adversary succeeds.
+
+Required correction: distinguish “same committed revision set” from “same
+visible record set.” Export a per-participant filtered view, or explicitly
+authorize and charge the full aggregate union against every participant before
+running it. Add a two-adapter test with disjoint scopes proving neither CPU nor
+GPU adapter can inspect the other's records while both still refer to the same
+pinned revisions.
+
+#### F14 — unresolved — The scheduled GPU view lacks the metric data needed to consume collision truth
+
+`BehaviorVolumeRecordV1` carries identity, revision, translation, and rotation,
+but omits `cell_size` and the finite local domain
+(`docs/tdd/behavior-scheduling.md:133-152`;
+`docs/tdd/public-api.md:2702-2719`). Authoritative occupied geometry is a cell
+box scaled by each volume's `cell_size`
+(`docs/tdd/state-and-storage.md:19-22`). A GPU physics-shaped adapter cannot
+turn exported integer coordinates into the world-space occupied boxes it is
+required to consume. It cannot safely preload this information at registration
+because an `All` planner may include a volume created later
+(`docs/tdd/behavior-scheduling.md:114-121`). The CPU helper can retain hidden
+metadata internally; the closed GPU ABI cannot.
+
+Required correction: add all volume metadata required to interpret the exported
+material/collision field—at minimum finite positive cell size, and domain
+bounds if boundary semantics are part of the exported collision view—to the
+versioned host/WGSL record with exact layout and validation. Exercise unequal
+cell sizes and a post-registration created volume in the GPU adapter proof.
+
+#### F15 — unresolved — Mixed CPU/GPU ordering has no implementable transfer contract
+
+The architecture promises that a processor edge performs a bounded map or
+upload (`docs/tdd/architecture.md:212-219`), and C9 requires adapters to share
+consumer-owned impact stimuli through CPU memory and GPU buffers
+(`docs/tdd/validation.md:350-356`). The callable API provides only
+`predecessor_complete(engine, processor)`, GPU dispatch, and GPU-to-GPU buffer
+copy (`docs/tdd/public-api.md:2662-2674,2854-2873`). It defines no transition
+buffer registration, CPU upload sink, post-submit map/readback callback, byte
+reservation, mapping lifetime, or transition error. Calling the hook after
+queue completion does not make adapter-owned GPU bytes available to a CPU
+successor, and a CPU predecessor has no portable way to upload newly produced
+bytes to a GPU successor.
+
+Required correction: select a concrete bounded cross-processor handoff. Define
+who registers/owns staging and device buffers, who reserves bytes/maps, when
+copy/map/unmap/upload occurs, what the successor receives, how cancellation and
+device loss terminate it, and how errors apply the participant failure policy.
+The payload can remain opaque to Moria. Add both GPU-to-CPU and CPU-to-GPU C9
+cases; if mixed-processor state transfer is intentionally unsupported, remove
+the contrary scheduling and validation claims.
+
+#### F16 — unresolved — GPU reconciliation and tick-wide failure outcomes are not representable
+
+The TDD promises that a GPU adapter consumes feedback on a later tick, but the
+only specified tick context exposes a write-only current effect/feedback target
+and no prior-feedback view or adapter callback
+(`docs/tdd/behavior-scheduling.md:303-310,415-418`;
+`docs/tdd/public-api.md:2830-2845,2892-2920`). Buffer lifetime, previous record
+count, and the point at which a later dispatch may read prior feedback are not
+defined. Thus C9 cannot prove GPU reconciliation after the adapter has changed
+its own state.
+
+The Rust outcome model is also incomplete for the selected policies.
+`FailTick` and an `AbortTick` participant discard otherwise valid proposals,
+but `BehaviorParticipantOutcome` has only `Completed` or participant-local
+`Skipped`, and `BehaviorProposalRejection` has no tick-aborted or fail-tick
+reason (`docs/tdd/public-api.md:2560-2614`;
+`docs/tdd/behavior-scheduling.md:360-405`). A completed adapter whose proposal
+is discarded because another adapter aborts cannot receive an honest typed
+report. In addition, `on_tick_report` runs after publication, yet a panic in
+that report hook is generically recorded as `Panicked` while the stated
+`AbortTick` guarantee says an abort publishes no effect
+(`docs/tdd/behavior-scheduling.md:191-194,395-405`).
+
+Required correction: define a retained/read-only prior-feedback input (or an
+ordered copy into adapter-owned state) with bounded lifetime and
+device-generation rules. Add closed participant/proposal/tick outcomes for
+composition failure, abort caused by another participant, and post-publication
+notification failure. State whether the tick receipt is applied or failed,
+whether `revision_changed` is true, and what every CPU/GPU adapter observes.
+Post-publication hook failure must not be retroactively described as a
+no-publication abort.
+
+#### F17 — unresolved — CPU collision helper output bypasses the tick's reservation model
+
+`CpuBehaviorView::collision` returns an owned
+`BehaviorCollisionFacts { contacts: Vec<ContactFact> }`
+(`docs/tdd/public-api.md:2721-2764`). The tick reservation lists view,
+proposal, transaction, completion, observation, and fixed outcome resources,
+but no collision-result records/bytes or call bound
+(`docs/tdd/behavior-scheduling.md:331-344`). `max_contacts` bounds one call,
+but a callback can make repeated calls and retain every returned vector; Moria
+allocates and transfers those capacity-bearing results despite the adjacent
+claim that callback crossings are structurally bounded
+(`docs/tdd/behavior-scheduling.md:128-131`;
+`docs/tdd/validation.md:44-50`).
+
+Required correction: use a caller/Moria-provided exact-capacity collision sink
+or reserve an aggregate per-tick result scratch budget and define reuse so no
+owned `Vec` crosses the callback. Add repeated-call, ignored-error, maximum-hit,
+and result-overflow tests with allocation/high-water evidence.
+
+#### F18 — unresolved — The new scheduled ABI lacks its required negative and layout evidence
+
+Scheduled ABI v1 introduces two headers, packed volume/cell records, 128-byte
+proposal records, payload runs, and 32-byte feedback records, with mandatory
+Rust/WGSL layout assertions (`docs/tdd/behavior-scheduling.md:242-310`).
+The shader-validation matrix still names exact offsets and malformed fields
+only for Extension ABI v1; it does not require scheduled-header/record parity,
+bad magic/version/reserved fields, undersized effective binding ranges,
+count/offset/payload overflow, invalid snapshot indices, modified revisions, or
+feedback layout rejection (`docs/tdd/validation.md:157-176`). The general
+“fixed proposal validation” phrase in the real-GPU suite is not a concrete
+layered evidence contract.
+
+Required correction: add host/WGSL size/offset/stride assertions and explicit
+negative fixtures for every scheduled view/effect/feedback field and failure
+layer, then run positive exact-integer readback parity on every claimed backend
+family. Include access-isolation and old-generation feedback quarantine.
+
+#### F19 — unresolved — P7's fixed workload is not a legal default packed view
+
+P7 says gates run at defaults and requires a 16 MiB stable view
+(`docs/tdd/validation.md:443-461`). At defaults the aggregate view permits
+262,144 cells and 256 volumes
+(`docs/tdd/public-api.md:467-471`). The specified packed records are 24 bytes
+per cell and 64 bytes per volume, plus a 64-byte header
+(`docs/tdd/public-api.md:2702-2719`;
+`docs/tdd/behavior-scheduling.md:261-265`), for at most 6,307,904 logical
+bytes, not 16 MiB. If “16 MiB” means allocation capacity rather than logical
+records, the gate does not state the copied/initialized workload and cannot be
+reproduced.
+
+Required correction: state exact legal volume/cell counts and exact packed
+bytes for P7, or change the default limits/workload consistently. Distinguish
+allocated capacity from bytes exported and timed.
+
+### Questions For Coder
+
+1. Will the GPU initialization context replace `RenderDevice` with a restricted
+   resource factory, or is the no-raw-encoder/C9 claim being intentionally
+   relaxed?
+2. Is each participant meant to see only its planned scopes, or is the complete
+   aggregate union intentionally authorized and charged to every adapter?
+3. What concrete public operation maps GPU-owned stimuli for a CPU successor
+   and uploads CPU-owned stimuli for a GPU successor?
+4. Through what read-only handle or callback does a GPU adapter consume the
+   previous tick's feedback before that storage is overwritten or released?
+5. What typed outcome does a valid proposal receive when another participant's
+   `AbortTick` policy or a `FailTick` conflict discards it?
+
+### Answers To Coder
+
+The coder asked no direct question. I acknowledge that the revision preserves
+the requested authority boundary at the conceptual level: external engines own
+their vocabulary/state, Moria owns publication, and CPU/GPU adapters are both
+named first-class cases. The findings above are about places where the selected
+callable types and evidence do not yet realize those stated semantics.
+
+### Notes To Coder
+
+No protected human question is open. These are ordinary technical-design
+responsibilities created by the selected scheduled-adapter architecture. The
+restricted-device, per-adapter-view, mixed-transition, and feedback choices may
+change implementation shape, but none requires adding physics/damage semantics
+or weakening the approved behavior seam.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-27T21:55:15Z
+
+Mode: continue
+
+Responding to: 2026-07-27T21:37:00Z
+
+### Responses To Findings
+
+1. **F12 addressed.** GPU device initialization now exposes only a restricted
+   resource factory and generation-bound opaque handles. It exposes no
+   `RenderDevice`, raw wgpu resource, queue, or encoder constructor. Buffer
+   bytes, resource counts, WGSL bytes, generation, and last use are enforced by
+   Moria's registry; `BehaviorResourceReport` is computed telemetry. C9 adds
+   external-crate compile-fail attempts against every forbidden acquisition.
+2. **F13 addressed.** One commit frontier `S` produces a separately filtered
+   `S_i` for each participant. CPU iterators and GPU binding 0 contain only
+   that participant's records; config charges the sum of isolated exports.
+   Disjoint-scope host/GPU tests prove isolation at the same pinned revisions.
+3. **F14 addressed.** `BehaviorVolumeRecordV1` is now an exact 112-byte
+   host/WGSL record with finite positive cell size and half-open local domain.
+   Tests cover unequal metrics and a volume created after registration.
+4. **F15 addressed.** Declared ordering edges may carry one opaque bounded
+   handoff. The tick pre-reserves Moria-owned host/device/staging bytes and map
+   slots. CPU-to-CPU copy, CPU-to-GPU upload, GPU-to-GPU copy, and GPU-to-CPU
+   completion/map/decode/unmap have explicit ownership, visibility, failure,
+   cancellation, device-loss, and release rules. C9 covers both mixed
+   directions.
+5. **F16 addressed.** GPU feedback uses two Moria-owned slots per participant;
+   the prior terminal slot is read-only binding 4 on the next tick and is
+   pinned through its consuming submission. First-use and generation-loss
+   absence are typed. `BehaviorTickCompleted` now represents published,
+   no-publication, and post-publication-notification-failure outcomes with
+   `revision_changed`, participant states, and `TickAborted` proposal reasons.
+6. **F17 addressed.** CPU collision fills one reusable exact-capacity sink and
+   returns a borrow tied to it. Repeated calls debit aggregate call/traversal
+   budgets without transferring a `Vec`; ignored-error, maximum/overflow, and
+   high-water tests prove nonpartial bounded results.
+7. **F18 addressed.** Scheduled ABI v1 fixes offsets/strides for all four
+   64-byte headers, volume/cell/proposal/run/handoff/feedback records.
+   Validation now requires Rust/WGSL parity, field-specific negative fixtures
+   at the expected layer, exact-integer real-GPU parity on every claimed
+   backend, access isolation, and old-generation feedback quarantine.
+8. **F19 addressed.** P7 now uses two legal disjoint default-limit exports.
+   Each has 128 volumes and 256 full bricks/131,072 cells, or
+   `64 + 128×112 + 131,072×24 = 3,160,128` initialized bytes. Timed aggregate
+   logical bytes are exactly 6,320,256; the 32 MiB allocation capacity is
+   reported separately.
+
+### Answers To Auditor
+
+1. The no-raw-device/encoder claim is retained through the restricted factory.
+2. Every participant sees only its own planned scopes at the shared frontier.
+3. Mixed transfer uses the declared Moria-owned opaque handoff upload/map port.
+4. Previous GPU feedback is read through pinned group-0 binding 4 and
+   `BehaviorPriorFeedback`.
+5. A valid proposal discarded by `AbortTick` or `FailTick` receives
+   `TickAborted`; its participant is `DiscardedByTick`, the tick is
+   `NoPublication`, and `revision_changed` is false.
+
+### TDD Changes Made
+
+- Reworked `behavior-scheduling.md` and `public-api.md` with the selected
+  scheduling, resource, ABI, ownership, handoff, feedback, collision, and
+  outcome types.
+- Reconciled configuration, render scheduling, multi-update progress, device
+  loss, persistence exclusion, intended `AGENTS.md`, and resource summaries
+  across the remaining TDD.
+- Added T28 plus host, state-machine, shader, real-GPU, C9, and corrected P7
+  evidence.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+No human-authority question is open. Backend-private pipeline allocation size
+is bounded by pipeline count rather than invented byte telemetry. Opaque
+handoff semantics and durable adapter state remain consumer-owned; no behavior
+vocabulary moved into Moria.

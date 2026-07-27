@@ -39,8 +39,39 @@ window or physical GPU and includes:
   dressing, and fixed correlation type in the normative facade;
 - scheduled behavior descriptor/access maxima, unresolved/cyclic ordering,
   deterministic topological ties, CPU/GPU trait mismatch, aggregate
-  view/proposal/transaction/conflict-check/dispatch/workgroup cross-limits, and
-  exact effective-config telemetry;
+  per-participant view/collision/handoff/proposal/transaction/conflict-check/
+  feedback/dispatch/workgroup cross-limits, and exact effective-config
+  telemetry;
+- restricted GPU factory surface: an external crate compile-pass adapter can
+  create and use only opaque registered buffers/layouts/bind groups/pipelines;
+  compile-fail fixtures attempt `RenderDevice`, `wgpu::Device`, raw resource,
+  queue, encoder, and submission acquisition through every public method.
+  Registry tests prove live bytes/counts are enforced through create/drop/last
+  GPU use rather than trusted from `BehaviorResourceReport`;
+- two adapters plan disjoint scopes at one commit frontier. Their CPU
+  iterators/lookups and GPU bindings contain only their own records, attempts
+  to name the other scope fail, and both reports retain the same pinned
+  revisions. Include unequal finite positive cell sizes, finite half-open
+  domains, and a volume created after adapter registration;
+- mixed-processor handoff registration and capacity: CPU-to-GPU upload and
+  GPU-to-CPU map/decode borrow carry exact opaque bytes, CPU/CPU and GPU/GPU
+  variants preserve order, count/byte/map pressure fails before adapters run,
+  uninitialized/duplicate CPU writes and oversized GPU `written_bytes` fail
+  the successor policy, and cancellation/device loss releases or quarantines
+  every slot;
+- behavior tick outcome closure: `AbortTick`, `FailTick`, transition failure,
+  per-volume preparation failure, zero-change success, and post-publication
+  report panic each produce the exact disposition, `revision_changed`,
+  participant publication/notification, and proposal rejection records.
+  A post-publication panic never changes an admitted proposal receipt;
+- prior GPU feedback double-buffering: first tick is `NoneYet`, the next
+  dispatch reads the prior terminal feedback until its submission completes,
+  slots never overwrite while pinned, and recovery returns
+  `UnavailablePreviousGeneration` rather than old-generation records;
+- CPU behavior collision sink: repeated calls, ignored errors, maximum hits,
+  one-over output, traversal/call exhaustion, and a callback copying facts into
+  its own memory. Moria reuses one exact contact allocation, returns no partial
+  overflow result, and its contact/byte high-water never exceeds config;
 - behavior effect sink ownership: dense/run inputs are borrowed and copied
   only into pre-reserved slots, over-capacity writes poison the participant,
   create is rejected as nonscheduled control-plane work, and no adapter-owned
@@ -97,11 +128,13 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   `TooLate` at every later stage, and noncancellable startup/shutdown receipts;
 - per-volume FIFO and independent-volume concurrency;
 - behavior command-frontier capture, one pinned view for every participant,
-  direct CPU callback without query admission, post-frontier command blocking,
-  mixed CPU/GPU ordering transitions, whole-proposal reject/replace/fail
+  isolated per-participant exports, direct CPU callback without query
+  admission, post-frontier command blocking, CPU-to-GPU and GPU-to-CPU handoff
+  milestones, whole-proposal reject/replace/fail
   composition, conservative sparse-patch AABB conflicts, bounded conflict-
-  check exhaustion before publication, per-volume tick atomicity, and
-  independent-volume failure;
+  check exhaustion before publication, typed tick-abort discard outcomes,
+  post-publication notification failure, prior-feedback rotation, per-volume
+  tick atomicity, and independent-volume failure;
 - query pending/materialize/minimum/exact revision behavior;
 - observation cursor filtering after several dynamic moves and reclamation of
   their old directory versions, proving retained envelopes still apply
@@ -171,7 +204,19 @@ offsets/sizes/constants with shader declarations. Negative fixtures cover:
   malformed candidate effect layout;
 - observation-delta frontier ABI parity: both oldest/head words are zero only
   for `Empty`, both are nonzero for `Retained`, one-zero/one-nonzero is rejected,
-  and pre-sequence-1 `Complete` has zero records and a zero cursor.
+  and pre-sequence-1 `Complete` has zero records and a zero cursor;
+- every Scheduled ABI v1 host/WGSL size, alignment, offset, and stride:
+  all four 64-byte headers, the 112-byte volume, 24-byte cell, 128-byte
+  proposal, 20-byte patch run, 32-byte handoff descriptor, and both 32-byte
+  feedback records;
+- scheduled negative fixtures at the expected validation layer for bad
+  magic/version/direction/availability/status/failure tags, nonzero
+  reserved/flags words,
+  undersized effective binding ranges, nonmonotonic/overlapping offsets,
+  record-count or byte arithmetic overflow, proposal/payload/handoff
+  over-capacity, invalid snapshot/volume indices, changed revisions, invalid
+  cell size/domain, cross-participant record access, stale device generation,
+  malformed prior feedback, and old-generation handoff/feedback reuse.
 
 Passing compilation is only validation evidence, not execution correctness.
 
@@ -215,9 +260,15 @@ Required tests:
 9. **Presentation provenance:** current/stale/failure/overflow install behavior,
    halo seams, and discard of obsolete output.
 10. **Scheduled behavior:** run a CPU adapter and two renderer-owned GPU
-    adapters against the same pinned revisions; prove declared DAG order,
-    direct CPU view delivery, GPU view/effect publication with zero authority-
-    path readback, fixed proposal validation, whole-proposal conflict outcomes,
+    adapters against the same pinned revisions but disjoint exported scopes;
+    prove declared DAG order, direct CPU view delivery, unequal cell-size/domain
+    interpretation including a post-registration volume, GPU view/effect
+    publication with zero authority-path readback, CPU-to-GPU upload and
+    GPU-to-CPU mapped handoff, fixed proposal validation, whole-proposal
+    conflict/tick-abort outcomes, prior-feedback reconciliation,
+    old-generation feedback quarantine,
+    exact integer readback parity for every scheduled header/record,
+    restricted-factory resource enforcement,
     one revision per affected volume, and post-frontier command exclusion.
     Induce participant failure, rejected effects, checkpoint/restore, shutdown,
     and device loss; prove Moria never owns adapter state, late old-generation
@@ -341,25 +392,36 @@ Implement four external-style adversarial adapters:
 4. a GPU-resident variant owning the same vocabulary in its own buffers.
 
 These names describe harness-owned state only and must not appear in Moria
-types. Each adapter plans bounded access to the same stable collision/material
-view, updates its own state, and proposes only generic matter, move, or retire
-effects. The CPU adapter must participate without submitting/polling a query.
+types. Each adapter plans bounded access at the same pinned commit frontier,
+receives only its own filtered collision/material records, updates its own
+state, and proposes only generic matter, move, or retire effects. Use two
+disjoint scopes to prove neither CPU nor GPU can inspect the other's records
+while their reports cite the same pinned revisions. Include unequal cell sizes
+and a post-registration created volume. The CPU adapter must participate
+without submitting/polling a query.
 The GPU adapters must validate, compose, prepare, and publish without material,
 solver-state, or candidate-effect CPU readback on the authority path.
 
 Declare physics before damage through `runs_after`, then reverse the legal
-order and prove Moria has no hard-coded phase. Share impact stimuli through
-harness-owned CPU memory and GPU buffers. Exercise every conflict policy with
+order and prove Moria has no hard-coded phase. Transfer opaque impact stimuli
+through a declared CPU-to-GPU edge and a declared GPU-to-CPU edge, verifying
+upload/map lifetimes and bounds; do not smuggle raw harness buffer handles
+through the seam. Exercise every conflict policy with
 overlapping and nonoverlapping proposals and prove no partial proposal, same-
 view leakage, or revision interleaving. Force rejection after adapter state
-changes and prove CPU report/GPU feedback lets the adapter reconcile while
-Moria neither rolls state back nor checkpoints it. Repeat across checkpoint,
-restore readiness, device loss/recovery, and shutdown.
+changes and prove the borrowed CPU report and next-tick read-only GPU feedback
+let the adapter reconcile while Moria neither rolls state back nor checkpoints
+it. Force another participant's `AbortTick`, a `FailTick` conflict, and a
+post-publication CPU report panic; assert the exact tick/participant/proposal
+outcomes and `revision_changed`. Repeat across checkpoint, restore readiness,
+device loss/recovery, and shutdown.
 
-The independent reviewer must attempt to obtain authoritative storage or a raw
-encoder, submit independently, bypass proposal validation, exceed
-access/proposal/dispatch/workgroup bounds, or introduce behavior-specific
-fields. Any success fails C9.
+The independent reviewer must compile an external-style adapter that attempts
+every public route to obtain `RenderDevice`, `wgpu::Device`, a raw buffer/
+pipeline/bind group, raw encoder, queue, or submission; import an externally
+created resource into the behavior encoder; bind another participant's export;
+bypass proposal validation; exceed access/collision/handoff/proposal/dispatch/
+workgroup bounds; or introduce behavior-specific fields. Any success fails C9.
 
 ### C10. Asynchronous WGSL inspection/effect jobs
 
@@ -423,7 +485,7 @@ benchmarks and GPU harnesses record separately:
 - extension packet/effect GPU bytes and compact CPU readback bytes.
 - scheduled behavior planning/export/CPU-map/GPU-dispatch/composition/
   publication latency, processor-transition count, view/proposal/feedback
-  bytes, and adapter-reported external GPU bytes.
+  bytes, handoff upload/map bytes, and restricted-factory GPU bytes.
 
 GPU timestamp queries are used only when supported. CPU wall time remains
 recorded. Every run states warm-up count, sample count, workload dimensions,
@@ -458,7 +520,7 @@ Correctness for the same workload must pass first.
 | P4 collision traversal | 32 in-flight sweeps/traces, each authorizing 65,536 candidate cells and 256 hits across static plus rotated dynamic volumes | p95 submit-to-decoded facts <=33 ms and GPU traversal <=10 ms when timestamps exist; >=1,000 queries/s aggregate for 4,096-candidate-cell zero/one-hit control workload |
 | P5 materialization | Precomputed in-memory source, 8,192 detailed mixed bricks (16 MiB), no scar, 512 bricks per source callback, four of the resulting 16 batches in flight | cold-to-ready throughput >=64 MiB/s and p95 per 4,096-brick interest <=300 ms; extraction never exceeds its byte/count limit |
 | P6 presentation rebuild | **P6a local:** one sparse patch changes the eight corner cells of one 8³ brick. The union of their one-cell halo dependencies is exactly the 3×3×3 neighborhood (27 artifacts); each emits 1,024–2,048 vertices and 6,000–12,288 indices. **P6b legal-command scale:** four nonoverlapping presentation interests of at most the default 4,096 bricks cover 13,824 artifacts; one 32,768-cell mutation touches 512 pairwise halo-disjoint bricks and therefore invalidates exactly those 13,824 artifact keys. Each emits 96–128 vertices and <=768 indices, no dressing, so all outputs fit default mesh pools. Start with all artifacts current, use default 1,024 jobs, 16,384 artifact/dirty records, and sample queue/dirty/current counts every update. | **P6a:** p95 commit-to-all-current <=250 ms and GPU derivation total <=20 ms when timestamps exist. **P6b:** first newly current artifact <=250 ms; all 13,824 are current at the command revision <=2 s; submitted jobs never exceed 1,024; exact dirty high-water <=13,824 and allocated artifact/dirty records stay <=16,384; current count increases in every 250 ms interval after dispatch begins; no starvation, coalescing, overflow, eviction of an interested target, crack, or provenance failure. |
-| P7 scheduled GPU behavior | Two ordered GPU adapters share a 16 MiB stable view and propose 1,024 valid effects totaling <=1 MiB across four volumes; both keep 32 MiB harness-owned state, and no CPU adapter participates | p95 stable-view-export-to-publication <=33 ms, adapter+validation+composition+publication GPU time <=16 ms when timestamps exist, zero material/proposal readback before publication, bounded feedback only after publication, and all pool/adapter-reported bytes remain within declared limits |
+| P7 scheduled GPU behavior | Two ordered GPU adapters have disjoint filtered exports at one pinned frontier. Each export contains exactly 128 volume records and 256 full 8³ bricks = 131,072 cell records: `64 + 128×112 + 131,072×24 = 3,160,128` logical initialized bytes; aggregate logical export is exactly 6,320,256 bytes and the configured `behavior_gpu_view_bytes` allocation capacity remains 32 MiB. Together they propose exactly 1,024 valid effects with payload totaling <=1 MiB across four volumes; each owns exactly 32 MiB of factory-registered harness state, and no CPU adapter participates. | p95 stable-view-export-to-publication <=33 ms, adapter+validation+composition+publication GPU time <=16 ms when timestamps exist, time/export receipts report exactly 6,320,256 initialized/copied view bytes rather than allocation capacity, zero material/proposal readback before publication, bounded prior feedback only after publication, and every pool/factory-registry byte remains within declared limits |
 | P8 checkpoint path | 8,192 dirty detailed scars (16 MiB raw), checkpoint concurrent with four mutation streams; in-memory durable test store so storage hardware is excluded | GPU-readback-plus-encode throughput >=64 MiB/s, mutation P2 p95 degrades by <=2×, staged bytes stay within config, and semantic restore parity passes |
 | P9 asynchronous WGSL job | 8 MiB inspection packet, 256 structurally valid candidate effects whose 32,768 record bytes plus payload total <=65,472 bytes, 2 extension jobs in flight; effects touch four volumes | p95 packet-capture-to-all-child-admitted <=50 ms, extension GPU work <=16 ms when timestamps exist, candidate + 64-byte diagnostic readback <=64 KiB/job, and zero inspection-packet/material readback to CPU |
 

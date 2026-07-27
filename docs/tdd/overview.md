@@ -90,10 +90,10 @@ remains a separate asynchronous tool API.
     schedules only bounded stable-view access and substrate-effect proposals;
     no adapter can mutate authority or bypass validation, composition,
     revision, receipt, or publication rules.
-13. One scheduled behavior tick pins one committed view for every participant.
-    Post-frontier commands cannot interleave before behavior publication, and
-    adapter ordering never exposes an earlier proposal as committed matter to
-    a later adapter.
+13. One scheduled behavior tick pins one commit frontier and exports only each
+    participant's authorized records from it. Post-frontier commands cannot
+    interleave before behavior publication, and adapter ordering never exposes
+    an earlier proposal as committed matter to a later adapter.
 
 ## Selected implementation baseline
 
@@ -122,9 +122,10 @@ remains a separate asynchronous tool API.
 - Sparse lookup uses a bounded GPU hash page table and per-key version chains.
   Mutation uses copy-on-write slots and one revision-gate publication.
 - Scheduled behavior uses one active tick per world, a builder-validated
-  stable-key order DAG, canonical bounded CPU/GPU view exports, whole-proposal
-  conflict policies, and at most one behavior publication revision per
-  affected volume.
+  stable-key order DAG, per-participant filtered CPU/GPU exports from one
+  pinned commit frontier, a restricted opaque GPU resource/encoder surface,
+  bounded opaque processor handoffs and prior feedback, whole-proposal conflict
+  policies, and at most one behavior publication revision per affected volume.
 - Organic and constructed surfaces use GPU dual contouring with
   material-selected feature treatment. Collision continues to use occupied
   material cells, not that contour.
@@ -254,9 +255,11 @@ contract tests remain in the ordinary suite.
   live in the render world and are recreated from `RenderStartup`.
 - Keep backend/runtime types out of the main facade. The scheduled GPU adapter
   API is isolated under `moria::bevy::behavior` and deliberately versioned to
-  Bevy 0.19/wgpu 29. It receives a counted Moria-controlled encoder wrapper,
-  read-only exported view, and write-only proposal/feedback targets, never the
-  raw encoder, render queue, or authoritative storage handles. The
+  Bevy 0.19/wgpu 29. It receives an opaque restricted resource factory, counted
+  encoder, participant-filtered read-only export, write-only proposal/handoff
+  targets, and read-only prior feedback. It must never expose or accept
+  `RenderDevice`, `wgpu::Device`, `RenderQueue`, raw encoders/resources, an
+  aggregate cross-participant view, or authoritative storage handles. The
   asynchronous WGSL facility exposes Moria descriptors and opaque handles, not
   `wgpu::Buffer`.
 - Channels, staging pools, page tables, mesh outputs, and per-request payloads
@@ -278,7 +281,8 @@ contract tests remain in the ordinary suite.
   directory, and gap snapshots must preserve typed retired pinned members.
 - Extraction records/bytes, live and lifetime volume records, presentation
   artifact/dirty/job/mesh/instance pools, dressing registrations, scheduled
-  behavior registrations/order edges/view records/proposals/feedback, and
+  behavior registrations/order edges/per-participant views/collision scratch/
+  handoff maps and bytes/proposals/double-buffered feedback, and
   asynchronous GPU extension registrations/WGSL bytes are separate named
   bounds. Do not make one pool silently own another.
 - A command/query type owns its payload until admission succeeds. Queue-full or
@@ -330,7 +334,7 @@ contract tests remain in the ordinary suite.
 | Bounded observation | `observation` | Overflow-to-gap and resnapshot tests |
 | Derived presentation/dressing | `presentation` | Revision install checks and diagnostic visual capture |
 | Persistence scars | `persistence` | Semantic round trip and incompatible-base failures |
-| Scheduled external behavior seam | `behavior`, `bevy`, `gpu`, `command` | Conventional CPU physics, GPU-resident physics, and CPU/GPU damage-and-bond adversarial adapters |
+| Scheduled external behavior seam | `behavior`, `bevy`, `gpu`, `command` | Conventional CPU/GPU physics and damage-shaped adapters proving isolated views, restricted GPU handles, both mixed-processor handoffs, prior feedback, and typed abort outcomes |
 | Asynchronous inspection/effect jobs | `gpu`, `query`, `command` | Bounded WGSL packet/effect tool scenario |
 | Telemetry and failure honesty | `telemetry`, all owners | Schema invariants and deliberate failure suite |
 
