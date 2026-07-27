@@ -807,3 +807,243 @@ None.
 No human-authority question is open. Snapshot filter membership was selected
 because it preserves already admitted volume/brick bounds; the accepted
 records make that choice visible rather than silently redefining `All`.
+
+## Auditor Turn — 2026-07-27T19:29:24Z
+
+Mode: continue
+
+Responding to: 2026-07-27T19:22:45Z
+
+### Prior Findings Status
+
+#### F1 — resolved — Collision authorization, partial-result honesty, and typed startup/region failure are now coherent
+
+Every collision-bearing public query now requires an explicit
+`TraversalAuthorization`; admission checked-sums conservative candidate brick
+and cell work against both request and fixed maxima
+(`docs/tdd/public-api.md:1370-1381,1695-1704`). Collision output overflow fails
+under both partial policies, while partial success can omit only named
+unavailable regions (`docs/tdd/public-api.md:1750-1759`;
+`docs/tdd/collision-and-presentation.md:91-103`).
+
+`RegionFailure` now retains a closed machine-actionable cause, retryability,
+generation, and bounded diagnostic (`docs/tdd/public-api.md:1657-1681`).
+Startup failures distinguish renderer lookup, capability aggregation, device,
+persistence, restore, and directory stages through the public receipt error
+(`docs/tdd/public-api.md:714-777,834-841`;
+`docs/tdd/architecture.md:137-143,284-294`). This resolves the prior finding.
+
+#### F2 — partially_resolved — The missing named limits exist, but content-response byte admission is still unspecified
+
+The revision correctly adds separate aggregate material-metadata and
+observation-payload pools, a fixed `content_bricks_per_request`, and the
+partitioned per-live-volume presentation fallback
+(`docs/tdd/public-api.md:321-362,381-410,450-469`;
+`docs/tdd/collision-and-presentation.md:117-142`). Their cross-limits,
+telemetry kinds, and boundary tests resolve the previously cited metadata,
+observation, batching-count, and simultaneous-presentation omissions.
+
+The content callback path is not yet implementably bounded by its aggregate
+byte pool. `content_requests` permits multiple callbacks in flight and
+`content_response_bytes` is one aggregate `ResourceKind`, while each callback
+may return an owned batch of up to `content_bricks_per_request` detailed boxes
+(`docs/tdd/public-api.md:345-347,400,467-469,1133-1175`). The request carries
+`maximum_encoded_bytes`, but the TDD never states that Moria reserves that many
+bytes from `content_response_bytes` before invoking consumer code, how callback
+admission behaves when count capacity exists but byte capacity does not, or
+when that reservation is released (`docs/tdd/public-api.md:1156-1169,
+1197-1209`). Rejecting an oversized result after the callback returns does not
+bound the simultaneous host allocations already created by several callbacks.
+
+Define the content-worker admission protocol: reserve an exact or conservative
+response-byte permit before invocation, set `maximum_encoded_bytes` from that
+permit, defer/reject batches when either count or bytes is unavailable, and
+release bytes at a named installation/failure/cancellation milestone. Add a
+pressure test in which count slots remain but response-byte capacity is
+exhausted.
+
+#### F3 — resolved — Persistence read, restore scope, and membership remain implementable
+
+The bounded reader, whole-world checkpoint/import request, exact live-volume
+membership, tombstone handling, and extra-material rule remain coherent
+(`docs/tdd/public-api.md:2047-2190`; `docs/tdd/persistence.md:125-188`).
+
+#### F4 — resolved — Extension effect fan-out remains fully pre-reserved
+
+Worst-case child records, aggregate payload, and completion slots are reserved
+before dispatch; invalid output admits none and unused capacity is released
+(`docs/tdd/public-api.md:597-618,2388-2432`).
+
+#### F5 — resolved — Collision/query dependency direction remains acyclic
+
+Architecture, ownership, and intended repository instructions consistently
+place the private collision kernel below public query orchestration
+(`docs/tdd/architecture.md:84-98,210-232`;
+`docs/tdd/overview.md:221-229`).
+
+#### F6 — resolved — Both presentation feasibility fixtures are now physically possible
+
+P6a now mutates the eight corner cells of one brick, whose halo union is the
+declared 27 artifacts; P6b retains the 512-brick/13,824-artifact legal-command
+fair-drain case (`docs/tdd/validation.md:319-324`;
+`docs/tdd/collision-and-presentation.md:111-117`).
+
+#### F7 — resolved — Material ID capacity remains consistent
+
+The public registry, GPU sample format, and persistence boundary consistently
+allow IDs 1 through 65,535 plus reserved empty ID zero
+(`docs/tdd/state-and-storage.md:42-51`;
+`docs/tdd/persistence.md:233-236`).
+
+#### F8 — resolved — Cancellation now has one observable linearization point
+
+All cancellable families use the atomic
+`Queued | WaitingForMatter -> Preparing` race; a winning cancellation installs
+`CancelledBeforePreparation`, a loss returns `TooLate { stage }`, and startup
+and shutdown are noncancellable (`docs/tdd/public-api.md:661-676,811-826`;
+`docs/tdd/lifecycles.md:100-121`). `CancelNotPrepared` uses the same boundary
+and drains later stages (`docs/tdd/lifecycles.md:301-315`). The state-machine
+matrix exercises both sides and every later stage
+(`docs/tdd/validation.md:58-64`).
+
+#### F9 — partially_resolved — Snapshot membership is selected, but retained observation filtering and retired-member resnapshot are not representable
+
+The revision explicitly makes `All` a snapshot for interests and
+subscriptions, exposes accepted IDs, freezes interest bricks, and requires
+update/resubscription to refresh membership
+(`docs/tdd/public-api.md:1051-1063,1101-1115,1925-1945,1961-1975`). That
+resolves the original snapshot-versus-live ambiguity.
+
+Two adjacent contracts still prevent the selected subscription behavior from
+being implemented:
+
+- Filtering occurs when a subscriber polls the shared ring, potentially long
+  after the fact was appended (`docs/tdd/lifecycles.md:168-177`). Yet
+  world-bounds predicates are defined at the fact revision and move predicates
+  must match either the prior or new placed domain
+  (`docs/tdd/public-api.md:1969-1975`). The retained public facts do not contain
+  sufficient geometry: `MatterCommitted` retains local affected bounds but no
+  placement, lifecycle and presentation facts retain local bounds/bricks, and
+  `VolumeMoved` retains only the new placement
+  (`docs/tdd/public-api.md:1797-1840`). Current directory state cannot
+  reconstruct a prior placement after later moves. No bounded internal ring
+  envelope, revision pin, or append-time match representation is selected.
+- Retirement invalidates the runtime handle
+  (`docs/tdd/public-api.md:1335-1341`), but a subscription-gap snapshot promises
+  the exact pinned membership and revisions while `WorldSnapshot` can represent
+  only live `VolumeStateSnapshot` records; it has no retired/tombstone member
+  record carrying the terminal revision
+  (`docs/tdd/public-api.md:1632-1655,1724-1731`). If the retirement observation
+  itself was overwritten, the resnapshot contract does not tell the consumer
+  how that pinned member is represented rather than silently absent.
+
+Select a bounded retained filter representation—such as per-fact prior/new
+world bounds or a charged internal filter envelope—and include it in
+`observation_payload_bytes`. Define a subscription-gap snapshot record for a
+pinned member retired during the gap, including stable identity and terminal
+revision (or explicitly define an equally unambiguous typed absence). Then test
+polling after multiple moves have reclaimed older directory versions and gap
+recovery after the retirement fact has been overwritten.
+
+### New Findings
+
+No new finding family beyond the unresolved resource and long-lived-filter
+contracts above.
+
+### Questions For Coder
+
+1. Will observation facts retain revision-time world filter bounds (including
+   both prior and new move bounds), or will the ring use another bounded
+   charged filter envelope?
+2. What typed record will a subscription-gap snapshot return for a pinned
+   volume whose retirement fact was lost?
+3. Will each content callback reserve its worst-case response bytes before
+   invocation, or will batching shrink to the currently available byte permit?
+
+### Answers To Coder
+
+The coder asked no direct question. I acknowledge and verified the stated
+choices: partial collision omits only unavailable regions, presentation uses
+partitioned per-volume fallback markers, and long-lived `All` membership is a
+snapshot. The remaining F9 issue is not the membership choice; it is the
+retained data needed to execute that choice after moves, retirement, and a
+gap.
+
+### Notes To Coder
+
+No protected human decision is open. The remaining corrections are ordinary
+bounded transport and observation-state design. The newly added validation
+language for create/retire/move is directionally correct, but the production
+record shapes must first contain the state those tests are meant to assert.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-27T19:35:21Z
+
+Mode: continue
+
+Responding to: 2026-07-27T19:29:24Z
+
+### Responses To Findings
+
+1. **F2 addressed.** Before invoking a content source, the scheduler now
+   atomically acquires both one callback-count slot and a conservative
+   worst-case `content_response_bytes` permit for the already formed batch.
+   `maximum_encoded_bytes` is that permit. If either resource is unavailable,
+   the batch remains queued, consumer code is not invoked, no partial resource
+   hold remains, and deferred pressure is observable. A valid smaller response
+   releases its unused reservation after validation; the rest is released only
+   after install/failure cleanup and drop. The response charge includes bounded
+   per-result ownership/control storage plus homogeneous or detailed sample
+   bytes. Validation now includes the case where count slots remain free but
+   aggregate response bytes are exhausted.
+2. **F9 addressed.** Each ring fact now retains a private fixed 128-byte
+   `FilterEnvelopeV1`, charged to `observation_payload_bytes`, with append-time
+   local/world geometry. Move envelopes retain both prior and new placed-domain
+   bounds; retirement retains the final live extent. Polling filters only
+   against this immutable envelope, so reclaimed directory versions cannot
+   change historical matches. `VolumeStateSnapshot` now has typed `Live` and
+   `Retired` states. A subscription-gap snapshot returns exactly one record per
+   pinned member; a lost retirement fact therefore produces a retired record
+   with the accepted historical ID, stable key, and terminal revision instead
+   of silent absence.
+
+### Answers To Auditor
+
+1. The ring uses a separate bounded, charged filter envelope. It retains
+   revision-time local/world bounds, including both prior and new world bounds
+   for a move, without enlarging the public observation fact payload.
+2. The gap snapshot returns
+   `VolumeStateSnapshot { volume, key, state:
+   SnapshotVolumeState::Retired { terminal_revision } }`. The historical
+   runtime ID identifies the accepted member but remains stale for operations;
+   the stable key is durable identity.
+3. Each callback reserves the already formed batch's full conservative
+   worst-case response bytes before invocation. Batching does not shrink to
+   currently available bytes; an unavailable dual permit defers the batch
+   without invoking the source or holding only one resource.
+
+### TDD Changes Made
+
+- Specified atomic count-plus-byte admission, pressure behavior, exact response
+  charging, cancellation, validation, installation, drop, and release
+  milestones for `BaseContentSource`.
+- Added the fixed append-time observation filter envelope, its payload-pool
+  accounting/cross-limit, old/new move semantics, and poll-time matching rules.
+- Added typed live/retired gap snapshot membership and made complete volume
+  state mandatory for `SubscriptionGap` snapshots.
+- Reconciled module ownership, lifecycle, resource tables, technical decisions,
+  host/state-machine tests, and the C7 public scenario with those contracts.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+No human-authority question is open. The private filter envelope is
+intentionally fixed-size and co-retained with its fact: it preserves
+revision-time spatial filtering without pinning historical directory versions
+or turning placement history into a second public truth channel.

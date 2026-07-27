@@ -217,3 +217,26 @@ ordinary dirty records.
 
 **Reason.** Per-record/count limits alone do not bound retained bytes or protect
 eventual presentation progress when several legal producers are active.
+
+## T21. Content callback bytes are admitted before consumer invocation
+
+**Decision.** One content batch starts only after Moria atomically acquires a
+callback slot and its exact worst-case response-byte permit. The batch is not
+shrunk to current capacity. Returned ownership remains charged until validation,
+copy/install or failure cleanup, and drop have completed.
+
+**Reason.** Validating an oversized owned response only after return does not
+bound concurrently live callback allocations. Atomic dual admission also
+avoids count/byte hold-and-wait deadlocks.
+
+## T22. Observation filters retain append-time geometry
+
+**Decision.** Every ring fact carries a fixed, charged private envelope with
+its revision-time local/world extents; move facts retain both old and new world
+bounds. Subscription-gap snapshots return a typed live or retired state for
+every pinned member, with retired members identified by stable key and terminal
+revision.
+
+**Reason.** Poll-time filtering cannot reconstruct historical placement after
+directory-version reclamation, and an overwritten retirement fact must not
+turn a pinned member into ambiguous absence.

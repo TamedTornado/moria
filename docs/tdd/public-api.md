@@ -394,10 +394,10 @@ maximum legal operation, or violates a cross-limit.
 | `command_records` / `command_payload_bytes` | 1,024 / 64 MiB | 65,536 / 1 GiB; records `>= extension_candidate_effects` when enabled; bytes >= maximum patch |
 | `query_records` / `query_result_bytes` | 256 / 32 MiB | 16,384 / 1 GiB; bytes >= largest enabled query result |
 | `observation_facts` | 4,096 | 1,048,576 |
-| `observation_payload_bytes` | 32 MiB | 1 GiB; `>= 64 + 32 * volume_records` so one maximum checkpoint fact fits |
+| `observation_payload_bytes` | 32 MiB | 1 GiB; `>= 192 + 32 * volume_records` so one maximum checkpoint fact plus its 128-byte filter envelope fits |
 | `subscribers` / `volumes_per_filter` | 64 / 256 | 4,096 / `min(live_volumes, 256)` |
 | `staging_maps` / `staging_bytes: GpuCapacityLimit` | 8 / 32 MiB desired, 8 MiB minimum | maps 1..=256; bytes <=1 GiB and adapter allocation; covers largest enabled readback chunk |
-| `content_requests` / `content_bricks_per_request` / `content_response_bytes` | 64 / 512 / 32 MiB | 4,096 requests / 4,096 bricks per request / 1 GiB; bytes `>= 2,048 * content_bricks_per_request + 256` |
+| `content_requests` / `content_bricks_per_request` / `content_response_bytes` | 64 / 512 / 32 MiB | 4,096 requests / 4,096 bricks per request / 1 GiB; bytes `>= 2,080 * content_bricks_per_request + 256` |
 | `persistence_requests` / `persistence_staged_bytes` | 8 / 64 MiB | 256 / 1 GiB; staged bytes >= 8 MiB chunk decode bound when enabled |
 | `extraction_records` / `extraction_bytes` | 2,048 / 32 MiB | 65,536 / 1 GiB; bytes cover one maximum enabled patch or extension input packet plus inline state and records are at least 1 |
 | `presentation_jobs` | 1,024 | 65,536; zero only when presentation disabled |
@@ -459,14 +459,21 @@ accepted; `MaterialMetadataBytes` reports the aggregate retained pool.
 
 The observation ring owns independent fact-slot and encoded-payload capacities.
 Append evicts oldest whole facts until both fit and never splits a fact.
+Every retained ring record also owns one fixed 128-byte `FilterEnvelopeV1`;
+that envelope is included in payload usage and high-water telemetry.
 Checkpoint revision vectors encode as 32 bytes per entry plus a 64-byte fact
-header, so one maximum legal fact always fits. Subscriber cursor/revision
-arrays are fixed-capacity allocations derived from
+header and the envelope, so one maximum legal fact always fits. Subscriber
+cursor/revision arrays are fixed-capacity allocations derived from
 `subscribers * volumes_per_filter` at startup and do not grow with history.
 
 `content_bricks_per_request` is the exact count bound for each source callback.
 Moria partitions larger materialization demand into stable brick-order batches,
-with at most `content_requests` callbacks in flight.
+with at most `content_requests` callbacks in flight. Before invoking consumer
+code, the scheduler atomically acquires both one callback slot and a
+`content_response_bytes` permit for
+`256 + 2,080 * request.bricks.len()` bytes. It never holds one resource while
+waiting for the other and never shrinks or splits an already formed batch to
+fit currently free bytes.
 
 ```rust
 impl MoriaHandle {
@@ -1198,15 +1205,39 @@ A request contains one volume key, its lineage/fingerprint, at most
 `content_bricks_per_request` sorted unique brick coordinates, the intersected
 domain, material registry digest, and maximum encoded bytes. Larger demand is
 partitioned in stable coordinate order; one callback never sees a hidden
-larger batch. Its worst-case detailed response must fit
-`content_response_bytes`. The callback runs on a Moria worker, never a render
-or Bevy main thread.
+larger batch. Before invocation, Moria atomically reserves one
+`content_requests` slot and the exact conservative worst-case response charge
+`256 + 2,080 * bricks.len()` from the aggregate
+`content_response_bytes` pool. `maximum_encoded_bytes` is exactly that byte
+permit. If either resource is unavailable, the materialization batch remains
+queued and emits `ResourcePressure { action: Deferred }`; consumer code is not
+invoked, and no count-only or byte-only reservation is retained. Stable batch
+order plus retry on permit release prevents a later batch for the same volume
+from bypassing it. Urgent priority changes selection between volumes only.
+Cancellation while queued removes the batch without acquiring either permit.
+The callback runs on a Moria worker, never a render or Bevy main thread.
 
 A result has exactly one response for every requested coordinate:
 `Homogeneous(MaterialSample)` or `Detailed([MaterialSample; 512])`. Results
 outside the domain must be canonical empty. Unknown material IDs, nonzero v1
 flags, omitted/duplicate bricks, excess bytes, and descriptor mismatch fail the
-whole batch. Failed content is never installed partially.
+whole batch. `encoded_bytes` must equal the checked charge of the returned
+variants: a fixed 256-byte batch allowance plus 32 bytes of vector/enum/box
+control storage per result, then 4 sample bytes for each homogeneous result or
+2,048 sample bytes for each detailed result. The source must return vector
+capacity no greater than `content_bricks_per_request` and may not return another
+variable payload. A smaller valid result shrinks the byte permit to its exact
+charge after validation and releases the difference.
+
+The remaining permit is released only after Moria has copied every returned
+sample into its already-reserved upload/installation storage and dropped the
+`BaseBrickBatch`. On validation failure, cancellation, source error, or panic,
+Moria first drops every returned allocation and then releases both permits.
+Late return after cancellation follows the same drop-before-release rule.
+Consumer-internal transient allocations during its own callback are outside
+Moria ownership, but every concurrently returned or retained response is
+bounded by the permit established before invocation. Failed content is never
+installed partially.
 
 The source descriptor supplies both:
 
@@ -1643,9 +1674,18 @@ pub struct WorldSnapshot {
 pub struct VolumeStateSnapshot {
     pub volume: VolumeId,
     pub key: VolumeKey,
-    pub revision: VolumeRevision,
-    pub placement: RigidPlacement,
-    pub mode: VolumeMode,
+    pub state: SnapshotVolumeState,
+}
+
+pub enum SnapshotVolumeState {
+    Live {
+        revision: VolumeRevision,
+        placement: RigidPlacement,
+        mode: VolumeMode,
+    },
+    Retired {
+        terminal_revision: VolumeRevision,
+    },
 }
 
 pub struct RegionStateSnapshot {
@@ -1722,10 +1762,21 @@ result-specific facts.
   bounded material data for observation-gap recovery.
 
 `SnapshotScope::SubscriptionGap` is accepted only while that subscriber is in
-`NeedsSnapshot`. Its result has `resolved_subscription = Some` containing the
+`NeedsSnapshot`, requires `SnapshotContents::VOLUME_STATE`, and requires
+`QueryOptions.max_results` to cover every pinned member; either shortfall is
+rejected before admission rather than clipping membership. Its result has
+`resolved_subscription = Some` containing the
 exact accepted subscription and pinned volume IDs, and `GapResumeToken` binds
 subscriber ID, resolved-scope digest, gap head, captured observation head, and
-captured revisions. Explicit region snapshots have
+captured revisions. Its `volumes` vector has exactly one stable-key-sorted
+record for every pinned member. A live member uses
+`SnapshotVolumeState::Live`; a member retired before the captured head uses
+`Retired { terminal_revision }` even when the retirement fact was overwritten.
+The historical `VolumeId` in a retired record identifies the accepted member
+but remains stale for every operation; `VolumeKey` is its durable identity.
+The retained tombstone supplies this state without recreating a live handle.
+Explicit region snapshots accept live scopes only and therefore return only
+`Live` volume records. Explicit region snapshots have
 `resolved_subscription = None` and `resume = None`. `resume_after` rejects a token from another subscriber,
 scope, or an older gap; this is the complete race-closing contract and does not
 depend on caller-provided sequence arithmetic.
@@ -1958,6 +2009,28 @@ scope, and last trustworthy revisions known at the cursor. The subscriber must
 obtain a bounded `Snapshot` and call `resume_after(snapshot)`; no later facts
 are delivered before that.
 
+Filtering at poll time uses immutable append-time metadata, never the current
+volume directory. Each ring record contains a private, fixed-size 128-byte
+`FilterEnvelopeV1` encoded as a valid-field mask, the affected `VolumeId`, and
+four six-word AABBs: prior/current volume-local bounds and prior/current world
+bounds. Local words are `i32`; world words are finite `f32` bit patterns.
+Unused fields are zero and masked out. Matter, lifecycle, and presentation
+facts record their affected local bounds and conservative transformed world
+bounds at the fact revision. Create records the new domain; retirement records
+the last live domain/placement; move records both the prior and new placed
+domain. The envelope is built before an old directory version can be reclaimed,
+is retained and evicted atomically with its public fact, and is charged to
+`observation_payload_bytes`. It is private filtering metadata, not another
+world-truth representation or a public fact payload.
+
+`ObservationBounds::VolumeLocal` compares the envelope's valid local extents
+after matching the pinned ID. `ObservationBounds::World` compares either valid
+world extent, which makes a move match its old or new placement even after both
+directory versions are reclaimed. Non-spatial checkpoint, pressure, and device
+facts are selected by `ObservationKinds` and ignore the optional spatial
+predicate. A malformed or missing required envelope is an internal invariant
+failure at append, not a poll-time guess from current placement.
+
 Subscription volume membership is snapshotted at `subscribe`. `Include`
 captures the named live handles and `All` captures every then-live volume,
 stable-key sorted; `max_volumes` is checked against that complete set. Later
@@ -1977,10 +2050,11 @@ subscription and closes/drops the old subscriber.
 Checkpoint revision vectors and gap revision vectors are stable-key/runtime-ID
 sorted and bounded by `volume_records` and `volumes_per_filter` respectively.
 Checkpoint vectors and all other variable retained fact payloads are charged
-to `observation_payload_bytes`; overwrite advances on whole facts until both
-ring count and byte capacity are available. Gap vectors are materialized from
-the subscriber's fixed-capacity revision array reserved at subscription time,
-not from an unbounded allocation.
+to `observation_payload_bytes`, as is every fixed filter envelope; overwrite
+advances on whole fact-plus-envelope records until both ring count and byte
+capacity are available. Gap vectors are materialized from the subscriber's
+fixed-capacity revision array reserved at subscription time, not from an
+unbounded allocation.
 `ResourceKind` is the closed set of every field in `ResourceLimits`, so
 pressure on extraction, lifetime volume records, presentation artifacts/dirty
 records/instances, or extension registry storage is observable through the

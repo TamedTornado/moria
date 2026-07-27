@@ -54,8 +54,10 @@ configuration errors in deterministic field order.
 ### `content`
 
 Owns the `BaseContentSource` port, content requests/results, reconstruction
-lineage/fingerprint, base-brick validation, and the bounded worker pool.
-Consumer algorithms live behind this port.
+lineage/fingerprint, base-brick validation, the bounded worker pool, and the
+atomic callback-count/response-byte permit. It invokes consumer code only
+after both resources are reserved and releases response bytes only after the
+returned allocation is dropped. Consumer algorithms live behind this port.
 
 ### `volume`
 
@@ -100,7 +102,10 @@ behavior.
 ### `observation`
 
 Owns filtered subscriber cursors, the bounded world observation ring, explicit
-gaps, and resnapshot coordination. An observation records a committed fact only.
+gaps, resnapshot coordination, and the fixed append-time spatial filter
+envelope retained with each fact. It never reconstructs historical filtering
+geometry from current directory state. An observation records a committed fact
+only.
 
 ### `presentation`
 

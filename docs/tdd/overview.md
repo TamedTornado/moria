@@ -239,6 +239,12 @@ contract tests remain in the ordinary suite.
 - Channels, staging pools, page tables, mesh outputs, and per-request payloads
   must be bounded by `MoriaConfig`. No unbounded channel or implicit allocation
   policy is allowed.
+- Invoke a base-content callback only after atomically reserving both its worker
+  slot and worst-case returned bytes. Drop returned ownership before releasing
+  that permit; never validate an unreserved owned batch after callback return.
+- Retained observation facts carry their fixed append-time filter envelope.
+  Polling must not reconstruct historical world bounds from the current volume
+  directory, and gap snapshots must preserve typed retired pinned members.
 - Extraction records/bytes, live and lifetime volume records, presentation
   artifact/dirty/job/mesh/instance pools, dressing registrations, and GPU
   extension registrations/WGSL bytes are separate named bounds. Do not make

@@ -45,6 +45,10 @@ window or physical GPU and includes:
 - aggregate/per-record material metadata, observation fact/payload, content
   batch count/response bytes, and the reserved per-live-volume presentation
   marker partition at minimum/default/maximum cross-limits;
+- content scheduling with callback-count capacity still free but response-byte
+  capacity exhausted: the next callback is not invoked, holds no count slot,
+  emits deferred pressure, and begins only after the first returned batch is
+  installed or dropped and its byte permit is released;
 - collision traversal authorization at 8,192 bricks/65,536 cells, rejection
   one above either bound, and hit overflow with both partial policies;
 - deterministic startup cause aggregation and every `RegionFailureKind`;
@@ -63,11 +67,17 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   `TooLate` at every later stage, and noncancellable startup/shutdown receipts;
 - per-volume FIFO and independent-volume concurrency;
 - query pending/materialize/minimum/exact revision behavior;
-- observation cursor filtering, overwrite gap, snapshot/resume race;
+- observation cursor filtering after several dynamic moves and reclamation of
+  their old directory versions, proving retained envelopes still apply
+  revision-time old-or-new world bounds; overwrite gap and snapshot/resume race;
 - interest/subscription `All` acceptance followed by create, retire, and
   dynamic move into/out of world bounds; prove pinned IDs/bricks never expand,
   subscription move predicates use old-or-new bounds, and update/resubscribe is
   the only membership refresh;
+- retirement after subscription followed by overwrite of the retirement fact;
+  the gap snapshot still returns exactly one typed retired member with its
+  accepted historical ID, stable key, and terminal revision, and never silently
+  omits or replaces it;
 - exact 27-key local and 13,824-key dispersed presentation invalidation,
   bounded 1,024-job draining, dirty-record coalescing fallback, fair eventual
   scheduling, superseded-target replacement, and simultaneous dirty commits in
@@ -224,7 +234,11 @@ Stall a bounded subscriber past ring capacity, observe an explicit gap, take a
 bounded snapshot, resume at its head, and receive later facts without claiming
 the missing sequence. Repeat with `All`, then create, retire, and move volumes:
 the accepted membership remains pinned and identical in the gap/snapshot; a
-fresh subscription is required to include the new volume.
+fresh subscription is required to include the new volume. Force several moves,
+reclaim their old directory versions, and poll retained facts afterward;
+revision-time world filtering must still use the retained old/new envelopes.
+Then overwrite a pinned member's retirement fact and require the gap snapshot
+to return its typed retired record with stable key and terminal revision.
 
 ### C8. Failure matrix
 

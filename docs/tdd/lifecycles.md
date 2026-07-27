@@ -167,14 +167,18 @@ result-cap overflow always fails with no truncated result.
 
 ## Observation lifecycle
 
-One per-world ring stores immutable metadata facts. Append assigns a checked
-sequence. Subscribers retain cursors, not private unbounded queues.
+One per-world ring stores immutable public facts together with fixed 128-byte
+append-time filter envelopes. Append computes local and world extents from the
+fact's committed placement/version before reclamation, charges the complete
+fact-plus-envelope record to both ring limits, and assigns a checked sequence.
+Subscribers retain cursors, not private unbounded queues.
 
-Filtering occurs while polling. A cursor advances across nonmatching facts so
-one narrow subscriber cannot pin ring history. Ring overwrite is allowed; it
-turns lag into the explicit gap protocol in [public-api.md](public-api.md).
-Creating a subscription begins at `CurrentHead` by default or at a retained
-sequence explicitly requested.
+Filtering occurs while polling against that retained envelope, never by
+consulting the current directory. A cursor advances across nonmatching facts so
+one narrow subscriber cannot pin ring history. Ring overwrite evicts a public
+fact and its envelope together; it turns lag into the explicit gap protocol in
+[public-api.md](public-api.md). Creating a subscription begins at
+`CurrentHead` by default or at a retained sequence explicitly requested.
 
 Subscription membership is also a snapshot. `All` pins all volumes live at
 subscription acceptance; later creates are excluded and retirement terminates
@@ -187,7 +191,9 @@ Gap recovery:
 1. subscriber receives `Gap` and becomes `NeedsSnapshot`;
 2. subscriber requests a bounded snapshot covering the accepted resolved
    subscription membership;
-3. snapshot result contains the observation head captured with its revisions;
+3. snapshot result contains the observation head and exactly one live or
+   retired state record for every pinned member; a retired record carries its
+   stable key and terminal revision even if the retirement fact was lost;
 4. `resume_after` validates the subscriber/scope and advances its cursor to
    that head;
 5. facts after the captured head become deliverable.
