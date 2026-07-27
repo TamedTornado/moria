@@ -2,7 +2,6 @@
 status: complete
 coverage:
   Problem Statement: 2/2
-  6. Milestones (demoable, in order): 1/1
   7. What Product One Buys: 1/1
 next_id: 11
 next_note_id: 4
@@ -49,22 +48,6 @@ next_note_id: 4
   
   Moria is only the voxel-world substrate. Broader game, System, LLM, spell, gas,
   combat, AI, and building intent is deliberately absent and out of scope.
-
-## 6. Milestones (demoable, in order)
-
-
-### q7: What should we know about 6. Milestones (demoable, in order)?
-- status: answered
-- answer: |-
-  1. **Hill that looks like a hill** — meshing + triplanar over stub gen. *(First screenshot.)*
-  2. **Carve a smooth tunnel** — dig/place verbs, incremental remesh. *(First clip: the mid-sprint hillside tunnel.)*
-  3. **True geology** — strata, cave, ore, aquifer band visible in a cutaway debug view. *(The DF-audience clip.)*
-  4. **Dressed world** — grass, trees, boulders, river, ruin; the postcard. *(The trailer shot.)*
-  5. **The run** — controller + camera + the continuous cliff-top-to-cave-floor route. *(The playable demo.)*
-  6. **Numbers** — streaming, persistence, benchmark scene. *(The credibility post.)*
-  7. *(Stretch)* **Timber** — one felled tree with rigid-body fall. *(The viral clip, if the physics coupling comes cheap.)*
-  
-  With the Visionary pipeline and parallel agents on well-partitioned work (gen layer, meshing, controller, and dressing are nearly independent), this is a **2–3 week build to milestone 6**, with the honest risk concentrated in milestone 2's remesh latency and milestone 6's memory numbers — everything else is assembly of known techniques.
 
 ## 7. What Product One Buys
 
