@@ -58,8 +58,10 @@ exact-length output sink, reconstruction lineage/fingerprint, base-brick
 validation, the bounded worker pool, and the atomic
 callback-count/response-byte permit. It invokes consumer code only after both
 resources and the complete Moria-owned sink are reserved; consumer code can
-only copy or borrow fixed-size values into that sink. Consumer algorithms live
-behind this port.
+only borrow its immutable descriptor, copy or borrow fixed-size values into
+that sink, and return a fixed inline error record. No variable owned result,
+descriptor, or diagnostic allocation crosses the port. Consumer algorithms
+live behind this port.
 
 ### `volume`
 
@@ -209,8 +211,8 @@ Base content and persistence each use a dedicated bounded native worker pool.
 The default is two content workers and one persistence worker; configuration
 allows 1–8 each. Worker callbacks receive cancellation tokens and owned data.
 A callback panic is caught at the worker boundary and becomes
-`ContentError::Panicked` or `PersistenceError::Panicked`; the worker slot is
-replaced.
+`ContentErrorKind::Panicked` with a fixed inline diagnostic or
+`PersistenceError::Panicked`; the worker slot is replaced.
 
 Progress requires:
 

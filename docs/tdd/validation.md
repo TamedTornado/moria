@@ -56,6 +56,15 @@ window or physical GPU and includes:
   API borrows exactly 512 samples rather than accepting ownership, incomplete
   and ignored-write-error callbacks fail, and process-visible Moria-owned sink
   high-water never exceeds `content_response_bytes`;
+- content-port ownership adversaries: a source whose borrowed descriptor owns
+  an oversized lineage allocation is rejected at registration without
+  transferring it; accepted 256-byte lineage is copied into exact canonical
+  ownership; 192-byte source diagnostics round-trip, 193-byte construction is
+  rejected before callback return, and concurrent source failures can return
+  only the fixed inline error record. Instrumented allocators assert that
+  source-owned descriptor/temporary allocations never enter the Moria response
+  charge and that all Moria-owned sink/error high-water remains within
+  `content_response_bytes`;
 - volume debug names accept exactly 96 UTF-8 bytes and reject 97 bytes through
   both `register_volume` and runtime `VolumeCommand::Create`; accepted names
   with oversized input `String` capacity retain exact boxed bytes only;

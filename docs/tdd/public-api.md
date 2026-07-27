@@ -493,7 +493,9 @@ code, the scheduler atomically acquires both one callback slot and a
 `content_response_bytes` permit for
 `256 + 2,080 * request.bricks.len()` bytes. It never holds one resource while
 waiting for the other and never shrinks or splits an already formed batch to
-fit currently free bytes.
+fit currently free bytes. The fixed 256-byte portion covers the complete
+by-value `ContentError`, batch bookkeeping, and poison state; a source cannot
+return variable owned diagnostic storage through that allowance.
 
 ```rust
 impl MoriaHandle {
@@ -712,6 +714,7 @@ pub enum WorldState {
     Failed,
 }
 
+#[repr(u8)]
 pub enum Retryability {
     Never,
     AfterInputChange,
@@ -1159,7 +1162,7 @@ transaction.
 
 ```rust
 pub trait BaseContentSource: Send + Sync + 'static {
-    fn descriptor(&self) -> SourceDescriptor;
+    fn descriptor(&self) -> &SourceDescriptor;
     fn load_bricks(
         &self,
         request: BaseBrickRequest,
@@ -1220,18 +1223,41 @@ pub enum ContentWriteErrorKind {
     NonEmptyOutsideDomain,
 }
 
+#[repr(C)]
 pub struct ContentError {
     pub kind: ContentErrorKind,
     pub retryability: Retryability,
-    pub diagnostic: String,
+    pub diagnostic: ContentDiagnostic,
 }
 
+#[repr(u8)]
 pub enum ContentErrorKind {
     Unavailable,
     InvalidBatch,
     Cancelled,
     Panicked,
 }
+
+pub const CONTENT_DIAGNOSTIC_MAX_BYTES: usize = 192;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ContentDiagnostic {
+    len: u8,
+    bytes: [u8; CONTENT_DIAGNOSTIC_MAX_BYTES],
+}
+
+impl ContentDiagnostic {
+    pub fn try_from_str(value: &str) -> Result<Self, ContentDiagnosticError>;
+    pub fn as_str(&self) -> &str;
+}
+
+pub struct ContentDiagnosticError {
+    pub actual_bytes: u32,
+    pub maximum_bytes: u16, // always 192 in ABI v1
+}
+
+const _: () = assert!(std::mem::size_of::<ContentError>() == 195);
 
 pub struct CancellationToken { /* Clone + Send + Sync */ }
 
@@ -1263,7 +1289,15 @@ The source fills the sink in request order, once per coordinate. A homogeneous
 write copies one `MaterialSample`; a detailed write borrows exactly
 `&[MaterialSample; 512]` and copies it into the already reserved slot. No
 capacity-bearing collection, box, or other result ownership crosses from the
-consumer into Moria. `push_*` validates material IDs, v1 flags, and
+consumer into Moria. The callback's only by-value return is a discriminant,
+retryability, and the fixed inline `ContentDiagnostic`; it cannot transfer a
+`String`, `Box`, vector capacity, or another variable allocation. Diagnostics
+must be valid UTF-8 of at most 192 bytes, unused bytes are zero, and
+`ContentDiagnostic::try_from_str` rejects rather than truncates one-over input.
+The `repr(u8)` error/retry tags and `repr(C)` inline diagnostic make
+`ContentError` exactly 195 bytes; a compile-time size assertion protects the
+256-byte allowance.
+`push_*` validates material IDs, v1 flags, and
 outside-domain canonical emptiness before advancing `written`. A rejected
 write, an attempted `(len + 1)`th result, callback success with
 `written != len`, or callback error/panic poisons the whole batch. Rejected
@@ -1276,20 +1310,25 @@ of control/tag storage and 2,048 bytes of sample storage for each exact output
 slot. Moria may encode a completed homogeneous slot compactly only after the
 callback returns successfully, but the full worst-case sink remains charged
 until validation and copy/upload installation complete. The response echoes no
-`SourceDescriptor` or other variable payload: Moria validates and canonicalizes
-the source's `descriptor()` at registration, then compares a fresh descriptor
-to the request's fixed lineage/fingerprint immediately before invocation and
-drops that temporary descriptor before entering consumer code.
-`ContentLineage.opaque` is itself an exact-length boxed slice.
+`SourceDescriptor` or other variable payload. `descriptor()` is an immutable
+borrow tied to `&self`, never an owned return. Moria validates that borrowed
+descriptor at registration, copies it into canonical bounded world ownership,
+and compares the borrow with the request's fixed lineage/fingerprint
+immediately before invocation. The borrowed source allocation remains
+consumer-owned throughout and cannot become live Moria response ownership.
+`ContentLineage.opaque` in Moria's canonical copy is an exact-length boxed
+slice of at most 256 bytes.
 
 On success, the already-owned sink becomes the validated installation input;
 there is no second returned batch to reserve. On cancellation, source error,
 panic, poisoned/incomplete output, or installation failure, Moria drops the
 sink and then releases both permits. Late return after cancellation follows the
 same drop-before-release rule. Consumer-internal transient allocations during
-its own callback are outside Moria ownership, and the callback can only borrow
-them into fixed sink writes. Thus every simultaneously live Moria-owned output
-is covered before invocation. Failed content is never installed partially.
+its own callback or behind its borrowed descriptor are outside Moria
+ownership. Across the port the callback can only borrow source identity, copy
+or borrow fixed-size values into the sink, and return the fixed inline error
+record. Thus every simultaneously live Moria-owned output is covered before
+invocation. Failed content is never installed partially.
 
 The source descriptor supplies both:
 

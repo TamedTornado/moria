@@ -1514,3 +1514,222 @@ results; this makes the ownership bound structural and leaves compaction as a
 later measured internal optimization. The empty frontier preserves the
 existing nonadvancing GPU-delta model and does not change snapshot membership
 or ordinary gap recovery.
+
+## Auditor Turn — 2026-07-27T20:15:32Z
+
+Mode: continue
+
+Responding to: 2026-07-27T20:10:23Z
+
+### Prior Findings Status
+
+#### F1 — resolved — Public operations, bounded traversal, truthful partial results, and typed failures remain concrete
+
+The facade still defines every material, mutation, volume, query, observation,
+persistence, extension, telemetry, and shutdown operation. Collision work is
+separately authorized and hit overflow remains terminal rather than silently
+truncated (`docs/tdd/public-api.md:872-1039,1450-1872`;
+`docs/tdd/collision-and-presentation.md:18-103`).
+
+#### F2 — partially_resolved — Brick-result transfer is structurally bounded, but the content port still has two variable owned return paths outside the permit
+
+The new `BaseBrickOutput` resolves the defect demonstrated in the prior turn.
+Moria constructs one exact fixed slot per requested brick before invocation;
+homogeneous writes copy one sample, detailed writes borrow exactly 512 samples,
+overlength/incomplete/ignored-error writes poison the batch, and no brick-result
+collection crosses ownership (`docs/tdd/public-api.md:1194-1209,1243-1277,
+1285-1291`). The concurrent sink high-water fixture verifies that selected
+mechanism (`docs/tdd/validation.md:48-58`).
+
+The same public content port nevertheless still transfers unbounded owned
+values in two other ways:
+
+- `BaseContentSource::descriptor()` returns a `SourceDescriptor` by value, and
+  that descriptor contains consumer-constructed
+  `ContentLineage.opaque: Box<[u8]>` (`docs/tdd/public-api.md:1161-1182`).
+  The TDD checks/canonicalizes the returned descriptor only after ownership has
+  crossed, and repeats that return immediately before every callback
+  (`docs/tdd/public-api.md:1278-1283`). A misbehaving source can therefore
+  return a many-megabyte exact box for a one-brick request even though only the
+  fixed 256-byte callback allowance was reserved.
+- `load_bricks` returns `Result<(), ContentError>`, where
+  `ContentError.diagnostic` is an unconstrained owned `String`
+  (`docs/tdd/public-api.md:1163-1168,1223-1234`). A valid source-error path may
+  therefore transfer arbitrary owned capacity before Moria turns it into the
+  bounded 512-byte `RegionFailure` diagnostic. This is not consumer-internal
+  temporary allocation once the `ContentError` has been returned.
+
+These paths contradict the statements that consumer code can only copy or
+borrow fixed-size values and that result ownership cannot cross the port
+(`docs/tdd/architecture.md:54-62`;
+`docs/tdd/state-and-storage.md:253-255`). They also leave the claimed
+process-visible Moria-owned high-water assertion incomplete.
+
+Make both ownership crossings bounded by construction. For example,
+`descriptor()` can borrow an already registration-validated descriptor or
+return a fixed inline lineage representation, and callback failures can use a
+closed/fixed-capacity diagnostic record or write into a Moria-owned diagnostic
+sink. Post-return length validation or truncation alone does not solve the
+ownership interval. Extend the adversarial content-port test with oversized
+descriptor and error-diagnostic attempts and prove all ownership received from
+concurrent source calls remains within the charged allowance.
+
+#### F3 — resolved — Persistence read, restore, and whole-world membership remain implementable
+
+The reader uses caller-owned bounded destinations; manifests and chunks have
+preallocation size checks; restore retains exact live membership, tombstones,
+lineage, and fingerprint validation (`docs/tdd/public-api.md:2205-2346`;
+`docs/tdd/persistence.md:1-225`).
+
+#### F4 — resolved — Extension effect fan-out remains fully pre-reserved
+
+Worst-case child records, payload bytes, and completion slots are reserved
+before dispatch; invalid output admits no child and a smaller valid output
+releases unused capacity (`docs/tdd/public-api.md:608-638,2631-2678`).
+
+#### F5 — resolved — Collision/query ownership remains acyclic
+
+The private collision fact kernel remains below the public query orchestrator
+in module ownership, dependency policy, and intended repository rules
+(`docs/tdd/architecture.md:75-100,225-247`;
+`docs/tdd/overview.md:221-229`).
+
+#### F6 — resolved — Presentation viability covers valid local and legal-command fan-out
+
+P6a retains the eight-corner-cell/27-artifact fixture, while P6b exercises the
+512-brick/13,824-artifact bounded fair drain with explicit pool and latency
+gates (`docs/tdd/validation.md:361-373`).
+
+#### F7 — resolved — Material ID capacity remains consistent
+
+The runtime sample, registry, persistence count, and boundary evidence all
+permit 65,535 nonempty IDs plus reserved empty ID zero
+(`docs/tdd/state-and-storage.md:29-55`;
+`docs/tdd/persistence.md:228-247`).
+
+#### F8 — resolved — Cancellation retains one preparation boundary
+
+Every cancellable family races cancellation against entry to `Preparing`;
+later requests return `TooLate`, and shutdown uses the same boundary
+(`docs/tdd/public-api.md:822-837`;
+`docs/tdd/lifecycles.md:87-121,321-339`).
+
+#### F9 — resolved — Snapshot membership, historical filtering, and retired gap members remain representable
+
+Accepted long-lived filters pin membership, retained facts carry charged
+append-time geometry, and gap/state snapshots return one typed live or retired
+record per pinned member (`docs/tdd/public-api.md:1125-1153,1827-1858,
+2069-2128`; `docs/tdd/lifecycles.md:168-216`).
+
+#### F10 — resolved — Retained volume names remain bounded and canonical
+
+Both creation paths validate 1..=96 UTF-8 bytes and retain exact boxed names;
+tombstones and persistence preserve that bound
+(`docs/tdd/public-api.md:169-183,1382-1404`;
+`docs/tdd/persistence.md:93-106,239-247`).
+
+#### F11 — resolved — Empty and retained observation frontiers are now complete across host and GPU contracts
+
+`ObservationFrontier::Empty | Retained { oldest, head }` represents the
+pre-sequence-1 state without synthesizing a fact
+(`docs/tdd/public-api.md:40-63`). Snapshots and GPU delta outcomes share that
+type; `after = None` over an empty frontier returns zero-record `Complete` with
+a `None` cursor, then observes sequence one after the first append
+(`docs/tdd/public-api.md:1726-1735,1848-1858,2413-2433,2485-2522`). ABI v1
+encodes only the empty pair as zero/zero, rejects half-present pairs, and keeps
+status distinct from overwrite (`docs/tdd/public-api.md:2577-2587`). Host,
+layout, real-GPU, C7, and C9 evidence explicitly cover the transition
+(`docs/tdd/validation.md:96-103,146-150,194-205,264-274,299-314`).
+
+### New Findings
+
+No new finding family is added. The remaining defect is the incomplete closure
+of F2: the permit-backed brick sink is correct, but all owned values returned
+through the same content source boundary are not yet structurally bounded.
+
+### Questions For Coder
+
+1. Will `descriptor()` become a borrow/fixed representation, or will another
+   type-level mechanism prevent an invalid source from returning an oversized
+   owned lineage before validation?
+2. Will source failure diagnostics use fixed inline storage or a
+   Moria-provided bounded sink so `ContentError` cannot transfer an unreserved
+   `String`?
+
+### Answers To Coder
+
+The coder asked no direct question. I acknowledge and verified both stated
+resolutions: `BaseBrickOutput` structurally bounds brick-result transfer, and
+`ObservationFrontier` fully distinguishes the valid pre-first-fact state from
+gap, paging, and unsupported-fact outcomes.
+
+### Notes To Coder
+
+No protected human question is open. Consumer-internal temporary memory remains
+outside Moria accounting as previously noted; this finding concerns only owned
+values after the source returns them into Moria. The descriptor and error
+record are small interface changes and do not require changing content
+semantics, sink sizing, or the selected nonadvancing observation model.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-27T20:19:47Z
+
+Mode: continue
+
+Responding to: 2026-07-27T20:15:32Z
+
+### Responses To Findings
+
+1. **F2 addressed.** `BaseContentSource::descriptor()` now returns an
+   immutable borrow tied to the source, so even an invalid oversized lineage
+   allocation remains consumer-owned during registration validation and never
+   crosses the port. Moria copies only an accepted at-most-256-byte lineage
+   into exact canonical world ownership. `ContentError` now carries a
+   192-byte inline UTF-8 `ContentDiagnostic` instead of `String`; its private
+   fixed representation rejects 193-byte construction rather than truncating.
+   `repr(u8)` tags, `repr(C)` records, and a compile-time assertion make the
+   complete by-value error exactly 195 bytes, inside the existing 256-byte
+   callback allowance. Thus brick output, descriptor identity, and failure
+   diagnostics are all structurally bounded at the ownership crossing.
+2. **F11 remains resolved.** This revision does not alter the selected closed
+   empty/nonempty observation frontier or nonadvancing GPU delta semantics.
+
+### Answers To Auditor
+
+1. `descriptor()` is now a borrow: `fn descriptor(&self) ->
+   &SourceDescriptor`. The source retains ownership of its allocation; Moria
+   validates through the borrow and copies only a valid bounded descriptor.
+2. Source failures use fixed inline storage. `ContentError` can return only a
+   closed kind, `Retryability`, and `ContentDiagnostic` containing at most 192
+   UTF-8 bytes; no `String` or other variable owned diagnostic can cross.
+3. `BoundedVolumeFilter::All` on a long-lived interest or subscription is a
+   snapshot of the live volume IDs at acceptance. Create, retire, and movement
+   do not expand or substitute membership; explicit interest update or
+   resubscription takes a new bounded snapshot.
+
+### TDD Changes Made
+
+- Revised the normative content-source API in `public-api.md` to use borrowed
+  immutable descriptors and an exact fixed-layout error/diagnostic record,
+  including ownership, validation, canonical-copy, size, and permit rules.
+- Reconciled the content ownership boundary in `architecture.md`,
+  `overview.md`, and `state-and-storage.md`.
+- Added adversarial validation for oversized borrowed descriptors, 192/193
+  byte diagnostics, concurrent fixed source errors, canonical lineage copies,
+  and aggregate response high-water.
+- Added technical decision T26 for borrowed source identity and inline errors.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+Consumer-internal memory, including storage behind the borrowed descriptor,
+remains outside Moria accounting and ownership. The public port can now receive
+only pre-reserved sink writes and the exact 195-byte error value; every
+variable source-owned allocation stays behind a borrow. No human-authority
+question is open.

@@ -242,8 +242,11 @@ contract tests remain in the ordinary suite.
 - Invoke a base-content callback only after atomically reserving both its worker
   slot and worst-case output bytes. Construct the exact-length Moria-owned
   output sink inside that permit before invocation; callback writes may borrow
-  or copy only fixed-size values and may not return result ownership. Keep the
-  sink charged until install or failure cleanup and drop.
+  or copy only fixed-size values and may not return result ownership.
+  `descriptor()` must remain a borrow, and callback failure diagnostics must
+  remain fixed inline values; no variable owned descriptor or error allocation
+  may cross the port. Keep the sink charged until install or failure cleanup
+  and drop.
 - Retained observation facts carry their fixed append-time filter envelope.
   GPU delta reads freeze an independent closed
   `Empty | Retained { oldest, head }` frontier plus cursor/status and never

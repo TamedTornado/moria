@@ -277,3 +277,16 @@ history, and silently omitting a fact that does not fit the fixed ABI violates
 the observation contract. Mandatory nonzero frontier fields also cannot encode
 a newly started world. Independent cursors and a closed frontier avoid both
 ambiguities without inventing a startup fact.
+
+## T26. Content descriptors are borrowed and errors are fixed inline
+
+**Decision.** `BaseContentSource::descriptor()` returns an immutable borrow
+tied to the source rather than an owned descriptor. `load_bricks` may return
+only a closed error with a 192-byte inline UTF-8 diagnostic. Moria validates
+and copies accepted lineage into canonical bounded world ownership; no
+descriptor or diagnostic allocation transfers across a callback return.
+
+**Reason.** A bounded brick sink does not constrain other owned values returned
+by the same port. Borrowed identity and a fixed error record make the ownership
+boundary structural, including invalid and adversarial source behavior, while
+leaving consumer-internal allocation outside Moria accounting.
