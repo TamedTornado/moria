@@ -24,6 +24,10 @@ Moria's central promise is:
 Authoritative matter is designed to remain GPU-resident at scale. Consumer
 interaction therefore uses an asynchronous-capable command, query, observation,
 and telemetry boundary rather than direct storage or buffer ownership.
+Residency is a performance direction: it must let Moria's owned work, and
+downstream behavior engines where feasible, operate without making a full CPU
+mirror or synchronous readback the normal route to world truth. It does not
+make those behavior engines or their policies part of Moria.
 
 ## 2. Design principles
 
@@ -88,6 +92,22 @@ own, and request admitted changes. Moria does not interpret those changes as
 gravity, force, fracture, damage, health, growth, fire, fluid flow, or another
 behavior vocabulary. The substrate supplies truth and controlled effects, not
 the rule that decides an effect should occur.
+
+### 2.7 Correct first, then optimize continuously
+
+Correct material truth, atomic mutation, honest readiness, and explicit failure
+come before performance claims. Optimization may change where or how work runs,
+but it may not weaken those public semantics, introduce a second world, or make
+unknown matter appear resolved.
+
+Within that constraint, Moria is designed for relentless, measured
+optimization. GPU residency exists to make large-scale world work fast, not as
+an architectural ornament. Generic extension seams must support the intended
+performance shape in which downstream physics and other behavior engines run
+primarily on the GPU when feasible, observe Moria truth without privileged
+storage ownership, and return requested effects through normal admission. A
+consumer may still choose a CPU-oriented engine; behavior placement and policy
+remain external.
 
 ## 3. Consumer mental model
 
@@ -257,7 +277,14 @@ either:
 An admitted command later reaches one terminal outcome:
 
 - **applied**, with affected bounds and the new committed revision; or
-- **failed**, with no unreported success and a reason the consumer can act on.
+- **failed**, with no committed effect and a reason the consumer can act on.
+
+A single bounded matter-mutation command is one atomic public operation,
+including when it affects multiple cells. All of its targeted changes become
+visible together at one committed revision, or none of them do. Admission and
+internal work may be staged, but queries, collision, observations,
+persistence, and presentation never observe a partially committed command. A
+consumer that wants independent success or failure submits separate commands.
 
 Pending edits are not visible as committed truth. Once applied, public queries,
 collision truth, scars, observations, and eventual presentation all converge on
@@ -383,8 +410,8 @@ truth when authoritative matter is unavailable.
 ### 5.2 Revision rules
 
 - Queries describe committed revisions only.
-- A mutation completion identifies the first revision at which its effect is
-  committed.
+- A mutation completion identifies the one revision at which all effects of
+  that command commit atomically.
 - An observation for a change is emitted only after that change commits.
 - Collision results identify or are correlated with the committed matter
   revision used.
@@ -477,7 +504,8 @@ Failures are part of the public experience and must preserve truth.
 | Query needs cold matter | Return pending/availability status or materialize under declared interest; never fabricate a result. |
 | Mutation uses missing material or volume identity | Reject with no effect. |
 | Mutation precondition is stale | Reject as conflict and report current revision context. |
-| Admitted work cannot complete | Finish the receipt as failed with no unreported partial success. |
+| Admitted mutation work cannot complete | Finish the receipt as failed with no portion of the command committed. |
+| Other admitted work cannot complete | Finish the receipt as failed, identify whether any committed revision changed, and never leave success unreported. |
 | Resource budget is exhausted | Defer, retire eligible work, or reject according to policy and expose pressure in telemetry. |
 | Derived presentation fails | Keep authoritative matter usable, report failed presentation, and permit retry or diagnostic fallback. |
 | Observation history is lost | Report an explicit gap and require a bounded resnapshot. |
@@ -538,6 +566,9 @@ The consumer removes and places matter at exposed locations, including across
 material boundaries and deep inside a volume. Completion advances revisions;
 queries and collision observe the edit; presentation becomes current with
 honest cut and placed surfaces; derived dressing updates with its support.
+Multi-cell commands are also forced to fail after admission in validation: no
+targeted cell changes, no mutation revision commits, and no observer sees an
+intermediate subset.
 
 ### Deep-volume proof
 
@@ -600,6 +631,12 @@ authority. This design resolves them as follows.
   and interest-driven materialization are required outcomes.
 - A command/query/observation boundary hides GPU-resident storage and
   asynchronous completion from consumers without hiding state.
+- GPU residency is selected for performance. The generic extension experience
+  supports downstream behavior engines that keep their work primarily on the
+  GPU when feasible, without giving them voxel ownership or importing their
+  behavior into Moria.
+- Correctness and explicit failure precede optimization; measured optimization
+  continues behind invariant public semantics.
 - Surface presentation, dressing, debug views, and collision visualizations are
   derived from matter revisions and are never authority.
 - Presentation can express smooth organic surfaces and sharp constructed
@@ -664,19 +701,15 @@ against GPU residency, portability, bounded access, sparse scale, presentation
 quality, and mutation latency. No technical selection may add a privileged
 consumer path or elevate a game-specific behavior into substrate policy.
 
-## 12. Human decisions still required
+## 12. Resolved human design decisions
 
-The approved vision leaves the following consumer-visible semantics unresolved:
+**Multi-target mutation completion is atomic.** One bounded matter-mutation
+command commits all targeted cells together at one revision or commits none of
+them. Partial application is not a supported public outcome. This selects the
+consumer-visible semantic only; the staging and coordination that realize it
+remain technical-design concerns.
 
-1. **Multi-target mutation completion:** must a bounded mutation affecting
-   multiple cells commit atomically, or may the contract support explicitly
-   reported partial application? This design requires no
-   *unreported* partial success but does not choose between those public
-   semantics.
-
-Until resolved, technical design must not silently choose semantics that make
-either behavior observable to consumers. This question does not change Moria's
-product identity or boundary.
+No consumer-visible human decision remains open in this design.
 
 ## 13. Completion criteria
 
@@ -687,7 +720,8 @@ public facade alone:
    volumes;
 2. keep large homogeneous regions cheap and materialize bounded interest;
 3. inspect committed truth with explicit bounds, readiness, and revision;
-4. remove, place, and patch matter through admitted asynchronous commands;
+4. remove, place, and patch matter through admitted asynchronous commands that
+   commit atomically per command;
 5. move and edit dynamic volumes without importing motion policy;
 6. collide against material truth while presentation is independently rebuilt;
 7. observe changes and recover explicitly from observation gaps;
