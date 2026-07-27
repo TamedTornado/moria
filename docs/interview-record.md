@@ -2,7 +2,6 @@
 status: complete
 coverage:
   Problem Statement: 2/2
-  7. What Product One Buys: 1/1
 next_id: 11
 next_note_id: 4
 ---
@@ -48,17 +47,6 @@ next_note_id: 4
   
   Moria is only the voxel-world substrate. Broader game, System, LLM, spell, gas,
   combat, AI, and building intent is deliberately absent and out of scope.
-
-## 7. What Product One Buys
-
-
-### q8: What should we know about 7. What Product One Buys?
-- status: answered
-- answer: |-
-  - The substrate crates exist, benchmarked, with the API boundary enforced from the first commit.
-  - A public artifact for the X audience thread — each milestone is a post; milestone 5 is a downloadable demo.
-  - The decision bed for every open question in the substrate doc (voxel size, LOD strategy, object-layer scaling) answered with measurements instead of guesses.
-  - Product two (pick your poison: fortress-mode toybox, or the ARPG with the System) starts from a walkable world instead of a whiteboard.
 
 
 ## General Notes
