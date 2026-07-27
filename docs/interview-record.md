@@ -2,7 +2,6 @@
 status: complete
 coverage:
   Problem Statement: 2/2
-  2. The Seed World: 1/1
   3. Substrate Slice Included: 1/1
   4. The Player: 1/1
   5. Performance Targets (the actual product spec): 1/1
@@ -53,35 +52,6 @@ next_note_id: 4
   
   Moria is only the voxel-world substrate. Broader game, System, LLM, spell, gas,
   combat, AI, and building intent is deliberately absent and out of scope.
-
-## 2. The Seed World
-
-
-### q3: What should we know about 2. The Seed World?
-- status: answered
-- answer: |-
-  One authored *seed*, not one authored *world* — the region is generated, but the generation parameters are curated so the demo route reliably contains every proof point.
-  
-  ### Region
-  - **1km × 1km × 256m** (surface at ~64m, so ~64m of sky headroom in play, ~190m of geology below). Small enough to tune, large enough that sparsity and streaming are real (the whole region must NOT fit in memory as raw voxels — that's a test, not a limitation).
-  - **25cm voxels, 16³ bricks** per the substrate doc. Voxel-size final call happens here — this region is the benchmark bed for the 25cm vs 12.5cm question.
-  
-  ### Terrain composition (what the generator must produce from this seed)
-  | Feature | Why it's in the seed |
-  |---|---|
-  | Rolling meadow with grass dressing | The "reads as a normal world" claim, and the instancing pipeline proof |
-  | Dense mixed forest (2 tree species + bushes) | Voxel-object layer at count; canopy density stress |
-  | River with carved channel + a lake | Tier-1 fluid bodies; the carve pipeline proving rivers occupy real channels |
-  | Cliff face / rocky outcrop with exposed strata | Dual contouring sharp features; tilted strata visibly reading as geology |
-  | One karst cave system, walkable from a surface mouth to ~-40m | Deep-Z is real; underground rendering + light; homogeneous-brick sparsity at depth |
-  | One aquifer band and one ore vein type crossing the cave | Dig-down honesty — hit something *true* underground |
-  | Boulders, stumps, scattered rocks | Micro voxel objects |
-  | A small ruin (hand-stamped blueprint, placed by POI metadata) | The stamp/prefab path exercised once; sharp masonry vs organic terrain in one frame |
-  
-  ### Materials palette (seed set, ~14)
-  air, water, topsoil, subsoil, sand, gravel, limestone, sandstone, shale, granite, iron-ore, wood, leaf, cut-stone (ruin). Each with hardness, granular flag (sand/gravel), and render/splat properties. No burn/wet state rules yet — the state nibble exists in the format but no CA consumes it in product one.
-  
-  ---
 
 ## 3. Substrate Slice Included
 
