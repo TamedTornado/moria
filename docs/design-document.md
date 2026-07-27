@@ -158,8 +158,13 @@ consumer-owned generator, or combine those approaches. Moria does not know or
 prescribe the algorithm.
 
 Every base source declares a stable content lineage that can be compared with
-persisted scars. This prevents edits made against one base world from being
-silently replayed onto an incompatible base.
+persisted scars. For matter a checkpoint does not carry, the source must be
+able to reconstruct the same base content for that lineage, or the consumer
+must durably supply that base content alongside the scars. A changed or
+non-reconstructable base requires a new lineage and explicit migration or
+rebase. This prevents edits made against one base world from being silently
+replayed onto a different one while still allowing untouched homogeneous
+volume to remain cheap.
 
 ### Scar
 
@@ -357,12 +362,16 @@ prop that claims occupancy.
 The consumer requests a checkpoint at known committed revisions. A successful
 checkpoint records substrate-owned scars and reconstruction state without
 serializing derived geometry or requiring a raw dump of untouched homogeneous
-volume.
+volume. Its completion identifies exactly which committed revisions are
+durable. Mutations committed after those revisions remain dirty for a later
+checkpoint; they are not silently included or lost.
 
 Restore combines the consumer's compatible base content lineage with the saved
 scars. It restores static and dynamic material edits, persistent volume
 identity, and volume placement needed to reconstruct the same material truth.
 Moria reports the restored revision context before dependent consumers resume.
+If exact base reconstruction cannot be established, restore fails rather than
+claiming that lineage compatibility alone proves equality.
 
 The following are explicit restore failures, never implicit empty or best-effort
 success:
@@ -499,7 +508,8 @@ Failures are part of the public experience and must preserve truth.
 | Condition | Required product behavior |
 | --- | --- |
 | Invalid configuration | World startup fails with actionable validation; no partial hidden world starts. |
-| Content source unavailable or returns invalid content | Affected region becomes failed or remains pending according to the reported condition; it is not treated as empty. |
+| Content source is temporarily unavailable | The affected region remains pending or becomes failed according to the declared retry condition; it is not treated as empty. |
+| Content source returns invalid content | The affected region becomes failed with the invalid scope identified; invalid matter is not admitted as truth. |
 | Query is too large or outside the addressable domain | Reject with supported bounds; do not silently clip unless partial results were requested. |
 | Query needs cold matter | Return pending/availability status or materialize under declared interest; never fabricate a result. |
 | Mutation uses missing material or volume identity | Reject with no effect. |
@@ -583,6 +593,16 @@ A content domain large enough that raw detailed residency would be
 unreasonable remains bounded under interest changes. Homogeneous untouched
 regions stay cheap, cold regions materialize on demand, and scars survive
 retirement. Evidence reports resource use and lifecycle behavior.
+
+### Persistence proof
+
+A consumer checkpoints an edited static volume and an edited, moved dynamic
+volume without saving derived presentation or dumping untouched homogeneous
+matter. Checkpoint completion identifies its durable revisions while a later
+mutation remains explicitly dirty. Restore against the reconstructable base
+lineage reproduces the same material, volume identities, and placements.
+Missing, incompatible, or non-reconstructable base content fails restore
+without speculative scar replay.
 
 ### Dynamic-volume proof
 
@@ -727,8 +747,8 @@ public facade alone:
 7. observe changes and recover explicitly from observation gaps;
 8. derive coherent organic and constructed presentation plus truth-anchored
    dressing;
-9. checkpoint and restore scars against compatible consumer-owned base
-   content;
+9. checkpoint and restore scars against compatible, reconstructable
+   consumer-owned base content with explicit durable revision coverage;
 10. attach an external behavior plug-in without privileged storage or a
     substrate-owned behavior vocabulary; and
 11. measure and fail-close each claim, including adverse lifecycle and
