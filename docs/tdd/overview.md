@@ -1,0 +1,291 @@
+# Moria Technical Design Overview
+
+## Status and authority
+
+This is the implementation contract for the approved
+[`docs/design-document.md`](../design-document.md). The approved product design
+is binding if this TDD is ever ambiguous. Supporting scope decisions come from
+[`docs/product-vision.md`](../product-vision.md) and
+[`docs/product-design-decisions.md`](../product-design-decisions.md). This TDD
+selects engineering mechanisms; it does not add product scope.
+
+The initial implementation target is a native Rust library integrated with
+Bevy 0.19.0 and its renderer-owned wgpu 29.0.3 device. Linux/Vulkan,
+macOS/Metal, and Windows/DX12 are first-class backend families after physical
+qualification. Web, WebGL, GLES, a standalone renderer, and a shipped game are
+not current targets.
+
+## Outcome
+
+Moria is one Cargo library package named `moria`. It exposes opaque world
+handles, bounded commands and queries, receipts, observations, persistence
+ports, telemetry, and a Bevy plugin. Its authoritative ready representation is
+a sparse GPU material volume. CPU state owns configuration, identities,
+admission, lifecycle metadata, bounded transports, and durable checkpoint I/O;
+it does not keep a full voxel mirror.
+
+Material detail is divided into fixed 8×8×8-cell bricks. Empty and uniform
+bricks are encoded directly in a sparse page entry. Non-uniform bricks occupy
+slots in a configured GPU pool. A per-volume revision gate publishes prepared
+copy-on-write page versions atomically. Readers acquire a committed revision
+before resolving page versions, so they see all or none of a multi-brick
+mutation. Old versions and slots are reclaimed only after earlier GPU readers
+have completed.
+
+Every consumer, including examples and validation harnesses, uses the public
+facade. The facade never returns Moria's page table, brick pool, mesh buffers,
+or device. The optional GPU behavior extension accepts a bounded shader job
+against a copied read-only inspection packet and a fixed-schema candidate
+effect buffer; Moria validates and admits any resulting effect through the same
+command path.
+
+## Document map
+
+| File | Contract owned |
+| --- | --- |
+| [architecture.md](architecture.md) | Components, module ownership, schedules, portability, and dependency direction |
+| [public-api.md](public-api.md) | Consumer types, inputs, outputs, invariants, errors, and extension boundary |
+| [state-and-storage.md](state-and-storage.md) | Coordinates, material encoding, sparse GPU layout, atomic publication, revisions, and resource bounds |
+| [lifecycles.md](lifecycles.md) | Startup, interest, commands, queries, observations, shutdown, and device loss |
+| [collision-and-presentation.md](collision-and-presentation.md) | Matter-derived collision, surface generation, dressing, and stale-view rules |
+| [persistence.md](persistence.md) | Scar model, checkpoint format, restore, durability, and base reconstruction |
+| [validation.md](validation.md) | Automated, real-GPU, portability, performance, and human evidence obligations |
+| [decisions.md](decisions.md) | Consequential technical decisions and rejected alternatives |
+
+## Binding invariants
+
+1. A material sample in a committed volume revision is the only occupancy
+   authority. Meshes, dressing, debug geometry, acceleration summaries, CPU
+   staging data, and checkpoint encodings are derived or transport forms.
+2. No public method exposes internal buffers or grants unbounded work.
+3. Admission and completion are distinct. Accepted work has a receipt, and
+   every accepted receipt reaches exactly one terminal outcome.
+4. One matter command targets one volume and commits every targeted sample at
+   one new volume revision, or changes no committed sample.
+5. A placement change advances the same per-volume revision sequence as a
+   matter edit. No operation combines independent volumes atomically.
+6. Unknown, cold, failed, stale, or device-lost matter is never reported as
+   empty.
+7. Collision is computed from material samples and the committed placement,
+   never from the render mesh.
+8. A derived artifact is installed only if its source volume revision and
+   placement revision still match. A stale artifact may remain visible only
+   under consumer policy and is labeled stale.
+9. Dirty scars pin enough state to reconstruct truth until a checkpoint store
+   has durably committed them. Budget pressure cannot silently discard them.
+10. Dropping a receipt does not cancel accepted work. Cancellation is explicit
+    and is only guaranteed before GPU submission.
+11. Device loss terminates the old device generation. Late callbacks from that
+    generation cannot publish success. Recovery returns readiness only if base
+    content plus durable/retained scars reconstruct every committed revision;
+    loss of a GPU-only dirty scar is terminal and is never hidden as rollback.
+12. External behavior owns all behavioral vocabulary and state. Moria accepts
+    only inspection intents and substrate effects.
+
+## Selected implementation baseline
+
+- Rust edition 2024 with `rust-version = "1.95.0"`.
+- Bevy `=0.19.0`; the integration uses Bevy's render device, render queue,
+  `RenderStartup`, extraction, render schedules, and root render graph.
+- One package and one public library. There is no Cargo workspace until a
+  separate deliverable or strict compile boundary actually exists.
+- Native multithreaded operation. Public futures are runtime-neutral and do not
+  require Tokio. WebAssembly is rejected at compile time for the GPU feature.
+- `MaterialId` is a runtime `u16`; zero is canonical empty. Durable material
+  identity is a consumer-supplied UUID.
+- `VolumeId`, `WorldId`, command IDs, query IDs, interest IDs, and subscriber
+  IDs are opaque generational handles. Durable volume identity is a UUID.
+- Per-volume revisions are nonzero monotonic `u64` values. Exhaustion makes
+  that volume terminally failed rather than wrapping.
+- Logical cell and brick coordinates use checked signed `i32` triples.
+  Placement is a validated rigid transform: finite `f32` translation plus a
+  normalized quaternion. Scale and shear are not placement operations.
+- The portable cell format is four bytes:
+  `{ material: u16, coverage: u8, flags: u8 }`. Occupancy is
+  `material != EMPTY && coverage >= 128`. Flags are format-reserved in v1 and
+  must be zero.
+- Fixed 8³ bricks are a v1 format constant. Changing this constant requires a
+  persistence contract version and migration.
+- Sparse lookup uses a bounded GPU hash page table and per-key version chains.
+  Mutation uses copy-on-write slots and one revision-gate publication.
+- Organic and constructed surfaces use GPU dual contouring with
+  material-selected feature treatment. Collision continues to use occupied
+  material cells, not that contour.
+- Checkpoints store stable identities, source lineage plus an exact
+  reconstruction fingerprint, placements, and sparse full-brick scars. They
+  never store meshes or untouched base bricks.
+
+## Intended repository shape
+
+```text
+.
+├── AGENTS.md
+├── Cargo.toml
+├── Cargo.lock
+├── rust-toolchain.toml
+├── assets/
+│   └── shaders/
+├── benches/
+│   └── substrate.rs
+├── examples/
+│   ├── contract_harness.rs
+│   └── visual_harness.rs
+├── src/
+│   ├── lib.rs
+│   ├── bevy/
+│   ├── collision/
+│   ├── command/
+│   ├── config/
+│   ├── content/
+│   ├── gpu/
+│   ├── identity/
+│   ├── interest/
+│   ├── material/
+│   ├── observation/
+│   ├── persistence/
+│   ├── presentation/
+│   ├── query/
+│   ├── storage/
+│   ├── telemetry/
+│   └── volume/
+└── tests/
+    ├── contract/
+    ├── gpu/
+    ├── persistence/
+    └── support/
+```
+
+`src/lib.rs` is a facade and export list. Feature modules own their types,
+systems, messages, schedules, and tests. Do not create top-level catch-all
+`types.rs`, `systems.rs`, `components.rs`, or `utils.rs` files. A feature may
+use private submodules with those names only when the feature boundary is
+already clear.
+
+`assets/` stays at repository root for Bevy `AssetServer` compatibility.
+Shaders that define persistence- or storage-visible layout constants have a
+Rust mirror and layout assertion tests.
+
+## Intended `AGENTS.md`
+
+The implementation agent must create `AGENTS.md` at the repository root with
+the following rules. These are exact repository instructions, not suggestions.
+
+### Formatting and documentation
+
+- Run `cargo fmt --all` after Rust edits. `cargo fmt --all -- --check` is the
+  formatting gate.
+- Markdown uses one sentence per line where practical, fenced blocks with a
+  language, and no trailing whitespace.
+- Public items require rustdoc that states bounds, revision semantics,
+  cancellation behavior, and errors. Unsafe code requires a `// SAFETY:`
+  argument adjacent to each unsafe block.
+- `#![deny(unsafe_op_in_unsafe_fn)]` is mandatory. Unsafe code is allowed only
+  in the `gpu` module for verified byte-layout interop; prefer `bytemuck`
+  derives.
+
+### Exact checks
+
+Run the ordinary local gate in this order:
+
+```sh
+cargo fmt --all -- --check
+cargo check --all-targets --all-features
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-targets --all-features
+cargo doc --no-deps --all-features
+```
+
+Real-GPU correctness is an explicit additional gate on a machine with a
+qualified physical adapter:
+
+```sh
+cargo test --test gpu --all-features -- --ignored --test-threads=1
+```
+
+Contract evidence, build, benchmark, and development commands are:
+
+```sh
+cargo run --example contract_harness --features validation -- --scenario all --report target/evidence/contracts.json
+cargo build --all-targets --all-features
+cargo bench --bench substrate --features validation
+cargo run --example visual_harness --features validation
+```
+
+The ordinary test suite must not open a window or require a GPU. GPU tests are
+ignored only when they execute a real adapter; shader validation and host
+contract tests remain in the ordinary suite.
+
+### Module and dependency rules
+
+- Dependency direction is
+  `identity/material/config -> content/volume -> storage -> command/query/
+  interest -> collision/presentation/persistence/observation/telemetry -> bevy`.
+  Lower layers must not import Bevy ECS, cameras, windows, presentation, or
+  consumer behavior concepts.
+- Only `bevy` and `gpu` may use Bevy render APIs. Only `bevy` registers
+  schedules or ECS-facing plugins.
+- Do not create a second wgpu device in the Bevy path. Device-bound resources
+  live in the render world and are recreated from `RenderStartup`.
+- Keep backend/runtime types out of the main facade. The optional GPU extension
+  exposes Moria descriptors and opaque handles, not `wgpu::Buffer`.
+- Channels, staging pools, page tables, mesh outputs, and per-request payloads
+  must be bounded by `MoriaConfig`. No unbounded channel or implicit allocation
+  policy is allowed.
+- A command/query type owns its payload until admission succeeds. Queue-full or
+  closed errors return the payload unchanged.
+- No consumer, example, test harness, or feature may inspect storage internals.
+  `tests/support` builds worlds exclusively through public APIs.
+- No physics, damage, gravity, generation recipe, player, camera policy,
+  gameplay content, or world-specific axis assumption belongs in `src/`.
+- New dependencies require a short justification in the commit message and
+  must use default features only when each default is required. Keep
+  `Cargo.lock` committed.
+
+### Naming and test rules
+
+- Public opaque IDs end in `Id`; asynchronous accepted operations end in
+  `Receipt`; immutable committed views end in `Snapshot`; lifecycle enums end
+  in `State`; configured hard limits end in `Limit`.
+- Systems use verb phrases (`admit_commands`, `dispatch_queries`); resources
+  and components use noun phrases. Do not encode schedule order in function
+  names.
+- Every state transition and error variant needs a unit or headless-app test.
+  Atomic publication, stale preconditions, observation gaps, restore mismatch,
+  output overflow, queue pressure, and device loss require adversarial tests.
+- Test-only fault injection is feature-gated under `test-support` and can fail
+  only public production stages. It may not expose a bypass or alternate truth
+  path.
+- Golden persistence fixtures live under `tests/fixtures/` and are never
+  rewritten by a passing test. Updating a fixture requires an explicit
+  migration test.
+
+## Traceability
+
+| Approved design capability | Technical owner | Required evidence |
+| --- | --- | --- |
+| Configure one facade | `config`, `bevy`, [public-api.md](public-api.md) | Startup validation matrix and external-style harness |
+| Sparse volume and deep 3D content | `storage`, `content` | Homogeneous-page and deep-volume GPU/CPU oracle tests |
+| Bounded interest/lifecycle | `interest`, `volume` | Headless transition tests and bounded-residency scenario |
+| Inspection and collision truth | `query`, `collision` | Exact query oracle; truth-versus-view scenario |
+| Atomic mutation | `command`, `storage` | Forced post-admission failure and concurrent snapshot tests |
+| Dynamic volumes | `volume`, `query` | Move/edit/query/checkpoint/restore scenario |
+| Bounded observation | `observation` | Overflow-to-gap and resnapshot tests |
+| Derived presentation/dressing | `presentation` | Revision install checks and diagnostic visual capture |
+| Persistence scars | `persistence` | Semantic round trip and incompatible-base failures |
+| GPU-oriented behavior seam | `gpu`, `command` | Bounded shader packet/effect integration scenario |
+| Telemetry and failure honesty | `telemetry`, all owners | Schema invariants and deliberate failure suite |
+
+## Open Human Questions
+
+None. The approved documents provide enough authority for implementation; all
+remaining choices in this TDD are ordinary reversible engineering decisions.
+
+## Completion definition for implementation
+
+Implementation is contract-complete only when every required automated claim
+in [validation.md](validation.md) passes, the public contract harness produces
+a fail-closed evidence report, at least one physical adapter in each claimed
+native backend family passes real-GPU parity and device-loss qualification, and
+the presentation fixture has a recorded human visual decision. Performance
+receipts are reported separately and cannot turn a correctness failure into a
+pass.
