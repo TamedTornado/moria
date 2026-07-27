@@ -16,6 +16,11 @@ It does not record runtime IDs, physical slots, page-table shape, occupancy
 acceleration, mesh/dressing data, cameras, external behavior state, generation
 code, or other consumer state.
 
+V1 exposes only `CheckpointScope::WholeWorld`. A successful manifest contains
+every live volume at the captured frontier and every known retirement
+tombstone. There is no partial-volume checkpoint and therefore no ambiguity
+about omitted live volumes during restore.
+
 ## Scar authority
 
 A scar brick is the complete 512-sample committed value of one logical brick.
@@ -34,8 +39,9 @@ restore cannot accidentally resurrect it through current registration.
 
 ## Checkpoint frontier
 
-Admission captures sorted `(VolumeKey, VolumeRevision, Placement)` entries.
-That immutable frontier `F` is the checkpoint truth:
+Admission captures sorted `(VolumeKey, VolumeRevision, Placement)` entries for
+the complete live-volume directory plus the tombstone set. That immutable
+frontier `F` is the checkpoint truth:
 
 - scar page versions visible at `F` are pinned;
 - later commits allocate later versions and remain dirty;
@@ -113,6 +119,13 @@ overflow are corruption.
 The writer contract is content-addressed chunks followed by one atomic manifest
 publish. An implementation may deduplicate an existing verified chunk.
 
+The reader first reports manifest/chunk lengths, then fills caller-owned slices
+through the bounded range API in [public-api.md](public-api.md). Moria rejects a
+manifest over 64 MiB, an encoded chunk over 4 MiB, a changing length, an
+out-of-range read, or a short read before decoding. Only Moria's configured
+persistence staging pool owns read buffers; a store cannot make Moria allocate
+an implementation-selected blob or expose an unbounded stream.
+
 Filesystem layout:
 
 ```text
@@ -139,13 +152,19 @@ Restore is fail-closed and ordered:
 
 1. Read and validate manifest size, magic, version, section lengths, canonical
    ordering, and digest.
-2. Verify world identity or explicit consumer-selected new-world import mode.
-3. Match every persisted material UUID and occupancy definition to a
-   registration. Extra current presentation-only definitions are allowed;
-   missing persisted materials fail.
-4. Match every live volume UUID, finite domain/cell size/mode, lineage, and
-   exact reconstruction fingerprint to its registered source. A missing source
-   or matching lineage with different fingerprint fails.
+2. Apply the explicit `RestoreWorldMode`: require the saved `WorldKey`, or
+   import under the builder's selected new key while preserving subordinate
+   identities.
+3. Match every persisted material UUID and occupancy definition to a current
+   registration. Missing persisted materials fail. Extra current materials
+   are ordinary valid materials and are allowed only because no saved sample
+   refers to them; there is no presentation-only material class.
+4. Require the current live volume registration key set to equal the
+   manifest's live volume key set exactly and reject registration of a
+   tombstoned key. For each matched live volume, require equal finite
+   domain/cell size/mode, lineage, and exact reconstruction fingerprint. A
+   missing/extra volume, missing source, or matching lineage with a different
+   fingerprint fails.
 5. Verify every referenced chunk exists and its size/digest/CRC before any
    world directory is published.
 6. Decode all scar records into bounded host batches, validate coordinates
@@ -155,10 +174,10 @@ Restore is fail-closed and ordered:
    expose regions as cold with known scars.
 8. Resolve the restore receipt with the complete revision context.
 
-Import mode may assign a new world UUID but does not relax material, volume,
-lineage, or fingerprint validation. Rebase/migration is a separate consumer
-tool outside Moria v1; the library returns structured mismatch data to support
-one.
+Import mode assigns exactly the `WorldKey` in `RestoreWorldMode::ImportAs` but
+does not relax material, exact volume membership, tombstone, lineage, or
+fingerprint validation. Rebase/migration is a separate consumer tool outside
+Moria v1; the library returns structured mismatch data to support one.
 
 ## Base plus scar materialization
 
@@ -202,6 +221,11 @@ Required fixtures and generated tests cover:
 - checkpoint frontier while a later mutation remains dirty;
 - homogeneous, detailed, negative-coordinate, and domain-edge scars;
 - absent/mismatched materials, volume, lineage, and reconstruction fingerprint;
+- zero/65,535/65,536 nonempty material-registration boundaries and persisted
+  material-table counts, proving empty remains additional and reserved;
+- exact whole-world volume membership, extra-current material acceptance,
+  extra/missing current volume rejection, and same-key versus import mode;
+- reader oversize/changing length, short/range read, and caller-buffer bounds;
 - chunk write failure, manifest failure, and incomplete transaction cleanup;
 - device-derived state discarded and rebuilt after restore;
 - semantic sample/query/collision equality before save and after restore;

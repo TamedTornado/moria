@@ -17,10 +17,14 @@ pub struct InterestId(u64);
 pub struct SubscriberId(u64);
 pub struct CommandId(u64);
 pub struct QueryId(u64);
+pub struct ExtensionId(u64);
+pub struct OperationId(u64);
 
 pub struct WorldKey(uuid::Uuid);
 pub struct VolumeKey(uuid::Uuid);
 pub struct MaterialKey(uuid::Uuid);
+pub struct ExtensionKey(uuid::Uuid);
+pub struct CheckpointKey(uuid::Uuid);
 
 pub struct VolumeRevision(NonZeroU64);
 pub struct ObservationSequence(NonZeroU64);
@@ -37,7 +41,7 @@ runtime IDs and physical slot numbers are never durable.
 pub struct MoriaBuilder { /* registrations */ }
 
 impl MoriaBuilder {
-    pub fn new(config: MoriaConfig) -> Self;
+    pub fn new(world: WorldDefinition, config: MoriaConfig) -> Self;
     pub fn register_material(
         &mut self,
         definition: MaterialDefinition,
@@ -51,11 +55,51 @@ impl MoriaBuilder {
         &mut self,
         store: Arc<dyn CheckpointStore>,
     ) -> &mut Self;
+    pub fn restore_from(
+        &mut self,
+        request: RestoreRequest,
+    ) -> Result<&mut Self, RegistrationError>;
     pub fn validate(&self) -> Result<ValidatedMoria, ConfigurationErrors>;
+}
+
+pub struct WorldDefinition {
+    pub key: WorldKey,
+    pub debug_name: String,              // 1..=96 UTF-8 bytes
+}
+
+pub struct BevyInstallation {
+    pub plugin: MoriaPlugin,
+    pub moria: MoriaHandle,
+    pub world: WorldHandle,
+    pub startup: Receipt<StartupApplied>,
+}
+
+impl ValidatedMoria {
+    pub fn into_bevy(self) -> BevyInstallation;
+}
+
+pub struct StartupApplied {
+    pub world: WorldId,
+    pub key: WorldKey,
+    pub effective_config: EffectiveConfig,
+    pub adapter: AdapterCapabilityReport,
+    pub mode: StartupModeApplied,
+}
+
+pub enum StartupModeApplied {
+    Fresh,
+    Restored(RestoreApplied),
 }
 ```
 
-`ValidatedMoria` is consumed by `MoriaPlugin` or a test host exactly once.
+The installation handles exist in `Configured` state so they can be inserted
+into consumer resources before `App::add_plugins(installation.plugin)`.
+`startup` becomes ready only after the plugin is installed and startup or
+restore reaches `Ready`; submitting through the world earlier returns
+`WorldNotAccepting`. `ValidatedMoria` is consumed exactly once. The
+`test-support` driver consumes it through the same internal installation
+routine and exposes no additional consumer operation.
+
 Registration does not allocate GPU storage or invoke a source. Duplicate
 stable keys, invalid domains, missing material references, invalid
 fingerprints, and impossible limits are registration/configuration failures.
@@ -65,7 +109,7 @@ pub struct MaterialDefinition {
     pub key: MaterialKey,
     pub debug_name: String,              // 1..=96 UTF-8 bytes
     pub presentation: SurfaceDescriptor,
-    pub opaque_metadata: Vec<u8>,        // <= config.max_material_metadata_bytes
+    pub opaque_metadata: Vec<u8>,        // <= config.limits.max_material_metadata_bytes
 }
 
 pub enum SurfaceClass {
@@ -88,6 +132,153 @@ pub struct VolumeDefinition {
 Opaque metadata is returned only through material registry inspection. Moria
 does not interpret it and does not upload it to occupancy kernels.
 
+### Configuration schema
+
+Every field below is public and constructible. `MoriaConfig::default()` supplies
+the stated defaults; zero is invalid except where a capability is disabled.
+Count fields are `u32`, byte fields are `u64`, and conversion to platform
+`usize` is checked.
+
+```rust
+pub struct MoriaConfig {
+    pub capabilities: CapabilityConfig,
+    pub limits: ResourceLimits,
+    pub overload: OverloadPolicies,
+    pub workers: WorkerConfig,
+    pub presentation: PresentationConfig,
+}
+
+pub struct CapabilityConfig {
+    pub presentation: bool,              // default true
+    pub persistence: bool,               // default false; enabled by store/restore
+    pub gpu_extensions: bool,             // default false; also needs feature
+}
+
+pub enum OverloadPolicy {
+    Reject,
+    WaitForPermit,
+}
+
+pub struct OverloadPolicies {
+    pub commands: OverloadPolicy,         // default WaitForPermit
+    pub queries: OverloadPolicy,          // default WaitForPermit
+    pub checkpoints: OverloadPolicy,      // default Reject
+    pub extensions: OverloadPolicy,       // default Reject
+}
+
+pub struct WorkerConfig {
+    pub content_threads: NonZeroU8,       // default 2, legal 1..=8
+    pub persistence_threads: NonZeroU8,   // default 1, legal 1..=8
+}
+
+pub struct GpuCapacityLimit {
+    pub desired: u32,
+    pub minimum: u32,
+}
+
+pub struct ResourceLimits {
+    pub nonempty_materials: u32,
+    pub max_material_metadata_bytes: u32,
+    pub live_volumes: u32,
+    pub interest_leases: u32,
+    pub bricks_per_interest: u32,
+    pub detailed_bricks: GpuCapacityLimit,
+    pub page_keys: GpuCapacityLimit,
+    pub page_versions: GpuCapacityLimit,
+    pub versions_per_brick: u32,
+    pub dirty_scar_bricks: GpuCapacityLimit,
+    pub command_records: u32,
+    pub command_payload_bytes: u64,
+    pub query_records: u32,
+    pub query_result_bytes: u64,
+    pub observation_facts: u32,
+    pub subscribers: u32,
+    pub volumes_per_filter: u32,
+    pub staging_maps: u32,
+    pub staging_bytes: GpuCapacityLimit, // bytes; v1 hard max fits u32
+    pub content_requests: u32,
+    pub content_response_bytes: u64,
+    pub persistence_requests: u32,
+    pub persistence_staged_bytes: u64,
+    pub presentation_jobs: u32,
+    pub mesh_vertices: u32,
+    pub mesh_indices: u32,
+    pub extension_jobs: u32,
+    pub extension_packet_bytes: u64,
+    pub extension_state_bytes: u64,
+    pub extension_candidate_effects: u32,
+}
+
+pub struct PresentationConfig {
+    pub stale_view_policy: StaleViewPolicy,
+    pub retry_count: u8,
+    pub diagnostic_fallback: bool,
+}
+```
+
+`ResourceLimits` has the following fields and relationships. “Hard maximum”
+means validation rejects a larger request before startup. An
+adapter-negotiated field uses `GpuCapacityLimit`: startup chooses
+`effective = min(desired, adapter_legal)` and fails with
+`UnsupportedCapabilities` if effective is below `minimum`, below one enabled
+maximum legal operation, or violates a cross-limit.
+
+| Field | Default | Hard maximum / relationship |
+| --- | ---: | --- |
+| `nonempty_materials` | 4,096 | 65,535; empty ID 0 is additional |
+| `max_material_metadata_bytes` | 4 KiB | 1 MiB per registration |
+| `live_volumes` | 1,024 | 65,535 |
+| `interest_leases` / `bricks_per_interest` | 64 / 4,096 | 4,096 / 65,536 |
+| `detailed_bricks: GpuCapacityLimit` | 32,768 / 8,192 | `min(u32::MAX, adapter allocation/2,048)`; segmented by binding limit |
+| `page_keys: GpuCapacityLimit` | 131,072 / 32,768 | largest power of two within adapter allocation and `u32`; live load <=70% |
+| `page_versions: GpuCapacityLimit` | 262,144 / 65,536 | adapter allocation/entry size and `u32`; `>= page_keys`; covers command reservations |
+| `versions_per_brick` | 8 | 64 |
+| `dirty_scar_bricks: GpuCapacityLimit` | 32,768 / 8,192 | adapter allocation/2,048 and `u32`; `>= max_command_bricks` |
+| `command_records` / `command_payload_bytes` | 1,024 / 64 MiB | 65,536 / 1 GiB; records `>= extension_candidate_effects` when enabled; bytes >= maximum patch |
+| `query_records` / `query_result_bytes` | 256 / 32 MiB | 16,384 / 1 GiB; bytes >= largest enabled query result |
+| `observation_facts` | 4,096 | 1,048,576 |
+| `subscribers` / `volumes_per_filter` | 64 / 256 | 4,096 / `live_volumes` |
+| `staging_maps` / `staging_bytes: GpuCapacityLimit` | 8 / 32 MiB desired, 8 MiB minimum | maps 1..=256; bytes <=1 GiB and adapter allocation; covers largest enabled readback chunk |
+| `content_requests` / `content_response_bytes` | 64 / 32 MiB | 4,096 / 1 GiB; bytes >= one detailed brick |
+| `persistence_requests` / `persistence_staged_bytes` | 8 / 64 MiB | 256 / 1 GiB; staged bytes >= 8 MiB chunk decode bound when enabled |
+| `presentation_jobs` | 1,024 | 65,536; zero only when presentation disabled |
+| `mesh_vertices` / `mesh_indices` | 2,097,152 / 12,582,912 | `u32` and adapter allocation bound; each covers one maximum artifact when enabled |
+| `extension_jobs` | 64 | 4,096; zero only when extensions disabled |
+| `extension_packet_bytes` / `extension_state_bytes` | 16 MiB / 1 MiB | fixed v1 maxima 64 MiB / 4 MiB |
+| `extension_candidate_effects` | 256 | fixed v1 maximum 256 and `<= command_records` |
+
+The fixed request maxima remain: 32,768 cells and 512 bricks per matter
+command, 16 MiB patch payload, 262,144 cells per region read, 4,096 collision
+hits, 256 world-scope volumes, 2,048 vertices/12,288 indices per brick artifact,
+and 256 candidate effects. They are exported in `contract_limits`; they are
+not independently configurable.
+
+`PresentationConfig` defaults to `stale_view_policy = DisplayStale`,
+`retry_count = 1` (legal `0..=3`), and
+`diagnostic_fallback = false`. It contains no camera or content policy.
+
+Supplying a checkpoint store or restore request requires
+`capabilities.persistence = true`; enabling persistence without a store is a
+configuration error. Enabling GPU extensions requires the Cargo feature,
+nonzero extension limits, and a command queue capable of reserving the
+configured worst-case batch. Disabling presentation requires all presentation
+pool/job fields to be zero and makes presentation interest an explicit
+`CapabilityDisabled` error.
+
+`EffectiveConfig` mirrors every requested field and records each exact
+effective value plus `Exact | AdapterClamped { requested, adapter_max }`.
+It is returned by startup, available through
+`MoriaHandle::effective_config()`, and embedded in telemetry/evidence. Values
+not marked adapter-negotiated must equal their request. No clamp can weaken an
+enabled operation below its fixed public maximum; such an adapter fails
+startup instead.
+
+```rust
+impl MoriaHandle {
+    pub fn effective_config(&self) -> Option<EffectiveConfig>;
+}
+```
+
 ## Bounds and coordinates
 
 `CellCoord` and `BrickCoord` are signed local coordinates. `CellAabb` is
@@ -109,37 +300,94 @@ Ingress is bounded independently by record count and owned payload bytes.
 
 ```rust
 pub enum ReserveError {
+    Full { available_records: u32, available_bytes: u64 },
     Closed,
-    PayloadTooLarge { requested: usize, limit: usize },
+    PayloadTooLarge { requested: u64, limit: u64 },
 }
 
 pub enum TryReserveError {
-    Full { available_records: u32, available_bytes: usize },
+    Full { available_records: u32, available_bytes: u64 },
     Closed,
-    PayloadTooLarge { requested: usize, limit: usize },
+    PayloadTooLarge { requested: u64, limit: u64 },
 }
 
 impl WorldHandle {
     pub fn try_reserve_command(
         &self,
-        payload_bytes: usize,
+        payload_bytes: u64,
     ) -> Result<CommandPermit, TryReserveError>;
 
     pub fn reserve_command(
         &self,
-        payload_bytes: usize,
+        payload_bytes: u64,
     ) -> ReserveFuture<CommandPermit>;
 
     pub fn try_reserve_query(
         &self,
-        result_budget_bytes: usize,
+        result_budget_bytes: u64,
     ) -> Result<QueryPermit, TryReserveError>;
+
+    pub fn reserve_query(
+        &self,
+        result_budget_bytes: u64,
+    ) -> ReserveFuture<QueryPermit>;
+
+    pub fn try_reserve_checkpoint(
+        &self,
+        staged_bytes: u64,
+    ) -> Result<CheckpointPermit, TryReserveError>;
+
+    pub fn reserve_checkpoint(
+        &self,
+        staged_bytes: u64,
+    ) -> ReserveFuture<CheckpointPermit>;
+
+    pub fn try_reserve_extension(
+        &self,
+        packet_bytes: u64,
+    ) -> Result<ExtensionPermit, TryReserveError>;
+
+    pub fn reserve_extension(
+        &self,
+        packet_bytes: u64,
+    ) -> ReserveFuture<ExtensionPermit>;
+
+    pub fn try_reserve_effect_batch(
+        &self,
+        max_effects: u16,
+        command_payload_bytes: u64,
+    ) -> Result<EffectBatchPermit, TryReserveError>;
+
+    pub fn reserve_effect_batch(
+        &self,
+        max_effects: u16,
+        command_payload_bytes: u64,
+    ) -> ReserveFuture<EffectBatchPermit>;
 }
 ```
 
-A permit reserves both one queue record and the declared bytes. Dropping an
-unused permit releases capacity. Submission consumes the permit and command.
-Structural rejection returns the command unchanged where possible.
+A command/query/checkpoint/extension permit reserves one record and the
+declared bytes in that operation's queue. An `EffectBatchPermit` reserves
+`max_effects` ordinary command records, their aggregate encoded payload bytes,
+and the same number of child receipt/completion slots. Dropping an unused
+permit releases all capacity.
+
+`ReserveFuture<P>` has output `Result<P, ReserveError>`. With the queue's
+configured `WaitForPermit`, it waits in bounded FIFO waiter storage; with
+`Reject`, it immediately resolves to `ReserveError::Full`. Every `try_` method
+is always immediate regardless of policy. Dropping the future removes its
+waiter. Each queue has at most its configured record count in waiter slots; an
+additional waiter resolves `Full` rather than allocating. Queue close resolves
+every waiter as `Closed`. Effect-batch reservation uses the command queue's
+overload policy because it reserves ordinary child command capacity.
+
+Submission consumes its permit and owned input. Structural rejection returns
+the input unchanged and releases the submitted operation permit's capacity. A
+rejected `GpuExtensionRequest` still owns its nested `EffectBatchPermit`, so
+the caller may correct/resubmit it or drop it to release child capacity.
+Declared bytes are an upper bound; admission rejects an input whose encoded
+size exceeds them and releases unused bytes immediately after successful
+encoding.
 
 ```rust
 pub enum SubmitError<T> {
@@ -149,11 +397,13 @@ pub enum SubmitError<T> {
     PermitMismatch { command: T },
 }
 
-pub struct Receipt<T> { /* Future<Output = Result<T, OperationError>> */ }
+pub struct Receipt<T: Clone> {
+    /* Clone + Future<Output = Result<T, OperationError>> + Send + Sync */
+}
 
-impl<T> Receipt<T> {
+impl<T: Clone> Receipt<T> {
     pub fn id(&self) -> OperationId;
-    pub fn try_status(&self) -> ReceiptStatus<&T>;
+    pub fn try_status(&self) -> ReceiptStatus<T>;
     pub fn request_cancel(&self) -> CancelRequest;
 }
 
@@ -195,6 +445,152 @@ of:
 
 A failed matter mutation always reports `revision_changed = false`.
 
+### Facade operations
+
+The following methods are the only admission and inspection facade. `submit_*`
+does no hidden waiting; callers acquire the matching permit first.
+
+```rust
+impl MoriaHandle {
+    pub fn world(&self, id: WorldId) -> Result<WorldHandle, StaleHandleError>;
+}
+
+impl WorldHandle {
+    pub fn submit_material_registry(
+        &self,
+        permit: QueryPermit,
+        page: RegistryPageRequest,
+    ) -> Result<Receipt<MaterialRegistryPage>, SubmitError<RegistryPageRequest>>;
+    pub fn material(
+        &self,
+        id: MaterialId,
+    ) -> Result<Arc<MaterialRegistration>, StaleHandleError>;
+
+    pub fn submit_matter(
+        &self,
+        permit: CommandPermit,
+        command: MatterCommand,
+    ) -> Result<Receipt<MatterApplied>, SubmitError<MatterCommand>>;
+
+    pub fn submit_volume(
+        &self,
+        permit: CommandPermit,
+        command: VolumeCommand,
+    ) -> Result<Receipt<VolumeApplied>, SubmitError<VolumeCommand>>;
+
+    pub fn submit_query(
+        &self,
+        permit: QueryPermit,
+        query: Query,
+    ) -> Result<Receipt<QueryOutcome>, SubmitError<Query>>;
+
+    pub fn declare_interest(
+        &self,
+        request: InterestRequest,
+    ) -> Result<InterestLease, InterestError>;
+
+    pub fn subscribe(
+        &self,
+        subscription: Subscription,
+        start: SubscriptionStart,
+    ) -> Result<ObservationSubscriber, SubscriptionError>;
+
+    pub fn request_checkpoint(
+        &self,
+        permit: CheckpointPermit,
+        request: CheckpointRequest,
+    ) -> Result<Receipt<CheckpointApplied>, SubmitError<CheckpointRequest>>;
+
+    pub fn register_gpu_extension(
+        &self,
+        descriptor: GpuExtensionDescriptor,
+    ) -> Result<ExtensionId, ExtensionRegistrationError>;
+
+    pub fn submit_gpu_extension(
+        &self,
+        permit: ExtensionPermit,
+        request: GpuExtensionRequest,
+    ) -> Result<Receipt<GpuExtensionDispatched>, SubmitError<GpuExtensionRequest>>;
+
+    pub fn telemetry(&self) -> TelemetrySnapshot;
+
+    pub fn shutdown(
+        &self,
+        policy: ShutdownPolicy,
+    ) -> Result<Receipt<ShutdownReport>, ShutdownStartError>;
+
+    pub fn shutdown_receipt(&self) -> Option<Receipt<ShutdownReport>>;
+}
+```
+
+`register_gpu_extension` is available only when the Cargo feature and
+configured capability are enabled. `shutdown` is the only accepted operation
+that does not use an ordinary queue permit: the world preallocates exactly one
+shutdown record during startup, and the first call atomically consumes it.
+Later calls return `AlreadyShuttingDown` and may obtain the same receipt
+through `WorldHandle::shutdown_receipt()`.
+
+Synchronous facade errors are closed enums:
+
+```rust
+pub enum InterestError {
+    Invalid(Vec<Violation>),
+    Full { limit: u32 },
+    StaleHandle,
+    WorldNotAccepting(WorldState),
+    CapabilityDisabled(InterestCapabilities),
+}
+
+pub enum SubscriptionError {
+    Invalid(Vec<Violation>),
+    Full { limit: u32 },
+    StartNotRetained { requested: ObservationSequence, oldest: ObservationSequence },
+    WorldNotAccepting(WorldState),
+}
+
+pub enum ObservationError {
+    Closed,
+    StaleSubscriber,
+}
+
+pub enum ResumeError {
+    SnapshotScopeMismatch,
+    SnapshotOlderThanGap,
+    NotWaitingForSnapshot,
+    StaleSubscriber,
+}
+
+pub enum ExtensionRegistrationError {
+    CapabilityDisabled,
+    DuplicateKey,
+    InvalidDescriptor(Vec<Violation>),
+    ShaderValidation(ShaderDiagnostic),
+    ExceedsConfiguredLimit,
+    WorldNotAccepting(WorldState),
+}
+
+pub enum ShutdownStartError {
+    AlreadyShuttingDown,
+    StaleWorld,
+}
+```
+
+Registration/configuration and asynchronous operation errors remain the
+structured types specified above and in the failure table; none is replaced by
+a string. Every error exposes its stable category plus a human-readable
+diagnostic generated from the same fields.
+
+`RegistryPageRequest { after: Option<MaterialKey>, max_records, max_bytes }`
+is bounded by `nonempty_materials`, the `QueryPermit`, and
+`query_result_bytes`.
+`MaterialRegistryPage` is a stable-key-sorted owned vector of
+`MaterialRegistration { id, key, debug_name, presentation, opaque_metadata }`,
+the registry digest, and `next_after`. It never splits a record: if the first
+eligible registration exceeds `max_bytes`, it returns
+terminal `OperationError::OutputOverflow` with the required one-record size.
+Repeated pages therefore provide the stated opaque-metadata inspection path
+without an unbounded registry allocation or an unreserved concurrent copy.
+
 ## Interest
 
 ```rust
@@ -214,12 +610,27 @@ pub struct InterestRequest {
 }
 
 pub struct InterestLease { /* Send + Sync */ }
+
+impl InterestLease {
+    pub fn id(&self) -> InterestId;
+    pub fn accepted(&self) -> &AcceptedInterest;
+    pub fn state(&self) -> InterestState;
+    pub fn update(
+        &self,
+        replacement: InterestRequest,
+    ) -> Result<AcceptedInterest, InterestError>;
+}
 ```
 
 `declare_interest` validates and returns a lease plus the accepted bounded
 scope. Cloning the lease retains interest. `update` atomically replaces the
 request after validation. Dropping the last clone withdraws it. Withdrawal
 does not cancel commands, invalidate completed results, or discard dirty scars.
+
+Interest declarations use the configured `interest_leases` slots and return
+`InterestError::Full` synchronously when exhausted; they have no payload queue
+and therefore no wait policy. A consumer may retry after receiving a resource-
+pressure observation.
 
 `Urgent` changes ordering only; it cannot exceed budgets or preempt an admitted
 transaction.
@@ -334,6 +745,29 @@ pub enum VolumeCommand {
         correlation: Correlation,
     },
 }
+
+pub enum VolumeApplied {
+    Created {
+        command: CommandId,
+        volume: VolumeId,
+        key: VolumeKey,
+        revision: VolumeRevision,
+        correlation: Correlation,
+    },
+    Moved {
+        command: CommandId,
+        volume: VolumeId,
+        placement: RigidPlacement,
+        revision: VolumeRevision,
+        correlation: Correlation,
+    },
+    Retired {
+        command: CommandId,
+        key: VolumeKey,
+        terminal_revision: VolumeRevision,
+        correlation: Correlation,
+    },
+}
 ```
 
 Create reserves a stable/runtime identity and becomes applied only after its
@@ -367,6 +801,45 @@ pub struct QueryOptions {
     pub partial: PartialPolicy,           // Deny by default
     pub max_results: u32,
 }
+
+pub enum QueryAvailability {
+    Ready(QueryResult),
+    Pending {
+        required: Vec<RequiredRegion>,
+        retryability: Retryability,
+    },
+    Unavailable {
+        scopes: Vec<UnavailableRegion>,
+        retryability: Retryability,
+    },
+}
+
+pub struct QueryOutcome {
+    pub query: QueryId,
+    pub inspected: Vec<InspectedRegion>,
+    pub snapshots: Vec<VolumeSnapshotRef>,
+    pub device_generation: DeviceGeneration,
+    pub completeness: QueryCompleteness,
+    pub availability: QueryAvailability,
+}
+
+pub enum QueryCompleteness {
+    Complete,
+    PartialRequested {
+        coverage: CoverageMask,
+        omitted: Vec<QueryScope>,
+    },
+}
+
+pub enum QueryResult {
+    Samples(Vec<SampleFact>),
+    Region(RegionSamples),               // row-major or homogeneous runs
+    Occupancy(OccupancyFact),
+    Trace(Vec<ContactFact>),
+    Overlap(Vec<ContactFact>),
+    Sweep(Vec<ContactFact>),
+    Snapshot(WorldSnapshot),
+}
 ```
 
 All query results include query ID, actual inspected bounds, device generation,
@@ -397,6 +870,13 @@ the required regions and no fabricated facts. `Materialize` creates internal
 query interest bounded by the query permit. It does not evade interest or
 residency budgets.
 
+The `Query` variant and `QueryResult` variant must match as follows:
+`Sample -> Samples`, `Region -> Region`, `Occupancy -> Occupancy`,
+`Trace -> Trace`, `Overlap -> Overlap`, `Sweep -> Sweep`, and
+`Snapshot -> Snapshot`. Pending/unavailable outcomes contain no result variant.
+All vectors are bounded by the permit, `max_results`, and fixed request
+maxima; decoding an excess count is `OutputOverflow`.
+
 `PartialPolicy::Deny` either returns complete facts or a non-success
 availability/error. `Allow` returns an explicit coverage mask, omitted scopes,
 and `Complete | PartialRequested`; hitting a result cap without prior partial
@@ -414,6 +894,22 @@ pub struct Subscription {
 pub enum ObservationItem {
     Fact(Observation),
     Gap(ObservationGap),
+}
+
+pub enum SubscriptionStart {
+    CurrentHead,
+    Retained(ObservationSequence),
+}
+
+pub struct ObservationSubscriber { /* Send + Sync, bounded cursor */ }
+
+impl ObservationSubscriber {
+    pub fn id(&self) -> SubscriberId;
+    pub fn try_next(&self) -> Result<Option<ObservationItem>, ObservationError>;
+    pub fn resume_after(
+        &self,
+        snapshot: &WorldSnapshot,
+    ) -> Result<(), ResumeError>;
 }
 ```
 
@@ -468,6 +964,37 @@ creation instead.
 ## Persistence API
 
 ```rust
+pub struct PersistenceError {
+    pub kind: PersistenceErrorKind,
+    pub retryability: Retryability,
+    pub diagnostic: String,
+}
+
+pub enum PersistenceErrorKind {
+    NotFound,
+    Io,
+    UnsupportedDurability,
+    UnexpectedEof,
+    SizeChanged,
+    Bounds,
+    SizeLimit,
+    Corrupt,
+    UnsupportedVersion { saved: u16, supported: u16 },
+    RestoreMismatch(RestoreMismatch),
+    Panicked,
+}
+
+pub enum RestoreMismatch {
+    WorldKey,
+    MaterialMissing(MaterialKey),
+    MaterialDefinition(MaterialKey),
+    VolumeMembership,
+    TombstonedVolume(VolumeKey),
+    VolumeDefinition(VolumeKey),
+    Lineage(VolumeKey),
+    ReconstructionFingerprint(VolumeKey),
+}
+
 pub trait CheckpointStore: Send + Sync + 'static {
     fn begin(&self, checkpoint: CheckpointKey)
         -> Result<Box<dyn CheckpointWriter>, PersistenceError>;
@@ -482,6 +1009,22 @@ pub trait CheckpointWriter: Send {
         -> Result<(), PersistenceError>;
     fn abort(self: Box<Self>) -> Result<(), PersistenceError>;
 }
+
+pub trait CheckpointReader: Send {
+    fn manifest_len(&mut self) -> Result<u64, PersistenceError>;
+    fn read_manifest(
+        &mut self,
+        offset: u64,
+        destination: &mut [u8],
+    ) -> Result<(), PersistenceError>;
+    fn chunk_len(&mut self, id: ChunkDigest) -> Result<u64, PersistenceError>;
+    fn read_chunk(
+        &mut self,
+        id: ChunkDigest,
+        offset: u64,
+        destination: &mut [u8],
+    ) -> Result<(), PersistenceError>;
+}
 ```
 
 `commit_manifest` is the atomic durability point. After it succeeds, every
@@ -490,7 +1033,22 @@ contract is rejected. Moria includes a native filesystem store using sibling
 temporary files, file sync, atomic rename, and parent-directory sync where the
 platform supports it.
 
+Reader lengths are authoritative size discovery and may be queried more than
+once. Reads must fill the complete destination or return
+`PersistenceError::UnexpectedEof`; `offset + destination.len()` is checked and
+must not exceed the discovered length. The reader retains ownership of store
+handles, while Moria owns each bounded destination buffer from its persistence
+staging pool. A manifest over `max_manifest_bytes` (64 MiB v1), a chunk over
+4 MiB encoded, a changing reported length, missing data, or backend I/O failure
+is returned as a distinct persistence error before allocation/decoding. Reader
+methods execute only on persistence workers and never receive a Moria storage
+handle.
+
 ```rust
+pub enum CheckpointScope {
+    WholeWorld,
+}
+
 pub struct CheckpointRequest {
     pub key: CheckpointKey,
     pub scope: CheckpointScope,
@@ -501,12 +1059,50 @@ pub struct CheckpointApplied {
     pub durable: Vec<(VolumeKey, VolumeRevision)>,
     pub manifest: ChunkDigest,
 }
+
+pub struct RestoreRequest {
+    pub checkpoint: CheckpointKey,
+    pub world: RestoreWorldMode,
+}
+
+pub enum RestoreWorldMode {
+    RequireSameKey,
+    ImportAs(WorldKey),
+}
+
+pub struct RestoreApplied {
+    pub checkpoint: CheckpointKey,
+    pub saved_world: WorldKey,
+    pub active_world: WorldKey,
+    pub imported: bool,
+    pub revisions: Vec<(VolumeKey, VolumeRevision, RigidPlacement)>,
+    pub manifest: ChunkDigest,
+}
 ```
 
 The checkpoint frontier is captured when the request is admitted. Later
-commits remain dirty and are excluded. Restore is a startup mode, validates all
-registrations and base fingerprints before publishing any volume, and returns
-one `RestoreReceipt`.
+commits remain dirty and are excluded. V1 checkpoints are whole-world only:
+the manifest contains every live volume at the captured frontier plus every
+known retirement tombstone. It cannot omit a live volume, and no partial-scope
+variant is reserved.
+
+`restore_from` selects the builder's startup mode and may be called once.
+`RequireSameKey` requires manifest and `WorldDefinition` keys to match.
+`ImportAs(k)` requires the builder world key to equal `k`, preserves material
+and volume keys, and changes only the containing world identity. Restore
+validates all registrations and base fingerprints before publishing any
+volume. Its output is `StartupApplied::mode =
+StartupModeApplied::Restored(RestoreApplied)`; startup failure uses the normal
+receipt error with a restore-specific stage and publishes no world directory.
+
+The current live volume registration set must exactly equal the manifest's
+live volume key set. Missing and extra current volumes are both
+`RestoreMismatch::VolumeMembership`; tombstoned keys may not be registered.
+Every persisted material must have a matching current key and
+occupancy-relevant definition. Extra current materials are allowed regardless
+of presentation inputs, because no persisted sample refers to them; they must
+have distinct keys and valid ordinary definitions. There is no
+“presentation-only material” category in v1.
 
 ## GPU behavior extension
 
@@ -520,13 +1116,32 @@ pub struct GpuExtensionDescriptor {
     pub max_invocations: u32,
     pub max_observations: u32,
     pub max_candidate_effects: u32,
+    pub max_effect_payload_bytes: u32,   // aggregate encoded child commands
 }
 
 pub struct GpuExtensionRequest {
     pub extension: ExtensionId,
     pub query: GpuInspectionQuery,
     pub opaque_state: GpuStateInput,
-    pub effect_permit: CommandPermit,
+    pub effect_batch: EffectBatchPermit,
+}
+
+pub struct GpuExtensionDispatched {
+    pub extension: ExtensionId,
+    pub snapshot: Vec<VolumeSnapshotRef>,
+    pub diagnostics: ExtensionDiagnostics,
+    pub effects: Vec<AdmittedEffect>,
+}
+
+pub enum AdmittedEffect {
+    Matter {
+        command: CommandId,
+        receipt: Receipt<MatterApplied>,
+    },
+    Volume {
+        command: CommandId,
+        receipt: Receipt<VolumeApplied>,
+    },
 }
 ```
 
@@ -536,12 +1151,34 @@ header/revisions, requested material samples or occupancy records, lifecycle
 deltas, and opaque consumer state. The shader may write only its private state,
 diagnostics, and candidate `Fill`/bounded-run `Patch`/`Move` effect records.
 
+The request's batch permit must reserve at least the descriptor's declared
+`max_candidate_effects`, not merely an expected count, and enough aggregate
+encoded command payload bytes for the worst-case records permitted by the
+descriptor. This reservation happens before packet capture or shader dispatch.
+The extension queue permit independently bounds packet/state/diagnostic work.
+Registration rejects a descriptor whose candidate count exceeds
+`extension_candidate_effects`, whose aggregate effect bytes exceed
+`command_payload_bytes`, or whose worst record exceeds the fixed matter-command
+limits.
+
 Moria checks output count, coordinates, material IDs, revision preconditions,
-and permit bytes on GPU, copies only compact outcome metadata to the control
-plane, and routes valid candidates into ordinary per-volume command
-transactions. Each candidate has a normal command ID/receipt and can conflict
-or fail. Invalid output fails the extension request and commits no candidate
-from that dispatch. The fixed output capacity cannot be partially accepted.
+record lengths, and aggregate bytes on GPU, copies only compact outcome
+metadata to the control plane, then validates the entire candidate array on the
+host. Any invalid record, overflow, duplicate effect slot, or mismatch with the
+batch reservation fails the extension receipt and admits zero child commands.
+No command ID is assigned before whole-array validation succeeds.
+
+After successful validation, Moria converts every candidate into an ordinary
+`MatterCommand` or `VolumeCommand`, consumes the matching reserved record/byte
+slice, assigns a normal command ID, and returns every child receipt in
+`GpuExtensionDispatched.effects` in shader output order. Unused record, byte,
+and completion capacity is released immediately after the produced count and
+encoded sizes are validated. The outer extension receipt completes at this
+all-children-admitted milestone; it does not wait for child completion. Each
+child can then apply, conflict, be cancelled before submission, or fail
+independently under the normal per-volume queue. Thus validation/admission is
+all-or-none while terminal effects are deliberately independent. Cross-volume
+atomicity is not implied.
 
 The packet/effect buffers are not Moria storage and contain only the explicitly
 requested bounded snapshot. No extension receives page-table, brick-pool,

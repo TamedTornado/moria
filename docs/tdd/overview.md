@@ -36,8 +36,9 @@ Every consumer, including examples and validation harnesses, uses the public
 facade. The facade never returns Moria's page table, brick pool, mesh buffers,
 or device. The optional GPU behavior extension accepts a bounded shader job
 against a copied read-only inspection packet and a fixed-schema candidate
-effect buffer; Moria validates and admits any resulting effect through the same
-command path.
+effect buffer; before dispatch it reserves the shader's worst-case complete
+child command batch, then validates and admits all produced children through
+the same command path or admits none.
 
 ## Document map
 
@@ -217,11 +218,14 @@ contract tests remain in the ordinary suite.
 
 ### Module and dependency rules
 
-- Dependency direction is
-  `identity/material/config -> content/volume -> storage -> command/query/
-  interest -> collision/presentation/persistence/observation/telemetry -> bevy`.
-  Lower layers must not import Bevy ECS, cameras, windows, presentation, or
-  consumer behavior concepts.
+- Dependency direction is `identity/material/config -> content/volume ->
+  storage`, then `storage -> collision -> query`, while `command` and
+  `interest` depend directly on storage. `query`, `command`, and `interest`
+  feed `presentation/persistence/observation/telemetry -> bevy`.
+  `collision` is a private lower-level fact kernel: it must not import public
+  query descriptors, partial-result policy, codecs, or receipts. Lower layers
+  must not import Bevy ECS, cameras, windows, presentation, or consumer
+  behavior concepts.
 - Only `bevy` and `gpu` may use Bevy render APIs. Only `bevy` registers
   schedules or ECS-facing plugins.
 - Do not create a second wgpu device in the Bevy path. Device-bound resources
@@ -286,6 +290,9 @@ Implementation is contract-complete only when every required automated claim
 in [validation.md](validation.md) passes, the public contract harness produces
 a fail-closed evidence report, at least one physical adapter in each claimed
 native backend family passes real-GPU parity and device-loss qualification, and
-the presentation fixture has a recorded human visual decision. Performance
-receipts are reported separately and cannot turn a correctness failure into a
-pass.
+the presentation fixture has a recorded human visual decision. Architecture
+feasibility gates P1–P8 are blocking physical-adapter receipts for each claimed
+backend family; failure blocks the affected storage, mutation/query, collision,
+materialization, presentation, extension, or checkpoint selection until the
+design is revised or passes. Correctness and performance statuses remain
+separate, and neither can turn the other's failure into a pass.

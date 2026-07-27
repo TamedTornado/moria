@@ -84,14 +84,18 @@ Only this module can request a material or placement commit.
 ### `query`
 
 Owns bounded query descriptors, permits, snapshot acquisition, result codecs,
-partial-result policy, and query receipts. Query implementation calls storage
-and collision services; it never calls presentation.
+partial-result policy, public contact/result value types, and query receipts.
+It translates public collision-bearing queries into private collision-kernel
+plans and encodes the returned kernel facts; it never calls presentation.
 
 ### `collision`
 
-Owns exact v1 occupancy predicates, broad-phase brick traversal, shape tests,
-trace/sweep ordering, contact facts, and overflow handling. It produces facts,
-not responses.
+Is a lower-level service consumed by `query`. It owns exact v1 occupancy
+predicates, broad-phase brick traversal, private shape/trace/sweep plans, and
+private kernel facts. It depends on `storage`, `material`, `volume`, and shared
+coordinate values, but never imports `query`, its public descriptors, partial
+policy, result codecs, or receipts. It produces facts, not public responses or
+behavior.
 
 ### `observation`
 
@@ -196,6 +200,28 @@ Blocking waits are deliberately absent from the public API.
 
 ## Dependency policy
 
+The domain dependency direction is acyclic:
+
+```text
+identity/material/config
+        -> content/volume
+        -> storage
+             |-> collision -> query
+             |-> command
+             `-> interest
+        query/command/interest
+             -> presentation/persistence/observation/telemetry
+        -> bevy
+```
+
+`query` is the only public collision-query orchestrator. It converts public
+shapes and result budgets to collision plans; collision returns private facts
+that query turns into `ContactFact` values. `command` and `interest` do not
+depend on query, and collision does not consume query descriptors. The `gpu`
+module is a device implementation leaf used behind storage/collision/
+presentation dispatch traits; it may import their POD plans but none of those
+domain modules imports Bevy render types.
+
 The package pins Bevy `=0.19.0`. It uses Bevy renderer wrappers and the
 renderer-compatible wgpu version. Adding an independent wgpu version or
 requesting an adapter/device in the Bevy path is forbidden.
@@ -224,7 +250,8 @@ World construction has two phases.
 `MoriaBuilder::validate` is host-only and checks:
 
 - all limits are nonzero and internally consistent;
-- world/material/volume stable keys are unique;
+- the required consumer-supplied `WorldDefinition` has a nonnil stable key and
+  valid name, and world/material/volume stable keys are unique in their scopes;
 - material zero is not consumer-registerable;
 - volume domains and coordinate conversions cannot overflow;
 - placements are finite and rigid;
@@ -233,16 +260,21 @@ World construction has two phases.
 - persistence is configured if dirty-state retirement is enabled;
 - observation and staging limits can hold one maximum legal record.
 
-`MoriaBuilder::start` installs the validated configuration and waits for GPU
-capability negotiation, shader/pipeline creation, and initial volume directory
-publication. It returns a `StartupReceipt`. The world becomes `Ready` only
-after those stages complete. A failure tears down every partially allocated
-resource and returns the complete scoped cause.
+`ValidatedMoria::into_bevy` returns the plugin, configured facade handles, and
+typed startup receipt. Installing that plugin waits for GPU capability
+negotiation, shader/pipeline creation, and initial volume-directory publication
+or the selected restore. The world becomes `Ready` only after those stages
+complete. The startup output contains the stable world identity, adapter
+report, and every requested/effective config value. A failure tears down every
+partially allocated resource and returns the complete scoped cause.
 
 Required GPU capabilities are compute shaders, storage buffers, buffer-to-
 buffer copies, at least four writable storage bindings for mutation, and the
 configured binding/allocation limits. Optional timestamps and indirect
 dispatch are enabled only when reported and have semantic fallbacks.
+Adapter-negotiated capacities use `effective = min(desired, adapter_legal)`;
+startup fails instead of clamping below the consumer's declared minimum or one
+maximum legal enabled operation.
 
 ## Portability strategy
 

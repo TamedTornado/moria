@@ -110,3 +110,36 @@ name. WebGPU, WebGL/GLES, and standalone-device constructors are absent.
 **Reason.** The approved design excludes web as a current target, and Bevy owns
 the renderer device in the supported path. Unsupported targets fail clearly
 instead of receiving weaker semantics.
+
+## T11. Reserve the complete GPU-extension effect batch
+
+**Decision.** An extension request reserves its worst-case child command
+records, aggregate payload bytes, and receipt slots before shader dispatch.
+Whole candidate output validation and child admission are all-or-none; admitted
+children then complete independently.
+
+**Reason.** One ordinary command permit cannot bound a shader that may emit
+many effects. Pre-reservation preserves normal admission without a privileged
+queue or pressure-dependent partial admission.
+
+**Rejected.** One candidate per extension request needlessly multiplies packet
+capture/dispatch overhead and weakens the intended GPU-oriented handoff shape.
+
+## T12. Whole-world checkpoints in v1
+
+**Decision.** `CheckpointScope` has only `WholeWorld`; restore requires exact
+live-volume membership and permits extra current material registrations only
+when no saved sample refers to them.
+
+**Reason.** Whole-world membership gives unambiguous volume identity,
+tombstone, placement, and dirty-frontier semantics. Partial-volume imports need
+namespace/conflict policy that the approved contract does not require.
+
+## T13. Collision kernel below public query orchestration
+
+**Decision.** `collision` is a private lower-level fact kernel over storage.
+`query` owns public descriptors, partial/readiness policy, result codecs, and
+contact results.
+
+**Reason.** This gives one acyclic direction and keeps collision truth reusable
+without coupling storage traversal to receipt or public result policy.

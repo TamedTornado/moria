@@ -25,11 +25,16 @@ window or physical GPU and includes:
 
 - negative-coordinate Euclidean brick mapping and overflow boundaries;
 - material empty/coverage/flag invariants and host/WGSL byte layout;
+- material registry accepts exactly 65,535 nonempty definitions plus reserved
+  empty ID 0, rejects the 65,536th nonempty definition, and round-trips the
+  maximum manifest count without counting empty as registered;
 - rigid transform validation and domain half-open semantics;
 - stable versus runtime identity, stale generational handles, and counter
   exhaustion;
 - every configuration cross-limit and complete error aggregation;
 - bounded permit ownership, queue close, byte accounting, and wakeups.
+- `Reject` versus `WaitForPermit` behavior for every command, query,
+  checkpoint, and extension reserve method, including waiter cancellation.
 
 ### State-machine tests
 
@@ -118,9 +123,11 @@ Required tests:
    renderer generation, and compare samples/collision.
 9. **Presentation provenance:** current/stale/failure/overflow install behavior,
    halo seams, and discard of obsolete output.
-10. **GPU extension:** snapshot packet remains GPU-oriented, valid candidates
-    use normal receipts, invalid/overflow output commits none, and stale
-    preconditions conflict.
+10. **GPU extension:** snapshot packet remains GPU-oriented; the worst-case
+    effect batch is reserved before dispatch; fewer effects release unused
+    capacity; every valid child receipt is returned; invalid/overflow output
+    admits none; and already admitted children have independent
+    applied/conflict/failure outcomes.
 11. **Device loss:** intentionally destroy/lose the device while operations are
     pending/submitted; every receipt terminates, late callbacks are ignored,
     durable state reconstructs, and volatile dirty state fails honestly.
@@ -136,10 +143,12 @@ positions/normals use stated tolerance.
 
 ### C1. Public boundary
 
-Register material/static/dynamic volumes and a consumer base source; start,
-interest, inspect, mutate, observe, checkpoint, restore, and shut down through
-public APIs. Build the example as if it were an external crate: it imports only
-`moria` exports.
+Create a builder with an explicit world key; register material/static/dynamic
+volumes and a consumer base source; consume `ValidatedMoria` into its plugin,
+handles, and startup receipt; start, interest, inspect, mutate, observe,
+checkpoint, restore/import, inspect the material registry, and shut down
+through the callable methods in [public-api.md](public-api.md). Build the
+example as if it were an external crate: it imports only `moria` exports.
 
 ### C2. Truth versus view
 
@@ -239,9 +248,58 @@ density, mutation distribution, in-flight depth, adapter/driver, build profile,
 and fallback status. Synchronous readback is never inserted into a production
 hot path merely to time it.
 
-Initial performance work uses report-only baselines. A threshold becomes a
-release gate only through a later reviewed validation-plan change containing
-physical receipts. One machine's result is not a universal product promise.
+### Architecture feasibility gates
+
+The selected GPU hash/MVCC, bounded readback, collision, extension, checkpoint,
+and dual-contouring architecture is not implementation-ready on measurement
+alone. The following v1 gates are falsifiable. They are minimum feasibility
+floors for the physical qualification adapter in **each** claimed backend
+family, not customer frame-time promises. Software adapters cannot pass them.
+
+Runs use the default effective limits, enabling persistence or GPU extensions
+only for the gates that exercise them, an optimized non-debug build, uncapped
+Bevy updates, 10 warm-up iterations, at least 100 measured operations (or 10
+complete passes for throughput routes), and three process runs. The reported
+p95 is computed over all post-warm-up samples; every process run must meet the
+bound. GPU time uses timestamps where available; otherwise a queue-completion
+wall interval is reported and must meet the more lenient end-to-end bound.
+Correctness for the same workload must pass first.
+
+| Gate | Fixed workload and pressure | Required pass |
+| --- | --- | --- |
+| P1 sparse residency | C5 domain has at least 4 GiB dense sample size (64× the 32,768-brick detail pool); move 4,096-brick interest through 16 disjoint regions, with 4,096 dirty bricks and current presentation in the active region | No capacity exceeds effective config; authoritative device bytes are <=160 MiB at defaults; host-owned material payload/staging is <=96 MiB; after two full route cycles neither grows by >1%; no full-domain CPU or GPU allocation |
+| P2 mutation publication | 8 in flight across 4 volumes; each command changes 32,768 cells spanning 512 mixed bricks; 50% patch and 50% fill; presentation interested | p95 admission-to-commit <=50 ms, GPU prepare/validate/publish <=12 ms, and >=20 committed commands/s sustained; every revision/atomicity check passes |
+| P3 bounded region readback | 4 in-flight 262,144-cell region queries (1 MiB decoded samples each), detailed/mixed data, hot matter | p95 submit-to-decoded result <=50 ms, GPU query <=12 ms when timestamps exist, >=80 MiB/s decoded aggregate, staging stays within config |
+| P4 collision traversal | 32 in-flight sweeps/traces, each authorizing 65,536 candidate cells and 256 hits across static plus rotated dynamic volumes | p95 submit-to-decoded facts <=33 ms and GPU traversal <=10 ms when timestamps exist; >=1,000 queries/s aggregate for 4,096-candidate-cell zero/one-hit control workload |
+| P5 materialization | Precomputed in-memory source, 8,192 detailed mixed bricks (16 MiB), no scar, four content batches in flight | cold-to-ready throughput >=64 MiB/s and p95 per 4,096-brick interest <=300 ms; extraction never exceeds its byte/count limit |
+| P6 presentation rebuild | One mutation dirties the maximum 27 halo-dependent artifacts; each fixture artifact emits 1,024–2,048 vertices and 6,000–12,288 indices | p95 commit-to-all-current <=250 ms, GPU derivation total <=20 ms when timestamps exist, zero overflow/crack/provenance failures |
+| P7 GPU extension handoff | 8 MiB inspection packet, 256 structurally valid candidate effects totaling <=64 KiB, 2 extension jobs in flight (the default 16 MiB packet budget); effects touch four volumes | p95 packet-capture-to-all-child-admitted <=50 ms, extension GPU work <=16 ms when timestamps exist, CPU readback <=64 KiB/job, and zero inspection-packet/material readback to CPU |
+| P8 checkpoint path | 8,192 dirty detailed scars (16 MiB raw), checkpoint concurrent with four mutation streams; in-memory durable test store so storage hardware is excluded | GPU-readback-plus-encode throughput >=64 MiB/s, mutation P2 p95 degrades by <=2×, staged bytes stay within config, and semantic restore parity passes |
+
+These floors deliberately span latency, throughput, memory, density, and
+in-flight pressure. Qualification receipts may also publish stronger
+platform-specific targets, but may not weaken these common floors without a
+reviewed TDD decision and evidence that the approved GPU-residency performance
+direction remains viable.
+
+Failure is blocking and scoped:
+
+- P1 failure rejects the bounded sparse-residency claim and requires pool/page
+  layout revision.
+- P2 or P3 failure rejects the selected MVCC/readback hot path.
+- P4 failure rejects the collision traversal selection.
+- P5 failure rejects the materialization batching selection.
+- P6 failure rejects dual contouring/job granularity as the v1 presentation
+  baseline.
+- P7 failure rejects the copied-packet GPU extension as a viable GPU-oriented
+  seam.
+- P8 failure rejects the selected checkpoint readback/encoding pipeline.
+
+The affected architectural claim remains `fail`, not “report-only,” and the TDD
+implementation cannot be called contract-complete until it is revised or the
+gate passes on every claimed backend family. Performance never excuses a
+correctness failure, and a correctness pass never substitutes for these
+feasibility receipts.
 
 ## Portability qualification
 
@@ -252,6 +310,7 @@ Windows/DX12 family runs:
 - contract scenarios C1–C9 where platform capabilities allow loss injection;
 - shader validation;
 - a fixed report-only workload;
+- architecture feasibility gates P1–P8;
 - renderer recovery/device-loss test or an explicit `not_demonstrated` if the
   platform cannot inject it.
 
@@ -286,6 +345,8 @@ Cross-field validation rejects:
 - GPU claim from host oracle/mock/validation-only execution;
 - collision pass based only on mesh/render evidence;
 - device recovery pass without terminal outcomes for all outstanding receipts.
+- a P1–P8 pass missing its workload scale, in-flight pressure, percentile,
+  throughput/memory result, or physical-adapter context.
 
 The ordinary merge gate is the exact command list in
 [overview.md](overview.md). GPU qualification and visual review are release

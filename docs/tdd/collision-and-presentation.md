@@ -17,6 +17,12 @@ Any derived output missing this provenance is invalid.
 
 ## Collision pipeline
 
+The `collision` module is a private storage-level kernel. It accepts validated,
+bounded POD traversal plans and returns private material/contact facts.
+The `query` module owns every public collision descriptor, readiness/partial
+policy, receipt, ordering codec, and `ContactFact`; it performs the only
+translation across that boundary. Collision never imports `query`.
+
 ### Broad phase
 
 World-space query bounds are transformed into each candidate volume's local

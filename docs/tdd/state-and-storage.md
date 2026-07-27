@@ -39,10 +39,12 @@ pub struct MaterialSample {
 }
 ```
 
-`material == 0` is canonical empty and requires `coverage == 0`. Registered
-materials use IDs 1..=65535. A nonempty material may have coverage 0..=255.
-V1 occupancy is true only at coverage 128..=255. Coverage is the scalar field
-used by surface derivation; it is not opacity or health.
+`material == 0` is canonical empty and requires `coverage == 0`. Consumers may
+register exactly 65,535 nonempty materials using IDs 1..=65535; canonical empty
+is an additional reserved sample, so the complete runtime ID space contains
+65,536 values. A nonempty material may have coverage 0..=255. V1 occupancy is
+true only at coverage 128..=255. Coverage is the scalar field used by surface
+derivation; it is not opacity or health.
 
 V1 flags must be zero in content, commands, checkpoint data, and extension
 effects. Reserving the byte allows a later contract-version migration without
@@ -227,7 +229,7 @@ starting points, not universal performance promises.
 
 | Limit | Default | Hard v1 request maximum |
 | --- | ---: | ---: |
-| Registered materials | 4,096 | 65,535 including empty |
+| Consumer-registered nonempty materials | 4,096 | 65,535 (plus reserved empty ID 0) |
 | Registered/live volumes | 1,024 | 65,535 |
 | Active interest leases | 64 | 4,096 |
 | Bricks per interest | 4,096 | 65,536 |
@@ -251,18 +253,24 @@ starting points, not universal performance promises.
 | Presentation jobs | 1,024 | configured |
 | Vertices / indices per brick artifact | 2,048 / 12,288 | fixed v1 maximum |
 | GPU extension jobs | 64 | configured |
-| Candidate effects per extension job | 256 | fixed v1 maximum |
+| Candidate effects per extension job | 256 | fixed v1 maximum; batch-reserved before dispatch |
 
 The config must be capable of servicing one maximum legal operation for each
 enabled capability. For example, enabling patch mutations with a command byte
 budget below one maximum patch is a configuration error, not a runtime
-deadlock.
+deadlock. The field-level public schema, adapter-clamp rules, and exact
+cross-limit relationships are normative in
+[public-api.md](public-api.md#configuration-schema); this table summarizes
+storage-facing capacity rather than defining a second configuration shape.
 
 ## Pressure policy
 
-Policy is selected per queue as `Reject` or `WaitForPermit`; it never changes
-an already called `try_` method. Interest and presentation scheduling may defer
-lower priority work. Authoritative operations are never coalesced across
+Policy is selected for command, query, checkpoint, and extension queues as
+`Reject` or `WaitForPermit`. It never changes an already called `try_` method;
+it determines whether the corresponding non-try `reserve_*` future waits or
+immediately returns `Full`. Interest has no payload queue and rejects
+synchronously at its lease limit. Interest and presentation scheduling may
+defer lower priority work. Authoritative operations are never coalesced across
 command IDs. Presentation rebuilds for superseded revisions may be coalesced,
 and telemetry records each skipped target.
 

@@ -12,11 +12,16 @@ Ready
    -> ShuttingDown -> Stopped | Failed
 ```
 
-`Configured` is host-validated and has no GPU state. `Starting` negotiates the
-device and installs pipelines/directory state. Only `Ready` accepts ordinary
-permits. `Recovering` rejects new admissions with retryable state, keeps
-unsubmitted owned payloads, and does not answer material queries. `Failed` and
-`Stopped` are terminal for that world handle.
+`Configured` is host-validated and has no GPU state. It is represented by the
+handles and startup receipt returned from `ValidatedMoria::into_bevy`.
+Installing the returned plugin enters `Starting`, negotiates the device,
+records effective adapter-clamped limits, and installs pipelines/directory
+state. Fresh startup resolves `StartupApplied::Fresh`; restore resolves
+`StartupApplied::Restored(RestoreApplied)` with the complete restored revision
+context. Only `Ready` accepts ordinary permits. `Recovering` rejects new
+admissions with retryable state, keeps unsubmitted owned payloads, and does not
+answer material queries. `Failed` and `Stopped` are terminal for that world
+handle.
 
 Startup failure includes a stage and all actionable causes. There is no
 partially usable hidden world.
@@ -200,6 +205,8 @@ The captured frontier never expands. Later commits remain dirty. Chunk writes
 are not a successful checkpoint; atomic manifest publication is. On failure,
 pins are released only if the scar remains retained by another safe form.
 Incomplete store transactions are aborted best-effort and ignored by restore.
+V1 captures the whole live-world directory; no scope variant can omit a live
+volume.
 
 Restore:
 
@@ -220,17 +227,24 @@ chunk fails restore rather than failing later as an apparently empty region.
 
 ```text
 registered/validated
+  -> extension + worst-case child batch capacity reserved
   -> admitted bounded inspection
   -> packet captured at revisions
   -> external shader submitted
-  -> candidate output validated
-  -> zero or more normal command receipts
-  -> extension outcome
+  -> whole candidate output validated
+  -> every child admitted or zero children admitted
+  -> extension dispatch outcome with every child receipt
 ```
 
-Candidate output is a batch with all-or-none validation. The effects themselves
-remain independent public commands unless the external system encodes one
-bounded patch command. This does not create cross-volume atomicity.
+Before dispatch, `EffectBatchPermit` reserves the descriptor's worst-case
+ordinary command record count, aggregate encoded payload bytes, and child
+completion slots. Candidate output is a batch with all-or-none validation and
+all-or-none child admission. Invalid output assigns no command IDs and commits
+nothing. A smaller valid output releases unused capacity immediately; the
+outer receipt returns all child receipts in output order. Those effects then
+remain independent public commands unless the external system encoded one
+bounded patch command. A later conflict/failure of one child does not undo
+another child and does not create cross-volume atomicity.
 
 If the inspection snapshot becomes stale before an effect prepares, its
 mandatory revision precondition causes conflict. Moria never silently reruns
