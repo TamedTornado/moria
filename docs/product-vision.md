@@ -284,7 +284,7 @@ crate splits, or milestones.
 | Capability | Guarantee |
 | --- | --- |
 | Sparse material truth | Continuous volumes are representable without full raw-voxel residency of untouched regions. |
-| Lazy materialization | Regions become detailed when touched (render proximity, simulation activation, mutation, or query)—not all at once. |
+| Lazy materialization | Regions become detailed on demand—not all at once. |
 | Public mutation verbs | Dig, place, and related world edits are admitted only through the contract. |
 | Public inspection | Bounded reads, queries, snapshots, telemetry, or events—never privileged storage paths. |
 | Streaming lifecycle | Active and cold regions remain tractable; large worlds do not require permanent full residency. |
@@ -308,8 +308,8 @@ implementation checklists):
   crates.
 - Implementation ownership of work may move between CPU and GPU without
   changing the consumer contract.
-- Repeated vegetation and clutter should share presentation resources rather
-  than inventing a disconnected prop layer that desyncs from matter.
+- Vegetation and clutter presentation stays derived from matter—not a
+  disconnected prop layer that desyncs from material truth.
 
 ---
 
