@@ -85,6 +85,13 @@ immediately available. Commands, queries, derived presentation, and
 persistence checkpoints expose their progress, completion, revision, and
 failure rather than hiding delay behind direct storage access.
 
+When an external behavior engine already operates on the GPU, this boundary
+must support a bounded, authorized path for observing matter and requesting
+effects without making a full CPU mirror or synchronous CPU readback the normal
+coordination route. GPU compatibility does not grant direct ownership of
+Moria's storage: bounds, admission, revisions, completion, and failure remain
+the same public contract regardless of where the participating work runs.
+
 ### 2.6 Behavior remains external
 
 External systems may observe matter and lifecycle, perform any computation they
@@ -320,6 +327,12 @@ An observing plug-in receives no privileged voxel ownership. If it wants to
 change matter or move a volume, it submits an ordinary admitted command and
 receives the same validation and failure behavior as any other consumer.
 
+A GPU-oriented plug-in follows those same rules. Its bounded observation and
+effect handoff may remain GPU-oriented where feasible, but admission and
+terminal outcomes stay visible to the owning consumer through receipts,
+revisions, observations, and errors. A faster path may not bypass validation,
+make pending work appear committed, or introduce a second copy of world truth.
+
 ### 4.6 Present
 
 Moria derives visible surfaces and optional dressing from committed matter.
@@ -540,7 +553,9 @@ escape hatch. It covers:
 - current, stale, building, and failed presentation;
 - revision lag between truth and presentation;
 - checkpoint progress, durable revision coverage, and restore failure;
-- observation backlog and gaps; and
+- observation backlog and gaps;
+- behavior-extension boundary activity and consumer-meaningful transfer or
+  readback pressure when that boundary is exercised; and
 - resource-pressure decisions.
 
 Diagnostics may add raw-voxel, volume-boundary, lifecycle, revision, and
@@ -618,6 +633,12 @@ bounded truth, and submits an ordinary mutation or movement request. It owns
 the reason and all behavior state. Removing the plug-in removes the behavior
 without removing or changing Moria's material vocabulary.
 
+When this proof exercises a GPU-oriented behavior engine, it also shows that
+bounded observation and effect handoff can remain GPU-oriented where feasible
+without changing admission, atomic completion, revision, or failure semantics.
+A CPU-oriented proof can establish semantic compatibility, but by itself does
+not evidence the intended GPU-performance path.
+
 ### Failure proof
 
 Validation deliberately exercises cold queries, invalid bounds, stale
@@ -631,9 +652,12 @@ storage.
 Benchmarks record mutation-to-commit time, commit-to-current-presentation time,
 query responsiveness, lifecycle transitions, authoritative and derived
 residency, checkpoint/restore behavior, and collision-truth agreement with
-machine context. Target thresholds and curated routes belong to the validation
-plan and technical design; this product design requires the measures and
-honest status, not seed-specific numbers.
+machine context. When the behavior-extension boundary is exercised, evidence
+also reports its handoff latency and consumer-meaningful transfer or readback
+pressure. Correctness scenarios must pass before such measurements support an
+optimization claim. Target thresholds and curated routes belong to the
+validation plan and technical design; this product design requires the
+measures and honest status, not seed-specific numbers.
 
 A walkable third-person scene may make several proofs easy for a human to see,
 but its character, controls, camera, route, palette, assets, generator, and
@@ -750,7 +774,8 @@ public facade alone:
 9. checkpoint and restore scars against compatible, reconstructable
    consumer-owned base content with explicit durable revision coverage;
 10. attach an external behavior plug-in without privileged storage or a
-    substrate-owned behavior vocabulary; and
+    substrate-owned behavior vocabulary, while permitting a bounded
+    GPU-oriented observation and effect path where feasible; and
 11. measure and fail-close each claim, including adverse lifecycle and
     persistence cases.
 
