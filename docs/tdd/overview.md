@@ -49,7 +49,7 @@ main-world facade
           |
           v
 Bevy RenderApp / MoriaRenderPlugin
-  |-- private sparse page table and brick pools
+  |-- private sparse page table and immutable-base/current brick pools
   |-- private compute pipelines for materialization, mutation, query/collision
   |-- copy-on-write transaction pages and revision-tagged derived work
   `-- bounded result/readback rings
@@ -114,6 +114,22 @@ modules. `matter`, `collision`, `persistence`, and `presentation` may share
 small internal value types but may not call the facade. `gpu` implements work
 requested by `runtime`; it never performs consumer admission.
 
+Cross-module calls use typed immutable packets:
+
+- `runtime -> gpu`: reserved operation packet plus captured catalog/volume
+  revisions;
+- `gpu -> runtime`: bounded completion record plus an owned readback slice;
+- `runtime <-> persistence`: immutable checkpoint cut or validated private
+  restore state;
+- `matter -> presentation/collision`: internal cell/occupancy value types, not
+  storage handles; and
+- `telemetry`: receives bounded facts from owners and cannot call mutation or
+  query kernels.
+
+Only `runtime` may publish a revision, receipt terminal state, lifecycle
+transition, or observation. Only `gpu` may mutate private page-table bindings.
+Only `persistence` may mark a revision durable.
+
 ## 3. Repository and module contract
 
 The implementation will create this structure:
@@ -174,6 +190,13 @@ features, unsafe path dependencies into source modules, internal ECS queries,
 or raw storage handles. A compile-fail test verifies that representative
 private module paths are inaccessible.
 
+Within `crates/moria/src`, every owner directory has a `mod.rs` that exports
+only `pub(crate)` domain types to sibling owners; files below it are private by
+default. Cross-owner DTOs live in `src/internal.rs` only when at least two
+owners need the exact value and the ownership table above identifies the
+writer. Public DTOs live under `facade` and are re-exported deliberately from
+`lib.rs`; internal owners do not define look-alike public IDs.
+
 ### 3.1 Naming and dependency rules
 
 - Rust files and modules use `snake_case`; types/traits use `UpperCamelCase`;
@@ -209,6 +232,13 @@ private module paths are inaccessible.
 The repository-root `AGENTS.md` created with implementation must contain the
 following operational contract. It may add explanatory prose but may not
 weaken or rename these commands.
+
+All commands below run from the repository root with the committed
+`rust-toolchain.toml` and `Cargo.lock`. No command may download unpinned helper
+scripts, depend on an uncommitted asset, or convert a missing GPU adapter into a
+pass. Required developer tools are the pinned Rust components `rustfmt` and
+`clippy`, plus `cargo-deny` at the exact version recorded in
+`.cargo/config.toml`/the bootstrap instructions.
 
 ### Formatting
 
@@ -253,6 +283,27 @@ The first command contains unit, property, compile-fail, persistence golden,
 and shader-interface tests. The conformance command requires a wgpu compute
 adapter; absence is a reported `not_demonstrated` result and a failing exit,
 not a skipped pass.
+
+### Release qualification
+
+```sh
+cargo run -p xtask -- check
+cargo run -p moria-conformance -- \
+  --suite contract \
+  --adapter auto \
+  --output target/evidence/contract.json
+cargo run -p moria-conformance -- \
+  --suite performance \
+  --adapter auto \
+  --output target/evidence/performance.json
+cargo run -p xtask -- visual-review-check \
+  --contract target/evidence/contract.json \
+  --review target/evidence/visual-review.json
+```
+
+These commands implement the release gate in `validation.md`. The visual review
+record is supplied by the human review workflow; automation validates it but
+does not manufacture approval.
 
 ### Build and documentation
 
@@ -319,6 +370,14 @@ The following invariants are release blockers:
 11. CPU state never grows in proportion to every cell of an untouched volume.
 12. External GPU behavior observes bounded immutable snapshots and emits
     untrusted effect requests; it never receives authoritative storage.
+13. A ready brick retains a proof-verified immutable base view until eviction,
+    so canonical scars are computed without guessing or a CPU cell mirror.
+14. A commit barrier prevents old revision metadata from being paired with
+    post-commit GPU cells.
+15. World-scope no-hit/completeness claims use one captured catalog/AABB-index
+    snapshot.
+16. Collision truth is the thresholded occupied-cell union; smooth or
+    constructed presentation never changes it.
 
 ## 6. Delivery sequence
 

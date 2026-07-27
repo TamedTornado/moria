@@ -10,17 +10,30 @@ struct PackedCell(u32);
 // bits 0..=15 material ID, bits 16..=23 coverage, bits 24..=31 reserved = 0
 ```
 
-Coverage is an unsigned scalar from 0 (no matter) to 255 (full coverage at the
-cell sample). Empty is exactly material 0 and coverage 0. Nonempty material
-with zero coverage is invalid. Reserved bits must be zero in sources,
-commands, persistence, and GPU output.
+Coverage is an unsigned scalar from 0 (no matter) to 255 (full coverage) at the
+center of the addressed cell. Empty is exactly material 0 and coverage 0.
+Nonempty material with zero coverage is invalid. Reserved bits must be zero in
+sources, commands, persistence, and GPU output.
 
-Coverage provides shape information for smooth surface reconstruction without
-changing collision identity. Collision occupancy uses the registered
-material's threshold. Material identity at a mixed boundary is the nonempty
-sample selected by deterministic nearest-surface rules; no blended gameplay
-material is invented. More elaborate visual blending remains derived
-presentation data.
+The authoritative occupied set is defined exactly: a cell contributes its
+axis-aligned unit cell box when its coverage is greater than or equal to its
+material's `occupancy_threshold`, and contributes no occupied space otherwise.
+Point queries use floor-to-cell with the volume domain half-open at its maximum;
+overlap, trace, and sweep use the closed boundary of the union of those boxes
+for contact. Faces shared by two occupied cells are interior and not contacts;
+when several boundary cells coincide at an edge/corner, the lower
+lexicographic cell owns the fact. This definition is the reference model for
+collision and removes any dependency on a generated mesh.
+
+Coverage additionally provides a scalar field for smooth presentation.
+Presentation trilinearly interpolates center samples, treats the known finite
+domain exterior as a virtual zero only while closing a boundary surface, and
+uses the configured iso-level. This virtual presentation sample is not a query
+answer and cannot make cold or failed in-domain matter appear empty. Material
+identity at a visual mixed boundary is the nonempty sample selected by
+deterministic nearest-surface rules; no blended gameplay material is invented.
+Collision remains the thresholded occupied-cell set above, so smoothing never
+changes occupancy truth. More elaborate visual blending remains derived data.
 
 Logical truth is the exact `PackedCell` lattice plus volume placement at a
 revision. Compression, page location, mesh vertices, and acceleration data are
@@ -49,12 +62,13 @@ The GPU owns:
 
 1. a per-world volume descriptor table;
 2. a two-level sparse region/brick page table;
-3. descriptor pools for `Empty`, `Homogeneous`, and `Mixed` bricks;
-4. a fixed-capacity mixed-brick pool;
-5. transaction page pools;
-6. per-ready-region occupancy min/max hierarchy;
-7. revision-tagged query/result rings; and
-8. revision-tagged presentation buffers described elsewhere.
+3. immutable base and committed-current descriptors for each ready brick;
+4. descriptor pools for `Empty`, `Homogeneous`, and `Mixed` bricks;
+5. fixed-capacity immutable-base and committed-current mixed-brick pools;
+6. transaction page pools;
+7. per-ready-region occupancy hierarchy;
+8. revision-tagged query/result rings; and
+9. revision-tagged presentation buffers described elsewhere.
 
 A brick descriptor is one of:
 
@@ -63,10 +77,18 @@ A brick descriptor is one of:
 - `Mixed(PageIndex)`: exactly 512 packed cells in the private pool; or
 - `Unavailable`: an internal sentinel that is never interpreted as empty.
 
-Untouched homogeneous regions therefore cost region/brick descriptors, not
-raw cells. Fully cold regions have no detailed GPU descriptor and retain only
-CPU lifecycle/source/scar metadata. Sparse page-table entries are allocated
-only for requested regions, scars, and nonhomogeneous source results.
+For a ready brick, the immutable base descriptor names the proof-verified base
+leaf and the current descriptor names base-plus-scar truth. They share the same
+descriptor/page when no scar exists. A changed mixed brick may therefore pay
+for both a base page and a current page; that cost is charged to authoritative
+residency and is released when the region becomes cold. Retaining the base
+view is required to canonicalize later scars without a CPU mirror or a second
+source fetch during commit.
+
+Untouched homogeneous regions therefore cost region/brick descriptors, not raw
+cells. Fully cold regions have no detailed GPU descriptor and retain only CPU
+lifecycle/source/scar metadata. Sparse page-table entries are allocated only
+for requested regions, scars, and nonhomogeneous source results.
 
 The CPU may retain:
 
@@ -100,6 +122,16 @@ asks the source for an unbounded stream. The result consists of 512 canonical
 brick answers (`Empty`, `Homogeneous`, or mixed cell payload), edge validity,
 and content proofs described in `persistence.md`.
 
+`descriptor()` is captured once during configuration and must remain byte-equal
+for the source registration's lifetime. `SourceError` contains a stable
+consumer-selected diagnostic code, bounded message, and
+`SourceRetry::{Transient, Permanent}`; Moria maps it to its own scoped
+`MoriaError` without trusting retryability for malformed bytes or proofs.
+Cancellation is cooperative. A future that ignores cancellation remains
+charged to the source concurrency/buffer reservation until it resolves or the
+configured source timeout expires; after timeout its eventual output is
+discarded by operation generation.
+
 Materialization pipeline:
 
 1. Admission pins a cold/requested region and reserves source, GPU, and
@@ -108,8 +140,10 @@ Materialization pipeline:
 3. The source future runs on Bevy's I/O task pool with a timeout/retry policy.
 4. CPU validation checks identity proof, exact bounds, payload lengths,
    reserved bits, material IDs, empty semantics, and digest.
-5. Valid payloads upload to staging; a compute pass expands only mixed bricks,
-   applies canonical scars, and builds occupancy aggregates.
+5. Valid payloads upload to staging; a compute pass installs immutable base
+   descriptors/pages, derives sharing current descriptors, applies canonical
+   scars into distinct current pages only where needed, and builds occupancy
+   aggregates.
 6. A validation pass checks pool indices, cell domains, and scar application.
 7. After the GPU fence and compact completion record, runtime publishes
    `ready(revision)` once.
@@ -141,9 +175,10 @@ bricks. It follows a copy-on-write transaction:
 5. **Validate:** a separate pass validates every staged descriptor, material,
    index, affected-bounds reduction, scar capacity, and command checksum. A
    fault bit can force failure here in conformance builds.
-6. **Prepare scar:** GPU compares staged cells with base cells and emits a
-   bounded canonical delta for the affected bricks. The CPU verifies the
-   compact delta and reserves its scar index entry before commit.
+6. **Prepare scar:** GPU compares staged cells with the retained immutable base
+   descriptors/pages and emits a bounded canonical delta for the affected
+   bricks. The CPU verifies the compact delta and installs it in a reserved
+   unpublished scar version before commit.
 7. **Commit:** one ordered compute dispatch swaps all affected page-table
    descriptors, updates occupancy aggregates, and writes one completion record
    containing prior/new revision and checksum. Public query dispatches for that
@@ -153,10 +188,17 @@ bricks. It follows a copy-on-write transaction:
    revision metadata, install the scar delta, emit one observation, and mark
    presentation stale/building.
 9. **Reclaim:** old pages are retired after all earlier GPU readers complete;
-   transaction pages are discarded on any failure before commit.
+   transaction pages and the unpublished scar version are discarded on any
+   failure before commit.
 
-The commit dispatch does no fallible allocation or content validation. CPU
-publication after the completion fence is the public commit point. A GPU device
+The commit dispatch does no fallible allocation or content validation. From
+dispatch through CPU publication, the scheduler places a per-volume commit
+barrier: no later query, command, checkpoint cut, presentation build, or
+extension snapshot for that volume can capture or dispatch. Earlier readers
+are already ordered before the swap. CPU publication after the completion
+fence installs the prepared scar, revision, receipt fact, observation, and
+presentation invalidation in one main-world transaction and is the public
+commit point. A GPU device
 loss before publication invalidates the entire private GPU allocation, so the
 unpublished command fails with no committed effect; no later query result from
 that device is published. A device loss after CPU publication retains the
@@ -170,13 +212,15 @@ revision, and avoid scar/presentation/observation work.
 ## 6. Placement and registry commits
 
 Placement changes use the same ordered control queue but stage only a new
-volume transform and top-level spatial-index entry. The commit updates both
-atomically and increments the volume revision. In-flight world-space queries
-are ordered entirely before or after the new placement.
+volume transform and top-level spatial-index entry. The same per-volume barrier
+orders the GPU descriptor update before one CPU publication that swaps the AABB
+index snapshot and increments the volume revision. In-flight world-space
+queries are ordered entirely before or after that publication.
 
-Create reserves identity, source, registry, budget, and persistence entries
-before its catalog commit. It becomes visible at volume revision 1 and the new
-catalog revision. Retire enters `retiring` visibly but the catalog removal
+Create reserves identity, immutable source descriptor, registry/tombstone
+capacity, budget, and persistence entries before its catalog commit. It becomes
+visible at volume revision 1 and the new catalog revision. Retire enters
+`retiring` visibly but the catalog removal
 commits only after:
 
 - no operation pins the volume;
@@ -184,9 +228,20 @@ commits only after:
   policy; and
 - no checkpoint cut refers to work not yet copied.
 
-The retiring state rejects new commands and interests but allows existing
-queries to finish at their captured revision. The final removal advances
-catalog revision once and emits a retired observation.
+The retiring state rejects new local commands, interests, and queries but
+allows existing queries to finish at their captured revision. A newly submitted
+world-scope query whose bounds intersect a retiring volume waits behind the
+retirement control operation rather than omitting it or extending retirement
+with a new pin. The final removal advances catalog revision once and emits a
+retired observation. Its persistent volume record becomes a tombstone holding
+identity, last revision, and retirement state; its source/scars may be released
+only after the configured durability rule is met. A `VolumeId` is never reused
+within one persistent world.
+
+Cancellation or failure before final removal atomically leaves the catalog
+unchanged and returns the volume from `retiring` to its prior lifecycle states;
+waiting world queries are then dispatchable against it. Retirement has no
+post-catalog-removal failure stage.
 
 ## 7. GPU query execution
 
@@ -220,22 +275,29 @@ Collision reads the same cell representation as sample/region queries:
 - Point and region occupancy inspect exact occupied samples.
 - Ray trace uses 3D DDA through local cells and reports ordered occupied
   intervals; rotated volume hits are transformed back to world space.
-- Shape overlap prunes with region/brick occupancy and tests conservative
-  cell coverage surfaces.
+- Shape overlap prunes with region/brick occupancy and tests the thresholded
+  occupied-cell boxes defined in §1.
 - Sweeps use broad-phase swept AABBs, local-space conservative advancement,
   and at most 16 bisection iterations to reach configured tolerance.
-- Surface normals derive from the local coverage gradient when available and
-  fall back to the entered cell face. They are transformed by placement
-  rotation.
+- Contact normals are the entered occupied-cell face normals, transformed by
+  placement rotation. Coverage-gradient normals are presentation facts and
+  cannot alter collision.
 
 World overlap is the union of all volume facts. Overlapping cells are not
 merged, prioritized, or resolved. Results include volume/material identity,
 cell, world contact/interval, normal when defined, and exact volume revision.
 
-For occupancy and sweep, conservative means Moria may report a possible contact
-near a partially covered cell but must not miss coverage at or above the
-occupancy threshold. The result includes `ContactCertainty::Exact` or
-`Conservative`. Consumers own any follow-up policy.
+Point, AABB, and ray results are exact against the occupied-cell union.
+Oriented/curved/convex overlap and sweep may return
+`ContactCertainty::Conservative` when bounded iteration stops before a
+separating proof; they must not miss an occupied cell. A conservative hit is a
+fact about algorithmic certainty, not a behavior response. Consumers own any
+follow-up policy.
+
+`CollisionPrecision` is expressed as a positive cell-edge fraction, defaults
+to `1/256`, and is validated within `[1/4096, 1/16]`. Results report the
+configured tolerance and iterations used. Reaching 16 iterations without that
+tolerance returns a conservative fact rather than a falsely exact one.
 
 Collision correctness is checked against the deterministic reference model
 for bounded fixtures. The reference model is `#[cfg(test)]`/conformance-only

@@ -20,14 +20,20 @@ These limits are encoded into validation and, where applicable, wire formats:
 | Active worlds per plugin | 8 |
 | Registered materials per world | 65,535 plus reserved empty |
 | Active volumes per world | 4,096 |
+| Active plus retired catalog records per world | 65,536 |
 | Cells on one volume axis | 2,097,152 (`2^21`) |
 | Live interests per world | 4,096 |
 | Regions covered by one interest | 4,096 |
 | Cells targeted by one matter command | 262,144 |
 | Bricks touched by one matter command | 4,096 |
 | Decompressed patch/stamp bytes | 8 MiB |
+| Encoded or decoded base-region response | 8 MiB each |
 | Cells returned by one region query | 262,144 |
+| Cells visited by one query | 1,048,576 |
+| Bricks visited by one query | 16,384 |
 | Facts returned by one query | 65,536 |
+| Result bytes returned by one query/snapshot | 8 MiB |
+| Coverage spans returned by one query/snapshot | 65,536 |
 | Convex query planes | 32 |
 | Trace/sweep hits | 4,096 |
 | Live receipts/query tickets per world | 65,536 |
@@ -37,11 +43,23 @@ These limits are encoded into validation and, where applicable, wire formats:
 | Public diagnostic string | 1,024 bytes |
 | GPU extension snapshot cells | 1,048,576 |
 | GPU effects in one exchange | 262,144 |
+| GPU effect groups in one exchange | 4,096 |
+| Dressing instances per definition per region | 65,536 |
 | One persistence chunk | 8 MiB |
 | One world checkpoint | Configured, default 4 GiB; streaming only |
 
 Requests outside hard maxima are rejected with the supported maximum and no
 allocation. Lower per-world configured maxima are reported the same way.
+Catalog tombstones count against the active-plus-retired limit and IDs cannot
+be reused. Reaching it rejects a later create without disturbing active
+volumes.
+
+Bounds are charged after exact checked expansion. This includes rotated
+world-to-local bounds, one-cell presentation border halos, collision sweep
+broad-phase bounds, source requests rounded to regions, query coverage
+descriptors, and transaction worst cases. A directly requested interest of
+4,096 regions is rejected when its required halo cannot also fit its configured
+reservation; internal expansion is never an unmetered allocation.
 
 ## 3. Default budgets
 
@@ -60,6 +78,7 @@ Per plugin defaults:
 | Concurrent mutation transactions | 8 |
 | Concurrent query dispatches | 64 |
 | Concurrent presentation builds | 16 |
+| Source request timeout | 10 seconds per attempt |
 | Receipt retention | 60 seconds or explicit acknowledgment |
 | Idle subscription expiration | 10 minutes |
 
@@ -174,6 +193,12 @@ is an automatic failure.
 
 Checkpoint acceptance for 32 changed bricks must serialize less than 2 MiB plus
 fixed manifest overhead and must not scale with untouched domain cells.
+
+The GPU-extension latency workload is fixed at a 65,536-cell snapshot,
+4,096 patch-cell effect records in at most 16 groups, with no cold
+materialization. Its interval begins when the exchange becomes dispatchable
+and ends when every group has a main-world admission outcome; later command
+commit time is reported separately and is not hidden inside this metric.
 
 ## 8. Stable telemetry schema
 

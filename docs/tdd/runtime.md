@@ -17,6 +17,15 @@ streams. Commands for the same volume are dispatched FIFO after admission.
 Independent volumes may run concurrently. Queries capture a revision set when
 dispatched and order relative to commits through GPU queue ordering.
 
+The scheduler owns an immutable `Arc<CatalogSnapshot>` containing active
+volume descriptors and the world-space AABB index. World-scope query,
+interest, observation-snapshot, and checkpoint planning capture one snapshot
+under a short read barrier. Create/final-retire publication and placement
+publication take the matching write barrier and replace the snapshot; no
+consumer callback or I/O runs while either barrier is held. Per-volume commit
+barriers described in `matter-and-storage.md` prevent a query from pairing an
+old CPU revision with post-swap GPU cells.
+
 Priorities select ready work but do not reorder admitted commands on one
 volume. Starvation protection increments effective priority once per 60 frames
 up to 255. Deadlines never weaken truth.
@@ -44,6 +53,19 @@ Configuring -> Ready -> RecoveringDevice -> Ready
 - `RecoveringDevice`: all GPU results and unpublished transactions from the
   lost device are rejected, new admissions pause, and authority is rebuilt
   from exact base plus CPU scars. Applied revisions remain known.
+
+A post-publication `Failed` world admits only ticket polling/acknowledgment,
+telemetry, observation draining, discard handshake, and
+durability-preserving shutdown. It rejects new truth, presentation, interest,
+extension, and checkpoint operations; shutdown owns any required final
+checkpoint so failure cannot be bypassed with ordinary work.
+
+Device recovery uses the configured source retry policy and the same proof
+validation as ordinary materialization. A second device loss during recovery,
+adapter recreation failure, permanent source/proof failure, or exhausted retry
+budget transitions the world to `Failed`; it never exposes a partially rebuilt
+ready set. Consumers may still inspect failure/telemetry and request a
+durability-preserving shutdown.
 
 ## 3. Region lifecycle
 
@@ -105,6 +127,11 @@ Query cancellation is accepted until dispatch. After dispatch, Moria may drop
 the readback result and report cancelled but keeps resources pinned until its
 fence. `Unavailable` is a terminal typed outcome distinct from a complete
 empty/no-hit result.
+
+If cancellation is requested after dispatch, `request_cancel` returns
+`TooLate` unless the implementation has already installed a discard-result
+flag before GPU submission. Thus one call never reports `Requested` and later
+publishes `Complete`; `Requested` deterministically leads to `Cancelled`.
 
 ### Checkpoint
 
@@ -178,6 +205,11 @@ either publication returns the same terminal fact.
 No global atomic snapshot across independent volumes is promised.
 `RevisionSet` tells exactly what a multi-volume query used.
 
+World-scope dispatch linearizes at catalog-snapshot capture. Volume revisions
+in that result may differ because prior independent commands publish
+independently, but every entry and placement comes from the captured catalog
+snapshot and every GPU reader is ordered at that entry's recorded revision.
+
 ## 7. Observation retention and backpressure
 
 Each subscription owns only its bounded ring. Moria does not retain a global
@@ -193,6 +225,13 @@ If even the gap cannot be retained because the consumer never polls, the
 subscription state itself remains `Gapped`; the next poll synthesizes the same
 marker. Subscription expiration after configured idle time is explicit and
 does not affect world truth.
+
+`ObservationSequence` is allocated once per world publication before filters
+are evaluated. Filtered-out sequences need not appear in a subscription. A gap
+names the first and last lost event that matched that subscription, not merely
+the next global number. Snapshot/resume uses the global sequence barrier in
+`public-api.md`, so commits concurrent with snapshot capture appear exactly
+once either in the snapshot state or after the resume token.
 
 ## 8. Resource pressure behavior
 
@@ -218,10 +257,20 @@ let proposal = world.prepare_discard_undurable()?;
 world.confirm_discard_undurable(proposal.token, proposal.exact_revisions)?;
 ```
 
+`DiscardProposal` contains the world ID, exact dirty `RevisionSet`, dirty scar
+bytes, token, and proposal generation. It contains no boolean shorthand that
+could authorize a later revision accidentally.
+
 The first call returns the exact dirty revisions and a random nonce; the
 second call must echo both. Confirmation is rejected during an in-flight
 checkpoint or with mismatched revisions. Success emits an observation and
 telemetry audit record.
+
+For discard-and-stop, `shutdown(DiscardWithToken { token, exact_revisions })`
+is the second step instead of `confirm_discard_undurable`: it atomically
+validates the proposal, enters `Quiescing`, and only then discards. A token is
+single-use in either path. Calling `confirm_discard_undurable` discards while
+the world remains ready and does not itself authorize shutdown.
 
 This path is not used by eviction or ordinary shutdown. It exists because the
 approved design allows explicit consumer authorization while forbidding silent
@@ -231,14 +280,41 @@ loss.
 
 `shutdown(policy)` atomically enters `Quiescing`. Policies:
 
-- `RequireDurable { store, timeout }`: stop admissions, finish already
+```rust
+pub enum ShutdownPolicy {
+    RequireDurable { timeout: Duration },
+    DiscardWithToken {
+        token: DiscardToken,
+        exact_revisions: RevisionSet,
+    },
+}
+
+pub struct ShutdownResult {
+    pub final_revisions: RevisionSet,
+    pub durable: Option<RevisionSet>,
+    pub discarded: Option<RevisionSet>,
+}
+```
+
+- `RequireDurable { timeout }`: require the world's configured
+  `Checkpointed` store, stop admissions, finish already
   committing work, cancel other cancellable work, checkpoint the resulting
-  dirty revisions, then release resources. Timeout returns a nonterminal
-  shutdown receipt until the consumer chooses to keep waiting or explicitly
-  discard.
-- `LeaveDirtyInMemory`: permitted only when the world object remains alive for
-  later resume; it does not stop/destroy the world.
+  dirty revisions, then release resources. Timeout fails that shutdown ticket
+  with dirty revisions intact and leaves the world in `Quiescing`; the
+  consumer may submit another `RequireDurable` shutdown attempt or use the
+  explicit discard handshake.
 - `DiscardWithToken`: requires the two-step exact discard authority above.
+
+While `Quiescing`, ordinary operations remain rejected, but repeated shutdown,
+ticket polling/acknowledgment, telemetry, discard preparation/confirmation,
+and observation draining remain legal. `DiscardWithToken` is rejected unless
+its token and exact revision set were prepared after the most recent commit
+and no checkpoint is in its writing/verification phase.
+
+`RequireDurable` is rejected before entering `Quiescing` for a `MemoryOnly`
+world because no durability collaborator exists. That world can remain alive
+or use the explicit discard handshake; Moria does not pretend process memory
+is durable.
 
 Dropping the Bevy app without completed shutdown cannot preserve process memory.
 Moria logs a structured critical diagnostic naming undurable revisions; it

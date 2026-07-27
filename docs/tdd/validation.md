@@ -39,6 +39,8 @@ Compile graph and deny-list checks prevent features exposing internals.
 - revision overflow/precondition behavior;
 - state-machine transition tables;
 - observation gap/snapshot sequence model;
+- catalog-snapshot/query and per-volume commit-barrier interleavings;
+- world-interest re-evaluation and over-capacity transitions;
 - persistence envelope corruption and compatibility;
 - Merkle roots/proofs over empty, homogeneous, edge, and mixed bricks;
 - host/WGSL layout equality;
@@ -102,7 +104,10 @@ failure after all transaction pages are staged and scar capacity is reserved.
 Pass evidence: success advances exactly once and converges across query,
 collision, scar, observation, and presentation; injected failure changes no
 cell/revision/scar and emits no intermediate change event. Capture before,
-stale, and current presentation for success.
+stale, and current presentation for success. A mutation that restores cells
+exactly to their immutable base removes the canonical scar. Adversarial
+scheduler tests dispatch queries immediately around the commit barrier and
+prove that no result pairs one revision label with another revision's cells.
 
 ### C04 Deep volume
 
@@ -122,7 +127,10 @@ scars across retirement and rematerialization.
 
 Pass evidence: required lifecycle transitions occur, live-byte thresholds pass,
 pinned work is not evicted, unknown is never empty, pressure decisions are
-reported, and restored retired regions contain edits.
+reported, and restored retired regions contain edits. Move/create volumes into
+a bounded world interest until it exceeds `max_regions`; the lease must become
+explicitly `OverCapacity`, retain prior pins, and never report a clipped set as
+ready.
 
 ### C06 Persistence
 
@@ -136,7 +144,9 @@ is absent/rebuilt, and byte threshold passes.
 Negative variants corrupt every envelope layer, remove material/source/base
 snapshot, change lineage only, change Merkle root under same lineage, return a
 bad proof, and use unsupported major/contract/layout versions. Every variant
-must fail before world publication.
+must fail before world publication. Crash-store variants expose uncommitted,
+truncated, reordered, oversized, and post-footer data through the streaming
+reader; none may publish a durable checkpoint or restored world.
 
 ### C07 Dynamic volumes and overlap
 
@@ -155,7 +165,9 @@ continue.
 
 Pass evidence: a gap is unavoidable/explicit, no post-gap event leaks before
 resume, snapshot revision and next sequence close the race, and consumer
-reconstructs the same final facts as direct queries.
+reconstructs the same final facts as direct queries. Filtered-out global
+sequences and a commit at the snapshot barrier are included so sequence gaps
+cannot cause duplication or omission.
 
 ### C09 Failures and shutdown
 
@@ -179,6 +191,9 @@ admission/receipt results. Inject overflow and malformed output.
 Pass evidence: material schema has no behavior vocabulary; GPU path accesses
 only snapshot/sink; bytes/readback are reported; effects are bounded and
 atomic; bad exchanges change nothing except previously admitted commands.
+Randomized GPU invocation order produces byte-identical sorted effect groups;
+duplicate cells/sequences, mixed-kind groups, cross-volume groups, late
+watchdogs, and stale expected revisions exercise their specified failures.
 
 ### C11 Presentation and dressing
 
@@ -187,7 +202,10 @@ cut faces. Attach dressing and separately create a matter-backed assembly.
 
 Pass evidence: surface border checks are crack-free, status revision is honest,
 dressing follows/removes with support, assembly appears in matter/collision,
-and dressing does not.
+and dressing does not. Cold/failed neighbor halos never become virtual empty,
+and an unaffected region's dressing positions remain byte-identical when a
+different nonneighbor region advances the volume revision. An edit on a region
+border invalidates and rebuilds both sides of the derivation halo.
 
 ## 4. Portability matrix
 
@@ -238,12 +256,25 @@ major change retains at least the previous major's explicit
 
 ## 7. Human visual evidence
 
-`moria-lab` provides only fixture scenarios, not a game. A reviewer capture
+`moria-lab` provides only fixture scenarios, not a game. C03 and C11 render
+deterministic offscreen PNG captures into `target/evidence/captures/`; the
+contract report records their digests and fails `NotDemonstrated` if a required
+capture is absent. A reviewer capture
 must include an overlay showing scenario ID, adapter/backend, world/volume
 revision, presentation status/revision, query completeness, and configuration
-digest. Required C03/C11 captures are stored only when a later delivery plan
-requests them. A plausible image without matching machine evidence is
-`NotDemonstrated`.
+digest. Human visual acceptance is a separate explicitly reviewed evidence
+record binding those artifact digests to `Pass` or `Fail`; the tooling never
+infers a human decision from image generation. Curated captures are committed
+only when a later delivery plan requests them. A plausible image without
+matching machine evidence is `NotDemonstrated`, and a release cannot claim
+visual acceptance without the explicit review record.
+
+The JSON review record contains exactly `schema_version`,
+`contract_report_digest`, sorted `{ artifact_digest, decision }` entries for
+every required C03/C11 capture, an aggregate `decision`, and optional bounded
+review notes. Decisions are `Pass` or `Fail`; unknown fields are rejected.
+Identity or timestamp is not fabricated or required by this technical
+contract. The human-review workflow may add separately authenticated metadata.
 
 ## 8. Release gate
 
@@ -259,8 +290,14 @@ cargo run -p moria-conformance -- \
   --suite performance \
   --adapter auto \
   --output target/evidence/performance.json
+cargo run -p xtask -- visual-review-check \
+  --contract target/evidence/contract.json \
+  --review target/evidence/visual-review.json
 ```
 
 CI additionally runs the platform matrix. The local gate may establish only
 the local backend. Contract or performance report status other than `Pass`
-fails its command.
+fails its command. `visual-review-check` verifies that the review record names
+the exact required artifact digests and records an explicit `Pass`; missing,
+stale, or failed review exits nonzero. Creating that review record is a human
+review action, not an automated command or substrate capability.

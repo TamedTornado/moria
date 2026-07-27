@@ -20,16 +20,76 @@ pub trait CheckpointWriter: Send {
         -> BoxFuture<'static, Result<DurabilityProof, StoreError>>;
     fn abort(self: Box<Self>) -> BoxFuture<'static, Result<(), StoreError>>;
 }
+
+pub trait CheckpointReader: Send {
+    fn read_next(
+        &mut self,
+        max_bytes: u32,
+    ) -> BoxFuture<'_, Result<Option<StoredChunk>, StoreError>>;
+}
 ```
 
-Chunks are bounded. `commit` must provide all-or-nothing visibility and a
-durability proof meaningful for the store. Filesystem, object-store, database,
-and consumer-specific implementations sit outside Moria; conformance includes
-memory and crash-injecting filesystem stores.
+`read_next` is an ordered stream beginning with the envelope header and ending
+at the footer; it must never return a chunk larger than `max_bytes`. Premature
+EOF, duplicate data, or bytes after the footer are corruption. Chunks are
+bounded. `commit` must provide all-or-nothing visibility and a bounded
+durability proof meaningful for the store. Moria does not treat that opaque
+proof as an integrity shortcut: it always reopens the committed checkpoint,
+streams the complete envelope, and verifies every chunk plus the
+header/manifest/footer lengths and digests before publishing `Durable`.
+Filesystem, object-store, database, and consumer-specific implementations sit
+outside Moria; conformance includes memory and crash-injecting filesystem
+stores.
+
+`WorldSpec::persistence` is exactly one of:
+
+- `MemoryOnly`, which retains dirty scars and tombstones in bounded process
+  memory and rejects checkpoint requests; or
+- `Checkpointed { store, retirement }`, where `retirement` is
+  `RetainInMemory` or `RequireCheckpoint`.
+
+Neither mode permits silent loss. `MemoryOnly` makes no crash-durability claim.
+The selected mode, store capability limits, and scar/catalog reservations are
+validated before world publication.
+
+The corresponding public DTOs are:
+
+```rust
+pub enum PersistencePolicy {
+    MemoryOnly,
+    Checkpointed {
+        store: Arc<dyn CheckpointStore>,
+        retirement: RetirementDurability,
+    },
+}
+
+pub struct CheckpointRequest {
+    pub selection: CheckpointSelection,
+    pub correlation: BoundedBytes<256>,
+}
+
+pub enum CheckpointSelection {
+    LatestCommitted,
+    Exact(RevisionSet),
+}
+
+pub struct CheckpointResult {
+    pub checkpoint: CheckpointId,
+    pub durable: RevisionSet,
+    pub manifest_digest: Digest,
+    pub durability_proof_digest: Digest,
+}
+```
+
+The durability-proof digest is audit evidence, not a substitute for Moria's
+read-after-commit verification.
 
 Moria persists no presentation mesh, dressing, occupancy hierarchy, query
 cache, receipt, telemetry history, external behavior state, or consumer
-metadata beyond the explicitly opaque bounded material/world metadata.
+metadata beyond the explicitly opaque bounded material/world metadata. The
+canonical material table, including its bounded opaque metadata bytes, is part
+of the manifest so restore can prove that stable IDs retain the same registered
+meaning; Moria never interprets those opaque bytes.
 
 ## 2. Exact base identity
 
@@ -121,6 +181,13 @@ Checkpoint request selects a world and either:
 - an exact current `RevisionSet`: rejected if any named revision is not the
   current committed state.
 
+An exact checkpoint set must contain the current catalog revision and every
+active volume exactly once; checkpoints are whole-world cuts, not partial
+volume saves. The cut also includes every catalog tombstone and current
+creation/retirement record. Catalog snapshot capture and immutable scar
+reference capture occur in one scheduler transaction ordered before or after
+each command publication.
+
 Capturing the cut briefly snapshots immutable `Arc` references to catalog,
 volume state, and scar versions. Later commits use copy-on-write scar entries
 and remain dirty for the next generation. Checkpoint encoding and I/O do not
@@ -136,6 +203,7 @@ Header
   cell/shader layout IDs
   world ID and configuration digest
 Manifest chunk
+  canonical material-definition table and bounded opaque metadata
   catalog revision and sorted volume records
   exact per-volume durable revision coverage
   base identities and external snapshot references
@@ -145,6 +213,15 @@ Footer
   ordered chunk digests, manifest digest, total lengths
 Store durability proof (outside hashed envelope)
 ```
+
+The configuration digest covers every canonical material definition, cell
+encoding, volume immutable field, and registered base identity. Restore
+requires the supplied material table to match it byte-for-byte; changing a
+material definition is an explicit migration, as required by `public-api.md`.
+The digest excludes runtime budgets, queue capacities, adapter/driver,
+telemetry, presentation asset registrations, and stale-view policy, which may
+change on restore. Presentation registrations are validated separately for
+requested presentation but never gate restoration of matter truth.
 
 Integers use fixed little-endian encoding. Postcard payload schema is wrapped
 in explicit chunk type/version/length/digest fields. Chunks are independently
@@ -171,9 +248,30 @@ for scar versions included in that cut; later versions remain dirty.
 ## 5. Restore protocol
 
 Restore accepts a `RestoreSpec` containing the checkpoint ID, expected world
-ID, current material table, a source registry keyed by every saved `VolumeId`,
-checkpoint store, budgets, and presentation registrations. It operates into a
+ID, current material table, a source registry keyed by every saved active
+`VolumeId`, checkpoint store, budgets, persistence policy, and presentation
+registrations. Retired tombstones require no live source. It operates into a
 new configuring world and is atomic at world visibility:
+
+```rust
+pub struct RestoreSpec {
+    pub checkpoint: CheckpointId,
+    pub expected_world: WorldId,
+    pub materials: Vec<MaterialDefinition>,
+    pub sources: BTreeMap<VolumeId, Arc<dyn BaseContentSource>>,
+    pub store: Arc<dyn CheckpointStore>,
+    pub persistence: PersistencePolicy,
+    pub budgets: WorldBudgets,
+    pub presentation: PresentationRegistrations,
+    pub gpu_extensions: Vec<GpuExtensionRegistration>,
+}
+```
+
+The `store` reads the selected existing checkpoint. The restored world's
+`persistence` policy controls later writes and may name the same or a different
+store. All vectors/maps are bounded by the limits reserved during restore.
+Without the `gpu-extension` feature, the extension field is absent and saved
+matter remains fully restorable.
 
 1. Open header/footer and validate magic, lengths, digests, format, product
    contract, and configuration compatibility.
@@ -185,10 +283,11 @@ new configuring world and is atomic at world visibility:
    digests, canonical ordering, replacement cells, and aggregate budgets.
 5. Validate registry records, revisions, placements, retirement state, and
    catalog revision.
-6. For a bounded validation set containing every scarred brick, request base
-   leaves and verify Merkle proofs; apply scars in the test/reference path and
-   validate checksums. This establishes that all replayed deltas have the exact
-   base they named.
+6. Stream through every scarred brick in batches bounded by source-staging
+   limits, request its base leaf and verify its Merkle proof, apply its scar in
+   the validation path, and validate the resulting checksum. The total accepted
+   scar index was already reserved against the configured aggregate CPU budget
+   in step 4; no unbounded validation set is resident at once.
 7. Install private runtime metadata and keep regions cold. Materialization
    later combines proven base plus restored scars.
 8. Atomically publish the world as `Ready`, return its restored revision
