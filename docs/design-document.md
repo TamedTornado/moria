@@ -3,8 +3,11 @@
 Standalone product design for the Moria voxel-world substrate. This document
 turns the approved product vision into consumer-facing systems, interactions,
 rules, states, content boundaries, behavior, failure behavior, and validation
-experience. It does not choose implementation technology, storage formats,
-algorithms, crate layout, APIs, deployment topology, or delivery milestones.
+experience. It stays above technical implementation detail: it does not choose
+exact crate splits, algorithms, storage formats, APIs, deployment topology, or
+delivery milestones. Product form—**a Rust and Bevy library (or small family of
+tightly scoped crates) for crate consumers**—is part of approved product
+identity, not a deferred implementation choice.
 
 **Authority.** `docs/product-vision.md` is the complete product boundary. This
 design preserves its requirements and non-goals in meaning. It does not reopen
@@ -16,17 +19,35 @@ seed documents or redefine product identity from harness content.
 
 ### 1.1 Product
 
-**Moria** is reusable **voxel-world infrastructure**. Game and tool authors
-install it and drive continuous three-dimensional **material volumes** through a
-single public consumer contract.
+**Moria** is a reusable **voxel-world substrate**: engine-shaped world
+infrastructure that downstream games and tools install and drive through a
+public consumer contract.
 
-The product is engine-shaped world infrastructure, not a shipped game. Its job
-is to make hard world systems agree as **explicit, shareable contracts**: sparse
-material truth, bounded inspection, mutation admission, streaming lifecycle,
-collision against matter rather than presentation, persistence of matter plus
-edits, GPU-resident representation of that matter, measurable presentation
-derived from truth, and seams so a physics engine can plug in without privileged
-access to voxel storage.
+It is:
+
+- A **Rust and Bevy library** (or small family of tightly scoped crates) for
+  crate consumers—not an ecosystem-neutral engine abstract and not a shipped
+  game.
+- Infrastructure for continuous three-dimensional **material volumes**—natural
+  landscapes, underground geology, and constructed interiors among them—without
+  limiting identity to a Minecraft-style cube aesthetic or a single overworld
+  content palette.
+- **Volume-general:** substrate contracts must not assume gravity-aligned
+  planetary terrain as the only legal world shape. Freeform hulls remain
+  future-consumer motivation, not current delivery or validation targets;
+  contracts must stay able to express them later.
+
+It is **not** a playable game, game mode, progression loop, or game-rules stack;
+not a baked-in world generator; not a baked-in physics engine; and not defined by
+any single validation harness, demo route, character controller, content
+postcard, or machine-specific demo target.
+
+Its job is to make hard world systems agree as **explicit, shareable
+contracts**: sparse material truth, bounded inspection, mutation admission,
+streaming lifecycle, collision against matter rather than presentation,
+persistence of matter plus edits, GPU-resident representation of that matter,
+measurable presentation derived from truth, and seams so a physics engine can
+plug in without privileged access to voxel storage.
 
 ### 1.2 Core claim
 
@@ -495,8 +516,11 @@ These must remain true for the product to be Moria as approved.
     ship/station content is not current delivery or validation.
 12. **Dynamic voxel volumes are first-class matter.** Movable, damageable volumes
     share truth contracts with static geometry.
-13. **Substrate first.** Moria is world infrastructure, not a finished visual
-    game engine claimed before feasibility and visual-acceptance gates are met.
+13. **Substrate first.** Moria is world infrastructure consumed as a **Rust /
+    Bevy crate ecosystem**, not a finished visual game engine claimed before
+    feasibility and visual-acceptance gates are met, and not an
+    ecosystem-neutral engine abstract. Exact crate splits remain outside this
+    design; the Rust/Bevy library product form does not.
 
 ---
 
@@ -938,7 +962,7 @@ Closed by the approved vision. Do not reopen without a new human decision.
 
 | Topic | Decision |
 | --- | --- |
-| Product identity | Reusable voxel-world substrate / public consumer contract—not a shipped game. |
+| Product identity | Reusable voxel-world substrate: a Rust and Bevy library (or small family of tightly scoped crates) for crate consumers, with a public consumer contract—not an ecosystem-neutral engine abstract and not a shipped game. |
 | Walkable-world visual validation harness | Adjacent artifact. May exist for validation; does not define product identity or “done.” |
 | Everywhere mutation | Binding. |
 | First-class deep Z | Binding. Genuine volumetric depth, not heightmap terrain. |
@@ -996,6 +1020,9 @@ that answer as a scope decision requiring explicit human approval.
 
 This design is synthesized solely from the approved `docs/product-vision.md`.
 Seed documents and superseded Product One walkable-world planning language were
-not treated as authoritative product boundary. Implementation, crate structure,
-algorithms, storage layouts, numeric acceptance thresholds, demo routes, and
-task breakdowns remain outside this document’s scope.
+not treated as authoritative product boundary. Exact crate splits, algorithms,
+storage layouts, numeric acceptance thresholds, demo routes, and task breakdowns
+remain outside this document’s scope. The product’s form as a Rust and Bevy
+library (or small family of tightly scoped crates) for crate consumers is
+approved identity and is stated above; it is not deferred as mere
+implementation technology.
