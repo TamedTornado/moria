@@ -74,8 +74,10 @@ the same command path or admits none.
    under consumer policy and is labeled stale.
 9. Dirty scars pin enough state to reconstruct truth until a checkpoint store
    has durably committed them. Budget pressure cannot silently discard them.
-10. Dropping a receipt does not cancel accepted work. Cancellation is explicit
-    and is only guaranteed before GPU submission.
+10. Dropping a receipt does not cancel accepted work. For cancellable
+    operations, explicit cancellation linearizes before the transition to
+    `Preparing`; `Preparing` and later are too late. Startup and shutdown
+    receipts are noncancellable.
 11. Device loss terminates the old device generation. Late callbacks from that
     generation cannot publish success. Recovery returns readiness only if base
     content plus durable/retained scars reconstruct every committed revision;
@@ -307,3 +309,5 @@ design is revised or passes. Correctness and performance statuses remain
 separate, and neither can turn the other's failure into a pass. P6 requires
 both its 27-artifact local latency fixture and its 13,824-artifact
 maximum-command fair-drain fixture; the local receipt alone is incomplete.
+The local fixture is the eight-corner-cell patch whose halo union is exactly
+27 artifacts, not an impossible single-cell fan-out.

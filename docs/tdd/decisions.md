@@ -174,3 +174,46 @@ effect kinds are closed; every effect carries an exact captured revision.
 layout validation. A fixed bounded ABI preserves GPU-to-GPU inspection and
 state while allowing Moria to validate and translate effects into ordinary
 commands without exposing storage.
+
+## T17. Collision work is separately authorized; partial never truncates hits
+
+**Decision.** Every non-point collision query carries explicit candidate-brick
+and candidate-cell limits within fixed v1 maxima. Partial coverage may omit
+unavailable regions only; exceeding the hit cap always fails with
+`OutputOverflow` and returns no facts.
+
+**Reason.** Result bytes do not bound traversal through a huge sparse shape,
+and a coverage mask cannot truthfully describe omitted contacts inside a brick
+reported as inspected.
+
+## T18. Preparation is the cancellation point of no return
+
+**Decision.** Explicit cancellation and shutdown cancellation win only while an
+operation is queued or waiting for matter. The atomic transition to
+`Preparing` closes cancellation; later requests return `TooLate`, and
+`CancelNotPrepared` drains preparation and later stages.
+
+**Reason.** Preparation owns GPU and transaction reservations whose rollback
+would otherwise require a second ambiguous cancellation protocol. One atomic
+state race gives every operation family and shutdown the same testable rule.
+
+## T19. Long-lived world filters snapshot membership
+
+**Decision.** An accepted `All` interest or subscription pins the then-live
+volume IDs. Interest additionally pins exact local bricks at captured
+placements; subscription bounds remain an event predicate over the pinned IDs.
+Create/retire/move never expands membership. Update or resubscribe refreshes it.
+
+**Reason.** Live reevaluation could exceed already accepted volume/brick bounds
+and would make `All` pressure failure part of every lease. Exposing the
+resolved set makes the bounded snapshot semantics explicit.
+
+## T20. Retained variable payloads have aggregate pools
+
+**Decision.** Material metadata and observation payload bytes have independent
+aggregate limits. Content callbacks have a concrete bricks-per-request limit,
+and presentation reserves one dirty marker per live-volume slot in addition to
+ordinary dirty records.
+
+**Reason.** Per-record/count limits alone do not bound retained bytes or protect
+eventual presentation progress when several legal producers are active.

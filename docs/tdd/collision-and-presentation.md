@@ -36,8 +36,11 @@ the query pending or unavailable according to its readiness policy. They are
 not skipped as empty.
 
 The maximum candidate volume, brick, and cell counts are computed before
-dispatch. Exceeding a bound rejects the query unless explicit partial coverage
-was requested.
+dispatch. Collision work is admitted only with the public
+`TraversalAuthorization`; the checked conservative totals must fit both its
+values and the fixed 8,192-brick/65,536-cell v1 maxima. Exceeding either bound
+rejects the query. Partial coverage may omit unavailable spatial regions but
+never buys more traversal work.
 
 ### Narrow phase
 
@@ -95,9 +98,10 @@ Hits sort by:
 4. material ID.
 
 Duplicate cell hits produced by adjacent traversal are removed. Exceeding the
-authorized result cap is `OutputOverflow` unless partial was explicitly
-requested. A partial collision result carries omitted coverage and cannot be
-reported as “no hit.”
+authorized result cap always fails the receipt with `OutputOverflow` and
+returns no result; partial coverage does not truncate hits from an inspected
+brick. A partial collision result therefore omits only explicitly unavailable
+spatial regions, carries those omissions, and cannot be reported as “no hit.”
 
 ## Presentation source field
 
@@ -107,19 +111,31 @@ neighbors inside the volume domain keep the artifact building/pending; outside
 the finite domain the value is canonical empty.
 
 Mutating a boundary cell marks its brick and every face/edge/corner neighbor
-whose halo includes that cell dirty. This is at most 27 artifact jobs. The
-27 bound applies to one local brick neighborhood, not to a whole command. A
+whose halo includes that cell dirty. One cell belongs to at most two artifact
+read domains per axis, hence at most eight artifacts. Edits of cells on both
+sides of one brick—such as all eight brick-corner cells—can have the full
+3×3×3 union of 27 artifact keys. The 27 bound therefore applies to the union
+for one local brick neighborhood, not to one cell or a whole command. A
 legal command may affect 512 mutually separated bricks and therefore invalidate
 up to `512 * 27 = 13,824` distinct artifact keys. The control plane enumerates
 and deduplicates those keys during command validation with fixed maximum
 scratch, but truth publication never waits for presentation job slots.
 
-Invalidations enter `presentation_dirty_records`. At default limits all 13,824
-keys fit. With a smaller configured pool or concurrent invalidations, exact
-keys coalesce into one `(volume, dirty_revision)` marker; the scheduler then
-enumerates only currently interested artifacts in bounded
-`presentation_artifacts` pages and compares their source revision. This can
-increase rebuild work but cannot lose a stale/current transition. At most
+`presentation_dirty_records` is partitioned at startup: exactly
+`live_volumes` slots are permanently reserved as one
+`(live_slot, dirty_revision)` fallback marker each; the remaining slots hold
+exact artifact keys. Configuration requires
+`presentation_dirty_records >= live_volumes + presentation_jobs`. A created
+volume inherits its directory slot's marker, and retirement clears it before
+the slot can be reused.
+
+At default limits all 13,824 exact keys fit. With a smaller exact partition or
+concurrent invalidations, a volume atomically raises its reserved marker to the
+newest dirty revision before discarding/coalescing its exact keys. No other
+volume can consume that marker. The scheduler then enumerates only currently
+interested artifacts in bounded `presentation_artifacts` pages and compares
+their source revision. This can increase rebuild work but cannot lose a
+stale/current transition, even when all live volumes commit concurrently. At most
 `presentation_jobs` are submitted concurrently; the remainder stay as bounded
 dirty/artifact state and drain fairly by priority then stable volume/brick
 order. Telemetry distinguishes exact invalidations, volume coalescing, pending

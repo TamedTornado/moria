@@ -230,6 +230,7 @@ starting points, not universal performance promises.
 | Limit | Default | Hard v1 request maximum |
 | --- | ---: | ---: |
 | Consumer-registered nonempty materials | 4,096 | 65,535 (plus reserved empty ID 0) |
+| Material metadata per registration / aggregate | 4 KiB / 16 MiB | 1 MiB / 1 GiB |
 | Concurrently live volumes | 1,024 | 65,535 |
 | Lifetime volume records (live + tombstones) | 4,096 | 65,535 |
 | Active interest leases | 64 | 4,096 |
@@ -244,12 +245,13 @@ starting points, not universal performance promises.
 | Patch payload | 16 MiB | fixed v1 maximum |
 | Query records / reserved result bytes | 256 / 32 MiB | configured |
 | Cells per region read | 262,144 | fixed v1 maximum |
+| Candidate bricks / cells per collision traversal | 8,192 / 65,536 | fixed v1 maxima |
 | Hits per trace/overlap/sweep | 4,096 | fixed v1 maximum |
 | World-scope volumes per query | 256 | fixed v1 maximum |
-| Observation ring facts | 4,096 | configured |
+| Observation ring facts / payload bytes | 4,096 / 32 MiB | configured |
 | Subscribers / volumes per filter | 64 / 256 | configured |
 | In-flight staging maps / bytes | 8 / 32 MiB | configured |
-| Content requests / response bytes | 64 / 32 MiB | configured |
+| Content requests / bricks per request / response bytes | 64 / 512 / 32 MiB | configured |
 | Persistence requests / staged bytes | 8 / 64 MiB | configured |
 | Extraction records / bytes per frame | 2,048 / 32 MiB | configured |
 | Presentation jobs | 1,024 | configured |
@@ -267,9 +269,11 @@ not a runtime deadlock. `live_volumes` bounds concurrent directories;
 `volume_records` bounds every stable key accepted for the world lifetime, and
 retirement converts rather than frees that record. Presentation invalidation
 uses the bounded dirty-record pool; when it cannot retain individual keys it
-coalesces them to one volume dirty epoch and later enumerates only bounded
-active-interest artifacts, so pressure loses precision but never loses an
-eventual rebuild obligation. The field-level public schema, adapter-clamp
+atomically raises the marker reserved for that live-volume slot and later
+enumerates only bounded active-interest artifacts. Configuration reserves all
+`live_volumes` markers in addition to at least `presentation_jobs` other dirty
+records, so simultaneous commits in every live volume lose precision but never
+lose an eventual rebuild obligation. The field-level public schema, adapter-clamp
 rules, and exact cross-limit relationships are normative in
 [public-api.md](public-api.md#configuration-schema); this table summarizes
 storage-facing capacity rather than defining a second configuration shape.

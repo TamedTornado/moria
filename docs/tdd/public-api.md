@@ -203,6 +203,7 @@ pub enum RegistrationError {
     DuplicateVolume(VolumeKey),
     DuplicateDressingStyle(DressingStyleKey),
     MaterialCapacity { limit: u32 },
+    MaterialMetadataCapacity { requested: u64, available: u64 },
     LiveVolumeCapacity { limit: u32 },
     VolumeRecordCapacity { limit: u32 },
     DressingStyleCapacity { limit: u32 },
@@ -321,6 +322,7 @@ pub struct AdapterCapabilityReport {
 pub struct ResourceLimits {
     pub nonempty_materials: u32,
     pub max_material_metadata_bytes: u32,
+    pub material_metadata_bytes: u64,
     pub live_volumes: u32,
     pub volume_records: u32,
     pub interest_leases: u32,
@@ -335,11 +337,13 @@ pub struct ResourceLimits {
     pub query_records: u32,
     pub query_result_bytes: u64,
     pub observation_facts: u32,
+    pub observation_payload_bytes: u64,
     pub subscribers: u32,
     pub volumes_per_filter: u32,
     pub staging_maps: u32,
     pub staging_bytes: GpuCapacityLimit, // bytes; v1 hard max fits u32
     pub content_requests: u32,
+    pub content_bricks_per_request: u32,
     pub content_response_bytes: u64,
     pub persistence_requests: u32,
     pub persistence_staged_bytes: u64,
@@ -377,7 +381,8 @@ maximum legal operation, or violates a cross-limit.
 | Field | Default | Hard maximum / relationship |
 | --- | ---: | --- |
 | `nonempty_materials` | 4,096 | 65,535; empty ID 0 is additional |
-| `max_material_metadata_bytes` | 4 KiB | 1 MiB per registration |
+| `max_material_metadata_bytes` | 4 KiB | 1 MiB per registration; per-record gauge, not aggregate capacity |
+| `material_metadata_bytes` | 16 MiB | 1 GiB retained aggregate; `>= max_material_metadata_bytes` |
 | `live_volumes` | 1,024 | 65,535 |
 | `volume_records` | 4,096 | 65,535; `>= live_volumes`; counts every live key and retained tombstone for the world's lifetime |
 | `interest_leases` / `bricks_per_interest` | 64 / 4,096 | 4,096 / 65,536 |
@@ -389,13 +394,14 @@ maximum legal operation, or violates a cross-limit.
 | `command_records` / `command_payload_bytes` | 1,024 / 64 MiB | 65,536 / 1 GiB; records `>= extension_candidate_effects` when enabled; bytes >= maximum patch |
 | `query_records` / `query_result_bytes` | 256 / 32 MiB | 16,384 / 1 GiB; bytes >= largest enabled query result |
 | `observation_facts` | 4,096 | 1,048,576 |
-| `subscribers` / `volumes_per_filter` | 64 / 256 | 4,096 / `live_volumes` |
+| `observation_payload_bytes` | 32 MiB | 1 GiB; `>= 64 + 32 * volume_records` so one maximum checkpoint fact fits |
+| `subscribers` / `volumes_per_filter` | 64 / 256 | 4,096 / `min(live_volumes, 256)` |
 | `staging_maps` / `staging_bytes: GpuCapacityLimit` | 8 / 32 MiB desired, 8 MiB minimum | maps 1..=256; bytes <=1 GiB and adapter allocation; covers largest enabled readback chunk |
-| `content_requests` / `content_response_bytes` | 64 / 32 MiB | 4,096 / 1 GiB; bytes >= one detailed brick |
+| `content_requests` / `content_bricks_per_request` / `content_response_bytes` | 64 / 512 / 32 MiB | 4,096 requests / 4,096 bricks per request / 1 GiB; bytes `>= 2,048 * content_bricks_per_request + 256` |
 | `persistence_requests` / `persistence_staged_bytes` | 8 / 64 MiB | 256 / 1 GiB; staged bytes >= 8 MiB chunk decode bound when enabled |
 | `extraction_records` / `extraction_bytes` | 2,048 / 32 MiB | 65,536 / 1 GiB; bytes cover one maximum enabled patch or extension input packet plus inline state and records are at least 1 |
 | `presentation_jobs` | 1,024 | 65,536; zero only when presentation disabled |
-| `presentation_artifacts` / `presentation_dirty_records` | 16,384 / 16,384 | 1,048,576 each; both `>= presentation_jobs`; artifact records cover visible/building status, dirty records cover exact invalidations and may collapse to one volume marker under pressure; both zero only when presentation is disabled |
+| `presentation_artifacts` / `presentation_dirty_records` | 16,384 / 16,384 | 1,048,576 each; artifacts `>= presentation_jobs`; dirty records `>= presentation_jobs + live_volumes` and reserve one marker per live-volume slot; both zero only when presentation is disabled |
 | `mesh_vertices` / `mesh_indices` | 2,097,152 / 12,582,912 | `u32` and adapter allocation bound; each covers one maximum artifact when enabled |
 | `dressing_styles` / `dressing_instances: GpuCapacityLimit` | 256 / 1,048,576 desired, 65,536 minimum | 4,096 styles / adapter allocation and `u32` instances; instances cover one descriptor's `max_instances_per_artifact`; both may be zero together to disable dressing only |
 | `extension_jobs` | 64 | 4,096; zero only when extensions disabled |
@@ -404,7 +410,8 @@ maximum legal operation, or violates a cross-limit.
 | `extension_candidate_effects` | 256 | fixed v1 maximum 256 and `<= command_records` |
 
 The fixed request maxima remain: 32,768 cells and 512 bricks per matter
-command, 16 MiB patch payload, 262,144 cells per region read, 4,096 collision
+command, 16 MiB patch payload, 262,144 cells per region read, 8,192 candidate
+bricks and 65,536 candidate cells per collision traversal, 4,096 collision
 hits, 256 world-scope volumes, 2,048 vertices/12,288 indices per brick artifact,
 13,824 unique halo invalidations per matter command, 4,096 dressing instances
 per artifact, 1 MiB WGSL and 128 UTF-8 bytes for one extension entry point, and
@@ -442,6 +449,24 @@ It is returned by startup, available through
 not marked adapter-negotiated must equal their request. No clamp can weaken an
 enabled operation below its fixed public maximum; such an adapter fails
 startup instead.
+
+Metadata registration reserves both one material record and its exact retained
+metadata bytes. Exhausting `material_metadata_bytes` returns
+`RegistrationError::MaterialMetadataCapacity` without retaining the
+definition. `max_material_metadata_bytes` is enforced first. Its telemetry
+usage is the largest current record and high-water is the largest record ever
+accepted; `MaterialMetadataBytes` reports the aggregate retained pool.
+
+The observation ring owns independent fact-slot and encoded-payload capacities.
+Append evicts oldest whole facts until both fit and never splits a fact.
+Checkpoint revision vectors encode as 32 bytes per entry plus a 64-byte fact
+header, so one maximum legal fact always fits. Subscriber cursor/revision
+arrays are fixed-capacity allocations derived from
+`subscribers * volumes_per_filter` at startup and do not grow with history.
+
+`content_bricks_per_request` is the exact count bound for each source callback.
+Moria partitions larger materialization demand into stable brick-order batches,
+with at most `content_requests` callbacks in flight.
 
 ```rust
 impl MoriaHandle {
@@ -634,7 +659,9 @@ pub enum ReceiptStatus<T> {
 }
 
 pub enum CancelRequest {
-    Requested,
+    Accepted,
+    TooLate { stage: OperationStage },
+    NotCancellable,
     AlreadyTerminal,
 }
 
@@ -697,9 +724,56 @@ pub enum OperationErrorKind {
     Readback,
     Decode,
     Persistence(PersistenceErrorKind),
-    CancelledBeforeSubmission,
+    Startup(StartupFailure),
+    CancelledBeforePreparation,
     ShuttingDown,
     InternalInvariant,
+}
+
+pub struct StartupFailure {
+    pub stage: StartupStage,
+    pub causes: Vec<StartupCause>,       // sorted, <= config fields + required features
+}
+
+pub enum StartupStage {
+    RendererLookup,
+    AdapterQualification,
+    DeviceResources,
+    PersistenceOpen,
+    RestoreRead,
+    DirectoryPublication,
+}
+
+pub enum StartupCause {
+    RendererUnavailable,
+    UnsupportedCapabilities {
+        adapter: Option<AdapterCapabilityReport>,
+        missing_features: Vec<CapabilityRequirement>,
+        unmet_limits: Vec<LimitRequirement>,
+    },
+    Shader(ShaderDiagnostic),
+    OutOfMemory,
+    Persistence(PersistenceErrorKind),
+    Restore(PersistenceErrorKind),
+    InternalInvariant,
+}
+
+pub struct CapabilityRequirement {
+    pub capability: RequiredCapability,
+    pub available: bool,
+}
+
+pub enum RequiredCapability {
+    ComputeShaders,
+    StorageBuffers,
+    BufferToBufferCopy,
+    FourWritableStorageBindings,
+}
+
+pub struct LimitRequirement {
+    pub resource: ResourceKind,
+    pub requested_minimum: u64,
+    pub adapter_maximum: Option<u64>,
 }
 
 pub struct Violation {
@@ -728,20 +802,43 @@ pub struct SupportedBounds {
     pub maximum_bytes: Option<u64>,
     pub maximum_cells: Option<u32>,
     pub maximum_bricks: Option<u32>,
+    pub maximum_candidate_cells: Option<u32>,
+    pub maximum_candidate_bricks: Option<u32>,
     pub maximum_volumes: Option<u16>,
 }
 ```
 
 Receipts are cloneable observers of one shared terminal state. Dropping every
-observer does not cancel work. `request_cancel` returns `Requested` only; the
-terminal receipt distinguishes `CancelledBeforeSubmission` from an operation
-that was already submitted and therefore continues.
+observer does not cancel work. For command, query, checkpoint, and extension
+operations, the cancellation linearization point is the atomic transition from
+`Queued | WaitingForMatter` to `Preparing`. `request_cancel` wins that race by
+installing terminal `CancelledBeforePreparation` and returns `Accepted`; if
+preparation won, it returns `TooLate` with the observed stage and the operation
+continues. `Accepted` means the terminal state and capacity release are visible
+before the method returns. Startup and shutdown receipts return
+`NotCancellable`; terminal receipts return `AlreadyTerminal`.
+
+Every cancellable accepted operation starts in `Queued`, may enter
+`WaitingForMatter`, and must win exactly one transition to `Preparing` before
+it can acquire transaction slots, pin checkpoint versions, freeze a query
+snapshot, allocate an extension job, or enter any later family-specific stage.
+This rule applies even when an operation needs no GPU dispatch; no family has
+an alternate cancellation boundary.
 
 An operation stage is diagnostic, not a latency promise.
 `OperationErrorKind` is `#[non_exhaustive]` for source compatibility, while all
 v1 variants and their fields are listed above. `Violation` vectors are sorted
 by `path` then `code` and bounded by the submitted record's field count; they
 never contain arbitrary consumer payloads.
+
+Startup failures use `OperationErrorKind::Startup`; the outer operation error
+still supplies world scope, retryability, and diagnostic. Causes are aggregated
+rather than fail-fast, sorted by capability/`ResourceKind`/shader stage, and
+bounded by the closed required-feature list plus the numeric config fields.
+`UnsupportedCapabilities` carries the queried adapter report when one exists
+and one `LimitRequirement` for every unmet minimum, so startup never collapses
+renderer absence, adapter insufficiency, and restore failure into
+`Unavailable`.
 
 A failed matter mutation always reports `revision_changed = false`.
 
@@ -957,6 +1054,12 @@ pub struct AcceptedInterest {
     pub capabilities: InterestCapabilities,
     pub priority: InterestPriority,
     pub resolved_bricks: u32,
+    pub regions: Vec<ResolvedInterestRegion>,
+}
+
+pub struct ResolvedInterestRegion {
+    pub volume: VolumeSnapshotRef,
+    pub bricks: Vec<BrickCoord>,         // sorted unique; total <= request.max_bricks
 }
 
 pub struct InterestState {
@@ -999,6 +1102,17 @@ impl InterestLease {
 scope. Cloning the lease retains interest. `update` atomically replaces the
 request after validation. Dropping the last clone withdraws it. Withdrawal
 does not cancel commands, invalidate completed results, or discard dirty scars.
+
+Long-lived interest filters are snapshots, not live queries.
+`Include` resolves the named live handles and `All` resolves every volume live
+at acceptance, sorted by stable key; exceeding `max_volumes` rejects instead of
+clipping. A world-scope interest then freezes the exact local brick set
+intersecting its world bound at the captured placements. `AcceptedInterest`
+exposes those IDs, placements/revisions, and bricks. Later create, retire, or
+move commands do not add, substitute, or spatially recompute this set. A
+retired member reports `RegionFailureKind::Retired`; it is not replaced by a
+new volume. The consumer calls `update` to take a new bounded membership and
+placement snapshot.
 
 Interest declarations use the configured `interest_leases` slots and return
 `InterestError::Full` synchronously when exhausted; they have no payload queue
@@ -1043,7 +1157,7 @@ pub struct BaseBrickRequest {
     pub volume: VolumeKey,
     pub lineage: ContentLineage,
     pub reconstruction: ReconstructionFingerprint,
-    pub bricks: Vec<BrickCoord>,         // sorted unique, <= content batch bound
+    pub bricks: Vec<BrickCoord>,         // sorted unique, <= content_bricks_per_request
     pub intersections: Vec<CellAabb>,    // one per brick
     pub material_registry_digest: [u8; 32],
     pub maximum_encoded_bytes: u64,
@@ -1080,10 +1194,13 @@ impl CancellationToken {
 }
 ```
 
-A request contains one volume key, its lineage/fingerprint, sorted unique brick
-coordinates, the intersected domain, material registry digest, and maximum
-encoded bytes. The callback runs on a Moria worker, never a render or Bevy main
-thread.
+A request contains one volume key, its lineage/fingerprint, at most
+`content_bricks_per_request` sorted unique brick coordinates, the intersected
+domain, material registry digest, and maximum encoded bytes. Larger demand is
+partitioned in stable coordinate order; one callback never sees a hidden
+larger batch. Its worst-case detailed response must fit
+`content_response_bytes`. The callback runs on a Moria worker, never a render
+or Bevy main thread.
 
 A result has exactly one response for every requested coordinate:
 `Homogeneous(MaterialSample)` or `Detailed([MaterialSample; 512])`. Results
@@ -1255,6 +1372,12 @@ pub struct QueryOptions {
     pub readiness: ReadinessPolicy,
     pub partial: PartialPolicy,
     pub max_results: u32,
+    pub traversal: Option<TraversalAuthorization>,
+}
+
+pub struct TraversalAuthorization {
+    pub max_candidate_bricks: NonZeroU32, // <= 8,192
+    pub max_candidate_cells: NonZeroU32,  // <= 65,536
 }
 
 pub enum ReadinessPolicy {
@@ -1508,6 +1631,7 @@ pub struct ContactFact {
 
 pub struct WorldSnapshot {
     pub scope: SnapshotScope,
+    pub resolved_subscription: Option<AcceptedSubscription>,
     pub observation_head: ObservationSequence,
     pub volumes: Vec<VolumeStateSnapshot>,
     pub regions: Vec<RegionStateSnapshot>,
@@ -1536,7 +1660,24 @@ pub enum RegionLifecycleState {
     Materializing,
     Ready { revision: VolumeRevision },
     Retiring,
-    Failed { retryability: Retryability },
+    Failed { failure: RegionFailure },
+}
+
+pub struct RegionFailure {
+    pub kind: RegionFailureKind,
+    pub retryability: Retryability,
+    pub device_generation: Option<DeviceGeneration>,
+    pub diagnostic: String,              // <=512 UTF-8 bytes
+}
+
+pub enum RegionFailureKind {
+    Content(ContentErrorKind),
+    InvalidContent,
+    BudgetExhausted(ResourceKind),
+    DeviceLost,
+    RevisionUnavailable,
+    Retired,
+    InternalInvariant,
 }
 
 pub struct GapResumeToken { /* opaque subscriber/scope/head digest */ }
@@ -1550,6 +1691,17 @@ snapshot region vectors are normalized and validated before admission.
 Collision inputs require finite values, positive radii, a nonzero trace segment
 or sweep displacement, and complete shape bounds inside the supported checked
 coordinate range.
+
+Shape/region occupancy, trace, overlap, and sweep require
+`Some(TraversalAuthorization)`; point occupancy and noncollision query
+families require `None`. Before admission, the control plane transforms the
+finite world bounds into each selected volume, intersects its domain, and
+checked-sums the conservative brick-AABB and cell-AABB counts across volumes.
+Both totals must fit the request authorization and the fixed 8,192-brick /
+65,536-cell maxima. The authorization therefore bounds worst-case traversal
+work even when occupancy is sparse or `max_results` is small. An excess is a
+synchronous `ViolationCode::TooLarge` whose `SupportedBounds` reports both
+candidate maxima; partial coverage never authorizes extra traversal.
 
 All query outcomes include query ID, actual inspected bounds, device
 generation, a sorted `VolumeSnapshotRef` vector, completeness, and
@@ -1570,10 +1722,11 @@ result-specific facts.
   bounded material data for observation-gap recovery.
 
 `SnapshotScope::SubscriptionGap` is accepted only while that subscriber is in
-`NeedsSnapshot`. The result scope is the exact normalized subscription scope
-and `GapResumeToken` binds subscriber ID, scope digest, gap head, captured
-observation head, and captured revisions. Explicit region snapshots have
-`resume = None`. `resume_after` rejects a token from another subscriber,
+`NeedsSnapshot`. Its result has `resolved_subscription = Some` containing the
+exact accepted subscription and pinned volume IDs, and `GapResumeToken` binds
+subscriber ID, resolved-scope digest, gap head, captured observation head, and
+captured revisions. Explicit region snapshots have
+`resolved_subscription = None` and `resume = None`. `resume_after` rejects a token from another subscriber,
 scope, or an older gap; this is the complete race-closing contract and does not
 depend on caller-provided sequence arithmetic.
 
@@ -1599,7 +1752,11 @@ availability/error. `Allow` returns one `BrickCoverage` for every resolved
 brick, explicit unavailable omitted regions, and
 `Complete | PartialRequested`; the coverage vector is bounded by the request's
 resolved brick maximum. Hitting a result cap without prior partial
-authorization is `OutputOverflow`, not success.
+authorization is `OutputOverflow`, not success. In v1, partial means only that
+explicitly named unavailable spatial regions were omitted. It never permits
+hit truncation inside an inspected brick: if collision output exceeds
+`max_results`, the receipt fails `OutputOverflow { required, limit }` under
+both partial policies and returns no `QueryResult`.
 
 ## Observation
 
@@ -1684,7 +1841,10 @@ pub enum ObservationFact {
 
 pub enum CheckpointObservation {
     Durable { revisions: Vec<(VolumeKey, VolumeRevision)> },
-    Failed { retryability: Retryability },
+    Failed {
+        kind: PersistenceErrorKind,
+        retryability: Retryability,
+    },
 }
 
 pub struct ResourcePressureFact {
@@ -1704,6 +1864,7 @@ pub enum PressureAction {
 
 pub enum ResourceKind {
     Materials,
+    MaterialMetadataPerRegistration,
     MaterialMetadataBytes,
     LiveVolumes,
     VolumeRecords,
@@ -1719,11 +1880,13 @@ pub enum ResourceKind {
     QueryRecords,
     QueryResultBytes,
     ObservationFacts,
+    ObservationPayloadBytes,
     Subscribers,
     VolumesPerFilter,
     StagingMaps,
     StagingBytes,
     ContentRequests,
+    ContentBricksPerRequest,
     ContentResponseBytes,
     PersistenceRequests,
     PersistenceStagedBytes,
@@ -1755,8 +1918,13 @@ pub struct ObservationGap {
     pub last_delivered: Option<ObservationSequence>,
     pub oldest_retained: ObservationSequence,
     pub current_head: ObservationSequence,
-    pub scope: Subscription,
+    pub scope: AcceptedSubscription,
     pub trustworthy_revisions: Vec<(VolumeId, VolumeRevision)>,
+}
+
+pub struct AcceptedSubscription {
+    pub request: Subscription,
+    pub volumes: Vec<VolumeSnapshotRef>, // stable-key sorted snapshot
 }
 
 pub enum SubscriptionStart {
@@ -1768,6 +1936,7 @@ pub struct ObservationSubscriber { /* Send + Sync, bounded cursor */ }
 
 impl ObservationSubscriber {
     pub fn id(&self) -> SubscriberId;
+    pub fn accepted(&self) -> AcceptedSubscription;
     pub fn try_next(&self) -> Result<Option<ObservationItem>, ObservationError>;
     pub fn resume_after(
         &self,
@@ -1789,8 +1958,29 @@ scope, and last trustworthy revisions known at the cursor. The subscriber must
 obtain a bounded `Snapshot` and call `resume_after(snapshot)`; no later facts
 are delivered before that.
 
+Subscription volume membership is snapshotted at `subscribe`. `Include`
+captures the named live handles and `All` captures every then-live volume,
+stable-key sorted; `max_volumes` is checked against that complete set. Later
+creates are excluded, retirement of a captured volume is delivered when
+`VOLUME` is selected and then leaves that pinned member terminal, and no new
+volume substitutes for it. `accepted()` and every gap expose the resolved
+membership.
+
+Unlike interest brick residency, an optional subscription spatial bound is an
+event predicate over that pinned membership: matter/lifecycle/presentation
+facts match their affected world bounds at the fact revision, and a move fact
+matches when either its prior or new placed domain intersects the bound. Thus a
+captured dynamic volume can move into or out of the bound without changing the
+finite ID set. To include later-created volumes, the consumer creates a new
+subscription and closes/drops the old subscriber.
+
 Checkpoint revision vectors and gap revision vectors are stable-key/runtime-ID
 sorted and bounded by `volume_records` and `volumes_per_filter` respectively.
+Checkpoint vectors and all other variable retained fact payloads are charged
+to `observation_payload_bytes`; overwrite advances on whole facts until both
+ring count and byte capacity are available. Gap vectors are materialized from
+the subscriber's fixed-capacity revision array reserved at subscription time,
+not from an unbounded allocation.
 `ResourceKind` is the closed set of every field in `ResourceLimits`, so
 pressure on extraction, lifetime volume records, presentation artifacts/dirty
 records/instances, or extension registry storage is observable through the
@@ -2025,6 +2215,7 @@ pub enum GpuInspectionQuery {
     Occupancy {
         scope: QueryScope,
         maximum_records: u32,
+        traversal: TraversalAuthorization,
         minimum: MinimumRevision,
         readiness: ReadinessPolicy,
     },
@@ -2159,7 +2350,11 @@ index at 0, signed local cell XYZ at 4/8/12, packed
 `material:u16|coverage:u8|flags:u8` at 16, occupancy `0|1` at 20, and reserved
 zero through 31. Lifecycle records are 32 bytes: snapshot index at 0, signed
 brick XYZ at 4/8/12, lifecycle tag at 16, retryability tag at 20, and reserved
-zero. Observation-delta records are 64 bytes and contain sequence at 0,
+failure-kind tag at 24 (`0` for nonfailed, otherwise the closed
+`RegionFailureKind` tags: content `1`, invalid content `2`, budget `3`, device
+lost `4`, revision unavailable `5`, retired `6`, internal invariant `7`) with
+the closed `ContentErrorKind` or `ResourceKind` tag at 28 where applicable,
+zero otherwise. Observation-delta records are 64 bytes and contain sequence at 0,
 closed observation-kind tag at 8, runtime volume ID at 16, revision at 24,
 correlation bytes at 32, and kind-specific scalar data at 48; observations
 whose complete fact does not fit this fixed record are rejected for this GPU
@@ -2229,7 +2424,7 @@ slice, assigns a normal command ID, and returns every child receipt in
 and completion capacity is released immediately after the produced count and
 encoded sizes are validated. The outer extension receipt completes at this
 all-children-admitted milestone; it does not wait for child completion. Each
-child can then apply, conflict, be cancelled before submission, or fail
+child can then apply, conflict, be cancelled before preparation, or fail
 independently under the normal per-volume queue. Thus validation/admission is
 all-or-none while terminal effects are deliberately independent. Cross-volume
 atomicity is not implied.
@@ -2274,9 +2469,14 @@ pub struct ResourceUsage {
 ```
 
 Additional latency counters use fixed buckets versioned in the evidence schema.
-`ResourceUsage` is the normative pool accounting shape, and its vector must
-contain every `ResourceKind` in enum order even when the value is zero or its
-capability is disabled.
+`ResourceUsage` is the normative capacity/gauge accounting shape, and its
+vector must contain every `ResourceKind` in enum order even when the value is
+zero or its capability is disabled. Pool kinds report aggregate use.
+Per-operation/per-record kinds (`MaterialMetadataPerRegistration`,
+`BricksPerInterest`, `VersionsPerBrick`, and
+`ContentBricksPerRequest`) report the largest current value in `used` and the
+largest observed value in `high_water`; they are never added as though they
+were aggregate pools.
 
 `WorldHandle::telemetry()` returns an immutable aggregate snapshot containing:
 
@@ -2302,7 +2502,7 @@ telemetry. Histograms have fixed buckets defined in the evidence schema.
 ```rust
 pub enum ShutdownPolicy {
     Drain { require_checkpoint: Option<CheckpointKey> },
-    CancelUnsubmitted { require_checkpoint: Option<CheckpointKey> },
+    CancelNotPrepared { require_checkpoint: Option<CheckpointKey> },
 }
 
 pub struct ShutdownReport {
@@ -2314,8 +2514,11 @@ pub struct ShutdownReport {
 }
 ```
 
-Shutdown atomically closes permits/admission, applies the queued-work policy,
-waits for submitted GPU work or device terminal state, completes required
+Shutdown atomically closes permits/admission. `CancelNotPrepared` installs
+`CancelledBeforePreparation` for every operation still in
+`Queued | WaitingForMatter` using the same transition race as explicit
+cancellation; `Preparing` and later operations drain. It then waits for
+submitted GPU work or device terminal state, completes required
 checkpointing, emits the report, then releases resources. A failed required
 checkpoint yields `clean = false`; dirty data is not described as durable.
 The application may still terminate, but must make that loss decision outside

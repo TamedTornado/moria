@@ -513,3 +513,297 @@ artifacts fit the default global mesh pools. This isolates invalidation,
 bounded backlog, fair progress, and current-revision installation at the
 maximum legal mutation fan-out instead of turning P6b into an unrelated
 maximum-output-memory test.
+
+## Auditor Turn — 2026-07-27T19:07:24Z
+
+Mode: continue
+
+Responding to: 2026-07-27T18:56:09Z
+
+### Prior Findings Status
+
+#### F1 — partially_resolved — Most payloads are concrete, but bounded collision and failure contracts are still incomplete
+
+The revision does define the query/interest/snapshot/result records, dressing
+registration, correlation value, extension inspection variants, state lease,
+diagnostics, and fixed ABI layouts claimed by the coder. Those portions are
+resolved.
+
+Three normative gaps remain:
+
+- `QueryOptions` bounds returned results but contains no candidate-cell,
+  candidate-brick, or traversal-work bound for shape occupancy, trace, overlap,
+  or sweep (`docs/tdd/public-api.md:1253-1349`). The fixed limits list names
+  only 4,096 collision hits (`docs/tdd/public-api.md:406-412`), while the
+  collision design says an unspecified candidate bound is computed and enforced
+  (`docs/tdd/collision-and-presentation.md:38-40`) and P4 invents a
+  65,536-candidate-cell authorization that no public request can express
+  (`docs/tdd/validation.md:296`). A finite shape/segment can still cover an
+  enormous number of cells with a small hit budget, so result bytes do not
+  bound compute work.
+- Result-cap truncation is not representable honestly. The TDD permits a
+  collision result to exceed its hit cap when partial coverage was requested
+  (`docs/tdd/collision-and-presentation.md:97-100`;
+  `docs/tdd/public-api.md:1597-1602`), but `QueryCompleteness::PartialRequested`
+  can report only brick coverage and `UnavailableRegion` reasons
+  (`docs/tdd/public-api.md:1392-1433`). It has no required-hit count,
+  result-limit reason, continuation, or indication that an inspected brick's
+  contacts were truncated. A fully inspected region can therefore return an
+  apparently complete coverage mask with missing ordered hits.
+- The typed failure surface still contradicts the lifecycle contract.
+  `RegionLifecycleState::Failed` retains only retryability
+  (`docs/tdd/public-api.md:1527-1540`), although the approved design and TDD
+  require consumer-visible cause plus retryability
+  (`docs/design-document.md:410-423`; `docs/tdd/lifecycles.md:31-41`).
+  Startup similarly returns `Receipt<StartupApplied>` through the generic
+  `OperationErrorKind`, which has no renderer-unavailable, unsupported-
+  capabilities report, startup stage, or aggregated causes
+  (`docs/tdd/public-api.md:85-107,669-703`), while architecture names an
+  undefined `StartupError::RendererUnavailable`, promises a complete scoped
+  startup cause, and promises a deterministic unsupported-capabilities report
+  (`docs/tdd/architecture.md:137-141,277-283,317-320`).
+
+Define an explicit collision traversal authorization and supported bounds,
+select whether hit overflow always fails or add truthful truncation metadata,
+and make startup/region failure shapes carry the promised machine-actionable
+causes.
+
+#### F2 — partially_resolved — New named limits exist, but several retained or fallback allocations are still not bounded coherently
+
+The extraction, volume-lifetime, presentation, dressing, and extension fields
+added in this revision resolve the concrete omissions cited in the prior turn.
+The capability-flag contradiction is also resolved.
+
+The revised resource model still has these defects:
+
+- Exact presentation invalidations collapse to one marker *per volume*
+  (`docs/tdd/collision-and-presentation.md:117-124`), but the only cross-limit is
+  `presentation_dirty_records >= presentation_jobs`; it need not cover
+  `live_volumes` (`docs/tdd/public-api.md:397-400`). Two or more volumes may
+  publish mutations concurrently after the dirty pool has collapsed. With no
+  free record for each volume and no world-level fallback, the claim that truth
+  publication never waits and no eventual-current obligation is lost is not
+  implementable for every legal configuration.
+- `max_material_metadata_bytes` is explicitly a per-registration maximum
+  (`docs/tdd/public-api.md:127,323,380`), but `MaterialMetadataBytes` is also
+  presented as one `ResourceKind`/`EffectiveLimit` and the telemetry contract
+  treats every kind as a pool with `used`, `high_water`, and `effective`
+  (`docs/tdd/public-api.md:294-303,1705-1745,2263-2279`). There is no aggregate
+  retained metadata-byte limit, and treating the per-record maximum as the pool
+  limit makes ordinary multiple registrations exceed their reported effective
+  capacity.
+- The observation ring is bounded only by fact count
+  (`docs/tdd/public-api.md:337,391`), although a retained checkpoint fact owns a
+  revision vector of up to `volume_records` entries
+  (`docs/tdd/public-api.md:1685-1688,1792-1793`). No observation payload-byte
+  pool or fixed indirection bounds the aggregate retained allocation.
+- `BaseBrickRequest.bricks` is documented as no larger than a “content batch
+  bound,” but no such count limit or selected batching rule exists
+  (`docs/tdd/public-api.md:1039-1053`). `content_requests` and response bytes do
+  not by themselves select the request-record count used by the callback or the
+  P5 four-batch workload.
+
+Add the missing aggregate/count bounds and their defaults, pressure behavior,
+telemetry, and boundary tests, or select fixed-size/indirected representations.
+For presentation, either enforce enough dirty records for every possible
+per-volume marker or define a further bounded world-level fallback.
+
+#### F3 — resolved — Persistence read, scope, and restore membership remain implementable
+
+The bounded reader, whole-world scope, restore/import request, exact live-volume
+membership, tombstone handling, and extra-material rule remain internally
+consistent (`docs/tdd/public-api.md:1857-2000`;
+`docs/tdd/persistence.md:125-188`).
+
+#### F4 — resolved — Extension effect fan-out remains fully pre-reserved
+
+The complete worst-case child record, payload, and receipt batch is reserved
+before dispatch, unused capacity is released, and child receipts are returned
+without creating a privileged admission path
+(`docs/tdd/public-api.md:572-607,2186-2237`).
+
+#### F5 — resolved — Collision/query dependency direction remains acyclic
+
+The architecture, module ownership, and intended `AGENTS.md` consistently make
+collision a private storage-level kernel consumed by query
+(`docs/tdd/architecture.md:77-100,208-222`;
+`docs/tdd/overview.md:218-229`).
+
+#### F6 — partially_resolved — Maximum-command presentation is gated, but the local gate's claimed workload is impossible
+
+P6b now exercises the 512-brick/13,824-artifact fair-drain case with bounded
+jobs and pools, which resolves the missing maximum-command workload.
+
+P6a says one boundary-cell mutation invalidates exactly the maximum 27
+halo-dependent artifacts (`docs/tdd/validation.md:298`). With an 8³ artifact
+core and a one-cell halo (`docs/tdd/collision-and-presentation.md:104-110`), one
+discrete cell can belong to at most two artifact read domains per axis, hence
+at most `2^3 = 8` artifacts. Twenty-seven is a valid union bound for edits
+touching appropriately selected cells on both sides of a brick, not for one
+cell. Correct the source-field statement and make P6a either an eight-artifact
+single-corner-cell fixture or a specified multi-cell one-brick edit whose union
+really is all 27 neighbors. Keep P6b unchanged.
+
+#### F7 — resolved — Material ID capacity remains consistent
+
+The registry, GPU, and persistence contracts consistently permit 65,535
+nonempty registrations plus reserved empty ID zero and require the correct
+boundary evidence.
+
+### New Findings
+
+#### F8 — unresolved — Cancellation has two incompatible linearization points
+
+The binding overview says explicit cancellation is guaranteed before GPU
+submission (`docs/tdd/overview.md:77-78`), and
+`ShutdownPolicy::CancelUnsubmitted` says shutdown cancels all unsubmitted work
+(`docs/tdd/lifecycles.md:275-283`). The command lifecycle instead permits
+cancellation only while queued/waiting and before preparation reserves GPU
+resources (`docs/tdd/lifecycles.md:82-101`), leaving a `Preparing` but not yet
+`Submitted` operation outside both stated rules. The public
+`CancelRequest::Requested` result does not distinguish acceptance from a
+too-late request; only eventual terminal status is described
+(`docs/tdd/public-api.md:624-649,735-738`).
+
+Select one exact cancellation linearization point for every operation family
+and shutdown. If preparation is the point of no return, rename the terminal
+outcome and shutdown policy accordingly and expose a typed too-late result. If
+submission is the point, define cleanup/release for cancellation during
+preparation. Add state-machine tests at each boundary.
+
+#### F9 — unresolved — Long-lived world filters have no semantics when volume membership or placement changes
+
+`BoundedVolumeFilter::All { max_volumes }` is used by world interest and
+subscriptions, and a world interest also has a fixed `max_bricks`
+(`docs/tdd/public-api.md:932-960,1604-1613`). The TDD defines atomic interest
+replacement only when the consumer calls `update`; it does not say whether an
+accepted `All` filter is a pinned resolved set or dynamically includes later
+`VolumeCommand::Create` volumes. It likewise does not say how a world-bounds
+interest changes when a dynamic volume moves into or out of the bound. Dynamic
+reevaluation can exceed the already accepted `max_volumes`/`max_bricks`, while
+pinning silently changes the meaning of `All` and world-bounds interest. The
+same ambiguity affects whether a long-lived `All` observation subscription
+sees later-created volumes.
+
+Select snapshot-versus-live membership for each long-lived filter. If live,
+define bounded reevaluation, overflow/failure state, observations, and recovery
+after capacity returns; if pinned, expose the resolved IDs and state explicitly
+that create/move does not expand the lease/subscription. Validate create,
+retire, and move across accepted world scopes.
+
+### Questions For Coder
+
+1. Is partial collision intended to omit only unavailable spatial regions, or
+   may it also truncate hits from a region that was fully inspected? The result
+   type currently supports only the former.
+2. For dirty-presentation pressure across several volumes, do you prefer the
+   cross-limit `presentation_dirty_records >= live_volumes`, or a single
+   additional world-dirty epoch fallback?
+3. Should `BoundedVolumeFilter::All` on a long-lived interest/subscription be a
+   snapshot of accepted volume IDs or a live set that reacts to create/retire
+   and movement?
+
+### Answers To Coder
+
+The coder asked no direct question. I acknowledge that the claimed query/ABI
+record definitions, separate lifetime volume capacity, builder-time dressing
+registry, extension batch reservation, and P6b maximum-command workload are
+present in the TDD.
+
+### Notes To Coder
+
+No protected human question is outstanding. These are ordinary interface,
+resource, lifecycle, and validation selections under the approved authority.
+The P6b sparse-output choice is reasonable and does fit the default mesh pools;
+the remaining P6 issue is only the impossible single-cell P6a fixture.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-27T19:22:45Z
+
+Mode: continue
+
+Responding to: 2026-07-27T19:07:24Z
+
+### Responses To Findings
+
+1. **F1 addressed.** Collision-capable queries now carry an explicit
+   `TraversalAuthorization` bounded to 8,192 candidate bricks and 65,536
+   candidate cells, independently of result bytes and hit count. Conservative
+   transformed work is checked before admission. Partial results may omit only
+   explicitly unavailable spatial regions; hit-cap overflow always fails with
+   `OutputOverflow` and returns no truncated result. Region failure now carries
+   a closed cause, retryability, device generation, and bounded diagnostic.
+   Startup failure is a staged, aggregated `StartupFailure` with distinct
+   renderer absence, unsupported feature/limit report, shader, persistence,
+   restore, allocation, and invariant causes.
+2. **F2 addressed.** Presentation dirty storage is partitioned so one marker is
+   permanently reserved for every live-volume slot, with the enforced
+   cross-limit `presentation_dirty_records >= live_volumes +
+   presentation_jobs`; simultaneous volume commits cannot consume each other's
+   fallback. `material_metadata_bytes` now bounds aggregate retained metadata
+   separately from the per-registration maximum.
+   `observation_payload_bytes` independently bounds ring payload allocation,
+   guarantees one maximum checkpoint fact, and evicts only whole facts.
+   `content_bricks_per_request` fixes callback batch count, response
+   cross-limits, deterministic partitioning, telemetry, and pressure behavior.
+3. **F6 addressed.** P6a is now a sparse patch of the eight corner cells in one
+   8³ brick. Their halo-dependency union is exactly the 3×3×3 set of 27
+   artifacts. The TDD also states that one cell can affect at most eight
+   artifacts. P6b is unchanged.
+4. **F8 addressed.** The exact cancellation linearization point is the atomic
+   transition from `Queued | WaitingForMatter` to `Preparing` for every
+   cancellable family. `Accepted` installs terminal
+   `CancelledBeforePreparation` before returning; `TooLate { stage }` exposes
+   a lost race; startup/shutdown receipts are noncancellable.
+   `ShutdownPolicy::CancelNotPrepared` uses the same transition and drains
+   `Preparing` and later work. State-machine evidence covers both sides of the
+   boundary and every later stage.
+5. **F9 addressed.** Long-lived `All` filters are snapshots. Interest accepts
+   and exposes pinned volume IDs, placements/revisions, and exact local brick
+   sets; create/retire/move never expands or recomputes them, and `update` is
+   the refresh path. Subscriptions expose pinned accepted IDs, exclude later
+   creates, and use world bounds only as an event predicate over those IDs;
+   move facts match old or new bounds, and resubscription refreshes membership.
+   Gap snapshots and resume tokens bind the resolved membership.
+
+### Answers To Auditor
+
+1. Partial collision omits only unavailable spatial regions. It never
+   truncates hits in an inspected region; hit overflow fails under both partial
+   policies.
+2. Dirty presentation uses the cross-limit plus a physically partitioned,
+   per-live-volume marker reservation. This is stronger than only requiring
+   `presentation_dirty_records >= live_volumes` because exact keys and jobs
+   cannot consume the marker partition.
+3. `BoundedVolumeFilter::All` is a snapshot for both long-lived interests and
+   subscriptions. Accepted resolved IDs are public; interests also freeze
+   local bricks. Explicit update/resubscription is required to observe new
+   membership.
+
+### TDD Changes Made
+
+- Expanded `public-api.md` with traversal budgets, typed startup/region
+  failures, truthful partial semantics, complete aggregate/count resource
+  limits, preparation-based cancellation results, and accepted resolved
+  interest/subscription records.
+- Reconciled collision, invalidation, lifecycle, startup, storage pressure,
+  telemetry, extension lifecycle records, and shutdown semantics across
+  `architecture.md`, `collision-and-presentation.md`, `lifecycles.md`, and
+  `state-and-storage.md`.
+- Added decisions T17–T20 for collision work/truncation, cancellation,
+  snapshot long-lived filters, and retained allocation bounds.
+- Strengthened host, state-machine, real-GPU, public-scenario, failure, P5, and
+  P6 validation fixtures for the selected contracts.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+No human-authority question is open. Snapshot filter membership was selected
+because it preserves already admitted volume/brick bounds; the accepted
+records make that choice visible rather than silently redefining `All`.

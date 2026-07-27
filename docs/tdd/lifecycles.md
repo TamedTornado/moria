@@ -35,7 +35,7 @@ The consumer-visible region states are exactly:
 - `Materializing`
 - `Ready { revision }`
 - `Retiring`
-- `Failed { error, retryability }`
+- `Failed { failure: RegionFailure }`
 
 Regions are reported at brick granularity and can be aggregated only when
 state/revision/cause are equal. Legal transitions:
@@ -55,15 +55,18 @@ ready region directly to `Ready(new_revision)` at commit. An observation is
 emitted after each externally visible transition; adjacent equal-brick
 transitions may be coalesced into bounded AABBs with the same sequence fact.
 
-A failed content request records affected bricks. Retry occurs only through new
-interest/query work and the source's retryable error classification; no busy
-loop is built in.
+A failed content request records affected bricks. `RegionFailure` retains its
+machine-actionable content/budget/device/retirement cause, retryability,
+generation where relevant, and bounded diagnostic. Retry occurs only through
+new interest/query work and that classification; no busy loop is built in.
 
 ## Interest lifecycle
 
 1. Validate scope, capabilities, max bricks, and queue capacity.
-2. Resolve the scope to a deterministic sorted brick set. If the accepted set
-   would exceed `max_bricks`, reject with required count; never clip.
+2. Snapshot the volume filter (`All` means every currently live ID), placement
+   revisions, and deterministic sorted local brick set. If volume or brick
+   count would exceed its request bound, reject with required count; never
+   clip.
 3. Add reference counts by capability and priority.
 4. Move cold bricks to `Requested` and enqueue bounded content work.
 5. When every brick needed for a capability is ready, report capability
@@ -77,6 +80,10 @@ Multiple interests coalesce storage work but retain independent leases and
 readiness. Presentation interest does not imply collision interest; all three
 still depend on authoritative material readiness.
 
+Create, retire, and move never expand or spatially recompute an accepted lease.
+Retirement makes that pinned member failed/retired. `InterestLease::update` is
+the only operation that takes a new membership, placement, and brick snapshot.
+
 ## Command lifecycle
 
 ```text
@@ -87,7 +94,7 @@ owned by consumer
   -> Preparing
   -> Submitted
   -> Applied
-or terminal Rejected/Failed/CancelledBeforeSubmission
+or terminal Rejected/Failed/CancelledBeforePreparation
 ```
 
 Structural rejection occurs synchronously and consumes no command identity.
@@ -95,10 +102,10 @@ Admission consumes the permit/payload, assigns `CommandId`, and creates the
 receipt. After admission:
 
 - stale precondition discovered before publication is terminal `Conflict`;
-- cancellation succeeds only while queued/waiting and before preparation has
-  reserved GPU resources;
+- cancellation succeeds only while queued/waiting; the atomic transition to
+  `Preparing` is the point of no return;
 - a preparation failure commits nothing;
-- `Submitted` cannot be cancelled, even if every receipt is dropped;
+- `Preparing` and later cannot be cancelled, even if every receipt is dropped;
 - `Applied` means the revision gate was executed successfully; it does not mean
   the revision is durable until a checkpoint receipt covers it;
 - an observation is appended before the receipt wakeup is delivered, so a
@@ -106,6 +113,12 @@ receipt. After admission:
 
 Per-volume FIFO determines preparation order, not necessarily receipt wakeup
 order between volumes. Independent volume commands may execute concurrently.
+
+Every cancellable operation family uses the same race: cancellation CASes
+`Queued | WaitingForMatter` directly to terminal
+`CancelledBeforePreparation`, while the worker CASes those states to
+`Preparing`. The winner determines `Accepted` versus `TooLate { stage }`.
+Startup and shutdown lifecycle receipts are explicitly noncancellable.
 
 Create/retire failure reports any committed directory revision. Matter-command
 failure always commits no revision. Move uses the same prepare/publish rule as
@@ -146,6 +159,12 @@ wall-clock timeout. Consumers implement deadlines by explicit cancellation.
 Readback map completion and successful decode are required before a CPU result
 is ready. Queue submission alone is never result visibility.
 
+Collision queries authorize conservative traversal independently from result
+bytes/hits. Shape/region occupancy, trace, overlap, and sweep are rejected
+before admission unless their transformed aggregate candidates fit the stated
+and fixed brick/cell limits. Partial coverage can omit unavailable bricks only;
+result-cap overflow always fails with no truncated result.
+
 ## Observation lifecycle
 
 One per-world ring stores immutable metadata facts. Append assigns a checked
@@ -157,10 +176,17 @@ turns lag into the explicit gap protocol in [public-api.md](public-api.md).
 Creating a subscription begins at `CurrentHead` by default or at a retained
 sequence explicitly requested.
 
+Subscription membership is also a snapshot. `All` pins all volumes live at
+subscription acceptance; later creates are excluded and retirement terminates
+only that member. Spatial bounds remain an event predicate for pinned IDs, with
+move facts matching either old or new placement. Resubscription is the only
+way to include a later-created volume.
+
 Gap recovery:
 
 1. subscriber receives `Gap` and becomes `NeedsSnapshot`;
-2. subscriber requests a bounded snapshot covering the subscription;
+2. subscriber requests a bounded snapshot covering the accepted resolved
+   subscription membership;
 3. snapshot result contains the observation head captured with its revisions;
 4. `resume_after` validates the subscriber/scope and advances its cursor to
    that head;
@@ -277,7 +303,9 @@ external behavior against newer matter.
 `shutdown(policy)` is itself accepted once. It:
 
 1. closes all permit waiters and rejects new submissions;
-2. cancels unsubmitted work if selected, otherwise drains it;
+2. with `CancelNotPrepared`, atomically cancels work still
+   `Queued | WaitingForMatter`; otherwise drains it; `Preparing` and later
+   always drain;
 3. stops accepting interest updates and withdraws ordinary interest after
    dependent work;
 4. waits for submitted GPU work through renderer completion or terminal loss;

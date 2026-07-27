@@ -42,6 +42,13 @@ window or physical GPU and includes:
 - extraction, presentation artifact/dirty/instance, dressing registry, and
   extension registration/byte-pool defaults, boundaries, pressure facts,
   effective-config reflection, and telemetry high-water accounting.
+- aggregate/per-record material metadata, observation fact/payload, content
+  batch count/response bytes, and the reserved per-live-volume presentation
+  marker partition at minimum/default/maximum cross-limits;
+- collision traversal authorization at 8,192 bricks/65,536 cells, rejection
+  one above either bound, and hit overflow with both partial policies;
+- deterministic startup cause aggregation and every `RegionFailureKind`;
+- snapshot `All` membership and accepted resolved-scope encoding.
 
 ### State-machine tests
 
@@ -51,14 +58,22 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
 - every legal world/region/presentation/checkpoint transition;
 - invalid transition rejection;
 - interest cloning/update/withdrawal and retirement pins;
-- receipt cancellation before versus after submission;
+- receipt cancellation winning immediately before the atomic
+  `WaitingForMatter -> Preparing` transition, losing immediately after it,
+  `TooLate` at every later stage, and noncancellable startup/shutdown receipts;
 - per-volume FIFO and independent-volume concurrency;
 - query pending/materialize/minimum/exact revision behavior;
 - observation cursor filtering, overwrite gap, snapshot/resume race;
+- interest/subscription `All` acceptance followed by create, retire, and
+  dynamic move into/out of world bounds; prove pinned IDs/bricks never expand,
+  subscription move predicates use old-or-new bounds, and update/resubscribe is
+  the only membership refresh;
 - exact 27-key local and 13,824-key dispersed presentation invalidation,
   bounded 1,024-job draining, dirty-record coalescing fallback, fair eventual
-  scheduling, and superseded-target replacement;
-- shutdown drain/cancel/checkpoint reports;
+  scheduling, superseded-target replacement, and simultaneous dirty commits in
+  every live volume with each reserved fallback marker occupied;
+- shutdown drain/`CancelNotPrepared`/checkpoint reports, including an
+  operation already in `Preparing`;
 - device-generation callback quarantine and recovery/terminal branches.
 
 ### CPU oracle and generated sequences
@@ -127,7 +142,9 @@ Required tests:
    then release and recover capacity.
 5. **Collision parity:** all shape/trace/sweep cases, overlapping and rotated
    dynamic volumes, exact integer IDs/revisions and documented float tolerance
-   (`1e-5` local cell units for contact point/TOI).
+   (`1e-5` local cell units for contact point/TOI), conservative candidate
+   accounting at both fixed work maxima, and no hit truncation under either
+   partial policy.
 6. **Readback lifecycle:** multiple in-flight maps, cancellation, decode error,
    and staging reuse without mapping/submission overlap.
 7. **Eviction/compaction:** edit, checkpoint, evict, rematerialize, compact,
@@ -166,6 +183,8 @@ construct every query variant, inspect, mutate, observe,
 checkpoint, restore/import, inspect the material registry, and shut down
 through the callable methods in [public-api.md](public-api.md). Build the
 example as if it were an external crate: it imports only `moria` exports.
+Collision variants supply explicit traversal authorization; startup failure
+uses the typed staged cause shape.
 
 ### C2. Truth versus view
 
@@ -203,7 +222,9 @@ again. Stable identity and exact placement/revision context must match.
 
 Stall a bounded subscriber past ring capacity, observe an explicit gap, take a
 bounded snapshot, resume at its head, and receive later facts without claiming
-the missing sequence.
+the missing sequence. Repeat with `All`, then create, retire, and move volumes:
+the accepted membership remains pinned and identical in the gap/snapshot; a
+fresh subscription is required to include the new volume.
 
 ### C8. Failure matrix
 
@@ -214,6 +235,10 @@ with dirty state, and device loss where the host supports it. Presentation
 failures include unresolved dressing material filters at validation, missing
 surface/triplanar/dressing assets at runtime, instance overflow, and dirty/job
 pressure without loss of the eventual-current obligation.
+It also verifies renderer absence and a deliberately under-capable adapter
+produce distinct staged startup causes, region failures preserve cause plus
+retryability, observation byte pressure gaps rather than losing silently, and
+simultaneous dirty commits in all live volumes retain one fallback marker each.
 
 ### C9. Behavior extension
 
@@ -294,8 +319,8 @@ Correctness for the same workload must pass first.
 | P2 mutation publication | 8 in flight across 4 volumes; each command changes 32,768 cells spanning 512 mixed bricks; 50% patch and 50% fill; presentation interested but presentation completion is measured only by P6 | p95 admission-to-commit <=50 ms, GPU prepare/validate/publish <=12 ms, and >=20 committed commands/s sustained; every revision/atomicity check passes |
 | P3 bounded region readback | 4 in-flight 262,144-cell region queries (1 MiB decoded samples each), detailed/mixed data, hot matter | p95 submit-to-decoded result <=50 ms, GPU query <=12 ms when timestamps exist, >=80 MiB/s decoded aggregate, staging stays within config |
 | P4 collision traversal | 32 in-flight sweeps/traces, each authorizing 65,536 candidate cells and 256 hits across static plus rotated dynamic volumes | p95 submit-to-decoded facts <=33 ms and GPU traversal <=10 ms when timestamps exist; >=1,000 queries/s aggregate for 4,096-candidate-cell zero/one-hit control workload |
-| P5 materialization | Precomputed in-memory source, 8,192 detailed mixed bricks (16 MiB), no scar, four content batches in flight | cold-to-ready throughput >=64 MiB/s and p95 per 4,096-brick interest <=300 ms; extraction never exceeds its byte/count limit |
-| P6 presentation rebuild | **P6a local:** one boundary-cell mutation invalidates its maximum local 27 halo-dependent artifacts; each emits 1,024–2,048 vertices and 6,000–12,288 indices. **P6b legal-command scale:** four nonoverlapping presentation interests of at most the default 4,096 bricks cover 13,824 artifacts; one 32,768-cell mutation touches 512 pairwise halo-disjoint bricks and therefore invalidates exactly those 13,824 artifact keys. Each emits 96–128 vertices and <=768 indices, no dressing, so all outputs fit default mesh pools. Start with all artifacts current, use default 1,024 jobs, 16,384 artifact/dirty records, and sample queue/dirty/current counts every update. | **P6a:** p95 commit-to-all-current <=250 ms and GPU derivation total <=20 ms when timestamps exist. **P6b:** first newly current artifact <=250 ms; all 13,824 are current at the command revision <=2 s; submitted jobs never exceed 1,024; exact dirty high-water <=13,824 and allocated artifact/dirty records stay <=16,384; current count increases in every 250 ms interval after dispatch begins; no starvation, coalescing, overflow, eviction of an interested target, crack, or provenance failure. |
+| P5 materialization | Precomputed in-memory source, 8,192 detailed mixed bricks (16 MiB), no scar, 512 bricks per source callback, four of the resulting 16 batches in flight | cold-to-ready throughput >=64 MiB/s and p95 per 4,096-brick interest <=300 ms; extraction never exceeds its byte/count limit |
+| P6 presentation rebuild | **P6a local:** one sparse patch changes the eight corner cells of one 8³ brick. The union of their one-cell halo dependencies is exactly the 3×3×3 neighborhood (27 artifacts); each emits 1,024–2,048 vertices and 6,000–12,288 indices. **P6b legal-command scale:** four nonoverlapping presentation interests of at most the default 4,096 bricks cover 13,824 artifacts; one 32,768-cell mutation touches 512 pairwise halo-disjoint bricks and therefore invalidates exactly those 13,824 artifact keys. Each emits 96–128 vertices and <=768 indices, no dressing, so all outputs fit default mesh pools. Start with all artifacts current, use default 1,024 jobs, 16,384 artifact/dirty records, and sample queue/dirty/current counts every update. | **P6a:** p95 commit-to-all-current <=250 ms and GPU derivation total <=20 ms when timestamps exist. **P6b:** first newly current artifact <=250 ms; all 13,824 are current at the command revision <=2 s; submitted jobs never exceed 1,024; exact dirty high-water <=13,824 and allocated artifact/dirty records stay <=16,384; current count increases in every 250 ms interval after dispatch begins; no starvation, coalescing, overflow, eviction of an interested target, crack, or provenance failure. |
 | P7 GPU extension handoff | 8 MiB inspection packet, 256 structurally valid candidate effects whose 32,768 record bytes plus payload total <=65,472 bytes, 2 extension jobs in flight (the default 16 MiB packet budget); effects touch four volumes | p95 packet-capture-to-all-child-admitted <=50 ms, extension GPU work <=16 ms when timestamps exist, candidate + 64-byte diagnostic readback <=64 KiB/job, and zero inspection-packet/material readback to CPU |
 | P8 checkpoint path | 8,192 dirty detailed scars (16 MiB raw), checkpoint concurrent with four mutation streams; in-memory durable test store so storage hardware is excluded | GPU-readback-plus-encode throughput >=64 MiB/s, mutation P2 p95 degrades by <=2×, staged bytes stay within config, and semantic restore parity passes |
 

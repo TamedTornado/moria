@@ -137,8 +137,10 @@ installation. It is wiring, not domain authority.
 `MoriaPlugin` requires Bevy's render plugin. Its build step installs control
 plane resources in the main world and a render sub-app plugin in `RenderApp`.
 If `RenderApp` is missing, startup fails with
-`StartupError::RendererUnavailable`; simulation-only headless apps can use the
-host oracle/test support but cannot claim a running Moria world.
+`OperationErrorKind::Startup(StartupFailure { stage:
+RendererLookup, causes: [RendererUnavailable] })`; simulation-only headless
+apps can use the host oracle/test support but cannot claim a running Moria
+world.
 
 Device-bound layouts, pipelines, pools, and fallback diagnostic assets are
 created in `RenderStartup`. Every resource carries a monotonically increasing
@@ -265,12 +267,17 @@ World construction has two phases.
 - every volume has a content source and exact reconstruction fingerprint;
 - static/dynamic mode matches allowed placement command policy;
 - persistence is configured if dirty-state retirement is enabled;
-- observation and staging limits can hold one maximum legal record.
+- observation fact/payload and staging limits can hold one maximum legal
+  record/readback;
+- aggregate material metadata bytes cover the per-registration maximum;
+- content batching and response bytes can hold one maximum detailed source
+  batch;
 - live-volume and lifetime volume-record limits cover every initial
   registration, with lifetime records no smaller than live records;
 - extraction can freeze one maximum enabled operation;
 - presentation artifact/dirty/mesh/instance pools can represent their stated
-  fixed maximum artifact and bounded invalidation fallback; and
+  fixed maximum artifact, and dirty records reserve one marker for every live
+  volume in addition to the job/exact-key partition; and
 - extension registration count/bytes can hold every startup/runtime descriptor
   within its per-descriptor WGSL and entry-point caps.
 
@@ -280,7 +287,11 @@ negotiation, shader/pipeline creation, and initial volume-directory publication
 or the selected restore. The world becomes `Ready` only after those stages
 complete. The startup output contains the stable world identity, adapter
 report, and every requested/effective config value. A failure tears down every
-partially allocated resource and returns the complete scoped cause.
+partially allocated resource and returns the complete scoped
+`StartupFailure`. Renderer lookup, adapter qualification, device resources,
+persistence open, restore read, and directory publication are distinct stages.
+Adapter qualification aggregates every missing feature and unmet numeric
+minimum in deterministic public records rather than returning the first error.
 
 Required GPU capabilities are compute shaders, storage buffers, buffer-to-
 buffer copies, at least four writable storage bindings for mutation, and the
