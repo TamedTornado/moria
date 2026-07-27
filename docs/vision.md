@@ -4,7 +4,7 @@
 
 **Moria** is a reusable voxel-world substrate: a Rust and Bevy library (or small family of crates) that downstream games and tools install and drive through a public consumer contract. It is engine-shaped world infrastructure, not a playable game product.
 
-It is not limited to Minecraft-style overworlds. The same material contracts must support continuous three-dimensional volumes of different shapes and roles—natural landscapes, underground geology, constructed interiors, and freeform ship or station hulls among them.
+It is not limited to a Minecraft-style cube aesthetic or a single overworld content palette. The material contracts target continuous three-dimensional volumes—natural landscapes, underground geology, and constructed interiors among them. **Whether freeform ship and station hulls are in binding current scope** is a multi-world identity question still awaiting human approval (see Assumptions and Open questions below). Until that handoff is approved, ship/station support is **conditional context**, not a settled product claim.
 
 ## Purpose
 
@@ -39,12 +39,12 @@ These are outcomes the substrate must enable, not a feature inventory or impleme
 2. **Contracted consumption.** External consumers install the facade, inspect through public reads, mutate through admitted edits, and never require privileged internal paths.
 3. **Sparse scale.** Large regions remain tractable: untouched homogeneous volume stays cheap; only the interesting shell and active edits pay detailed cost.
 4. **Mutable everywhere.** Any material cell the contract exposes can be destroyed or placed; cut faces and scars remain honest matter, and presentation rebuilds from truth.
-5. **Deep Z is first-class.** Volume along the full depth axis is real content—caves, strata, ore, aquifers as material bands, multi-deck ship interiors, buried structure—not a painted floor under a skybox or a hollow hull with abstract slots.
+5. **Deep Z is first-class.** Volume along the full depth axis is real content—caves, strata, ore, aquifers as material bands, buried structure—not a painted floor under a skybox. Multi-deck ship or station interiors are in scope for this outcome **only if** multi-world freeform volumes are approved; until then they motivate the capability as consumer context, not a binding Deep Z deliverable shape.
 6. **Reproducible base, cheap scars.** World identity is generation parameters (seed and curation) plus edit deltas—not a dump of every brick.
 7. **GPU-resident architecture.** Sparse brick storage and a command/query boundary keep world representation GPU-resident and support asynchronous GPU work. This is a product distinction from CPU-driven voxel engines: residency enables gameplay-scale mutation, meshing, and future simulation without abandoning the consumer contract. Specific kernels and simulations remain milestone-selected; residency and the async-capable boundary do not.
 8. **Measurable substrate quality.** Benchmarks and harnesses can evidence generation, mutation response, streaming, GPU memory behavior, and related contracts without redefining the product as a game.
 
-**World-dependent presentation.** How a world “looks natural” depends on the consumer’s world—landscape geology, ship bulkheads, fortress masonry, and other material styles. The substrate must support fully material volumes that read as coherent for their domain; it does not mandate a single overworld aesthetic or a heightmap-with-props look.
+**World-dependent presentation.** How a world “looks natural” depends on the consumer’s world—landscape geology, fortress masonry, and other material styles. The substrate must support fully material volumes that read as coherent for their domain; it does not mandate a single overworld aesthetic or a heightmap-with-props look. Ship bulkheads and similar freeform-hull presentation remain conditional on multi-world approval.
 
 ## Non-goals
 
@@ -64,7 +64,7 @@ Reference material describes possible later products that motivate reusable mate
 - A fortress / colony game with engineering and designation play.
 - A descent-style roguelike through deep geology.
 - Pure sandboxes.
-- A single-captain space trading and combat game in the Escape Velocity mold—starmap, cargo runs, factions, missions—where the ship is a freeform material volume rather than a hull with abstract slots. Reactors, conduits, weapons, and life support occupy real space; power routes are visible geometry; a hit destroys a specific thing rather than a health number. Ship design is conversational with an engineer who proposes layouts and benches them under load; ships wear, fail under stress, and leave wrecks as real salvageable geometry. Debris from fights the player never saw still floats when they arrive. This consumer needs everywhere mutation, first-class depth through multi-deck interiors, GPU-resident matter at combat and design scale, and truth-vs-view so damage and salvage stay honest—without importing its fiction, UI, or mission systems into Moria.
+- A single-captain space trading and combat game in the Escape Velocity mold—starmap, cargo runs, factions, missions—where the ship is a freeform material volume rather than a hull with abstract slots. Reactors, conduits, weapons, and life support occupy real space; power routes are visible geometry; a hit destroys a specific thing rather than a health number. Ship design is conversational with an engineer who proposes layouts and benches them under load; ships wear, fail under stress, and leave wrecks as real salvageable geometry. Debris from fights the player never saw still floats when they arrive. This paragraph is **explicitly nonbinding future-consumer context**: it motivates everywhere mutation, first-class depth through multi-deck interiors, GPU-resident matter at combat and design scale, and truth-vs-view so damage and salvage stay honest—without importing its fiction, UI, mission systems, or freeform-hull requirements into current Moria scope until multi-world is approved.
 
 The “walkable world” seed describes a third-person proof shape (curated region, forest, ruin, dig-as-demo) that a validation consumer might use to make substrate claims undeniable. That seed’s content, controls, milestones, and performance tables remain **context for what the substrate might support**, not the definition of the product itself.
 
@@ -73,15 +73,16 @@ The “walkable world” seed describes a third-person proof shape (curated regi
 - Adjacent consumers, including any walkable validation harness, have no privileged access path into the substrate.
 - The walkable-world harness is an adjacent artifact only—not a required product delivery that defines Moria’s completion.
 - The product is a Rust / Bevy library ecosystem for crate consumers, not an ecosystem-neutral engine abstract.
-- Everywhere mutation and first-class deep Z are binding product outcomes; natural-looking presentation is world-dependent, not a single mandated overworld aesthetic.
+- Everywhere mutation and first-class deep Z (geology and continuous depth as real content) are binding product outcomes; natural-looking presentation is world-dependent, not a single mandated overworld aesthetic.
 - GPU residency and an async-capable command/query boundary are binding product direction and a deliberate distinction from CPU-driven voxel engines.
 - When seed documents conflict, the project boundary wins: substrate product first; game examples and Product One detail are nonbinding unless selected by that boundary or an explicit human decision.
+- Freeform ship/station volumes are **not** confirmed product identity; they remain under the multi-world approval handoff below.
 
 ## Assumptions proposed for approval
 
 1. **Authority order stands.** `docs/seeds/project-boundary.md` is binding for product identity; the walkable-world seed and broad architecture reference inform capabilities and seams only.
 2. **Harnesses are adjacent.** Curation, bench, and demo executables may ship in-repo to prove contracts; they do not redefine Moria as a game or as “the walkable demo.”
-3. **Multi-world material volumes.** “World” means continuous material volume in general—not only planetary terrain—so ship interiors, stations, and other freeform volumes remain in scope for the same contracts.
+3. **Multi-world material volumes (pending).** Proposal for human approval: “world” means continuous material volume in general—not only planetary terrain—so ship interiors, stations, and other freeform volumes would share the same contracts. **This assumption is not yet approved.** Until the human accepts it, ship/station support stays conditional in the opening statement and Deep Z outcome, and must not be treated as settled substrate identity.
 
 ## Resolved human decisions
 
@@ -91,7 +92,13 @@ The “walkable world” seed describes a third-person proof shape (curated regi
 | **Q2.** Are natural-looking terrain, everywhere mutation, and first-class deep Z binding current outcomes? | **Everywhere mutation and first-class deep Z are binding.** Natural-looking presentation **depends on the consumer’s world**—required as coherent material presentation for that domain, not as a single natural-overworld mandate. |
 | **Q3.** Is GPU-resident / asynchronous-GPU-capable architecture binding current direction? | **Yes.** GPU residency is an important product feature: it enables many gameplay capabilities and is a core distinction between Moria and CPU-driven voxel engines. Specific simulations remain milestone-selected. |
 
-No open identity questions remain from the prior vision pass. Older planning docs that still title the effort as “Product One — The Walkable World” should be read as superseded on identity by the boundary and this vision once approved.
+## Open questions (identity)
+
+| Question | Why it matters |
+| --- | --- |
+| **Q4.** Multi-world freeform volumes: does current product identity include ship/station (and similar freeform) material volumes on the same contracts as natural geology, or do those remain nonbinding future-consumer motivation only? | Approving elevates freeform hulls into binding opening and Deep Z scope; rejecting keeps them as future-consumer context and leaves Deep Z framed around continuous geological/constructed depth without mandating multi-deck ship interiors. |
+
+Older planning docs that still title the effort as “Product One — The Walkable World” should be read as superseded on identity by the boundary and this vision once approved, except where this vision still marks multi-world as pending.
 
 ## Seed synthesis
 
@@ -101,6 +108,7 @@ No open identity questions remain from the prior vision pass. Older planning doc
 | **docs/seeds/project-boundary.md** | **Binding product target:** reusable substrate (crate family); games are separate consumers; any walkable executable is a public-interface validation harness only; System / LLM / spell / gas / combat / AI / building layers are out of scope. Cargo workspace split is motivated but left as technical design. |
 | **docs/seeds/product-one-seed.md** | **Downstream / validation example:** supplies a “fully material walkable world” proof shape and explicit non-goals (no combat, System, CA, building UI, dynamic fluids). Motivates smooth material truth, dig/place proof, geology, sparse streaming, seed+delta save, and measurable quality. Does **not** import third-person character, curated 1 km postcard, content palette, performance tables, or milestone schedule into product identity. GPU memory language in that seed aligns with the affirmed GPU-resident direction without importing demo numbers as substrate law. |
 | **docs/seeds/voxel-world-substrate.md** | **Architecture reference:** long-horizon goals include reads as a coherent world for its domain; mutable everywhere; deep Z; substrate not game; and GPU-resident direction—now affirmed as product outcomes/direction where stated above. Layering diagram and many extensions (fluids tier 2+, integrity, weather, building verbs, nav, multiplayer readiness) remain context or future seams unless selected. Game examples (ARPG, fortress, Moria descent) motivate reusability only. Companion `gpu-resident-substrate.md` (supporting architecture per seeds README) details the GPU-resident claim without becoming a separate product target. |
-| **Human review (this pass)** | Resolved Q1–Q3 as tabulated above. Added a space-trading / freeform-ship consumer as nonbinding motivation for volume-general mutability, deep interiors, GPU-resident matter, and honest damage/salvage—without importing that game’s systems into current scope. |
+| **Human review (prior pass)** | Resolved Q1–Q3 as tabulated above. Added a space-trading / freeform-ship consumer as **nonbinding** motivation for volume-general mutability, deep interiors, GPU-resident matter, and honest damage/salvage—without importing that game’s systems into current scope. |
+| **Human review (this pass)** | Preserve multi-world as an approval handoff, not a settled claim. Ship/station support is conditional in the opening and Deep Z outcome until approved. The space-game paragraph remains explicitly nonbinding future-consumer context. The claim that no identity questions remain is withdrawn; Q4 stays open. |
 
 Authority among seeds (from `docs/seeds/README.md`): project boundary first; GPU-resident architecture note second as supporting principles (now elevated to product direction by human decision where residency and async boundary are concerned); broad voxel reference third; Product One seed last as validation example. Conflicts resolve toward the boundary without silent expansion of scope.
