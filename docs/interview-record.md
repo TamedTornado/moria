@@ -2,7 +2,6 @@
 status: complete
 coverage:
   Problem Statement: 2/2
-  1. Product Statement: 1/1
   2. The Seed World: 1/1
   3. Substrate Slice Included: 1/1
   4. The Player: 1/1
@@ -54,28 +53,6 @@ next_note_id: 4
   
   Moria is only the voxel-world substrate. Broader game, System, LLM, spell, gas,
   combat, AI, and building intent is deliberately absent and out of scope.
-
-## 1. Product Statement
-
-
-### q2: What should we know about 1. Product Statement?
-- status: answered
-- answer: |-
-  A generated natural world — hills, forest, river, cliffs, caves — that you can run through in third person, where everything you see is voxel truth: you can walk to any point, the terrain is continuous and smooth, and a debug key proves it's all mutable matter underneath. The demo's job is to make one claim undeniable: **this is not a heightmap with props — it's a fully material world, and it looks good.**
-  
-  ### Non-goals (explicitly out)
-  - Combat, stats, entities beyond the player, AI of any kind
-  - The System / LLM anything
-  - Gas, pricing, intent
-  - Building UI, blueprints, mechanisms
-  - Fluids beyond static bodies (tier 1 only — lakes and a river *channel* with a water surface; no flow sim)
-  - Weather sim, seasons, growth (a fixed time-of-day slider is enough)
-  - Persistence beyond "reload the same seed + deltas" (single save slot, no versioning)
-  
-  ### The one indulgence kept in
-  **Dig and place stay in scope**, on a debug key. Not as gameplay — as the *proof*. The demo clip is: run through a postcard forest, stop, carve a tunnel into the hillside mid-sprint, walk through it, and the cut faces look like cut earth. Without this, the demo is indistinguishable from any Unity terrain scene. With it, it's a substrate.
-  
-  ---
 
 ## 2. The Seed World
 
