@@ -2,7 +2,6 @@
 status: complete
 coverage:
   Problem Statement: 2/2
-  5. Performance Targets (the actual product spec): 1/1
   6. Milestones (demoable, in order): 1/1
   7. What Product One Buys: 1/1
 next_id: 11
@@ -50,33 +49,6 @@ next_note_id: 4
   
   Moria is only the voxel-world substrate. Broader game, System, LLM, spell, gas,
   combat, AI, and building intent is deliberately absent and out of scope.
-
-## 5. Performance Targets (the actual product spec)
-
-
-### q6: What should we know about 5. Performance Targets (the actual product spec)?
-- status: answered
-- answer: |-
-  This product's customers are future-you and the audience on X; both buy numbers.
-  
-  | Metric | Target |
-  |---|---|
-  | Frame rate | 60fps at 1440p on a mid GPU (3060-class); 60fps at 1080p–1440p on the M4 Mac Mini dev machine (bandwidth-bound — if the M4 hits this, discrete targets are nearly guaranteed) |
-  | Dig-to-remesh latency | dirtied bricks remeshed within 2 frames; no hitch on a 3m-radius carve |
-  | Cold-start into world | < 5s to walkable (lazy materialization doing its job) |
-  | Memory | full region under ~2GB GPU resident with streaming rings active; idle wilderness near-zero per the sentinel design |
-  | Save/load | delta save < 50MB after heavy defacement; load restores exactly |
-  
-  Benchmarks are part of the deliverable: a scripted flythrough + carve-storm scene that outputs these numbers **plus a machine profile**, so every subsequent substrate change regression-tests against product one and numbers from different hardware stay comparable.
-  
-  ### Dev-platform constraints (M4 Mac Mini, 32GB unified, wgpu/Metal)
-  - **No 64-bit buffer atomics** — Apple GPUs don't support them. All counters, allocators, and label-propagation stay 32-bit (the design already complies; this pins it as a rule for future kernels).
-  - **Bandwidth is the ceiling, not compute** (~120–273GB/s depending on M4 variant). CA and meshing passes are traffic-bound: brick sparsity and homogeneous sentinels are load-bearing from milestone 1, not deferred optimization. Profile memory traffic first (Xcode Metal GPU capture works on wgpu apps and is excellent for this).
-  - **Unified memory softens the mirror problem** during dev — keep the FleX command/mirror architecture anyway; it's still correct for discrete GPUs and it's the sandbox/multiplayer boundary.
-  - **Stay on wgpu/WGSL** — no native Metal fork, ever, in the load-bearing layers. Portability to Vulkan/DX12 is the point of the crate.
-  - Discrete-GPU targets are unverifiable until the Linux box returns; treat them as provisional, re-baseline later.
-  
-  ---
 
 ## 6. Milestones (demoable, in order)
 
