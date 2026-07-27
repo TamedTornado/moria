@@ -46,8 +46,19 @@ window or physical GPU and includes:
   create and use only opaque registered buffers/layouts/bind groups/pipelines;
   compile-fail fixtures attempt `RenderDevice`, `wgpu::Device`, raw resource,
   queue, encoder, and submission acquisition through every public method.
-  Registry tests prove live bytes/counts are enforced through create/drop/last
-  GPU use rather than trusted from `BehaviorResourceReport`;
+  Registry tests prove per-adapter and aggregate live bytes/counts are enforced
+  through create/drop/dependency/last GPU use rather than trusted from
+  `BehaviorResourceReport`;
+- aggregate factory-buffer admission at minimum/default/hard bounds: descriptor
+  maxima are checked-summed at registration and against the adapter-clamped
+  effective value at startup; multiple adapters fill the pool exactly and one
+  byte over returns `BehaviorGpuBufferCapacity`. An instrumented backend proves
+  a logical-capacity rejection occurs before renderer allocation, renderer OOM
+  releases the permit and registers no handle, dropped buffers remain charged
+  through bind-group and submission dependencies, terminal device-generation
+  teardown reaches zero, and recreation can then reserve the same bytes.
+  `BehaviorGpuBufferBytes` current/high-water/limit/rejected telemetry must
+  match every transition;
 - two adapters plan disjoint scopes at one commit frontier. Their CPU
   iterators/lookups and GPU bindings contain only their own records, attempts
   to name the other scope fail, and both reports retain the same pinned
@@ -207,16 +218,30 @@ offsets/sizes/constants with shader declarations. Negative fixtures cover:
   and pre-sequence-1 `Complete` has zero records and a zero cursor;
 - every Scheduled ABI v1 host/WGSL size, alignment, offset, and stride:
   all four 64-byte headers, the 112-byte volume, 24-byte cell, 128-byte
-  proposal, 20-byte patch run, 32-byte handoff descriptor, and both 32-byte
-  feedback records;
+  proposal, 20-byte patch run, 32-byte handoff descriptor, 64-byte feedback
+  participant, and 48-byte feedback proposal;
+- every logical 64-bit scheduled field is declared as adjacent low/high
+  `u32` words at the documented offsets. Golden values
+  `0`, `1`, `0x00000001_00000000`, and `u64::MAX` assert host pack/unpack,
+  WGSL reconstruction/comparison, both-word zero tests, and little-endian
+  bytes. No Scheduled ABI WGSL declaration or shader source contains a
+  concrete `u64` scalar;
 - scheduled negative fixtures at the expected validation layer for bad
   magic/version/direction/availability/status/failure tags, nonzero
-  reserved/flags words,
+  reserved/undefined-flags words, a zero pair where a nonzero value is
+  required, or a decoder incorrectly treating a one-zero pair as absent,
   undersized effective binding ranges, nonmonotonic/overlapping offsets,
   record-count or byte arithmetic overflow, proposal/payload/handoff
   over-capacity, invalid snapshot/volume indices, changed revisions, invalid
   cell size/domain, cross-participant record access, stale device generation,
   malformed prior feedback, and old-generation handoff/feedback reuse.
+- golden feedback fixtures map participant abort, two-party conflict fail-tick,
+  transition failure with predecessor/successor/stage, preparation failure,
+  device loss with a two-word generation, and
+  published-with-notification-failure with exact failed-hook count. Each
+  fixture round-trips to the corresponding Rust disposition, cause,
+  participant publication/notification, proposal outcome, flags, and unused
+  zero fields; changing any required/unused field fails at feedback validation.
 
 Passing compilation is only validation evidence, not execution correctness.
 
@@ -267,8 +292,11 @@ Required tests:
     GPU-to-CPU mapped handoff, fixed proposal validation, whole-proposal
     conflict/tick-abort outcomes, prior-feedback reconciliation,
     old-generation feedback quarantine,
-    exact integer readback parity for every scheduled header/record,
-    restricted-factory resource enforcement,
+    exact low/high-word integer readback parity for every scheduled
+    header/record, all six terminal-feedback golden outcomes,
+    restricted-factory per-adapter and aggregate buffer-byte enforcement,
+    drop-after-last-use release, terminal-generation teardown/recreation, and
+    logical OOM rejection before a backend allocation,
     one revision per affected volume, and post-frontier command exclusion.
     Induce participant failure, rejected effects, checkpoint/restore, shutdown,
     and device loss; prove Moria never owns adapter state, late old-generation
@@ -413,8 +441,12 @@ changes and prove the borrowed CPU report and next-tick read-only GPU feedback
 let the adapter reconcile while Moria neither rolls state back nor checkpoints
 it. Force another participant's `AbortTick`, a `FailTick` conflict, and a
 post-publication CPU report panic; assert the exact tick/participant/proposal
-outcomes and `revision_changed`. Repeat across checkpoint, restore readiness,
-device loss/recovery, and shutdown.
+outcomes and `revision_changed` in both the Rust report and next-tick GPU
+feedback. The GPU assertion includes both engine/proposal pairs for
+`FailTick`, predecessor/successor/stage for transition failure, the device
+generation pair, preparation failure, disposition, defined flags, and exact
+failed-hook count after publication. Repeat across checkpoint, restore
+readiness, device loss/recovery, and shutdown.
 
 The independent reviewer must compile an external-style adapter that attempts
 every public route to obtain `RenderDevice`, `wgpu::Device`, a raw buffer/
@@ -520,7 +552,7 @@ Correctness for the same workload must pass first.
 | P4 collision traversal | 32 in-flight sweeps/traces, each authorizing 65,536 candidate cells and 256 hits across static plus rotated dynamic volumes | p95 submit-to-decoded facts <=33 ms and GPU traversal <=10 ms when timestamps exist; >=1,000 queries/s aggregate for 4,096-candidate-cell zero/one-hit control workload |
 | P5 materialization | Precomputed in-memory source, 8,192 detailed mixed bricks (16 MiB), no scar, 512 bricks per source callback, four of the resulting 16 batches in flight | cold-to-ready throughput >=64 MiB/s and p95 per 4,096-brick interest <=300 ms; extraction never exceeds its byte/count limit |
 | P6 presentation rebuild | **P6a local:** one sparse patch changes the eight corner cells of one 8³ brick. The union of their one-cell halo dependencies is exactly the 3×3×3 neighborhood (27 artifacts); each emits 1,024–2,048 vertices and 6,000–12,288 indices. **P6b legal-command scale:** four nonoverlapping presentation interests of at most the default 4,096 bricks cover 13,824 artifacts; one 32,768-cell mutation touches 512 pairwise halo-disjoint bricks and therefore invalidates exactly those 13,824 artifact keys. Each emits 96–128 vertices and <=768 indices, no dressing, so all outputs fit default mesh pools. Start with all artifacts current, use default 1,024 jobs, 16,384 artifact/dirty records, and sample queue/dirty/current counts every update. | **P6a:** p95 commit-to-all-current <=250 ms and GPU derivation total <=20 ms when timestamps exist. **P6b:** first newly current artifact <=250 ms; all 13,824 are current at the command revision <=2 s; submitted jobs never exceed 1,024; exact dirty high-water <=13,824 and allocated artifact/dirty records stay <=16,384; current count increases in every 250 ms interval after dispatch begins; no starvation, coalescing, overflow, eviction of an interested target, crack, or provenance failure. |
-| P7 scheduled GPU behavior | Two ordered GPU adapters have disjoint filtered exports at one pinned frontier. Each export contains exactly 128 volume records and 256 full 8³ bricks = 131,072 cell records: `64 + 128×112 + 131,072×24 = 3,160,128` logical initialized bytes; aggregate logical export is exactly 6,320,256 bytes and the configured `behavior_gpu_view_bytes` allocation capacity remains 32 MiB. Together they propose exactly 1,024 valid effects with payload totaling <=1 MiB across four volumes; each owns exactly 32 MiB of factory-registered harness state, and no CPU adapter participates. | p95 stable-view-export-to-publication <=33 ms, adapter+validation+composition+publication GPU time <=16 ms when timestamps exist, time/export receipts report exactly 6,320,256 initialized/copied view bytes rather than allocation capacity, zero material/proposal readback before publication, bounded prior feedback only after publication, and every pool/factory-registry byte remains within declared limits |
+| P7 scheduled GPU behavior | Two ordered GPU adapters have disjoint filtered exports at one pinned frontier. Each export contains exactly 128 volume records and 256 full 8³ bricks = 131,072 cell records: `64 + 128×112 + 131,072×24 = 3,160,128` logical initialized bytes; aggregate logical export is exactly 6,320,256 bytes and the configured `behavior_gpu_view_bytes` allocation capacity remains 32 MiB. Together they propose exactly 1,024 valid effects with payload totaling <=1 MiB across four volumes; each declares and owns exactly 32 MiB of factory-registered harness state, so the checked descriptor sum and live charge are exactly 64 MiB against the default effective `behavior_gpu_buffer_bytes = 256 MiB`; no CPU adapter participates. | p95 stable-view-export-to-publication <=33 ms, adapter+validation+composition+publication GPU time <=16 ms when timestamps exist, time/export receipts report exactly 6,320,256 initialized/copied view bytes rather than allocation capacity, zero material/proposal readback before publication, bounded prior feedback only after publication, `BehaviorGpuBufferBytes` reports exactly 64 MiB live and no rejection, and every pool/factory-registry byte remains within declared limits |
 | P8 checkpoint path | 8,192 dirty detailed scars (16 MiB raw), checkpoint concurrent with four mutation streams; in-memory durable test store so storage hardware is excluded | GPU-readback-plus-encode throughput >=64 MiB/s, mutation P2 p95 degrades by <=2×, staged bytes stay within config, and semantic restore parity passes |
 | P9 asynchronous WGSL job | 8 MiB inspection packet, 256 structurally valid candidate effects whose 32,768 record bytes plus payload total <=65,472 bytes, 2 extension jobs in flight; effects touch four volumes | p95 packet-capture-to-all-child-admitted <=50 ms, extension GPU work <=16 ms when timestamps exist, candidate + 64-byte diagnostic readback <=64 KiB/job, and zero inspection-packet/material readback to CPU |
 

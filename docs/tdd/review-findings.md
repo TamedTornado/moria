@@ -2248,3 +2248,282 @@ No human-authority question is open. Backend-private pipeline allocation size
 is bounded by pipeline count rather than invented byte telemetry. Opaque
 handoff semantics and durable adapter state remain consumer-owned; no behavior
 vocabulary moved into Moria.
+
+## Auditor Turn — 2026-07-27T22:07:01Z
+
+Mode: continue
+
+Responding to: 2026-07-27T21:55:15Z
+
+### Prior Findings Status
+
+#### F12 — resolved — The scheduled GPU surface no longer exposes a raw renderer device or trusted byte report
+
+`BehaviorGpuDeviceContext` now contains only a restricted factory and device
+generation, while the callable encoder accepts only opaque factory-created
+handles (`docs/tdd/public-api.md:3019-3150,3183-3204`).
+The TDD explicitly excludes `RenderDevice`, `wgpu::Device`, queues, raw
+resources, and encoder construction, and makes `BehaviorResourceReport`
+registry-computed rather than adapter-supplied
+(`docs/tdd/behavior-scheduling.md:223-244`).
+The external compile-fail/adversarial requirements now attempt every forbidden
+acquisition (`docs/tdd/validation.md:44-50,419-424`).
+The distinct aggregate byte-budget defect is recorded as F20 below rather than
+leaving this authority finding open.
+
+#### F13 — resolved — Participants receive isolated exports from one pinned frontier
+
+The state machine now defines union `S` only as the coordinator's pin set and
+gives each participant a filtered `S_i`
+(`docs/tdd/behavior-scheduling.md:52-62`).
+The public and GPU contracts deny addressing records outside that participant's
+export (`docs/tdd/behavior-scheduling.md:164-172,246-266`;
+`docs/tdd/public-api.md:3197-3204`).
+The aggregate count/byte rules charge the sum of isolated views, and validation
+uses disjoint CPU/GPU scopes at the same pinned revisions
+(`docs/tdd/public-api.md:480-482`; `docs/tdd/validation.md:51-55,262-275`).
+
+#### F14 — resolved — Scheduled volume records carry the metric and domain needed to interpret collision truth
+
+The exact 112-byte record now includes finite positive `cell_size` and
+half-open local-domain bounds
+(`docs/tdd/behavior-scheduling.md:139-170,311-318`;
+`docs/tdd/public-api.md:2825-2846,2968-2973`).
+Host and real-GPU evidence includes unequal metrics and a volume created after
+registration (`docs/tdd/validation.md:51-55,262-275`).
+
+#### F15 — resolved — Mixed CPU/GPU order edges have an owned, bounded transfer protocol
+
+Each declared edge may carry one bounded opaque payload; startup reserves the
+host/device/staging representations and mixed-edge map slots
+(`docs/tdd/public-api.md:2568-2575,2766-2769,2948-2966`).
+CPU-to-CPU, CPU-to-GPU, GPU-to-GPU, and GPU-to-CPU milestones, borrows,
+validation, map/unmap, cancellation, loss, and failure attribution are selected
+concretely (`docs/tdd/behavior-scheduling.md:418-443`).
+C9 exercises both mixed directions and forbids smuggling raw harness buffers
+through the seam (`docs/tdd/validation.md:403-410`).
+
+#### F16 — partially_resolved — Feedback lifetime and CPU outcomes are concrete, but the GPU wire record cannot represent the promised terminal outcome
+
+The double-buffered feedback lifetime, next-tick binding, first-use state, and
+old-generation quarantine are now explicit
+(`docs/tdd/behavior-scheduling.md:370-384`;
+`docs/tdd/public-api.md:3125-3129,3222-3231`).
+The Rust outcome model also closes publication, tick-abort, proposal discard,
+and post-publication notification cases
+(`docs/tdd/public-api.md:2606-2691,2748-2760`).
+
+The fixed GPU record does not carry that same closed information.
+`BehaviorTickAbortCause::ConflictFailTick` needs two engine/proposal pairs,
+`TransitionFailure` needs predecessor, successor, and stage, and
+`PublishedWithNotificationFailure` needs a terminal disposition and failed-hook
+count (`docs/tdd/public-api.md:2613-2635`).
+The scheduled feedback ABI provides only `status`, `failure`, undefined
+`flags`, `revision_changed`, and one `cause_engine_or_zero` /
+`cause_proposal_or_zero` pair, with no disposition or transition-stage field
+(`docs/tdd/behavior-scheduling.md:386-407`).
+Nevertheless the TDD says the slot is finalized after notification failure and
+that GPU adapters reconcile from this feedback
+(`docs/tdd/behavior-scheduling.md:377-384,540-563`).
+An implementation agent cannot encode a third participant's discarded
+proposal after a two-party `ConflictFailTick`, distinguish publication from
+`PublishedWithNotificationFailure`, or reconstruct a transition failure from
+the specified fields.
+
+Required correction: either extend the versioned header/records so every
+promised GPU-visible terminal disposition and closed cause has an exact field
+mapping, or explicitly select a smaller GPU feedback contract and define the
+lossless information it does expose. Define every `flags` bit and add golden
+host/WGSL cases for participant abort, conflict fail-tick, transition failure,
+preparation failure, device loss, and post-publication notification failure.
+
+#### F17 — resolved — CPU behavior collision output is structurally reused and bounded
+
+`CpuBehaviorView::collision` fills a Moria-owned exact-capacity sink and returns
+only a borrow valid until reuse (`docs/tdd/public-api.md:2864-2892,2975-2986`).
+The aggregate call counter, traversal debit, poison behavior, nonpartial
+overflow, and 320 KiB contact pool are explicit
+(`docs/tdd/public-api.md:483`; `docs/tdd/behavior-scheduling.md:180-191`).
+Validation covers repeated calls, ignored errors, maximum/overflow, and
+allocation high-water (`docs/tdd/validation.md:71-74`).
+
+#### F18 — partially_resolved — Scheduled ABI fixtures are named, but the normative WGSL field types are not legal WGSL
+
+The revision adds the requested size/offset/stride matrix and field-specific
+negative fixtures (`docs/tdd/validation.md:208-219`) and requires exact integer
+readback on the claimed backends (`docs/tdd/validation.md:262-275`).
+However, the normative Scheduled ABI declares `tick:u64`,
+`generation:u64`, `volume:u64`, `revision:u64`, command IDs, and proposal
+revisions as `u64` fields while requiring direct Rust/WGSL layout parity
+(`docs/tdd/behavior-scheduling.md:300-318,330-348,386-408`).
+WGSL has no concrete 64-bit integer type; its concrete integer scalar types are
+`i32` and `u32`, as the current WGSL specification states:
+https://gpuweb.github.io/gpuweb/wgsl/#scalar-types.
+The older Extension ABI already demonstrates the portable representation by
+naming low/high `u32` words for device generation and operation ID
+(`docs/tdd/public-api.md:3462-3474`), but Scheduled ABI v1 never selects such a
+wire representation or comparison rule.
+
+Required correction: define every logical 64-bit scheduled field as an exact
+little-endian low/high `u32` pair (or another legal closed wire type), preserve
+or update all offsets and sizes consistently, specify host pack/unpack and
+two-word equality/zero rules, and make the scheduled Rust/WGSL golden and
+negative fixtures assert those actual declarations.
+
+#### F19 — resolved — P7 now states a legal default packed workload
+
+P7 uses two isolated exports whose summed volume/cell counts exactly consume
+the default aggregate maxima and whose arithmetic is correct:
+`64 + 128×112 + 131,072×24 = 3,160,128` bytes per participant and
+`6,320,256` initialized/copied bytes in aggregate
+(`docs/tdd/validation.md:523`; `docs/tdd/public-api.md:480-482`).
+It separately reports the 32 MiB allocation capacity.
+
+### New Findings
+
+#### F20 — unresolved — Factory-owned GPU buffer bytes have no aggregate world budget
+
+The restricted factory makes adapter buffers Moria-created, Moria-registered
+device allocations and enforces each descriptor's
+`maximum_owned_gpu_bytes` (`docs/tdd/behavior-scheduling.md:223-244`;
+`docs/tdd/public-api.md:3032-3099,3190-3195`).
+But `ResourceLimits` has aggregate counts for behavior buffers, pipelines, and
+bind groups plus aggregate WGSL bytes, and no aggregate byte field for the
+buffers themselves (`docs/tdd/public-api.md:400-435,478-490`).
+The storage summary repeats counts/WGSL only
+(`docs/tdd/state-and-storage.md:262-269`) while claiming telemetry exposes
+current, high-water, and limit for every behavior opaque-resource pool
+(`docs/tdd/state-and-storage.md:311-318`).
+
+Consequently, 16 default adapters may each declare an arbitrarily large `u64`
+maximum, pass every stated aggregate cross-limit, and allocate until the
+renderer reports OOM. Per-adapter registries prevent one adapter from exceeding
+its own declaration, but they do not provide a world memory budget,
+backpressure rule, startup feasibility check, or aggregate byte telemetry.
+P7's two 32 MiB states happen to be finite but are not checked against any
+configured aggregate factory-state byte pool
+(`docs/tdd/validation.md:523`).
+
+Required correction: add a configured, adapter-negotiated aggregate live
+factory-buffer byte limit with default/minimum/hard/adapter relationships;
+require the sum of descriptor maxima to fit it at builder/startup validation;
+charge allocation until handle dependencies and last GPU use permit release;
+surface current/high-water/limit/rejection telemetry; and test multi-adapter
+admission, drop-after-last-use, recreation, and OOM-before-allocation behavior.
+Backend-private pipeline memory may remain count-bounded as already justified.
+
+### Questions For Coder
+
+1. Is next-tick GPU feedback intended to reproduce the complete Rust terminal
+   cause/disposition, or only a reduced rejection/failure category? Whichever
+   is intended needs an exact record mapping.
+2. Will Scheduled ABI v1 encode each logical 64-bit value as low/high `u32`
+   words, matching the existing Extension ABI convention?
+3. What configured aggregate byte limit is meant to cap all live
+   factory-created behavior buffers across adapters?
+
+### Answers To Coder
+
+The coder asked no direct question.
+I acknowledge all five prior answers: the restricted factory, per-participant
+views, Moria-owned mixed handoffs, pinned prior-feedback binding, and typed
+tick-abort outcome are present in the actual TDD.
+The remaining F16 issue is not the absence of those concepts; it is that the
+selected fixed GPU record cannot encode the outcome the prose and Rust types
+promise.
+
+### Notes To Coder
+
+No protected human question is open.
+F16/F18/F20 are ordinary wire-format and resource-admission decisions within
+the already selected T28 architecture.
+The view, metric/domain, handoff, collision-sink, and P7 corrections should be
+retained.
+Only `docs/tdd/review-findings.md` was modified in this auditor turn.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-27T22:18:33Z
+
+Mode: continue
+
+Responding to: 2026-07-27T22:07:01Z
+
+### Responses To Findings
+
+1. **F16 addressed.** Next-tick GPU feedback now preserves the complete Rust
+   terminal disposition and every `BehaviorTickAbortCause`. The participant
+   record is 64 bytes and carries execution/failure category, publication,
+   notification, tick disposition, exactly defined flags, failed-hook count,
+   both engine/proposal pairs for `ConflictFailTick`, both engines plus stage
+   for `TransitionFailure`, and a device-generation pair. Proposal feedback is
+   48 bytes and retains related engine/proposal or volume identity where its
+   closed rejection variant requires it. Variable Rust failure payloads remain
+   intentionally CPU-report-only; the GPU record exposes their category, but
+   terminal disposition/cause is lossless. Golden host/WGSL cases cover all
+   requested terminal paths.
+2. **F18 addressed.** Scheduled ABI v1 now defines
+   `ScheduledU64LeV1 { low: u32, high: u32 }` as its only logical 64-bit wire
+   representation. Every header, volume, proposal, feedback command/revision,
+   tick, generation, and device-loss field names the two legal WGSL words at
+   exact offsets. Host pack/unpack, equality, zero, byte order, boundary
+   values, exact absence-sentinel handling, and the absence of WGSL `u64`
+   declarations are normative validation obligations. Existing record sizes
+   remain unchanged except for the deliberately expanded feedback records.
+3. **F20 addressed.** `ResourceLimits` now includes the adapter-negotiated
+   aggregate `behavior_gpu_buffer_bytes` pool: 256 MiB desired, 64 MiB
+   minimum, and `min(1 GiB, adapter max_buffer_size)` hard/effective bound.
+   Builder registration checked-sums descriptor maxima against desired
+   capacity; startup repeats the check against effective capacity before
+   device-state creation. Each allocation atomically reserves adapter bytes,
+   aggregate bytes, and a handle before renderer allocation. Charges survive
+   handle drop through bind-group dependencies and last GPU use, and terminal
+   generation teardown reaches zero before recreation. Logical exhaustion
+   invokes no backend allocation; renderer OOM releases all permits and
+   registers no handle. Public resource telemetry reports aggregate current,
+   high-water, limit, and rejections. P7's two 32 MiB states are now explicitly
+   checked as a 64 MiB charge against the 256 MiB default.
+
+### Answers To Auditor
+
+1. GPU feedback reproduces the complete Rust terminal tick
+   disposition/cause. Only variable participant failure detail such as region
+   vectors or diagnostic text is reduced to its closed category; this
+   reduction is explicit and does not affect reconciliation of publication,
+   abort, conflict, transition, device-loss, preparation, or notification
+   outcomes.
+2. Yes. Every Scheduled ABI v1 logical 64-bit value is a low/high `u32` pair
+   matching the Extension ABI convention, with the low significance word
+   first.
+3. The aggregate cap is
+   `ResourceLimits::behavior_gpu_buffer_bytes`, defaulting to 256 MiB desired
+   and 64 MiB minimum, with a 1 GiB hard ceiling and adapter
+   `max_buffer_size` clamp.
+
+### TDD Changes Made
+
+- Revised `behavior-scheduling.md` and `public-api.md` with the portable
+  two-word integer ABI, complete 64-byte terminal participant feedback,
+  complete 48-byte proposal feedback, tag/flag/zero rules, and exact outcome
+  mappings.
+- Added the aggregate factory-buffer byte field, resource kind, registration
+  and startup cross-limits, allocation/release/device-generation lifecycle,
+  typed capacity/OOM failures, and telemetry contract.
+- Reconciled architecture, lifecycle, storage/resource summaries, intended
+  repository rules, decision T29, scheduled correctness evidence, C9, and P7.
+- Added host/WGSL golden and negative fixtures plus real-GPU requirements for
+  low/high fields, all terminal outcomes, multi-adapter byte admission,
+  dependency-delayed release, recreation, and no-backend-call logical OOM.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+No human-authority question is open. F12–F15, F17, and F19 remain unchanged.
+Backend-private pipeline allocation remains count-bounded. The new aggregate
+byte pool covers factory-created buffers only and does not claim unavailable
+pipeline-memory telemetry or expand adapter authority.

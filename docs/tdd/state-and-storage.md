@@ -265,7 +265,7 @@ starting points, not universal performance promises.
 | Scheduled behavior CPU collision calls / contacts / bytes | 128 / 4,096 / 320 KiB | configured aggregate calls plus one reusable exact 80-byte contact-slot sink |
 | Scheduled behavior handoff maps / bytes | 4 / 24 MiB | configured Moria-owned host/device/staging transport; payload meaning remains consumer-owned |
 | Scheduled behavior proposals / payload / affected cells / affected bricks / directory effects / conflict checks / feedback | 1,024 / 64 MiB / 262,144 / 4,096 / 16 / 1,048,576 / 1 MiB | configured and wholly reserved/bounded before adapters run |
-| Scheduled behavior GPU buffers / pipelines / bind groups / WGSL bytes | 256 / 64 / 256 / 4 MiB | configured aggregate opaque factory resources and pre-parse borrowed source charge |
+| Scheduled behavior GPU buffers / live buffer bytes / pipelines / bind groups / WGSL bytes | 256 / 256 MiB / 64 / 256 / 4 MiB | configured aggregate opaque factory resources; buffer bytes use a 64 MiB minimum and 1 GiB/adapter-max clamp, while WGSL is charged before parse |
 | Scheduled GPU adapter dispatches / workgroups | 256 / 1,048,576 | configured counted-encoder limits per tick |
 | Asynchronous GPU extension jobs | 64 | configured |
 | Asynchronous GPU extension registrations / registry bytes | 32 / 4 MiB | configured; 1 MiB WGSL + 128-byte entry point per registration |
@@ -315,7 +315,11 @@ new stable volume key even after older volumes retire. Telemetry exposes
 current, high-water, limit, and rejection/coalescing counts for every pool in
 the public `ResourceLimits`, including extraction, presentation
 dirty/artifact/instance, behavior view/collision/handoff/proposal/feedback/
-opaque-resource/WGSL, and extension-registry resources.
+opaque-resource/live-factory-buffer-byte/WGSL, and extension-registry
+resources. Factory buffer bytes remain charged after logical handle drop while
+a bind group or in-flight submission depends on them; capacity returns only
+after dependency drop and last-use completion. Device-loss recreation begins
+only after the terminal generation's aggregate byte charge reaches zero.
 
 Moria never blocks a render schedule waiting for capacity.
 

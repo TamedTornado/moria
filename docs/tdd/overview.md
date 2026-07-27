@@ -260,6 +260,10 @@ contract tests remain in the ordinary suite.
   targets, and read-only prior feedback. It must never expose or accept
   `RenderDevice`, `wgpu::Device`, `RenderQueue`, raw encoders/resources, an
   aggregate cross-participant view, or authoritative storage handles. The
+  factory atomically charges every buffer to both the adapter maximum and the
+  adapter-clamped aggregate live-byte pool through last GPU use; logical
+  exhaustion must reject before renderer allocation. Terminal-generation
+  charges reach zero before recovery recreates adapter state. The
   asynchronous WGSL facility exposes Moria descriptors and opaque handles, not
   `wgpu::Buffer`.
 - Channels, staging pools, page tables, mesh outputs, and per-request payloads
@@ -282,7 +286,8 @@ contract tests remain in the ordinary suite.
 - Extraction records/bytes, live and lifetime volume records, presentation
   artifact/dirty/job/mesh/instance pools, dressing registrations, scheduled
   behavior registrations/order edges/per-participant views/collision scratch/
-  handoff maps and bytes/proposals/double-buffered feedback, and
+  handoff maps and bytes/proposals/double-buffered feedback/factory buffer
+  counts and live bytes, and
   asynchronous GPU extension registrations/WGSL bytes are separate named
   bounds. Do not make one pool silently own another.
 - A command/query type owns its payload until admission succeeds. Queue-full or
@@ -291,7 +296,9 @@ contract tests remain in the ordinary suite.
   and asynchronous Extension ABI v1 layouts in `public-api.md` and
   `behavior-scheduling.md` are normative. Do not replace closed variants,
   mandatory revision binding, or fixed offsets with implementation-defined
-  blobs.
+  blobs. Scheduled ABI logical 64-bit fields are always explicit low/high
+  `u32` pairs, and next-tick feedback must preserve the complete documented
+  terminal disposition/cause rather than a reduced category.
 - No consumer, example, test harness, or feature may inspect storage internals.
   `tests/support` builds worlds exclusively through public APIs.
 - No physics, damage, health, resistance, bond, fracture, gravity, force,

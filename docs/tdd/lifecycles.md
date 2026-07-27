@@ -334,7 +334,12 @@ with `revision_changed = false`, participant discard outcomes, and
 borrowed CPU report or a retained prior-feedback GPU binding, checkpoint
 excludes it, restore requires the adapter to become ready independently, and
 device loss invalidates GPU engine resources/feedback while leaving CPU engine
-state consumer-owned. The complete contract is
+state consumer-owned. GPU feedback carries the complete terminal
+disposition/cause, not only a category, and its logical 64-bit values use
+portable low/high words. Old-generation factory buffer bytes remain charged
+until dependencies/last use are terminally released; recovery recreates
+adapter state only after that generation's aggregate charge reaches zero. The
+complete contract is
 [behavior-scheduling.md](behavior-scheduling.md).
 
 ## Asynchronous GPU extension lifecycle

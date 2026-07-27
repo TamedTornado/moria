@@ -248,6 +248,7 @@ pub enum RegistrationError {
     DressingStyleCapacity { limit: u32 },
     BehaviorEngineCapacity { limit: u32 },
     BehaviorOrderCapacity { limit: u32 },
+    BehaviorGpuBufferCapacity { requested: u64, available: u64 },
     BehaviorOrderCycle { cycle: Vec<BehaviorEngineKey> },
     DuplicateBehaviorEngine(BehaviorEngineKey),
     InvalidDefinition(Vec<Violation>),
@@ -422,6 +423,7 @@ pub struct ResourceLimits {
     pub behavior_conflict_checks: u64,
     pub behavior_feedback_bytes: GpuCapacityLimit,
     pub behavior_gpu_buffers: u32,
+    pub behavior_gpu_buffer_bytes: GpuCapacityLimit,
     pub behavior_gpu_pipelines: u32,
     pub behavior_gpu_bind_groups: u32,
     pub behavior_gpu_wgsl_bytes: u64,
@@ -485,8 +487,9 @@ maximum legal operation, or violates a cross-limit.
 | `behavior_proposal_records` / `behavior_proposal_bytes` | 1,024 / 64 MiB | 65,536 / 1 GiB aggregate; each GPU participant's effect allocation fits one storage binding, aggregate declared maxima fit, and command/transaction completion capacity covers the same tick |
 | `behavior_effect_cells` / `behavior_effect_bricks` / `behavior_directory_effects` | 262,144 / 4,096 / 16 | 1,048,576 / 65,536 / 1,024 aggregate per tick; each proposal still obeys ordinary command maxima and aggregate declared adapter maxima must fit |
 | `behavior_conflict_checks` | 1,048,576 | 4,294,967,296 candidate whole-proposal overlap comparisons per tick; overflow fails before publication |
-| `behavior_feedback_bytes: GpuCapacityLimit` | 1 MiB desired / 64 KiB minimum | 64 MiB and adapter allocation; holds two fixed feedback slots for every GPU participant, each with one participant and its maximum proposal records |
-| `behavior_gpu_buffers` / `behavior_gpu_pipelines` / `behavior_gpu_bind_groups` / `behavior_gpu_wgsl_bytes` | 256 / 64 / 256 / 4 MiB | 65,536 handles each / 64 MiB borrowed cumulative pipeline source per device creation; descriptor maxima must sum within them |
+| `behavior_feedback_bytes: GpuCapacityLimit` | 1 MiB desired / 128 KiB minimum | 64 MiB and adapter allocation; holds two slots for every GPU participant, each containing a 64-byte header, one 64-byte terminal participant record, and its maximum 48-byte proposal records |
+| `behavior_gpu_buffers` / `behavior_gpu_buffer_bytes: GpuCapacityLimit` | 256 / 256 MiB desired, 64 MiB minimum | 65,536 handles / `min(1 GiB, adapter max_buffer_size)` aggregate live registered bytes; every descriptor maximum and their checked sum must fit the requested desired value at registration and the effective value at startup |
+| `behavior_gpu_pipelines` / `behavior_gpu_bind_groups` / `behavior_gpu_wgsl_bytes` | 64 / 256 / 4 MiB | 65,536 handles each / 64 MiB borrowed cumulative pipeline source per device creation; descriptor maxima must sum within them |
 | `behavior_gpu_dispatches` / `behavior_gpu_workgroups` | 256 / 1,048,576 | 65,536 / 4,294,967,296 aggregate scheduled adapter dispatches/workgroups per tick; each dimension also obeys the adapter device limit |
 | `extension_jobs` | 64 | 4,096; zero only when extensions disabled |
 | `extension_registrations` / `extension_registry_bytes` | 32 / 4 MiB | 1,024 / 64 MiB; owns all registered WGSL and entry-point bytes |
@@ -551,8 +554,16 @@ extraction capacity for one maximum transition record. CPU-view bytes may be
 zero only when every registered adapter is GPU. GPU-view bytes may be zero only
 when every adapter is CPU. Handoff maps/bytes may be zero only when no registered
 edge declares a payload. Feedback capacity includes current and prior slots.
-GPU buffer/pipeline/bind-group/WGSL pools may be zero only when every adapter
-is CPU; otherwise their aggregate descriptor maxima must fit.
+GPU buffer/count/pipeline/bind-group/WGSL pools may be zero only when every
+adapter is CPU. For GPU registrations, the checked sum of
+`maximum_owned_gpu_bytes` must fit `behavior_gpu_buffer_bytes.desired` during
+builder registration and its adapter-clamped effective value during startup;
+the count and WGSL descriptor maxima must likewise fit their aggregate pools.
+`behavior_gpu_buffer_bytes.minimum` must be nonzero, no greater than desired,
+and large enough for the largest registered descriptor maximum. An adapter
+whose clamp makes either the largest descriptor or the aggregate sum
+unrepresentable fails startup with the deterministic
+`UnsupportedCapabilities` report before `create_device_state`.
 The behavior ordering graph and all maximum access envelopes are validated
 before startup; runtime planning may narrow but never expand them.
 
@@ -2199,6 +2210,7 @@ pub enum ResourceKind {
     BehaviorConflictChecks,
     BehaviorFeedbackBytes,
     BehaviorGpuBuffers,
+    BehaviorGpuBufferBytes,
     BehaviorGpuPipelines,
     BehaviorGpuBindGroups,
     BehaviorGpuWgslBytes,
@@ -2727,6 +2739,8 @@ pub enum BehaviorAdapterErrorKind {
     InvalidPlan,
     InvalidState,
     Capacity,
+    WorldGpuBufferCapacity,
+    RendererOutOfMemory,
     Device,
     Internal,
 }
@@ -2820,9 +2834,23 @@ pub struct BehaviorCpuTickContext<'a> {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct ScheduledU64LeV1 {
+    pub low: u32,
+    pub high: u32,
+}
+
+impl ScheduledU64LeV1 {
+    pub const ZERO: Self = Self { low: 0, high: 0 };
+    pub const fn pack(value: u64) -> Self;
+    pub const fn unpack(self) -> u64;
+    pub const fn is_zero(self) -> bool;
+}
+
+#[repr(C)]
 pub struct BehaviorVolumeRecordV1 {
-    pub volume: u64,
-    pub revision: u64,
+    pub volume: ScheduledU64LeV1,
+    pub revision: ScheduledU64LeV1,
     pub key: [u8; 16],
     pub translation: [f32; 4],
     pub rotation_xyzw: [f32; 4],
@@ -2831,6 +2859,11 @@ pub struct BehaviorVolumeRecordV1 {
     pub local_domain_min: [i32; 4],  // xyz + zero
     pub local_domain_max: [i32; 4],  // exclusive xyz + zero
     pub reserved: [u32; 2],          // v1 zero
+}
+
+impl BehaviorVolumeRecordV1 {
+    pub const fn volume_id(&self) -> u64;
+    pub const fn volume_revision(&self) -> u64;
 }
 
 #[repr(C)]
@@ -2966,6 +2999,16 @@ successor transition. A successor sees only the initialized prefix.
 GPU handoffs use the equivalent header `written_bytes` validation. Handoff
 storage is Moria-owned transport; payload meaning and any durable copy remain
 consumer-owned.
+
+`ScheduledU64LeV1` is the only representation of a logical 64-bit integer in
+Scheduled ABI v1. It is exactly 8 bytes, aligned to 4, with the least
+significant `u32` at offset 0 and the most significant `u32` at offset 4.
+`pack(v)` stores `v as u32` and `(v >> 32) as u32`; `unpack` performs the
+inverse. Equality compares both words, and logical zero requires both words to
+be zero. WGSL declares the two words as separate `u32` fields rather than a
+nonexistent `u64` scalar. Each word is encoded little-endian in the packed
+buffer. Host helpers expose logical IDs/revisions without changing the wire
+record.
 
 `BehaviorVolumeRecordV1` is exactly 112 bytes with offsets
 `0, 8, 16, 32, 48, 64, 68, 72, 88, 104` in field order above.
@@ -3188,11 +3231,30 @@ entry points are charged to `maximum_gpu_wgsl_bytes` and the aggregate
 `behavior_gpu_wgsl_bytes` before parsing; creation
 validates group 0 exactly and only permits declared groups 1 and above.
 Opaque handles are usable only with the factory generation that created them.
-Every create/drop and last-use completion updates the registry, so
-`maximum_owned_gpu_bytes` (the sum of requested live buffer sizes) and the
-buffer/pipeline/bind-group count limits are enforced rather than trusted
-telemetry. Backend-private pipeline memory is not observable and is bounded by
-the pipeline count, not invented byte accounting.
+Before calling the renderer for `create_buffer`, the factory atomically
+reserves the descriptor's requested bytes from both the adapter's
+`maximum_owned_gpu_bytes` registry and the world-wide effective
+`behavior_gpu_buffer_bytes` pool, then reserves one buffer handle. Failure of
+either reservation returns `WorldGpuBufferCapacity` (or the adapter-local
+`Capacity`) and records a rejection without invoking a backend allocation.
+If the renderer nevertheless reports allocation OOM, the factory releases all
+three reservations, registers no handle, and returns
+`RendererOutOfMemory`; an uncaptured renderer OOM is never the admission
+mechanism.
+
+Dropping a buffer handle stops new uses but does not release its byte charge
+while a registered bind group still refers to it or an encoded/submitted use
+has not completed. The registry releases the handle and aggregate byte permit
+only after every opaque dependency is dropped and the last-use submission is
+complete. On device loss the terminal generation is quarantined, its backend
+handles and dependencies are destroyed, and its byte charges reach zero
+before `create_device_state` may reserve replacement-generation bytes. Thus
+recovery cannot temporarily hide two generations outside the pool.
+Every create/drop/dependency/last-use transition updates current, high-water,
+limit, and rejection telemetry for `BehaviorGpuBufferBytes` as well as
+adapter-local `BehaviorResourceReport`; the latter remains computed telemetry,
+not authority. Backend-private pipeline memory is not observable and is
+bounded by the pipeline count, not invented byte accounting.
 
 `BehaviorGpuTickContext` contains a counted `BehaviorGpuEncoder`, this
 participant's read-only filtered `BehaviorGpuViewV1`, write-only fixed
@@ -3216,9 +3278,15 @@ Outcome metadata is made CPU-visible later for typed receipts.
 
 `BehaviorParticipantReport` borrows coordinator-owned snapshot/proposal arrays;
 no capacity-bearing report collection crosses the callback. It and GPU
-feedback records contain only tick,
-snapshot revision, participant status, proposal selection/rejection, command
-ID, published revision, and failure category.
+feedback records contain only tick, snapshot revision, participant status,
+proposal selection/rejection, command ID, published revision, and failure
+category. The GPU terminal decision is not reduced: its documented 64-byte
+participant record losslessly maps the terminal tick disposition, every
+`BehaviorTickAbortCause`, participant publication/notification, exact
+failed-hook count, and defined flags. Scheduled logical 64-bit fields use
+`ScheduledU64LeV1` low/high words throughout. Variable Rust failure detail
+remains CPU-report-only; GPU feedback exposes its closed category and does not
+promise unavailable-region vectors or diagnostic text.
 Moria does not roll back adapter-owned state when a proposal is rejected.
 Adapters reconcile from this report/feedback according to their own policy.
 

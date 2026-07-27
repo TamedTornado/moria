@@ -356,6 +356,35 @@ post-publication notification panic as a no-publication abort.
 
 ---
 
+## T29. Scheduled wire integers, terminal feedback, and factory bytes are closed
+
+**Decision.** Scheduled ABI v1 represents every logical 64-bit value as an
+explicit low/high `u32` pair. Next-tick GPU feedback losslessly encodes the
+Rust tick disposition and abort cause in a 64-byte participant record,
+including both conflict participants, transition stage, device generation,
+notification disposition, defined flags, and failed-hook count. All
+factory-created behavior buffers share one adapter-clamped aggregate live-byte
+pool in addition to each adapter's declared maximum.
+
+**Lifetime and admission.** Builder registration checked-sums descriptor byte
+maxima against the requested pool and startup checks the effective pool before
+device-state creation. Buffer bytes remain charged through opaque-handle
+dependencies and last GPU use; terminal-generation teardown releases them
+before recreation. Logical exhaustion rejects before renderer allocation, and
+renderer OOM releases the permit without registering a handle.
+
+**Reason.** WGSL has no portable concrete `u64`, a category-only feedback
+record cannot reconcile a complete terminal outcome, and independent
+per-adapter maxima do not bound aggregate device memory. Exact word pairs,
+closed feedback mapping, and one world pool make portability, recovery, and
+memory pressure testable without exposing renderer authority.
+
+**Rejected.** Scheduled WGSL `u64` declarations, undocumented feedback flags,
+lossy conflict/transition causes, trusted byte reports, and renderer OOM as the
+aggregate admission policy.
+
+---
+
 ## Human review entry — external-behavior boundary
 
 ### Verbatim feedback

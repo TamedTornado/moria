@@ -143,9 +143,12 @@ Telemetry reads counters and summaries; it exposes no storage handle.
 Owns shader layouts, device-generation resources, dispatch encoding, staging
 pools, validation error scopes, completion callbacks, scheduled
 per-participant behavior view/proposal/handoff/prior-feedback buffers, the
-restricted behavior resource factory, asynchronous extension packets, and layout
-assertions. It is the only module allowed to turn storage transactions into GPU
-work.
+restricted behavior resource factory and its aggregate live-buffer-byte
+semaphore, asynchronous extension packets, and layout assertions. It is the
+only module allowed to turn storage transactions into GPU work. Factory bytes
+remain charged through registered dependencies and last submission use;
+device-loss teardown returns the terminal generation's permits before
+replacement state creation.
 
 ### `bevy`
 

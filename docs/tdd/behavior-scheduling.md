@@ -139,8 +139,8 @@ The exported canonical record is:
 
 ```text
 BehaviorVolumeRecordV1 {
-    runtime_volume_id: u64,
-    revision: u64,
+    runtime_volume_id: { low: u32, high: u32 },
+    revision: { low: u32, high: u32 },
     stable_key: [u8; 16],
     translation: [f32; 4],
     rotation_xyzw: [f32; 4],
@@ -236,8 +236,25 @@ It exposes neither `RenderDevice`,
 Every resource usable by `BehaviorGpuEncoder` must come from this factory;
 external raw handles are not accepted. Moria therefore enforces
 `maximum_owned_gpu_bytes` as the sum of requested live buffer allocation
-sizes, separate buffer/pipeline/bind-group counts, generation, and destruction
-after last use from the registry. Backend-private pipeline allocation size is
+sizes and also charges the world-wide effective
+`behavior_gpu_buffer_bytes` pool shared by every adapter. Builder registration
+requires the checked sum of descriptor maxima to fit the requested desired
+pool; startup repeats the check against the adapter-clamped effective pool
+before any adapter creates device state.
+
+Each buffer creation atomically reserves adapter bytes, aggregate bytes, and
+one handle before invoking the renderer. Logical capacity failure rejects
+without a backend allocation; renderer OOM releases the reservation and
+registers no handle. Dropping an adapter handle only prevents new use.
+Referenced bind groups and the last GPU submission keep the bytes charged
+until their dependencies and use complete. Device-loss recovery destroys and
+uncharges the terminal generation before replacement resources are admitted.
+Moria exposes aggregate current/high-water/limit/rejection telemetry in
+`BehaviorGpuBufferBytes` and per-adapter usage in
+`BehaviorResourceReport`.
+
+Separate buffer/pipeline/bind-group counts, generation, and destruction after
+last use remain registry-enforced. Backend-private pipeline allocation size is
 not knowable and is bounded by count rather than falsely included in byte
 telemetry. `BehaviorResourceReport` is a read-only
 registry snapshot/telemetry record computed by Moria, not a trusted adapter
@@ -299,16 +316,24 @@ The view, effect, and handoff allocations are tick-local and charged to
 double-buffered per-participant allocation charged to
 `behavior_feedback_bytes`.
 All words are little-endian, offsets are four-byte aligned, and Rust/WGSL
-layout assertions are mandatory. Headers use these exact byte offsets:
+layout assertions are mandatory. WGSL has no Scheduled ABI `u64` field.
+Every logical 64-bit ID, revision, tick, or generation is the exact
+`ScheduledU64LeV1 { low:u32, high:u32 }` wire value: the low/significance word
+comes first, both words are compared for equality, and zero means
+`low == 0 && high == 0`. Host packing is `low = value as u32`,
+`high = (value >> 32) as u32`; unpacking is
+`u64::from(low) | (u64::from(high) << 32)`. WGSL declares each pair as two
+separate `u32` members. Headers use these exact byte offsets:
 
 | Record | Exact fields |
 | --- | --- |
-| `BehaviorViewHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 tick:u64`, `16 generation:u64`, `24 engine:u32`, `28 volume_count:u32`, `32 cell_count:u32`, `36 volume_offset:u32`, `40 cell_offset:u32`, `44 total_bytes:u32`, `48 reserved:[u32;4]` |
-| `BehaviorEffectHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 engine:u32`, `12 proposal_capacity:u32`, `16 payload_capacity:u32`, `20 output_proposal_count:u32`, `24 output_payload_bytes:u32`, `28 reserved0:u32`, `32 tick:u64`, `40 generation:u64`, `48 reserved:[u32;4]` |
-| `BehaviorHandoffHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 direction:u32`, `12 engine:u32`, `16 edge_count:u32`, `20 descriptor_offset:u32`, `24 payload_offset:u32`, `28 total_bytes:u32`, `32 tick:u64`, `40 generation:u64`, `48 reserved:[u32;4]` |
-| `BehaviorFeedbackHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 availability:u32`, `12 engine:u32`, `16 source_tick:u64`, `24 generation:u64`, `32 participant_count:u32`, `36 proposal_count:u32`, `40 total_bytes:u32`, `44 reserved:[u32;5]` |
+| `BehaviorViewHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 tick_low:u32`, `12 tick_high:u32`, `16 generation_low:u32`, `20 generation_high:u32`, `24 engine:u32`, `28 volume_count:u32`, `32 cell_count:u32`, `36 volume_offset:u32`, `40 cell_offset:u32`, `44 total_bytes:u32`, `48 reserved:[u32;4]` |
+| `BehaviorEffectHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 engine:u32`, `12 proposal_capacity:u32`, `16 payload_capacity:u32`, `20 output_proposal_count:u32`, `24 output_payload_bytes:u32`, `28 reserved0:u32`, `32 tick_low:u32`, `36 tick_high:u32`, `40 generation_low:u32`, `44 generation_high:u32`, `48 reserved:[u32;4]` |
+| `BehaviorHandoffHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 direction:u32`, `12 engine:u32`, `16 edge_count:u32`, `20 descriptor_offset:u32`, `24 payload_offset:u32`, `28 total_bytes:u32`, `32 tick_low:u32`, `36 tick_high:u32`, `40 generation_low:u32`, `44 generation_high:u32`, `48 reserved:[u32;4]` |
+| `BehaviorFeedbackHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 availability:u32`, `12 engine:u32`, `16 source_tick_low:u32`, `20 source_tick_high:u32`, `24 generation_low:u32`, `28 generation_high:u32`, `32 participant_count:u32`, `36 proposal_count:u32`, `40 total_bytes:u32`, `44 reserved:[u32;5]` |
 
-The 112-byte volume record has offsets `0 volume:u64`, `8 revision:u64`,
+The 112-byte volume record has offsets `0 volume_low:u32`,
+`4 volume_high:u32`, `8 revision_low:u32`, `12 revision_high:u32`,
 `16 key:[u8;16]`, `32 translation:[f32;4]`,
 `48 rotation_xyzw:[f32;4]`, `64 cell_size:f32`, `68 flags:u32`,
 `72 local_domain_min:[i32;4]`, `88 local_domain_max:[i32;4]`, and
@@ -333,7 +358,8 @@ Each proposal slot is 128 bytes:
 | ---: | --- |
 | 0 | kind: unused `0`, fill `1`, patch-runs `2`, move `3`, retire `4` |
 | 4 | snapshot index `u32` |
-| 8 | exact expected revision `u64` |
+| 8 | exact expected revision low `u32` |
+| 12 | exact expected revision high `u32` |
 | 16 | flags, v1 zero |
 | 20 | payload offset |
 | 24 | payload byte length |
@@ -370,10 +396,13 @@ validated before transfer. Payload bytes are opaque to Moria.
 The 64-byte feedback header uses magic `MORF`, ABI version 1, closed availability
 (`NoneYet`, `Ready`, or `UnavailablePreviousGeneration`), engine ID, source
 tick ID, device generation, participant/proposal counts, total bytes, and zero
-reserved words. It is followed by one fixed 32-byte participant record and one
-fixed 32-byte record per proposal. Records contain only closed
-status/failure/rejection tags, tick/engine/proposal indices, assigned command
-ID or zero, and published revision or zero.
+reserved words. `Ready` has `participant_count == 1`; its total bytes are
+`64 + 64 + 48 * proposal_count`. `NoneYet` and
+`UnavailablePreviousGeneration` have zero source tick, zero counts, and
+`total_bytes == 64`; the current generation pair remains present so absence
+cannot be confused with an old ready record. A ready header is followed by one
+fixed 64-byte participant/terminal-decision record and one fixed 48-byte
+record per proposal.
 After the terminal publication/no-publication decision and all CPU report hooks
 return or panic, Moria finalizes the current feedback slot, including any
 post-decision notification failure. That slot becomes binding 4 on the
@@ -385,28 +414,86 @@ feedback presented as ready.
 
 The exact 32-byte handoff descriptor offsets are `0 peer_engine:u32`,
 `4 payload_offset:u32`, `8 capacity:u32`, `12 written_bytes:u32`,
-`16 status:u32`, and `20 reserved:[u32;3]`. The exact 32-byte feedback
-participant record is `0 status:u32`, `4 failure:u32`, `8 engine:u32`,
-`12 flags:u32`, `16 revision_changed:u32`, `20 cause_engine_or_zero:u32`,
-`24 cause_proposal_or_zero:u32`, and `28 reserved:u32`. The exact
-32-byte feedback proposal record is `0 status:u32`, `4 reason:u32`,
-`8 proposal_index:u32`, `12 reserved:u32`, `16 command_id_or_zero:u64`, and
-`24 revision_or_zero:u64`.
+`16 status:u32`, and `20 reserved:[u32;3]`. The exact 64-byte feedback
+participant record is:
+
+| Byte | Field |
+| ---: | --- |
+| 0 | `execution:u32` |
+| 4 | `execution_failure:u32` |
+| 8 | `publication:u32` |
+| 12 | `notification:u32` |
+| 16 | `tick_disposition:u32` |
+| 20 | `flags:u32` |
+| 24 | `failed_hook_count:u32` |
+| 28 | `abort_cause:u32` |
+| 32 | `cause_engine_a_or_zero:u32` |
+| 36 | `cause_proposal_a_or_zero:u32` |
+| 40 | `cause_engine_b_or_zero:u32` |
+| 44 | `cause_proposal_b_or_zero:u32` |
+| 48 | `cause_transition_stage_or_zero:u32` |
+| 52 | `reserved:u32` |
+| 56 | `cause_generation_low_or_zero:u32` |
+| 60 | `cause_generation_high_or_zero:u32` |
+
+`flags` defines exactly bit 0 as the tick's `revision_changed` and bit 1 as
+this participant notification's `publication_was_complete`; bits 2..31 are
+zero. Bit 1 is set only with
+`notification == FailedAfterTerminalDecision`. `failed_hook_count` is the
+tick-wide number of report hooks that returned an error or panicked after the
+terminal decision; it is nonzero for
+`PublishedWithNotificationFailure` and may also record notification failures
+after `NoPublication` without changing that abort disposition.
+
+`abort_cause == ParticipantAbort` stores the engine in A.
+`ConflictFailTick` stores the earlier engine/proposal in A and the later pair
+in B. `TransitionFailure` stores predecessor in A, successor in B, and the
+closed transition stage. `DeviceLost` stores only its generation pair.
+`PreparationFailure` has no payload. Every field not selected by that mapping
+is zero; a nonzero unused field is invalid. `Published` and
+`PublishedWithNotificationFailure` require `abort_cause == 0`;
+`NoPublication` requires one nonzero closed abort cause and a clear
+revision-changed bit. This mapping is lossless for
+`BehaviorTickDisposition`, `BehaviorTickAbortCause`,
+`BehaviorParticipantPublication`, and `BehaviorNotificationOutcome`; it
+exposes the `BehaviorParticipantExecution` variant plus its closed failure
+category, not variable Rust failure payloads such as unavailable-region
+vectors or diagnostics. Proposal-specific terminal data remains in the
+following records. This is the only intentional reduction: the terminal tick
+disposition and abort cause are never reduced.
+
+The exact 48-byte feedback proposal record is `0 status:u32`,
+`4 reason:u32`, `8 proposal_index:u32`,
+`12 related_engine_or_zero:u32`, `16 related_proposal_or_zero:u32`,
+`20 reserved:u32`, `24 command_id_low_or_zero:u32`,
+`28 command_id_high_or_zero:u32`, `32 revision_low_or_zero:u32`,
+`36 revision_high_or_zero:u32`, `40 related_volume_low_or_zero:u32`, and
+`44 related_volume_high_or_zero:u32`. `OverlapsEarlier` and
+`ReplacedByLater` use the related engine/proposal pair;
+`PreparationFailed` uses the related volume pair; `TickAborted` refers to the
+complete participant-record abort cause. All unrelated fields are zero.
 
 ABI tag values are stable: handoff direction incoming `0`, outgoing `1`;
 handoff status empty `0`, ready `1`, failed `2`; feedback availability
-`NoneYet=0`, `Ready=1`, `UnavailablePreviousGeneration=2`; participant status
-completed `1`, skipped `2`, discarded-by-tick `3`; proposal status admitted
-matter `1`, admitted volume `2`, rejected `3`; proposal reasons none `0`,
+`NoneYet=0`, `Ready=1`, `UnavailablePreviousGeneration=2`; participant
+execution completed `1`, skipped `2`; participant publication published `1`,
+no-selected-effect `2`, discarded-by-tick `3`; notification delivered `1`,
+not-applicable `2`, failed-after-terminal-decision `3`; tick disposition
+published `1`, no-publication `2`,
+published-with-notification-failure `3`; proposal status admitted matter `1`,
+admitted volume `2`, rejected `3`; proposal reasons none `0`,
 overlap `1`, replaced `2`, invalid `3`, participant-failed `4`,
 preparation-failed `5`, and tick-aborted `6`. Failure and tick-abort category
 tags are: none `0`; planning `1`, unavailable `2`, access-limit `3`,
 effect-limit `4`, invalid-proposal `5`, panicked `6`, GPU-validation `7`,
 transition `8`, device-lost `9`, not-ready-generation `10`, shutdown `11`;
-tick participant-abort `32`, conflict-fail-tick `33`, transition-failure `34`,
-device-lost `35`, and preparation-failure `36`. These constants are shared by
-Rust/WGSL layout tests. Unknown tags are validation failures, never forwarded
-to an adapter.
+abort cause participant-abort `1`, conflict-fail-tick `2`,
+transition-failure `3`, device-lost `4`, and preparation-failure `5`.
+Transition stages are none `0`, CPU-write `1`, upload `2`, GPU-validate `3`,
+GPU-copy `4`, map `5`, and decode `6`. These constants are shared by Rust/WGSL
+layout tests. Unknown tags, a both-zero pair where a nonzero value is
+required, treating a one-zero/one-nonzero pair as an absence sentinel, or
+nonzero unused fields are validation failures, never forwarded to an adapter.
 
 GPU adapters may retain their own factory-created GPU working state across
 ticks.
