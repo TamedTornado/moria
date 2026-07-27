@@ -2,7 +2,6 @@
 status: complete
 coverage:
   Problem Statement: 2/2
-  3. Substrate Slice Included: 1/1
   4. The Player: 1/1
   5. Performance Targets (the actual product spec): 1/1
   6. Milestones (demoable, in order): 1/1
@@ -52,28 +51,6 @@ next_note_id: 4
   
   Moria is only the voxel-world substrate. Broader game, System, LLM, spell, gas,
   combat, AI, and building intent is deliberately absent and out of scope.
-
-## 3. Substrate Slice Included
-
-
-### q4: What should we know about 3. Substrate Slice Included?
-- status: answered
-- answer: |-
-  From the layering diagram, product one builds the bottom two layers plus a sliver of the third:
-  
-  **Generation layer — full.** Continent pass can be stubbed to "this one region's curated parameters," but columns, strata, caves, ore, lazy materialization, and POI metadata all ship as designed. This layer is the reusable asset; don't cheapen it.
-  
-  **Matter layer — partial.**
-  - Brick pool, homogeneous sentinels, lazy materialization: full.
-  - Meshing (surface nets/dual contouring, GPU, dirty-brick incremental): full — this is the headline tech.
-  - Grass/clutter dressing from scatter points: full.
-  - Voxel objects (trees, boulders): placement, registration, rendering — **yes**; felling/rigid conversion — **no** (stretch goal, it's the best clip but it drags in the physics coupling).
-  - CA, fire, fluids-tier-2/3, integrity, granular settle: **no.** Format supports them; nothing runs them.
-  - Static water surfaces (tier 1): yes.
-  
-  **Script/API layer — sliver.** The dig/place verbs and mirror queries exist as engine-internal API (the debug tools call them), establishing the "nothing touches voxels directly" boundary from day one. No embedded scripting language yet.
-  
-  ---
 
 ## 4. The Player
 
