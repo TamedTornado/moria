@@ -222,12 +222,12 @@ eventual presentation progress when several legal producers are active.
 
 **Decision.** One content batch starts only after Moria atomically acquires a
 callback slot and its exact worst-case response-byte permit. The batch is not
-shrunk to current capacity. Returned ownership remains charged until validation,
-copy/install or failure cleanup, and drop have completed.
+shrunk to current capacity. Moria constructs the complete exact-length output
+sink inside that permit before invocation and keeps it charged through
+validation, install or failure cleanup, and drop.
 
-**Reason.** Validating an oversized owned response only after return does not
-bound concurrently live callback allocations. Atomic dual admission also
-avoids count/byte hold-and-wait deadlocks.
+**Reason.** Callback count and bytes must be acquired as one unit to bound
+simultaneous work and avoid count/byte hold-and-wait deadlocks.
 
 ## T22. Observation filters retain append-time geometry
 
@@ -241,16 +241,18 @@ revision.
 directory-version reclamation, and an overwritten retirement fact must not
 turn a pinned member into ambiguous absence.
 
-## T23. Content callbacks return exact boxed ownership
+## T23. Content callbacks fill Moria-owned exact sinks
 
-**Decision.** A valid content response owns an exact
-`Box<[BaseBrickResult]>`, lineage opaque bytes are exact boxed slices, and the
-response does not echo a variable source descriptor.
+**Decision.** A content callback receives an opaque exact-length output sink
+already owned and byte-reserved by Moria. Homogeneous writes copy one sample;
+detailed writes borrow exactly 512 samples into a fixed slot. No result
+collection or detailed box crosses ownership. Lineage opaque bytes remain
+exact boxed slices, and no variable source descriptor is echoed.
 
-**Reason.** Charging returned length while retaining spare vector capacity or
-an echoed variable lineage does not bound simultaneous Moria-owned callback
-allocations. Exact boxes make the pre-invocation permit equal to valid returned
-ownership.
+**Reason.** Even an exact returned box can be overlength before post-return
+validation. A permit-backed sink makes ownership crossing bounded by
+construction and leaves invalid count/content as ordinary poisoned-batch
+failure.
 
 ## T24. Volume names are canonical bounded directory data
 
@@ -266,9 +268,12 @@ bound alone cannot bound unconstrained `String` capacity or name length.
 subscriber's accepted filter without mutating its CPU cursor. The packet and
 public result distinguish complete, paged, overwritten, and unsupported-fact
 boundaries; blocked boundaries emit no effects and recover through a bounded
-non-resuming subscription-state snapshot.
+non-resuming subscription-state snapshot. A closed observation frontier is
+either `Empty` or a nonempty retained oldest/head pair; pre-sequence-1 reads
+and snapshots preserve `Empty`, encoded as zero sequence words.
 
 **Reason.** A fact-only packet cannot distinguish an empty delta from lost
 history, and silently omitting a fact that does not fit the fixed ABI violates
-the observation contract. Independent cursors avoid hidden competition with
-ordinary CPU polling.
+the observation contract. Mandatory nonzero frontier fields also cannot encode
+a newly started world. Independent cursors and a closed frontier avoid both
+ambiguities without inventing a startup fact.

@@ -251,7 +251,7 @@ starting points, not universal performance promises.
 | Observation ring facts / payload bytes | 4,096 / 32 MiB | configured; payload includes one 128-byte append-time filter envelope per fact |
 | Subscribers / volumes per filter | 64 / 256 | configured |
 | In-flight staging maps / bytes | 8 / 32 MiB | configured |
-| Content requests / bricks per request / response bytes | 64 / 512 / 32 MiB | configured; count and worst-case response bytes are atomically reserved before callback invocation; valid results/lineage use exact boxed ownership |
+| Content requests / bricks per request / response bytes | 64 / 512 / 32 MiB | configured; count and worst-case response bytes plus the exact-length Moria-owned sink are atomically reserved before callback invocation; result ownership cannot cross the port |
 | Persistence requests / staged bytes | 8 / 64 MiB | configured |
 | Extraction records / bytes per frame | 2,048 / 32 MiB | configured |
 | Presentation jobs | 1,024 | configured |

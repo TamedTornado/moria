@@ -191,11 +191,12 @@ Gap recovery:
 1. subscriber receives `Gap` and becomes `NeedsSnapshot`;
 2. subscriber requests a bounded snapshot covering the accepted resolved
    subscription membership;
-3. snapshot result contains the observation head and exactly one live or
-   retired state record for every pinned member; a retired record carries its
-   stable key and terminal revision even if the retirement fact was lost;
+3. snapshot result contains the nonempty retained observation frontier and
+   exactly one live or retired state record for every pinned member; a retired
+   record carries its stable key and terminal revision even if the retirement
+   fact was lost;
 4. `resume_after` validates the subscriber/scope and advances its cursor to
-   that head;
+   that frontier's head;
 5. facts after the captured head become deliverable.
 
 This closes the race between snapshot and resume without retaining every
@@ -203,13 +204,16 @@ intermediate event.
 
 GPU observation-delta capture is a separate read cursor supplied per request.
 It pins the subscriber's accepted membership/filter but neither observes nor
-changes the CPU cursor state. Each capture freezes oldest/head, scans retained
-fact-plus-envelope records through that head, and returns `Complete`,
+changes the CPU cursor state. Each capture freezes an
+`Empty | Retained { oldest, head }` frontier and returns `Complete`,
 `MoreAvailable`, `NeedsSnapshot`, or `UnsupportedFact` in both the ABI header
-and public outcome. A gap or matching nonrepresentable fact emits zero records,
-forbids candidate effects, and never skips the boundary. Recovery takes a
-bounded non-resuming `SubscriptionState` snapshot and restarts after that
-snapshot head; only an independently gapped CPU cursor uses `resume_after`.
+and public outcome. An empty frontier is a successful zero-record
+`Complete` page with a `None` cursor; it is not a gap. A nonempty capture scans
+retained fact-plus-envelope records through its head. A gap or matching
+nonrepresentable fact emits zero records, forbids candidate effects, and never
+skips the boundary. Recovery takes a bounded non-resuming
+`SubscriptionState` snapshot and restarts after that snapshot's optional head;
+only an independently gapped CPU cursor uses `resume_after`.
 
 ## Presentation lifecycle
 

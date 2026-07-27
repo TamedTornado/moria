@@ -47,13 +47,15 @@ window or physical GPU and includes:
   marker partition at minimum/default/maximum cross-limits;
 - content scheduling with callback-count capacity still free but response-byte
   capacity exhausted: the next callback is not invoked, holds no count slot,
-  emits deferred pressure, and begins only after the first returned batch is
-  installed or dropped and its byte permit is released;
-- content response ownership uses an exact boxed result slice and exact boxed
-  lineage bytes: a one-result callback formed from a vector with capacity
-  `content_bricks_per_request` must convert to `Box<[BaseBrickResult]>` before
-  return, retains only one slot, and aggregate live valid batches plus their
-  fixed allowances never exceed `content_response_bytes`;
+  emits deferred pressure, and begins only after the first permit-backed sink
+  is installed or dropped and its byte permit is released;
+- content callbacks receive only a Moria-owned exact-length output sink:
+  concurrently invoke one-brick callbacks that attempt a second result and
+  detailed writes sourced from consumer buffers sized for
+  `content_bricks_per_request`; the extra write poisons the batch, the detailed
+  API borrows exactly 512 samples rather than accepting ownership, incomplete
+  and ignored-write-error callbacks fail, and process-visible Moria-owned sink
+  high-water never exceeds `content_response_bytes`;
 - volume debug names accept exactly 96 UTF-8 bytes and reject 97 bytes through
   both `register_volume` and runtime `VolumeCommand::Create`; accepted names
   with oversized input `String` capacity retain exact boxed bytes only;
@@ -91,8 +93,13 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   paging returns `MoreAvailable` with an exact continuation cursor, overwrite
   returns a zero-record `NeedsSnapshot`, and a matching checkpoint fact returns
   a zero-record `UnsupportedFact` at its sequence without skipping later facts;
-  `SubscriptionState` snapshot recovery restarts after its captured head while
-  never calling `resume_after`;
+  `SubscriptionState` snapshot recovery restarts after its frontier's optional
+  head while never calling `resume_after`;
+- before the first observation, `CurrentHead` subscription acceptance records
+  `initial_after = None`, explicit and subscription-state snapshots return an
+  `Empty` frontier, and a GPU delta read from `after = None` returns zero-record
+  `Complete` with a `None` cursor; appending sequence one then makes the same
+  cursor read that first fact rather than reporting overwrite;
 - exact 27-key local and 13,824-key dispersed presentation invalidation,
   bounded 1,024-job draining, dirty-record coalescing fallback, fair eventual
   scheduling, superseded-target replacement, and simultaneous dirty commits in
@@ -135,7 +142,10 @@ offsets/sizes/constants with shader declarations. Negative fixtures cover:
 - every Extension ABI v1 host/WGSL offset and size;
 - malformed candidate kind/reserved word/offset/alignment/state ID, missing
   exact revision precondition, oversized WGSL/entry point/registry, and
-  malformed candidate effect layout.
+  malformed candidate effect layout;
+- observation-delta frontier ABI parity: both oldest/head words are zero only
+  for `Empty`, both are nonzero for `Retained`, one-zero/one-nonzero is rejected,
+  and pre-sequence-1 `Complete` has zero records and a zero cursor.
 
 Passing compilation is only validation evidence, not execution correctness.
 
@@ -185,11 +195,14 @@ Required tests:
     previous opaque state, fixed diagnostics, and Fill/Patch/Move candidate
     layouts execute through the public path; retained filtered delta records
     use their 128-byte tagged layout; an overwritten sequence, a matching
-    unsupported checkpoint fact, a maximum-record page, and an empty complete
-    page produce distinct header/public statuses; blocked statuses produce no
-    effects; recovery through a bounded subscription-state snapshot does not
-    advance the CPU cursor; and already admitted children have independent
-    applied/conflict/failure outcomes.
+    unsupported checkpoint fact, and a maximum-record page produce distinct
+    header/public statuses; before any fact is appended, an
+    `after = None` request and subscription-state snapshot return the exact
+    empty frontier (zero oldest/head/cursor words), then sequence one is read
+    from the same cursor; blocked statuses produce no effects; recovery through
+    a bounded subscription-state snapshot does not advance the CPU cursor; and
+    already admitted children have independent applied/conflict/failure
+    outcomes.
 11. **Device loss:** intentionally destroy/lose the device while operations are
     pending/submitted; every receipt terminates, late callbacks are ignored,
     every prior extension-state lease becomes stale, durable material state
@@ -250,7 +263,11 @@ again. Stable identity and exact placement/revision context must match.
 
 ### C7. Observation gap
 
-Stall a bounded subscriber past ring capacity, observe an explicit gap, take a
+Before any fact exists, subscribe at `CurrentHead`, take explicit-region and
+subscription-state snapshots, and require their frontier plus a GPU delta page
+from `after = None` to report valid `Empty`, not a gap; after the first fact,
+that same delta cursor observes sequence one. Then stall a bounded subscriber
+past ring capacity, observe an explicit gap, take a
 bounded snapshot, resume at its head, and receive later facts without claiming
 the missing sequence. Repeat with `All`, then create, retire, and move volumes:
 the accepted membership remains pinned and identical in the gap/snapshot; a
@@ -285,13 +302,15 @@ state ID, decodes fixed diagnostics, and emits the exact ABI v1 Fill,
 Patch-runs, and Move records with mandatory captured revisions. For
 `ObservationDeltas`, it filters retained matter/move facts after old directory
 versions are reclaimed, pages at `maximum_records`, and proves the CPU
-subscriber cursor is unchanged. It then overwrites the requested sequence and
-observes `NeedsSnapshot`, matches a checkpoint fact and observes
+subscriber cursor is unchanged. It first captures a newly started world and
+proves the public/ABI frontier is empty, then reads sequence one from
+`after = None`. It then overwrites the requested sequence and observes
+`NeedsSnapshot`, matches a checkpoint fact and observes
 `UnsupportedFact`, produces no candidate effects in either blocked state,
 reconciles via `SnapshotScope::SubscriptionState`, and restarts after the
-snapshot head without silent loss. Empty `Complete`, `MoreAvailable`,
-`NeedsSnapshot`, and `UnsupportedFact` must be distinct in both the shader
-header and the public outcome.
+snapshot frontier's optional head without silent loss. Empty `Complete`,
+`MoreAvailable`, `NeedsSnapshot`, and `UnsupportedFact` must be distinct in
+both the shader header and the public outcome.
 
 ## Visual evidence
 

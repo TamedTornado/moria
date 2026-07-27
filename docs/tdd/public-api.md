@@ -40,11 +40,27 @@ pub struct CheckpointKey(uuid::Uuid);
 pub struct VolumeRevision(NonZeroU64);
 pub struct ObservationSequence(NonZeroU64);
 pub struct DeviceGeneration(NonZeroU64);
+
+pub enum ObservationFrontier {
+    Empty,
+    Retained {
+        oldest: ObservationSequence,
+        head: ObservationSequence,
+    },
+}
 ```
 
 Runtime IDs are process-local generational handles. A stale ID is rejected
 before GPU work. Stable keys are consumer-supplied and persisted. Numeric
 runtime IDs and physical slot numbers are never durable.
+
+Observation sequences start at one. `ObservationFrontier::Empty` means no fact
+has ever been appended. Once the first fact is appended, the frontier is
+`Retained { oldest, head }`, with `oldest <= head`; the configured ring always
+retains its newest fact, so a world never returns to `Empty`. Zero is therefore
+available as the ABI encoding of an absent sequence, but is never a Rust
+`ObservationSequence`. Startup does not synthesize a fact merely to make this
+frontier nonempty.
 
 ## Configuration
 
@@ -1147,8 +1163,9 @@ pub trait BaseContentSource: Send + Sync + 'static {
     fn load_bricks(
         &self,
         request: BaseBrickRequest,
+        output: &mut BaseBrickOutput<'_>,
         cancel: &CancellationToken,
-    ) -> Result<BaseBrickBatch, ContentError>;
+    ) -> Result<(), ContentError>;
 }
 
 pub struct ContentLineage {
@@ -1174,14 +1191,33 @@ pub struct BaseBrickRequest {
     pub maximum_encoded_bytes: u64,
 }
 
-pub struct BaseBrickBatch {
-    pub bricks: Box<[BaseBrickResult]>,  // exact allocation and request order/count
-    pub encoded_bytes: u64,
+pub struct BaseBrickOutput<'permit> {
+    /* opaque Moria-owned, permit-backed, exact-length sink; not Send or constructible */
 }
 
-pub enum BaseBrickResult {
-    Homogeneous(MaterialSample),
-    Detailed(Box<[MaterialSample; 512]>),
+impl BaseBrickOutput<'_> {
+    pub fn len(&self) -> u32;
+    pub fn written(&self) -> u32;
+    pub fn push_homogeneous(
+        &mut self,
+        sample: MaterialSample,
+    ) -> Result<(), ContentWriteError>;
+    pub fn push_detailed(
+        &mut self,
+        samples: &[MaterialSample; 512],
+    ) -> Result<(), ContentWriteError>;
+}
+
+pub struct ContentWriteError {
+    pub index: u32,
+    pub kind: ContentWriteErrorKind,
+}
+
+pub enum ContentWriteErrorKind {
+    TooManyResults,
+    UnknownMaterial,
+    InvalidSample,
+    NonEmptyOutsideDomain,
 }
 
 pub struct ContentError {
@@ -1211,41 +1247,49 @@ partitioned in stable coordinate order; one callback never sees a hidden
 larger batch. Before invocation, Moria atomically reserves one
 `content_requests` slot and the exact conservative worst-case response charge
 `256 + 2,080 * bricks.len()` from the aggregate
-`content_response_bytes` pool. `maximum_encoded_bytes` is exactly that byte
-permit. If either resource is unavailable, the materialization batch remains
-queued and emits `ResourcePressure { action: Deferred }`; consumer code is not
-invoked, and no count-only or byte-only reservation is retained. Stable batch
-order plus retry on permit release prevents a later batch for the same volume
-from bypassing it. Urgent priority changes selection between volumes only.
-Cancellation while queued removes the batch without acquiring either permit.
-The callback runs on a Moria worker, never a render or Bevy main thread.
+`content_response_bytes` pool and constructs an exact-length, Moria-owned
+`BaseBrickOutput` inside that permit. The sink owns one fixed worst-case slot
+for every requested coordinate before consumer code runs.
+`maximum_encoded_bytes` is exactly that byte permit. If either resource is
+unavailable, the materialization batch remains queued and emits
+`ResourcePressure { action: Deferred }`; consumer code is not invoked, and no
+count-only or byte-only reservation is retained. Stable batch order plus retry
+on permit release prevents a later batch for the same volume from bypassing
+it. Urgent priority changes selection between volumes only. Cancellation while
+queued removes the batch without acquiring either permit. The callback runs on
+a Moria worker, never a render or Bevy main thread.
 
-A result has exactly one response for every requested coordinate:
-`Homogeneous(MaterialSample)` or `Detailed([MaterialSample; 512])`. Results
-outside the domain must be canonical empty. Unknown material IDs, nonzero v1
-flags, omitted/duplicate results, and excess bytes fail the whole batch.
-`encoded_bytes` must equal the checked charge of the returned variants: a fixed
-256-byte callback/batch allowance plus 32 bytes of slice/enum/box control
-storage per result, then 4 sample bytes for each homogeneous result or 2,048
-sample bytes for each detailed result. `Box<[BaseBrickResult]>` has exactly the
-returned length and cannot retain spare vector capacity. The response echoes
-no `SourceDescriptor` or other variable payload: Moria validates and
-canonicalizes the source's `descriptor()` at registration, then compares a
-fresh descriptor to the request's fixed lineage/fingerprint immediately
-before invocation and drops that temporary descriptor before entering consumer
-code. `ContentLineage.opaque` is itself an exact-length boxed slice. A smaller
-valid result shrinks the byte permit to its exact charge after validation and
-releases the difference.
+The source fills the sink in request order, once per coordinate. A homogeneous
+write copies one `MaterialSample`; a detailed write borrows exactly
+`&[MaterialSample; 512]` and copies it into the already reserved slot. No
+capacity-bearing collection, box, or other result ownership crosses from the
+consumer into Moria. `push_*` validates material IDs, v1 flags, and
+outside-domain canonical emptiness before advancing `written`. A rejected
+write, an attempted `(len + 1)`th result, callback success with
+`written != len`, or callback error/panic poisons the whole batch. Rejected
+writes allocate nothing and remain terminal even if consumer code ignores the
+returned `ContentWriteError`. `ContentWriteError` converts to
+`ContentErrorKind::InvalidBatch` for ordinary `?` propagation.
 
-The remaining permit is released only after Moria has copied every returned
-sample into its already-reserved upload/installation storage and dropped the
-`BaseBrickBatch`. On validation failure, cancellation, source error, or panic,
-Moria first drops every returned allocation and then releases both permits.
-Late return after cancellation follows the same drop-before-release rule.
-Consumer-internal transient allocations during its own callback are outside
-Moria ownership, but every concurrently returned or retained response is
-bounded by the permit established before invocation. Failed content is never
-installed partially.
+The fixed response charge is a 256-byte callback/batch allowance plus 32 bytes
+of control/tag storage and 2,048 bytes of sample storage for each exact output
+slot. Moria may encode a completed homogeneous slot compactly only after the
+callback returns successfully, but the full worst-case sink remains charged
+until validation and copy/upload installation complete. The response echoes no
+`SourceDescriptor` or other variable payload: Moria validates and canonicalizes
+the source's `descriptor()` at registration, then compares a fresh descriptor
+to the request's fixed lineage/fingerprint immediately before invocation and
+drops that temporary descriptor before entering consumer code.
+`ContentLineage.opaque` is itself an exact-length boxed slice.
+
+On success, the already-owned sink becomes the validated installation input;
+there is no second returned batch to reserve. On cancellation, source error,
+panic, poisoned/incomplete output, or installation failure, Moria drops the
+sink and then releases both permits. Late return after cancellation follows the
+same drop-before-release rule. Consumer-internal transient allocations during
+its own callback are outside Moria ownership, and the callback can only borrow
+them into fixed sink writes. Thus every simultaneously live Moria-owned output
+is covered before invocation. Failed content is never installed partially.
 
 The source descriptor supplies both:
 
@@ -1682,7 +1726,7 @@ pub struct ContactFact {
 pub struct WorldSnapshot {
     pub scope: SnapshotScope,
     pub resolved_subscription: Option<AcceptedSubscription>,
-    pub observation_head: ObservationSequence,
+    pub observation_frontier: ObservationFrontier,
     pub volumes: Vec<VolumeStateSnapshot>,
     pub regions: Vec<RegionStateSnapshot>,
     pub samples: Vec<SampleFact>,
@@ -1786,9 +1830,10 @@ result-specific facts.
 rejected before admission rather than clipping membership. Its result has
 `resolved_subscription = Some` containing the
 exact accepted subscription and pinned volume IDs, and `GapResumeToken` binds
-subscriber ID, resolved-scope digest, gap head, captured observation head, and
-captured revisions. Its `volumes` vector has exactly one stable-key-sorted
-record for every pinned member. A live member uses
+subscriber ID, resolved-scope digest, gap head, captured nonempty observation
+frontier, and captured revisions. A gap implies at least one prior fact, so
+this snapshot's frontier is always `Retained`. Its `volumes` vector has exactly
+one stable-key-sorted record for every pinned member. A live member uses
 `SnapshotVolumeState::Live`; a member retired before the captured head uses
 `Retired { terminal_revision }` even when the retirement fact was overwritten.
 The historical `VolumeId` in a retired record identifies the accepted member
@@ -1803,11 +1848,14 @@ depend on caller-provided sequence arithmetic.
 `SnapshotScope::SubscriptionState` is the non-resuming form used to reconcile
 a nonadvancing GPU observation view. It has the same bounded, exact pinned
 live/retired membership requirement as `SubscriptionGap`, captures
-`observation_head`, and has `resume = None`. It is legal regardless of the CPU
-subscriber cursor state and never changes that cursor. The caller may restart
-an independent GPU delta read after the returned `observation_head`; this
-reconciles current state rather than pretending overwritten or unsupported
-facts were delivered.
+`observation_frontier`, and has `resume = None`. It is legal regardless of the
+CPU subscriber cursor state and never changes that cursor. Before the first
+fact it returns `ObservationFrontier::Empty`; otherwise it returns the retained
+oldest/head pair. The caller restarts an independent GPU delta read after the
+frontier head, using `after = None` for `Empty`; this reconciles current state
+rather than pretending overwritten or unsupported facts were delivered.
+Explicit region snapshots use the same frontier rule, so a snapshot before
+sequence one is representable without inventing an observation.
 
 Supported collision shapes are sphere, axis-aligned box, and capsule. Inputs
 are finite and nondegenerate. Trace/sweep results sort by parametric distance,
@@ -2069,10 +2117,11 @@ volume substitutes for it. `accepted()` and every gap expose the resolved
 membership.
 
 `AcceptedSubscription.initial_after` is the subscriber's immutable lower
-cursor bound. `CurrentHead` records the acceptance head. `Retained(S)` records
-the checked predecessor of `S`, or `None` when `S` is the first world
-sequence; `S` must still be retained. CPU polling and nonadvancing GPU reads
-therefore share an explicit legal start without sharing cursor mutation.
+cursor bound. `CurrentHead` records `Some(head)` for a retained frontier and
+`None` for an empty frontier. `Retained(S)` records the checked predecessor of
+`S`, or `None` when `S` is the first world sequence; `S` must still be
+retained. CPU polling and nonadvancing GPU reads therefore share an explicit
+legal start without sharing cursor mutation.
 
 Unlike interest brick residency, an optional subscription spatial bound is an
 event predicate over that pinned membership: matter/lifecycle/presentation
@@ -2368,8 +2417,7 @@ pub enum GpuInspectionOutcome {
 
 pub struct GpuObservationDeltaOutcome {
     pub status: GpuObservationDeltaStatus,
-    pub oldest_retained: ObservationSequence,
-    pub captured_head: ObservationSequence,
+    pub frontier: ObservationFrontier,
     pub cursor: Option<ObservationSequence>,
     pub records: u32,
 }
@@ -2439,18 +2487,26 @@ observation ring using only the named subscriber's accepted membership, kinds,
 spatial predicate, and immutable `FilterEnvelopeV1` records. It never reads,
 advances, gaps, or resumes the subscriber's CPU cursor. `after` is legal only
 when it is at or after `accepted().initial_after` (with `None` ordered before
-every sequence) and no later than the atomically captured ring head; otherwise
-the extension receipt fails `OperationErrorKind::Validation` before shader
+every sequence) and no later than the atomically captured frontier head.
+For `ObservationFrontier::Empty`, only `after = None` is legal. Otherwise the
+extension receipt fails `OperationErrorKind::Validation` before shader
 dispatch. A stale subscriber is likewise a validation failure.
 
-Capture atomically records `oldest_retained` and `captured_head`, then scans in
-sequence order only through that head. Nonmatching facts advance the scan
-cursor using their retained envelopes but emit no record. Matching supported
-facts emit in order. If `maximum_records` fills before the scan reaches the
-head, status is `MoreAvailable` and `cursor` is the greatest sequence examined
-without skipping the next matching fact; the caller pages with that exact
-cursor. Reaching the head is `Complete`, including a legitimately empty result,
-and `cursor = Some(captured_head)`.
+Capture atomically records the closed `ObservationFrontier`. For
+`Retained { oldest, head }`, it scans in sequence order only through `head`.
+Nonmatching facts advance the scan cursor using their retained envelopes but
+emit no record. Matching supported facts emit in order. If `maximum_records`
+fills before the scan reaches the head, status is `MoreAvailable` and `cursor`
+is the greatest sequence examined without skipping the next matching fact; the
+caller pages with that exact cursor. Reaching the head is `Complete` and
+`cursor = Some(head)`.
+
+`ObservationFrontier::Empty` with `after = None` is a distinct successful
+capture: status is `Complete`, `records = 0`, and `cursor = None`. It is not a
+gap. After sequence one is appended, another read from `after = None` examines
+that first fact. For a nonempty frontier, `after = None` means "before sequence
+one"; if `oldest` is greater than sequence one, its successor was overwritten
+and the status is `NeedsSnapshot`.
 
 If the successor of `after` has been overwritten, status is `NeedsSnapshot`,
 the packet has zero observation records, and `cursor = after`. If a matching
@@ -2461,8 +2517,9 @@ status the shader is dispatched so it can observe the status, but candidate
 count and payload must remain zero or the whole extension fails GPU validation.
 The CPU owner reconciles through an ordinary bounded
 `SnapshotScope::SubscriptionState`, then restarts this independent view after
-the snapshot's `observation_head`. It does not call `resume_after` unless the
-ordinary CPU subscriber independently entered `NeedsSnapshot`.
+the snapshot frontier head, or from `None` when that frontier is `Empty`. It
+does not call `resume_after` unless the ordinary CPU subscriber independently
+entered `NeedsSnapshot`.
 
 When `descriptor.state_bytes > 0`, `GpuStateInput::Inline` must contain exactly
 that many bytes; `Zeroed` creates that many zero bytes, and `Previous` must name the same
@@ -2517,9 +2574,17 @@ The 128-byte packet header is:
 | 80, 84 | candidate-record offset, effect-payload offset |
 | 88, 92 | device generation low/high words |
 | 96, 100 | operation ID low/high words |
-| 104, 108 | delta oldest-retained sequence, otherwise zero |
-| 112, 116 | delta captured-head sequence, otherwise zero |
+| 104, 108 | delta oldest-retained sequence; zero for an empty frontier or non-delta inspection |
+| 112, 116 | delta captured-head sequence; zero for an empty frontier or non-delta inspection |
 | 120, 124 | delta cursor: scanned-through, requested-after, or unsupported sequence according to status; zero represents `None` |
+
+For delta inspection, oldest and head are either both zero
+(`ObservationFrontier::Empty`) or both nonzero
+(`ObservationFrontier::Retained`); a one-zero/one-nonzero header is invalid.
+Thus an empty complete history is encoded as delta kind, `Complete`, zero
+records, and zero in all three sequence fields. This cannot be confused with
+`NeedsSnapshot`, whose nonempty captured frontier and distinct status are
+mandatory.
 
 Snapshot records are 64 bytes: runtime volume ID at 0, revision at 8,
 translation `[f32; 4]` at 16, quaternion `[f32; 4]` at 32, and stable

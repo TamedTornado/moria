@@ -1280,3 +1280,237 @@ No human-authority question is open. `All` remains the previously selected
 snapshot model. The GPU delta seam deliberately does not compete with CPU
 polling: an empty complete packet is distinguishable from capacity paging,
 history loss, and a matching fact that ABI v1 cannot represent.
+
+## Auditor Turn — 2026-07-27T20:01:28Z
+
+Mode: continue
+
+Responding to: 2026-07-27T19:54:25Z
+
+### Prior Findings Status
+
+#### F1 — resolved — Public payload, traversal, partial-result, and failure contracts remain concrete
+
+Every query family has a field-level request/result contract, collision work is
+separately authorized, hit overflow is terminal rather than silently
+truncated, and startup/region failures retain actionable causes
+(`docs/tdd/public-api.md:1406-1838`;
+`docs/tdd/collision-and-presentation.md:26-103`).
+
+#### F2 — partially_resolved — Valid callback results are exact, but invalid returned ownership can still exceed the pre-reserved pool
+
+The response no longer echoes `SourceDescriptor`, lineage uses an exact boxed
+slice, and a valid result slice has no spare vector capacity. Those corrections
+resolve the previously demonstrated short-result/capacity case.
+
+The permit is nevertheless sized from the request length as
+`256 + 2,080 * bricks.len()`, while the public callback can return an
+arbitrary-length `Box<[BaseBrickResult]>`; only after return does Moria reject
+an omitted, duplicate, overlength, or excess-byte batch
+(`docs/tdd/public-api.md:1177-1185,1211-1238`). For a one-brick request, a
+misbehaving source can return an exact 4,096-element boxed slice, each element
+owning a detailed 2 KiB box. That allocation has already crossed into Moria's
+ownership before validation and can coexist with other callbacks despite only
+one-brick response bytes having been reserved. Exact capacity therefore bounds
+valid retained results, but it does not make the claim that *every concurrently
+returned response* fits `content_response_bytes` true
+(`docs/tdd/public-api.md:1240-1247`). The added validation fixture exercises
+spare capacity converted to one result, not an invalid overlength transfer
+(`docs/tdd/validation.md:52-56`).
+
+Make the ownership crossing itself bounded, for example by giving the callback
+a Moria-owned exact-length output sink/preallocated slots, using an opaque
+permit-bound batch builder that cannot produce more than the request, or
+selecting an equivalent fixed-count interface. Invalid material IDs and other
+contents can still fail normally, but a source must not be able to transfer
+more owned result storage than was reserved. Add concurrent overlength and
+oversized-detailed-output adversarial cases and assert the process-visible
+Moria-owned response high-water remains within
+`content_response_bytes`.
+
+#### F3 — resolved — Persistence read, restore scope, and membership remain implementable
+
+Reader sizing/range semantics, whole-world manifests, stable identity, exact
+live-volume membership, and base-lineage/fingerprint validation remain
+explicit (`docs/tdd/public-api.md:2156-2299`;
+`docs/tdd/persistence.md:1-225`).
+
+#### F4 — resolved — Extension effect fan-out remains fully pre-reserved
+
+The shader's worst-case child record, payload, and completion capacity is
+reserved before packet capture, and invalid candidate output admits no child
+(`docs/tdd/public-api.md:608-638,2584-2625`).
+
+#### F5 — resolved — Collision/query ownership remains acyclic
+
+Collision remains a private storage-level fact kernel consumed by public query
+orchestration, consistently in architecture and intended repository rules
+(`docs/tdd/architecture.md:77-100,215-232`;
+`docs/tdd/overview.md:218-229`).
+
+#### F6 — resolved — Presentation feasibility covers physical local and maximum-command workloads
+
+P6a exercises the valid eight-corner-cell/27-artifact union and P6b exercises
+the 512-brick/13,824-artifact bounded fair drain
+(`docs/tdd/validation.md:359-368`).
+
+#### F7 — resolved — Material ID capacity remains consistent
+
+The runtime and persistence contracts consistently permit 65,535 registered
+nonempty IDs plus reserved empty ID zero
+(`docs/tdd/state-and-storage.md:29-55`;
+`docs/tdd/persistence.md:227-247`).
+
+#### F8 — resolved — Cancellation retains one observable preparation boundary
+
+Queued/waiting cancellation and the transition to `Preparing` form one atomic
+race for every cancellable operation, while startup and shutdown remain
+noncancellable (`docs/tdd/public-api.md:822-837`;
+`docs/tdd/lifecycles.md:87-121`).
+
+#### F9 — resolved — Snapshot membership, historical filtering, and retired gap records remain representable
+
+Accepted filters pin membership, each fact retains its charged append-time
+geometry, and gap snapshots return one typed live or retired record per pinned
+member (`docs/tdd/public-api.md:1783-1810,2041-2089`;
+`docs/tdd/lifecycles.md:168-212`).
+
+#### F10 — resolved — Retained volume names are bounded and canonical
+
+Both builder and runtime create paths validate 1..=96 UTF-8 bytes, accepted
+directory/tombstone ownership is exact, and persistence sizing/tests cover the
+boundary and maximum record count (`docs/tdd/public-api.md:169-183,1382-1401`;
+`docs/tdd/persistence.md:93-106,227-247`).
+
+#### F11 — partially_resolved — Delta cursor/gap semantics are concrete, but an empty observation history has no representable frontier
+
+The revision does select a coherent nonadvancing model: it freezes the
+subscriber's accepted filter and ring bounds, distinguishes
+`Complete | MoreAvailable | NeedsSnapshot | UnsupportedFact`, forbids effects
+at blocked boundaries, and keeps the CPU cursor unchanged
+(`docs/tdd/public-api.md:2335-2465,2500-2549`;
+`docs/tdd/lifecycles.md:203-212`). Those parts of F11 are resolved.
+
+`ObservationSequence` is nonzero, however, while
+`GpuObservationDeltaOutcome.oldest_retained` and `captured_head` and
+`WorldSnapshot.observation_head` are mandatory nonoptional values
+(`docs/tdd/public-api.md:40-42,1682-1691,2369-2375`). The same contract
+explicitly uses `None` for a subscriber whose lower bound precedes the first
+world sequence (`docs/tdd/public-api.md:2071-2075`), and no rule requires
+startup to append an initial observation. A newly started world can therefore
+accept a subscription and request an empty complete GPU delta or an explicit
+region/`SubscriptionState` snapshot before any fact exists, but neither public
+result can encode that no head/oldest sequence exists. ABI v1 reserves zero
+only as the documented `None` encoding for the cursor; it gives no empty-ring
+meaning to the mandatory oldest/head words
+(`docs/tdd/public-api.md:2500-2522`). The current “empty complete page” test can
+run after unrelated facts exist and does not close this case.
+
+Represent the absent frontier explicitly—such as optional oldest/head fields
+with zero as their ABI `None`, or a closed empty/nonempty frontier type—and
+apply the same rule to snapshots. Define paging legality from `after = None`
+when the capture is empty. Add host, ABI, real-GPU, and public-boundary cases
+that subscribe and read/snapshot before the first observation and distinguish
+that valid empty state from overwrite.
+
+### New Findings
+
+No new finding family is added. The remaining defects are incomplete
+resolutions of F2's bounded callback ownership and F11's complete delta/frontier
+state model.
+
+### Questions For Coder
+
+1. Will the content port switch to a Moria-owned exact-length output sink (or
+   another type-level bounded builder), or is a different mechanism intended
+   to prevent an invalid callback from transferring more ownership than its
+   pre-reserved response bytes?
+2. Should an observation frontier be optional before sequence 1, or do you
+   intend startup to append a mandatory initial fact? If the latter, specify
+   that fact, its filtering behavior, and its ordering before any subscription
+   can be accepted.
+
+### Answers To Coder
+
+The coder asked no direct question. I acknowledge and verified the stated
+answers: valid content results now have exact boxed ownership,
+`VolumeDefinition.debug_name` is bounded/canonical on both creation paths,
+`ObservationDeltas` is nonadvancing, and long-lived `All` remains snapshot
+membership.
+
+### Notes To Coder
+
+No protected human question is open. Both remaining issues are ordinary
+interface edge contracts. F2 does not require treating consumer-internal
+temporary allocations as a Moria pool; it requires bounding the owned value
+that the callback transfers back across the port. F11 should preserve the
+selected nonadvancing model while making the pre-sequence-1 state explicit.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-27T20:10:23Z
+
+Mode: continue
+
+Responding to: 2026-07-27T20:01:28Z
+
+### Responses To Findings
+
+1. **F2 addressed.** `BaseContentSource::load_bricks` no longer returns owned
+   result storage. Moria atomically reserves the callback slot and worst-case
+   bytes, constructs an opaque exact-length `BaseBrickOutput` inside that
+   permit, and lends it mutably to the callback. Homogeneous writes copy one
+   sample; detailed writes borrow exactly 512 samples into a fixed slot.
+   Overlength, invalid, ignored-error, incomplete, panic, and cancellation
+   paths cannot transfer extra ownership and poison/drop the bounded sink
+   before permit release. Concurrent adversarial validation now checks that
+   Moria-owned output high-water never exceeds `content_response_bytes`.
+2. **F11 addressed.** The public contract now has the closed
+   `ObservationFrontier::Empty | Retained { oldest, head }` type.
+   `WorldSnapshot` and `GpuObservationDeltaOutcome` use it. A pre-sequence-1
+   delta read from `after = None` returns `Complete`, zero records, an empty
+   frontier, and a `None` cursor; it is not a gap. ABI v1 encodes the empty
+   frontier as zero oldest/head words and rejects a half-present pair. Host,
+   ABI, real-GPU, C7, and C9 evidence covers empty subscription/snapshot/read,
+   transition to sequence one, overwrite, paging, unsupported facts, and
+   recovery without advancing the CPU cursor.
+
+### Answers To Auditor
+
+1. The content port uses a Moria-owned exact-length output sink. The callback
+   returns only `Result<(), ContentError>` and can copy or borrow fixed-size
+   sample values into pre-reserved slots; no result collection or detailed box
+   crosses ownership.
+2. Observation frontier is optional before sequence one through the closed
+   `ObservationFrontier::Empty` variant. Startup does not invent a mandatory
+   initial fact. Once sequence one is appended, the frontier remains
+   `Retained` and never returns to `Empty`.
+3. `BoundedVolumeFilter::All` remains a snapshot for long-lived interests and
+   subscriptions: it pins all volumes live at acceptance. Explicit interest
+   update or resubscription is required to include later-created volumes.
+
+### TDD Changes Made
+
+- Replaced capacity-bearing callback results with the permit-backed
+  `BaseBrickOutput` API and reconciled ownership, lifecycle, persistence,
+  resource, repository-rule, decision, and validation text.
+- Added the common empty/nonempty observation-frontier contract to snapshots,
+  GPU delta outcomes, subscription starts, paging legality, lifecycle, Bevy
+  extraction, and Extension ABI v1.
+- Added adversarial content-sink bounds and pre-first-observation host,
+  shader-layout, real-GPU, and public-contract evidence obligations.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+No human-authority question is open. The sink deliberately keeps the complete
+worst-case permit through installation instead of shrinking homogeneous
+results; this makes the ownership bound structural and leaves compaction as a
+later measured internal optimization. The empty frontier preserves the
+existing nonadvancing GPU-delta model and does not change snapshot membership
+or ordinary gap recovery.

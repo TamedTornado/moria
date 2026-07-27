@@ -53,11 +53,13 @@ configuration errors in deterministic field order.
 
 ### `content`
 
-Owns the `BaseContentSource` port, content requests/results, reconstruction
-lineage/fingerprint, base-brick validation, the bounded worker pool, and the
-atomic callback-count/response-byte permit. It invokes consumer code only
-after both resources are reserved and releases response bytes only after the
-returned allocation is dropped. Consumer algorithms live behind this port.
+Owns the `BaseContentSource` port, content requests, the permit-backed
+exact-length output sink, reconstruction lineage/fingerprint, base-brick
+validation, the bounded worker pool, and the atomic
+callback-count/response-byte permit. It invokes consumer code only after both
+resources and the complete Moria-owned sink are reserved; consumer code can
+only copy or borrow fixed-size values into that sink. Consumer algorithms live
+behind this port.
 
 ### `volume`
 
@@ -189,11 +191,12 @@ input packet plus inline state, while larger queue contents drain across later
 frames.
 
 For GPU `ObservationDeltas`, the main-world observation owner freezes the
-subscriber's accepted filter, retained oldest/head pair, status, cursor, and
-matching fact-plus-envelope records as one extraction record. The CPU
-subscriber cursor is neither read nor written. The render world only encodes
-that immutable bounded capture into ABI v1 and cannot reinterpret a gap,
-unsupported fact, or maximum-record boundary as an empty complete packet.
+subscriber's accepted filter, closed empty-or-retained frontier, status,
+cursor, and matching fact-plus-envelope records as one extraction record. The
+CPU subscriber cursor is neither read nor written. The render world only
+encodes that immutable bounded capture into ABI v1 and cannot reinterpret an
+empty frontier, gap, unsupported fact, or maximum-record boundary as another
+state.
 
 ## Threading and progress
 

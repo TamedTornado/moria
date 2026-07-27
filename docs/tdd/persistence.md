@@ -199,7 +199,8 @@ For a cold restored brick:
 1. if a scar reference exists, decode and upload the scar as authoritative
    content at the restored revision;
 2. otherwise request the exact registered base source;
-3. validate the returned batch and upload its homogeneous/detailed form;
+3. finalize the permit-backed output sink and upload its
+   homogeneous/detailed form;
 4. publish region readiness only after GPU installation.
 
 Moria does not need to rerun the base for scarred bricks. The fingerprint
