@@ -188,6 +188,13 @@ telemetry. Configuration must fit one maximum enabled patch or extension
 input packet plus inline state, while larger queue contents drain across later
 frames.
 
+For GPU `ObservationDeltas`, the main-world observation owner freezes the
+subscriber's accepted filter, retained oldest/head pair, status, cursor, and
+matching fact-plus-envelope records as one extraction record. The CPU
+subscriber cursor is neither read nor written. The render world only encodes
+that immutable bounded capture into ABI v1 and cannot reinterpret a gap,
+unsupported fact, or maximum-record boundary as an empty complete packet.
+
 ## Threading and progress
 
 `MoriaHandle`, world handles, permits, and receipts are `Send + Sync`. Methods
@@ -264,8 +271,10 @@ World construction has two phases.
 `MoriaBuilder::validate` is host-only and checks:
 
 - all limits are nonzero and internally consistent;
-- the required consumer-supplied `WorldDefinition` has a nonnil stable key and
-  valid name, and world/material/volume stable keys are unique in their scopes;
+- required world/material/volume/style debug names are 1..=96 UTF-8 bytes;
+  retained volume names and content-lineage bytes canonicalize to exact boxes;
+- the required consumer-supplied `WorldDefinition` has a nonnil stable key,
+  and world/material/volume stable keys are unique in their scopes;
 - material zero is not consumer-registerable;
 - volume domains and coordinate conversions cannot overflow;
 - placements are finite and rigid;

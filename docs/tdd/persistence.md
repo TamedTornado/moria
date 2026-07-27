@@ -100,6 +100,11 @@ Volume records sort by stable UUID and contain:
 - placement translation/quaternion IEEE-754 bits;
 - sorted `(BrickCoord, ChunkDigest, record_index)` scar references.
 
+Volume debug names are canonical 1..=96-byte UTF-8 strings from the directory's
+exact `Box<str>`; the encoder never serializes discarded `String` capacity.
+Checked manifest sizing covers every fixed field, name byte, scar reference,
+and section prefix before allocation or store I/O.
+
 Tombstones sort by volume UUID. Chunk directory entries sort by digest and
 contain encoded size, decoded record count, codec, and CRC32.
 
@@ -236,6 +241,10 @@ Required fixtures and generated tests cover:
 - acceptance at `live_volumes` and `volume_records`, live-slot reuse after
   retirement, permanent lifetime-key exhaustion, and manifest rejection when
   live-plus-tombstone counts exceed effective limits;
+- builder/runtime volume-name acceptance at 96 UTF-8 bytes and rejection at
+  97, exact retained name ownership, and a maximum-`volume_records` directory
+  of 96-byte names whose checked no-scar manifest size remains below the 64 MiB
+  v1 cap (additional scar references still obey the independent cap);
 - reader oversize/changing length, short/range read, and caller-buffer bounds;
 - chunk write failure, manifest failure, and incomplete transaction cleanup;
 - device-derived state discarded and rebuilt after restore;

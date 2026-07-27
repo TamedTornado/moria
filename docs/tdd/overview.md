@@ -240,9 +240,13 @@ contract tests remain in the ordinary suite.
   must be bounded by `MoriaConfig`. No unbounded channel or implicit allocation
   policy is allowed.
 - Invoke a base-content callback only after atomically reserving both its worker
-  slot and worst-case returned bytes. Drop returned ownership before releasing
-  that permit; never validate an unreserved owned batch after callback return.
+  slot and worst-case returned bytes. Valid results and lineage bytes use exact
+  boxed ownership and do not echo a variable descriptor. Drop returned
+  ownership before releasing that permit; never validate an unreserved owned
+  batch after callback return.
 - Retained observation facts carry their fixed append-time filter envelope.
+  GPU delta reads freeze an independent oldest/head/cursor/status capture and
+  never mutate the ordinary subscriber cursor or skip a gap/unsupported fact.
   Polling must not reconstruct historical world bounds from the current volume
   directory, and gap snapshots must preserve typed retired pinned members.
 - Extraction records/bytes, live and lifetime volume records, presentation

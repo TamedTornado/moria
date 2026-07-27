@@ -168,7 +168,7 @@ pub struct DressingDescriptor {
 
 pub struct VolumeDefinition {
     pub key: VolumeKey,
-    pub debug_name: String,
+    pub debug_name: String,              // 1..=96 UTF-8 bytes
     pub domain: CellAabb,                // finite, min inclusive/max exclusive
     pub cell_size: f32,                  // finite and > 0
     pub mode: VolumeMode,                // Static | Dynamic
@@ -177,6 +177,10 @@ pub struct VolumeDefinition {
     pub reconstruction: ReconstructionFingerprint,
 }
 ```
+
+All debug-name limits are measured in UTF-8 bytes. A validated builder copies
+each accepted volume name into an exact-length `Box<str>` directory record and
+drops the input `String`, so an input vector capacity is never retained.
 
 Opaque metadata is returned only through material registry inspection. Moria
 does not interpret it and does not upload it to occupancy kernels.
@@ -414,8 +418,8 @@ command, 16 MiB patch payload, 262,144 cells per region read, 8,192 candidate
 bricks and 65,536 candidate cells per collision traversal, 4,096 collision
 hits, 256 world-scope volumes, 2,048 vertices/12,288 indices per brick artifact,
 13,824 unique halo invalidations per matter command, 4,096 dressing instances
-per artifact, 1 MiB WGSL and 128 UTF-8 bytes for one extension entry point, and
-256 candidate effects. They are exported in
+per artifact, 96 UTF-8 bytes for every debug name, 1 MiB WGSL and 128 UTF-8
+bytes for one extension entry point, and 256 candidate effects. They are exported in
 `contract_limits`; they are not independently configurable.
 
 `PresentationConfig` defaults to `stale_view_policy = DisplayStale`,
@@ -1150,7 +1154,7 @@ pub trait BaseContentSource: Send + Sync + 'static {
 pub struct ContentLineage {
     pub family: uuid::Uuid,
     pub version: u32,
-    pub opaque: Vec<u8>,                 // <=256 bytes
+    pub opaque: Box<[u8]>,               // exact allocation, <=256 bytes
 }
 
 pub struct ReconstructionFingerprint(pub [u8; 32]);
@@ -1171,8 +1175,7 @@ pub struct BaseBrickRequest {
 }
 
 pub struct BaseBrickBatch {
-    pub descriptor: SourceDescriptor,
-    pub bricks: Vec<BaseBrickResult>,    // exact request order/count
+    pub bricks: Box<[BaseBrickResult]>,  // exact allocation and request order/count
     pub encoded_bytes: u64,
 }
 
@@ -1220,14 +1223,19 @@ The callback runs on a Moria worker, never a render or Bevy main thread.
 A result has exactly one response for every requested coordinate:
 `Homogeneous(MaterialSample)` or `Detailed([MaterialSample; 512])`. Results
 outside the domain must be canonical empty. Unknown material IDs, nonzero v1
-flags, omitted/duplicate bricks, excess bytes, and descriptor mismatch fail the
-whole batch. `encoded_bytes` must equal the checked charge of the returned
-variants: a fixed 256-byte batch allowance plus 32 bytes of vector/enum/box
-control storage per result, then 4 sample bytes for each homogeneous result or
-2,048 sample bytes for each detailed result. The source must return vector
-capacity no greater than `content_bricks_per_request` and may not return another
-variable payload. A smaller valid result shrinks the byte permit to its exact
-charge after validation and releases the difference.
+flags, omitted/duplicate results, and excess bytes fail the whole batch.
+`encoded_bytes` must equal the checked charge of the returned variants: a fixed
+256-byte callback/batch allowance plus 32 bytes of slice/enum/box control
+storage per result, then 4 sample bytes for each homogeneous result or 2,048
+sample bytes for each detailed result. `Box<[BaseBrickResult]>` has exactly the
+returned length and cannot retain spare vector capacity. The response echoes
+no `SourceDescriptor` or other variable payload: Moria validates and
+canonicalizes the source's `descriptor()` at registration, then compares a
+fresh descriptor to the request's fixed lineage/fingerprint immediately
+before invocation and drops that temporary descriptor before entering consumer
+code. `ContentLineage.opaque` is itself an exact-length boxed slice. A smaller
+valid result shrinks the byte permit to its exact charge after validation and
+releases the difference.
 
 The remaining permit is released only after Moria has copied every returned
 sample into its already-reserved upload/installation storage and dropped the
@@ -1371,6 +1379,16 @@ work and checkpoint obligations, commits a tombstone revision, emits an
 observation, and invalidates the runtime handle. Durable tombstones prevent a
 saved key from being accidentally reused.
 
+Builder registration and runtime `Create` both validate
+`definition.debug_name` as 1..=96 UTF-8 bytes before accepting the definition.
+`register_volume` returns `RegistrationError::InvalidDefinition`; a runtime
+create returns `SubmitError::Invalid` and releases its command permit without
+entering the queue. On acceptance, the directory canonicalizes the name to an
+exact-length `Box<str>`; retirement transfers that box into the tombstone and
+checkpoint encoding reads only the boxed length. No command-payload
+reservation or discarded input `String` capacity becomes retained world
+state.
+
 `live_volumes` bounds concurrently live directory entries.
 `volume_records` separately bounds all stable keys ever accepted by the world,
 including current live volumes and retained retirement tombstones. Retiring a
@@ -1513,6 +1531,7 @@ bitflags! {
 
 pub enum SnapshotScope {
     SubscriptionGap { subscriber: SubscriberId, max_bricks: u32 },
+    SubscriptionState { subscriber: SubscriberId, max_bricks: u32 },
     Regions(Vec<QueryScope>),            // sorted, non-overlapping, <=256
 }
 
@@ -1781,6 +1800,15 @@ Explicit region snapshots accept live scopes only and therefore return only
 scope, or an older gap; this is the complete race-closing contract and does not
 depend on caller-provided sequence arithmetic.
 
+`SnapshotScope::SubscriptionState` is the non-resuming form used to reconcile
+a nonadvancing GPU observation view. It has the same bounded, exact pinned
+live/retired membership requirement as `SubscriptionGap`, captures
+`observation_head`, and has `resume = None`. It is legal regardless of the CPU
+subscriber cursor state and never changes that cursor. The caller may restart
+an independent GPU delta read after the returned `observation_head`; this
+reconciles current state rather than pretending overwritten or unsupported
+facts were delivered.
+
 Supported collision shapes are sphere, axis-aligned box, and capsule. Inputs
 are finite and nondegenerate. Trace/sweep results sort by parametric distance,
 then stable volume key, then local cell coordinate. Coincident overlaps are all
@@ -1976,11 +2004,12 @@ pub struct ObservationGap {
 pub struct AcceptedSubscription {
     pub request: Subscription,
     pub volumes: Vec<VolumeSnapshotRef>, // stable-key sorted snapshot
+    pub initial_after: Option<ObservationSequence>,
 }
 
 pub enum SubscriptionStart {
     CurrentHead,
-    Retained(ObservationSequence),
+    Retained(ObservationSequence),       // requested sequence is first candidate
 }
 
 pub struct ObservationSubscriber { /* Send + Sync, bounded cursor */ }
@@ -2038,6 +2067,12 @@ creates are excluded, retirement of a captured volume is delivered when
 `VOLUME` is selected and then leaves that pinned member terminal, and no new
 volume substitutes for it. `accepted()` and every gap expose the resolved
 membership.
+
+`AcceptedSubscription.initial_after` is the subscriber's immutable lower
+cursor bound. `CurrentHead` records the acceptance head. `Retained(S)` records
+the checked predecessor of `S`, or `None` when `S` is the first world
+sequence; `S` must still be retained. CPU polling and nonadvancing GPU reads
+therefore share an explicit legal start without sharing cursor mutation.
 
 Unlike interest brick residency, an optional subscription spatial bound is an
 event predicate over that pinned membership: matter/lifecycle/presentation
@@ -2299,7 +2334,7 @@ pub enum GpuInspectionQuery {
     },
     ObservationDeltas {
         subscriber: SubscriberId,
-        after: ObservationSequence,
+        after: Option<ObservationSequence>,
         maximum_records: u32,
     },
 }
@@ -2320,9 +2355,45 @@ pub struct GpuExtensionRequest {
 pub struct GpuExtensionDispatched {
     pub extension: ExtensionId,
     pub snapshot: Vec<VolumeSnapshotRef>,
+    pub inspection: GpuInspectionOutcome,
     pub diagnostics: ExtensionDiagnostics,
     pub state: Option<GpuStateOutput>,
     pub effects: Vec<AdmittedEffect>,
+}
+
+pub enum GpuInspectionOutcome {
+    Snapshot,
+    ObservationDeltas(GpuObservationDeltaOutcome),
+}
+
+pub struct GpuObservationDeltaOutcome {
+    pub status: GpuObservationDeltaStatus,
+    pub oldest_retained: ObservationSequence,
+    pub captured_head: ObservationSequence,
+    pub cursor: Option<ObservationSequence>,
+    pub records: u32,
+}
+
+pub enum GpuObservationDeltaStatus {
+    Complete,
+    MoreAvailable,
+    NeedsSnapshot { requested_after: Option<ObservationSequence> },
+    UnsupportedFact {
+        sequence: ObservationSequence,
+        kind: ObservationFactKind,
+    },
+}
+
+pub enum ObservationFactKind {
+    MatterCommitted,
+    VolumeCreated,
+    VolumeMoved,
+    VolumeRetired,
+    RegionLifecycle,
+    Presentation,
+    Checkpoint,
+    ResourcePressure,
+    Device,
 }
 
 pub struct ExtensionDiagnostics {
@@ -2362,6 +2433,36 @@ validates WGSL and the fixed ABI. A request captures exactly one closed
 `GpuInspectionQuery` into an extension-owned packet. `maximum_records` must be
 nonzero and fit the packet permit, descriptor maximum, and fixed public query
 limit; unsupported partial coverage is rejected rather than clipped.
+
+`ObservationDeltas` is an independent, nonadvancing read of the retained
+observation ring using only the named subscriber's accepted membership, kinds,
+spatial predicate, and immutable `FilterEnvelopeV1` records. It never reads,
+advances, gaps, or resumes the subscriber's CPU cursor. `after` is legal only
+when it is at or after `accepted().initial_after` (with `None` ordered before
+every sequence) and no later than the atomically captured ring head; otherwise
+the extension receipt fails `OperationErrorKind::Validation` before shader
+dispatch. A stale subscriber is likewise a validation failure.
+
+Capture atomically records `oldest_retained` and `captured_head`, then scans in
+sequence order only through that head. Nonmatching facts advance the scan
+cursor using their retained envelopes but emit no record. Matching supported
+facts emit in order. If `maximum_records` fills before the scan reaches the
+head, status is `MoreAvailable` and `cursor` is the greatest sequence examined
+without skipping the next matching fact; the caller pages with that exact
+cursor. Reaching the head is `Complete`, including a legitimately empty result,
+and `cursor = Some(captured_head)`.
+
+If the successor of `after` has been overwritten, status is `NeedsSnapshot`,
+the packet has zero observation records, and `cursor = after`. If a matching
+fact has no complete ABI v1 representation, status is `UnsupportedFact`, the
+packet has zero records, and `cursor` plus `sequence` identify that first
+unsupported fact; no later fact is scanned or silently skipped. In either
+status the shader is dispatched so it can observe the status, but candidate
+count and payload must remain zero or the whole extension fails GPU validation.
+The CPU owner reconciles through an ordinary bounded
+`SnapshotScope::SubscriptionState`, then restarts this independent view after
+the snapshot's `observation_head`. It does not call `resume_after` unless the
+ordinary CPU subscriber independently entered `NeedsSnapshot`.
 
 When `descriptor.state_bytes > 0`, `GpuStateInput::Inline` must contain exactly
 that many bytes; `Zeroed` creates that many zero bytes, and `Previous` must name the same
@@ -2403,19 +2504,22 @@ The 128-byte packet header is:
 | 0 | magic `0x4d4f5249` |
 | 4 | ABI version `1` |
 | 8 | inspection kind: samples `1`, occupancy `2`, lifecycle `3`, observation delta `4` |
-| 12 | flags; v1 input is zero |
+| 12 | inspection status: non-delta `0`, delta complete `1`, more available `2`, needs snapshot `3`, unsupported fact `4` |
 | 16, 20 | snapshot count, inspection record count |
 | 24, 28 | state byte count, candidate capacity |
 | 32, 36 | output candidate count (initially zero), diagnostic word count (`8`) |
 | 40, 44 | effect-payload capacity, output payload bytes (initially zero) |
 | 48 | total packet bytes |
-| 52..63 | reserved zero |
+| 52 | unsupported observation-kind tag, otherwise zero |
+| 56..63 | reserved zero |
 | 64, 68 | snapshot-record offset, inspection-record offset |
 | 72, 76 | input-state offset, output-state offset |
 | 80, 84 | candidate-record offset, effect-payload offset |
 | 88, 92 | device generation low/high words |
 | 96, 100 | operation ID low/high words |
-| 104..127 | reserved zero |
+| 104, 108 | delta oldest-retained sequence, otherwise zero |
+| 112, 116 | delta captured-head sequence, otherwise zero |
+| 120, 124 | delta cursor: scanned-through, requested-after, or unsupported sequence according to status; zero represents `None` |
 
 Snapshot records are 64 bytes: runtime volume ID at 0, revision at 8,
 translation `[f32; 4]` at 16, quaternion `[f32; 4]` at 32, and stable
@@ -2428,11 +2532,21 @@ failure-kind tag at 24 (`0` for nonfailed, otherwise the closed
 `RegionFailureKind` tags: content `1`, invalid content `2`, budget `3`, device
 lost `4`, revision unavailable `5`, retired `6`, internal invariant `7`) with
 the closed `ContentErrorKind` or `ResourceKind` tag at 28 where applicable,
-zero otherwise. Observation-delta records are 64 bytes and contain sequence at 0,
-closed observation-kind tag at 8, runtime volume ID at 16, revision at 24,
-correlation bytes at 32, and kind-specific scalar data at 48; observations
-whose complete fact does not fit this fixed record are rejected for this GPU
-inspection variant and remain available through the CPU observation API.
+zero otherwise. Observation-delta records are 128 bytes. Their common prefix is
+sequence `u64` at 0, closed kind/flags words at 8/12, runtime volume ID at 16,
+revision or terminal revision at 24, command ID (or zero) at 32, and the
+16-byte correlation at 40. Bytes 56..127 are a zero-filled tagged payload:
+matter stores the local affected AABB; create/retire store the stable volume
+key; move stores translation `[f32; 4]` and quaternion `[f32; 4]`;
+presentation stores brick XYZ, state/error tags, and visible/target revisions;
+resource pressure stores resource tag, used/limit `u64`, and action; device
+stores generation and state. The fixed complete v1 tags are therefore
+`MatterCommitted`, `VolumeCreated`, `VolumeMoved`, `VolumeRetired`,
+`Presentation`, `ResourcePressure`, and `Device`.
+`RegionLifecycle` (bounded diagnostic) and `Checkpoint` (variable revision
+vector) are explicitly unsupported v1 delta facts. They cause the
+`UnsupportedFact` boundary only when they match the accepted filter/kinds;
+irrelevant facts may be scanned past.
 
 Candidate records are fixed 128-byte slots:
 
@@ -2490,6 +2604,13 @@ packet or material samples. Any invalid record, overflow, duplicate effect
 slot, or mismatch with the batch reservation fails the extension receipt and
 admits zero child commands. No command ID is assigned before whole-array
 validation succeeds.
+
+For delta statuses `NeedsSnapshot` and `UnsupportedFact`, output validation
+additionally requires candidate count and effect payload bytes to remain zero.
+The returned `GpuInspectionOutcome` is decoded from the same fixed header and
+must agree with its public query, captured bounds, record count, and status;
+an empty `Complete` packet can therefore never be confused with a gap,
+unsupported boundary, or capacity page.
 
 After successful validation, Moria converts every candidate into an ordinary
 `MatterCommand` or `VolumeCommand`, consumes the matching reserved record/byte

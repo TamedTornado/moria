@@ -49,6 +49,14 @@ window or physical GPU and includes:
   capacity exhausted: the next callback is not invoked, holds no count slot,
   emits deferred pressure, and begins only after the first returned batch is
   installed or dropped and its byte permit is released;
+- content response ownership uses an exact boxed result slice and exact boxed
+  lineage bytes: a one-result callback formed from a vector with capacity
+  `content_bricks_per_request` must convert to `Box<[BaseBrickResult]>` before
+  return, retains only one slot, and aggregate live valid batches plus their
+  fixed allowances never exceed `content_response_bytes`;
+- volume debug names accept exactly 96 UTF-8 bytes and reject 97 bytes through
+  both `register_volume` and runtime `VolumeCommand::Create`; accepted names
+  with oversized input `String` capacity retain exact boxed bytes only;
 - collision traversal authorization at 8,192 bricks/65,536 cells, rejection
   one above either bound, and hit overflow with both partial policies;
 - deterministic startup cause aggregation and every `RegionFailureKind`;
@@ -78,6 +86,13 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   the gap snapshot still returns exactly one typed retired member with its
   accepted historical ID, stable key, and terminal revision, and never silently
   omits or replaces it;
+- nonadvancing GPU delta capture after several moves uses the same retained
+  envelopes and leaves the CPU cursor byte-for-byte unchanged; maximum-record
+  paging returns `MoreAvailable` with an exact continuation cursor, overwrite
+  returns a zero-record `NeedsSnapshot`, and a matching checkpoint fact returns
+  a zero-record `UnsupportedFact` at its sequence without skipping later facts;
+  `SubscriptionState` snapshot recovery restarts after its captured head while
+  never calling `resume_after`;
 - exact 27-key local and 13,824-key dispersed presentation invalidation,
   bounded 1,024-job draining, dirty-record coalescing fallback, fair eventual
   scheduling, superseded-target replacement, and simultaneous dirty commits in
@@ -168,8 +183,13 @@ Required tests:
     capacity; every valid child receipt is returned; invalid/overflow output
     admits none; ABI v1 samples/occupancy/lifecycle/delta records, inline/
     previous opaque state, fixed diagnostics, and Fill/Patch/Move candidate
-    layouts execute through the public path; and already admitted children
-    have independent applied/conflict/failure outcomes.
+    layouts execute through the public path; retained filtered delta records
+    use their 128-byte tagged layout; an overwritten sequence, a matching
+    unsupported checkpoint fact, a maximum-record page, and an empty complete
+    page produce distinct header/public statuses; blocked statuses produce no
+    effects; recovery through a bounded subscription-state snapshot does not
+    advance the CPU cursor; and already admitted children have independent
+    applied/conflict/failure outcomes.
 11. **Device loss:** intentionally destroy/lose the device while operations are
     pending/submitted; every receipt terminates, late callbacks are ignored,
     every prior extension-state lease becomes stale, durable material state
@@ -262,7 +282,16 @@ variants produce the same public command/revision semantics; only the latter
 can claim GPU handoff evidence. The GPU variant registers through the bounded
 extension registry, uses each closed inspection variant, chains one opaque
 state ID, decodes fixed diagnostics, and emits the exact ABI v1 Fill,
-Patch-runs, and Move records with mandatory captured revisions.
+Patch-runs, and Move records with mandatory captured revisions. For
+`ObservationDeltas`, it filters retained matter/move facts after old directory
+versions are reclaimed, pages at `maximum_records`, and proves the CPU
+subscriber cursor is unchanged. It then overwrites the requested sequence and
+observes `NeedsSnapshot`, matches a checkpoint fact and observes
+`UnsupportedFact`, produces no candidate effects in either blocked state,
+reconciles via `SnapshotScope::SubscriptionState`, and restarts after the
+snapshot head without silent loss. Empty `Complete`, `MoreAvailable`,
+`NeedsSnapshot`, and `UnsupportedFact` must be distinct in both the shader
+header and the public outcome.
 
 ## Visual evidence
 

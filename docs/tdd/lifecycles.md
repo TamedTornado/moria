@@ -201,6 +201,16 @@ Gap recovery:
 This closes the race between snapshot and resume without retaining every
 intermediate event.
 
+GPU observation-delta capture is a separate read cursor supplied per request.
+It pins the subscriber's accepted membership/filter but neither observes nor
+changes the CPU cursor state. Each capture freezes oldest/head, scans retained
+fact-plus-envelope records through that head, and returns `Complete`,
+`MoreAvailable`, `NeedsSnapshot`, or `UnsupportedFact` in both the ABI header
+and public outcome. A gap or matching nonrepresentable fact emits zero records,
+forbids candidate effects, and never skips the boundary. Recovery takes a
+bounded non-resuming `SubscriptionState` snapshot and restarts after that
+snapshot head; only an independently gapped CPU cursor uses `resume_after`.
+
 ## Presentation lifecycle
 
 For each interested brick artifact:
@@ -276,7 +286,7 @@ chunk fails restore rather than failing later as an apparently empty region.
 registered/validated
   -> extension + worst-case child batch capacity reserved
   -> admitted closed ABI inspection + prior/inline state
-  -> packet captured at revisions
+  -> packet captured at revisions/ring head with explicit inspection status
   -> external shader submitted
   -> whole candidate output validated
   -> every child admitted or zero children admitted

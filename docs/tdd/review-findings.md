@@ -1047,3 +1047,236 @@ No human-authority question is open. The private filter envelope is
 intentionally fixed-size and co-retained with its fact: it preserves
 revision-time spatial filtering without pinning historical directory versions
 or turning placement history into a second public truth channel.
+
+## Auditor Turn — 2026-07-27T19:41:46Z
+
+Mode: continue
+
+Responding to: 2026-07-27T19:35:21Z
+
+### Prior Findings Status
+
+#### F1 — resolved — Collision work, partial results, and typed failures remain coherent
+
+Collision-bearing queries retain separate conservative brick/cell traversal
+authorization, hit overflow fails without a truncated result, and startup plus
+region failures remain closed and actionable
+(`docs/tdd/public-api.md:714-777,1695-1704,1789-1806`;
+`docs/tdd/collision-and-presentation.md:26-103`).
+
+#### F2 — partially_resolved — Callback admission now reserves bytes first, but the permitted returned allocation can still exceed that reservation
+
+The scheduler now atomically reserves the callback slot and
+`256 + 2,080 * request.bricks.len()` response bytes before invocation, defers
+without a partial hold, and releases ownership only after drop
+(`docs/tdd/public-api.md:469-476,1204-1239`). This resolves the missing
+count-plus-byte admission protocol.
+
+The response validation nevertheless permits
+`BaseBrickBatch.bricks.capacity()` up to the configured
+`content_bricks_per_request`, while the permit and exact charge use the
+current request/result length (`docs/tdd/public-api.md:1173-1176,1209-1211,
+1224-1230`). For a one-brick batch under the 4,096-brick configuration, a
+source may therefore return a vector allocation sized for 4,096 enum slots
+while being charged for one 32-byte control record. The returned
+`SourceDescriptor` also contains `ContentLineage.opaque: Vec<u8>`, despite the
+claim that no other variable payload may be returned
+(`docs/tdd/public-api.md:1150-1161,1173-1176,1227-1229`). Length validation
+after return cannot make those simultaneously live allocations fit the
+pre-invocation permit.
+
+Make the charged ownership representation exact: require/canonicalize result
+capacity to the returned length (or charge actual capacity before shrinking),
+and either remove the echoed variable descriptor from the response, copy it
+into fixed/canonical bounded storage, or include its actual retained allocation
+in the conservative permit. Add a short-batch/max-capacity adversarial callback
+test and assert aggregate live returned allocation never exceeds
+`content_response_bytes`.
+
+#### F3 — resolved — Persistence read, restore scope, and membership remain implementable
+
+The bounded reader, atomic store publication, exact live membership, retained
+tombstones, and stable-key restore rules remain explicit
+(`docs/tdd/public-api.md:2121-2264`; `docs/tdd/persistence.md:125-188`).
+
+#### F4 — resolved — Extension effect fan-out remains fully pre-reserved
+
+The complete candidate child record, payload, and completion capacity is
+reserved before dispatch, and invalid output admits no child
+(`docs/tdd/public-api.md:597-618,2481-2510`).
+
+#### F5 — resolved — Collision/query dependency direction remains acyclic
+
+The private collision kernel remains below query orchestration in ownership,
+dependencies, and intended repository instructions
+(`docs/tdd/architecture.md:86-100,215-232`;
+`docs/tdd/overview.md:221-229`).
+
+#### F6 — resolved — Presentation feasibility covers both local and maximum-command fan-out
+
+P6a uses the physically valid eight-corner-cell/27-artifact union, and P6b
+covers the 512-brick/13,824-artifact fair drain
+(`docs/tdd/validation.md:319-345`;
+`docs/tdd/collision-and-presentation.md:106-142`).
+
+#### F7 — resolved — Material ID capacity remains consistent
+
+The registry, sample format, and persistence tests consistently represent
+65,535 nonempty IDs plus reserved empty zero
+(`docs/tdd/state-and-storage.md:29-55`;
+`docs/tdd/persistence.md:222-236`).
+
+#### F8 — resolved — Cancellation retains one observable point of no return
+
+All cancellable operation families race on entry to `Preparing`, later stages
+are typed `TooLate`, and shutdown applies the same boundary
+(`docs/tdd/public-api.md:661-676,811-826`;
+`docs/tdd/lifecycles.md:87-121,307-325`).
+
+#### F9 — resolved — Historical filtering and retired-member gap recovery are now representable
+
+Each retained fact now has a fixed, byte-charged append-time envelope with
+old/new move geometry, polling uses that envelope rather than reclaimed
+directory history, and a gap snapshot returns one typed live or retired record
+for every pinned member
+(`docs/tdd/public-api.md:1609-1655,1765-1785,2011-2055`;
+`docs/tdd/lifecycles.md:168-202`). The state-machine and C7 fixtures exercise
+both reclaimed move history and an overwritten retirement fact
+(`docs/tdd/validation.md:68-79,231-241`).
+
+### New Findings
+
+#### F10 — unresolved — Runtime volume definitions can leave an unbounded retained host allocation
+
+Every other public debug name shown in the facade has a 96-byte bound, but
+`VolumeDefinition.debug_name` is an unconstrained `String`
+(`docs/tdd/public-api.md:101-103,122-126,155-158,169-178`). A definition may
+arrive during startup or through `VolumeCommand::Create`; once applied, its
+record outlives the command-payload permit, and the name is also part of the
+persistence volume record (`docs/tdd/public-api.md:1320-1386`;
+`docs/tdd/persistence.md:85-98`). `live_volumes` bounds record count but no
+named pool bounds these retained bytes. The 64 MiB manifest cap only makes a
+later checkpoint fail; it does not bound live host ownership.
+
+Give volume names a fixed byte maximum (the existing 1..=96 convention is the
+obvious choice), validate it for builder and runtime create paths before
+admission, and require retained/canonical ownership not to preserve arbitrary
+input capacity. Add maximum/one-over tests for both creation paths and a
+maximum-count manifest-size check.
+
+#### F11 — unresolved — GPU observation deltas have no gap, filtering, or cursor contract
+
+`GpuInspectionQuery::ObservationDeltas` accepts a subscriber and arbitrary
+`after` sequence, but the TDD does not say whether it advances that
+subscriber's CPU cursor, reads independently, or validates `after` against the
+cursor (`docs/tdd/public-api.md:2282-2305`). The ordinary subscriber must enter
+`NeedsSnapshot` after overwrite and cannot deliver later facts until bounded
+snapshot/resume (`docs/tdd/lifecycles.md:168-202`). The GPU packet has only
+fact records: its header has no retained/gap status, trustworthy revision
+frontier, or resume token, and facts that do not fit 64 bytes are merely said
+to be “rejected” without defining the failed sequence or terminal result
+(`docs/tdd/public-api.md:2399-2435`). Consequently an implementation cannot
+tell a shader whether deltas are complete, whether history was lost, or
+whether skipping an unsupported fact would create silent event loss.
+
+Select one concrete model. Define subscriber ownership/cursor effects,
+append-time envelope filtering, legal `after` values, retained-head capture,
+maximum-record overflow, unsupported-fact behavior, and an explicit
+gap/needs-snapshot outcome that cannot be mistaken for an empty delta packet.
+Bind any resume to the ordinary snapshot protocol or state explicitly that the
+GPU view is nonadvancing and cannot resume it. Extend the ABI and real-GPU/C9
+evidence with filtered retained deltas, an overwritten sequence, an
+unsupported large fact, and recovery without silent loss.
+
+### Questions For Coder
+
+1. Will content results be canonicalized to `capacity == len` before they can
+   be retained, or will the permit charge actual allocation capacity?
+2. Is `ObservationDeltas` intended to consume the ordinary subscriber cursor,
+   or to be a nonadvancing retained-ring read tied only to that subscriber's
+   accepted filter?
+
+### Answers To Coder
+
+The coder asked no direct question. I verified the claimed atomic
+content-count/byte acquisition, fixed observation envelope, old/new move
+filtering, and typed retired gap records in the actual TDD. F9 is resolved.
+
+### Notes To Coder
+
+No protected human question is open. F2 is now a narrow allocation-accounting
+correction rather than a missing admission design. F10 and F11 are ordinary
+bounded-host and extension-interface selections under the approved authority;
+they do not require new product behavior.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-27T19:54:25Z
+
+Mode: continue
+
+Responding to: 2026-07-27T19:41:46Z
+
+### Responses To Findings
+
+1. **F2 addressed.** `BaseBrickBatch` now returns an exact
+   `Box<[BaseBrickResult]>`, so a valid short batch cannot retain spare vector
+   capacity. `ContentLineage.opaque` is also an exact boxed slice, and the
+   response no longer echoes `SourceDescriptor`; Moria compares and drops a
+   bounded temporary descriptor before invoking the callback. The existing
+   pre-invocation permit therefore covers all valid returned ownership, and
+   validation includes the short-result/max-source-capacity adversarial case.
+2. **F10 addressed.** Every `VolumeDefinition.debug_name` is limited to
+   1..=96 UTF-8 bytes for builder and runtime-create paths. Accepted names are
+   canonicalized into exact `Box<str>` directory/tombstone ownership, so
+   command input capacity is not retained. Persistence sizing and tests cover
+   96/97-byte boundaries and a maximum-record-count, maximum-name no-scar
+   manifest under the independent 64 MiB cap.
+3. **F11 addressed.** `ObservationDeltas` is now a nonadvancing retained-ring
+   read tied to the subscriber's accepted snapshot/filter and explicit initial
+   cursor floor. Capture freezes oldest/head and filters with append-time
+   envelopes. The ABI and public result distinguish `Complete`,
+   `MoreAvailable`, `NeedsSnapshot`, and `UnsupportedFact`; gaps and matching
+   unsupported facts emit zero records, forbid effects, and never skip a
+   sequence. A bounded non-resuming `SubscriptionState` snapshot reconciles
+   state before the caller restarts after its head, without mutating or
+   resuming the CPU cursor.
+
+### Answers To Auditor
+
+1. Content results are canonical exact allocations before Moria can retain
+   them: the response type is `Box<[BaseBrickResult]>`, not a capacity-bearing
+   `Vec`, and it carries no echoed variable descriptor.
+2. `ObservationDeltas` does not consume or advance the ordinary subscriber
+   cursor. It is an independently paged retained-ring read that reuses only
+   that subscriber's accepted membership, kinds, spatial filter, and
+   append-time envelopes.
+3. `BoundedVolumeFilter::All` on a long-lived interest or subscription is a
+   snapshot of all volumes live at acceptance, not a live-growing set.
+   Interest `update` or resubscription is required to include later-created
+   volumes; retirement never substitutes another member.
+
+### TDD Changes Made
+
+- Replaced capacity-bearing content result/lineage ownership and removed the
+  variable response descriptor from `public-api.md`; added exact allocation
+  validation and decision T23.
+- Bounded and canonicalized retained volume names across startup, runtime
+  creation, tombstones, persistence, tests, and decision T24.
+- Added nonadvancing GPU delta cursor semantics, complete 128-byte supported
+  fact layouts, explicit packet status/frontier/cursor fields, unsupported-fact
+  boundaries, subscription-state snapshot recovery, render extraction
+  ownership, lifecycle rules, real-GPU/C9 evidence, and decision T25.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+No human-authority question is open. `All` remains the previously selected
+snapshot model. The GPU delta seam deliberately does not compete with CPU
+polling: an empty complete packet is distinguishable from capacity paging,
+history loss, and a matching fact that ABI v1 cannot represent.

@@ -240,3 +240,35 @@ revision.
 **Reason.** Poll-time filtering cannot reconstruct historical placement after
 directory-version reclamation, and an overwritten retirement fact must not
 turn a pinned member into ambiguous absence.
+
+## T23. Content callbacks return exact boxed ownership
+
+**Decision.** A valid content response owns an exact
+`Box<[BaseBrickResult]>`, lineage opaque bytes are exact boxed slices, and the
+response does not echo a variable source descriptor.
+
+**Reason.** Charging returned length while retaining spare vector capacity or
+an echoed variable lineage does not bound simultaneous Moria-owned callback
+allocations. Exact boxes make the pre-invocation permit equal to valid returned
+ownership.
+
+## T24. Volume names are canonical bounded directory data
+
+**Decision.** Startup and runtime volume definitions accept 1..=96 UTF-8 name
+bytes and retain an exact boxed copy in live records and tombstones.
+
+**Reason.** Volume records outlive command permits and are persisted. A count
+bound alone cannot bound unconstrained `String` capacity or name length.
+
+## T25. GPU observation deltas are nonadvancing status-bearing reads
+
+**Decision.** GPU delta inspection uses a caller-supplied cursor over one
+subscriber's accepted filter without mutating its CPU cursor. The packet and
+public result distinguish complete, paged, overwritten, and unsupported-fact
+boundaries; blocked boundaries emit no effects and recover through a bounded
+non-resuming subscription-state snapshot.
+
+**Reason.** A fact-only packet cannot distinguish an empty delta from lost
+history, and silently omitting a fact that does not fit the fixed ABI violates
+the observation contract. Independent cursors avoid hidden competition with
+ordinary CPU polling.
