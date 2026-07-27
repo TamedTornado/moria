@@ -1863,3 +1863,78 @@ visual evidence gates.
 ### Approval
 
 Approved.
+
+## Coder Turn — human-review revision
+
+Mode: continue
+
+Responding to: TamedTornado (COMMENTED)
+
+### Responses To Human Review
+
+1. **Scheduled hook added.** A consumer-triggered substrate tick now captures
+   an ordinary-command frontier, drains it, pins one committed
+   material/placement view, runs registered adapters, validates and composes
+   their proposals, publishes at most one new revision per affected volume,
+   and only then releases post-frontier work.
+2. **CPU and GPU are first-class.** CPU adapters receive a borrowed stable tick
+   view and exact-capacity effect sink directly from the coordinator, without
+   submitting or polling a query receipt. GPU adapters own their pipelines and
+   state on Bevy's renderer device, encode against a read-only exported view
+   through a Moria-controlled encoder, and reach validation/composition/
+   publication without material or candidate-effect CPU readback.
+3. **Bounds and authority remain Moria-owned.** Builder descriptors cap access,
+   view records/bytes, proposals, payloads, external GPU-resource reporting,
+   and ordering edges. Tick admission pre-reserves proposal, transaction,
+   completion, observation, and feedback resources. Adapters receive neither
+   authoritative storage nor queue submission.
+4. **Ordering and conflict are explicit.** `runs_after` produces a
+   builder-validated DAG with stable-key tie order. Every participant sees the
+   same view. Overlap selects a whole-proposal `RejectLater`,
+   `ReplaceEarlier`, or `FailTick` outcome; no named physics/damage phase or
+   partial proposal exists.
+5. **State ownership is complete.** CPU/GPU behavior state is excluded from
+   checkpoints and Moria recovery. Reports/GPU feedback describe rejected
+   effects without rollback. Device loss quarantines the tick and invalidates
+   adapter GPU resources; the adapter recreates its state and reports ready.
+   Shutdown drains an already-running tick and calls adapter lifecycle hooks
+   without saving or discarding consumer state.
+6. **Asynchronous APIs retained and reframed.** Ordinary queries remain
+   unchanged. The copied-packet WGSL inspection/effect job remains available
+   for tools and nonscheduled consumers but is explicitly not the general
+   behavior-engine hook.
+
+### Concrete TDD Evidence
+
+- `behavior-scheduling.md` owns the tick state machine, stable-view format,
+  CPU/GPU execution, synchronization, admission, composition, failure,
+  persistence, device loss, recovery, shutdown, and adversarial cases.
+- `public-api.md` defines builder registrations, CPU/GPU adapter traits,
+  behavior access/envelope types, tick permits/receipts, participant/proposal
+  outcomes, resource limits, and the renderer-coupled GPU context boundary.
+- `architecture.md` places behavior export/run/validate/compose/publish in the
+  render schedule and keeps the adapter dependency below Bevy wiring but above
+  storage/collision/command services.
+- `lifecycles.md` makes post-frontier command exclusion, tick transitions,
+  failure policy, publication, and shutdown behavior explicit.
+- `persistence.md` excludes adapter state and specifies consumer coordination
+  and restore readiness.
+- `state-and-storage.md` names the view/proposal/feedback bounds and device-loss
+  pins.
+- `validation.md` adds host/state-machine/real-GPU evidence, contract scenario
+  C9 for conventional CPU physics-shaped, GPU-resident physics-shaped, and
+  CPU/GPU damage-and-bond-shaped adapters, retains the WGSL facility as C10,
+  and adds blocking scheduled-GPU feasibility gate P7.
+- `decisions.md` preserves every prior technical entry, adds T27, and records
+  the complete supplied human feedback separately from the resulting
+  technical interpretation.
+
+### Questions For Reviewer
+
+None.
+
+### Notes To Reviewer
+
+The proof adapters are adversarial harness integrations only. No physics,
+damage, health, resistance, bond, fracture, gravity, force, player, or gameplay
+field was added to Moria's data model.

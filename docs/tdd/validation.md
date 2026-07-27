@@ -37,6 +37,17 @@ window or physical GPU and includes:
   checkpoint, and extension reserve method, including waiter cancellation.
 - exact construction/validation of every query, interest, snapshot, result,
   dressing, and fixed correlation type in the normative facade;
+- scheduled behavior descriptor/access maxima, unresolved/cyclic ordering,
+  deterministic topological ties, CPU/GPU trait mismatch, aggregate
+  view/proposal/transaction/conflict-check/dispatch/workgroup cross-limits, and
+  exact effective-config telemetry;
+- behavior effect sink ownership: dense/run inputs are borrowed and copied
+  only into pre-reserved slots, over-capacity writes poison the participant,
+  create is rejected as nonscheduled control-plane work, and no adapter-owned
+  collection/source crosses the callback return;
+- behavior planner/adapter callback ownership: access scopes fill the
+  Moria-owned exact-capacity sink, errors use only the fixed inline diagnostic,
+  and adversarial overlength plans/diagnostics cannot transfer owned storage;
 - live-volume reuse versus permanent `volume_records` exhaustion, including
   bounded manifest tombstones;
 - extraction, presentation artifact/dirty/instance, dressing registry, and
@@ -85,6 +96,12 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   `WaitingForMatter -> Preparing` transition, losing immediately after it,
   `TooLate` at every later stage, and noncancellable startup/shutdown receipts;
 - per-volume FIFO and independent-volume concurrency;
+- behavior command-frontier capture, one pinned view for every participant,
+  direct CPU callback without query admission, post-frontier command blocking,
+  mixed CPU/GPU ordering transitions, whole-proposal reject/replace/fail
+  composition, conservative sparse-patch AABB conflicts, bounded conflict-
+  check exhaustion before publication, per-volume tick atomicity, and
+  independent-volume failure;
 - query pending/materialize/minimum/exact revision behavior;
 - observation cursor filtering after several dynamic moves and reclamation of
   their old directory versions, proving retained envelopes still apply
@@ -197,10 +214,19 @@ Required tests:
    renderer generation, and compare samples/collision.
 9. **Presentation provenance:** current/stale/failure/overflow install behavior,
    halo seams, and discard of obsolete output.
-10. **GPU extension:** snapshot packet remains GPU-oriented; the worst-case
-    effect batch is reserved before dispatch; fewer effects release unused
-    capacity; every valid child receipt is returned; invalid/overflow output
-    admits none; ABI v1 samples/occupancy/lifecycle/delta records, inline/
+10. **Scheduled behavior:** run a CPU adapter and two renderer-owned GPU
+    adapters against the same pinned revisions; prove declared DAG order,
+    direct CPU view delivery, GPU view/effect publication with zero authority-
+    path readback, fixed proposal validation, whole-proposal conflict outcomes,
+    one revision per affected volume, and post-frontier command exclusion.
+    Induce participant failure, rejected effects, checkpoint/restore, shutdown,
+    and device loss; prove Moria never owns adapter state, late old-generation
+    work cannot publish, CPU state is untouched, and GPU adapters must recreate
+    and report ready.
+11. **Asynchronous GPU extension:** snapshot packet remains GPU-oriented; the
+    worst-case effect batch is reserved before dispatch; fewer effects release
+    unused capacity; every valid child receipt is returned; invalid/overflow
+    output admits none; ABI v1 samples/occupancy/lifecycle/delta records, inline/
     previous opaque state, fixed diagnostics, and Fill/Patch/Move candidate
     layouts execute through the public path; retained filtered delta records
     use their 128-byte tagged layout; an overwritten sequence, a matching
@@ -212,7 +238,7 @@ Required tests:
     a bounded subscription-state snapshot does not advance the CPU cursor; and
     already admitted children have independent applied/conflict/failure
     outcomes.
-11. **Device loss:** intentionally destroy/lose the device while operations are
+12. **Device loss:** intentionally destroy/lose the device while operations are
     pending/submitted; every receipt terminates, late callbacks are ignored,
     every prior extension-state lease becomes stale, durable material state
     reconstructs, and volatile dirty material state fails honestly.
@@ -229,11 +255,13 @@ positions/normals use stated tolerance.
 ### C1. Public boundary
 
 Create a builder with an explicit world key; register material/static/dynamic
-volumes, a dressing style, and a consumer base source; consume
+volumes, a dressing style, a consumer base source, and ordered CPU/GPU
+behavior adapters; consume
 `ValidatedMoria` into its plugin, handles, and startup receipt; start, interest,
 construct every query variant, inspect, mutate, observe,
-checkpoint, restore/import, inspect the material registry, and shut down
-through the callable methods in [public-api.md](public-api.md). Build the
+checkpoint, restore/import, inspect the material registry, request a behavior
+tick, run an asynchronous WGSL job, and shut down through
+the callable methods in [public-api.md](public-api.md). Build the
 example as if it were an external crate: it imports only `moria` exports.
 Collision variants supply explicit traversal authorization; startup failure
 uses the typed staged cause shape.
@@ -300,7 +328,40 @@ produce distinct staged startup causes, region failures preserve cause plus
 retryability, observation byte pressure gaps rather than losing silently, and
 simultaneous dirty commits in all live volumes retain one fallback marker each.
 
-### C9. Behavior extension
+### C9. Scheduled behavior engines
+
+Implement four external-style adversarial adapters:
+
+1. a conventional CPU physics-shaped adapter owning bodies, velocities,
+   forces, joints, solver state, and policy;
+2. a GPU-resident physics-shaped adapter owning equivalent state in its own
+   renderer-device buffers; and
+3. a CPU damage-and-bond-shaped adapter owning impacts, accumulation, bond
+   strength, breakage, crumbling, and fracture rules; and
+4. a GPU-resident variant owning the same vocabulary in its own buffers.
+
+These names describe harness-owned state only and must not appear in Moria
+types. Each adapter plans bounded access to the same stable collision/material
+view, updates its own state, and proposes only generic matter, move, or retire
+effects. The CPU adapter must participate without submitting/polling a query.
+The GPU adapters must validate, compose, prepare, and publish without material,
+solver-state, or candidate-effect CPU readback on the authority path.
+
+Declare physics before damage through `runs_after`, then reverse the legal
+order and prove Moria has no hard-coded phase. Share impact stimuli through
+harness-owned CPU memory and GPU buffers. Exercise every conflict policy with
+overlapping and nonoverlapping proposals and prove no partial proposal, same-
+view leakage, or revision interleaving. Force rejection after adapter state
+changes and prove CPU report/GPU feedback lets the adapter reconcile while
+Moria neither rolls state back nor checkpoints it. Repeat across checkpoint,
+restore readiness, device loss/recovery, and shutdown.
+
+The independent reviewer must attempt to obtain authoritative storage or a raw
+encoder, submit independently, bypass proposal validation, exceed
+access/proposal/dispatch/workgroup bounds, or introduce behavior-specific
+fields. Any success fails C9.
+
+### C10. Asynchronous WGSL inspection/effect jobs
 
 A minimal external descriptor observes bounded matter and requests one patch or
 move. Its opaque state and reason remain outside Moria. CPU and GPU-oriented
@@ -360,6 +421,9 @@ benchmarks and GPU harnesses record separately:
 - authoritative, scar, derived, staging, and peak allocated bytes;
 - checkpoint GPU readback, encoding, store write, and restore;
 - extension packet/effect GPU bytes and compact CPU readback bytes.
+- scheduled behavior planning/export/CPU-map/GPU-dispatch/composition/
+  publication latency, processor-transition count, view/proposal/feedback
+  bytes, and adapter-reported external GPU bytes.
 
 GPU timestamp queries are used only when supported. CPU wall time remains
 recorded. Every run states warm-up count, sample count, workload dimensions,
@@ -369,14 +433,16 @@ hot path merely to time it.
 
 ### Architecture feasibility gates
 
-The selected GPU hash/MVCC, bounded readback, collision, extension, checkpoint,
+The selected GPU hash/MVCC, bounded readback, collision, scheduled behavior,
+asynchronous extension, checkpoint,
 and dual-contouring architecture is not implementation-ready on measurement
 alone. The following v1 gates are falsifiable. They are minimum feasibility
 floors for the physical qualification adapter in **each** claimed backend
 family, not customer frame-time promises. Software adapters cannot pass them.
 
-Runs use the default effective limits, enabling persistence or GPU extensions
-only for the gates that exercise them, an optimized non-debug build, uncapped
+Runs use the default effective limits, enabling persistence, behavior hooks,
+or GPU extensions only for the gates that exercise them, an optimized
+non-debug build, uncapped
 Bevy updates, 10 warm-up iterations, at least 100 measured operations (or 10
 complete passes for throughput routes), and three process runs. The reported
 p95 is computed over all post-warm-up samples; every process run must meet the
@@ -392,8 +458,9 @@ Correctness for the same workload must pass first.
 | P4 collision traversal | 32 in-flight sweeps/traces, each authorizing 65,536 candidate cells and 256 hits across static plus rotated dynamic volumes | p95 submit-to-decoded facts <=33 ms and GPU traversal <=10 ms when timestamps exist; >=1,000 queries/s aggregate for 4,096-candidate-cell zero/one-hit control workload |
 | P5 materialization | Precomputed in-memory source, 8,192 detailed mixed bricks (16 MiB), no scar, 512 bricks per source callback, four of the resulting 16 batches in flight | cold-to-ready throughput >=64 MiB/s and p95 per 4,096-brick interest <=300 ms; extraction never exceeds its byte/count limit |
 | P6 presentation rebuild | **P6a local:** one sparse patch changes the eight corner cells of one 8³ brick. The union of their one-cell halo dependencies is exactly the 3×3×3 neighborhood (27 artifacts); each emits 1,024–2,048 vertices and 6,000–12,288 indices. **P6b legal-command scale:** four nonoverlapping presentation interests of at most the default 4,096 bricks cover 13,824 artifacts; one 32,768-cell mutation touches 512 pairwise halo-disjoint bricks and therefore invalidates exactly those 13,824 artifact keys. Each emits 96–128 vertices and <=768 indices, no dressing, so all outputs fit default mesh pools. Start with all artifacts current, use default 1,024 jobs, 16,384 artifact/dirty records, and sample queue/dirty/current counts every update. | **P6a:** p95 commit-to-all-current <=250 ms and GPU derivation total <=20 ms when timestamps exist. **P6b:** first newly current artifact <=250 ms; all 13,824 are current at the command revision <=2 s; submitted jobs never exceed 1,024; exact dirty high-water <=13,824 and allocated artifact/dirty records stay <=16,384; current count increases in every 250 ms interval after dispatch begins; no starvation, coalescing, overflow, eviction of an interested target, crack, or provenance failure. |
-| P7 GPU extension handoff | 8 MiB inspection packet, 256 structurally valid candidate effects whose 32,768 record bytes plus payload total <=65,472 bytes, 2 extension jobs in flight (the default 16 MiB packet budget); effects touch four volumes | p95 packet-capture-to-all-child-admitted <=50 ms, extension GPU work <=16 ms when timestamps exist, candidate + 64-byte diagnostic readback <=64 KiB/job, and zero inspection-packet/material readback to CPU |
+| P7 scheduled GPU behavior | Two ordered GPU adapters share a 16 MiB stable view and propose 1,024 valid effects totaling <=1 MiB across four volumes; both keep 32 MiB harness-owned state, and no CPU adapter participates | p95 stable-view-export-to-publication <=33 ms, adapter+validation+composition+publication GPU time <=16 ms when timestamps exist, zero material/proposal readback before publication, bounded feedback only after publication, and all pool/adapter-reported bytes remain within declared limits |
 | P8 checkpoint path | 8,192 dirty detailed scars (16 MiB raw), checkpoint concurrent with four mutation streams; in-memory durable test store so storage hardware is excluded | GPU-readback-plus-encode throughput >=64 MiB/s, mutation P2 p95 degrades by <=2×, staged bytes stay within config, and semantic restore parity passes |
+| P9 asynchronous WGSL job | 8 MiB inspection packet, 256 structurally valid candidate effects whose 32,768 record bytes plus payload total <=65,472 bytes, 2 extension jobs in flight; effects touch four volumes | p95 packet-capture-to-all-child-admitted <=50 ms, extension GPU work <=16 ms when timestamps exist, candidate + 64-byte diagnostic readback <=64 KiB/job, and zero inspection-packet/material readback to CPU |
 
 These floors deliberately span latency, throughput, memory, density, and
 in-flight pressure. Qualification receipts may also publish stronger
@@ -411,9 +478,10 @@ Failure is blocking and scoped:
 - Either P6 sub-workload failing rejects dual contouring, invalidation
   tracking, queue granularity, or fair-drain scheduling as the v1 presentation
   baseline. P6a alone cannot qualify maximum-command presentation viability.
-- P7 failure rejects the copied-packet GPU extension as a viable GPU-oriented
-  seam.
+- P7 failure rejects the scheduled renderer-owned GPU behavior path.
 - P8 failure rejects the selected checkpoint readback/encoding pipeline.
+- P9 failure rejects the asynchronous copied-packet WGSL facility, not the
+  scheduled behavior hook.
 
 The affected architectural claim remains `fail`, not “report-only,” and the TDD
 implementation cannot be called contract-complete until it is revised or the
@@ -427,10 +495,10 @@ At least one physical adapter for each claimed Linux/Vulkan, macOS/Metal, and
 Windows/DX12 family runs:
 
 - all real-GPU correctness tests;
-- contract scenarios C1–C9 where platform capabilities allow loss injection;
+- contract scenarios C1–C10 where platform capabilities allow loss injection;
 - shader validation;
 - a fixed report-only workload;
-- architecture feasibility gates P1–P8;
+- architecture feasibility gates P1–P9;
 - renderer recovery/device-loss test or an explicit `not_demonstrated` if the
   platform cannot inject it.
 
@@ -465,7 +533,7 @@ Cross-field validation rejects:
 - GPU claim from host oracle/mock/validation-only execution;
 - collision pass based only on mesh/render evidence;
 - device recovery pass without terminal outcomes for all outstanding receipts.
-- a P1–P8 pass missing its workload scale, in-flight pressure, percentile,
+- a P1–P9 pass missing its workload scale, in-flight pressure, percentile,
   throughput/memory result, or physical-adapter context.
 - a P6 pass missing both local and 512-brick dispersed receipts, per-update
   dirty/job/current series, exact 13,824 invalidations, or the final

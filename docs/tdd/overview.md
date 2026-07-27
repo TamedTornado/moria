@@ -34,20 +34,24 @@ have completed.
 
 Every consumer, including examples and validation harnesses, uses the public
 facade. The facade never returns Moria's page table, brick pool, mesh buffers,
-or device. The optional GPU behavior extension accepts a bounded shader job
-against a copied read-only inspection packet and a fixed-schema candidate
-effect buffer; before dispatch it reserves the shader's worst-case complete
-child command batch, then validates and admits all produced children through
-the same command path or admits none.
+or device. A first-class behavior coordinator pins one committed substrate
+view, invokes independently implemented CPU and GPU adapters in a validated
+declared order, and composes bounded proposed effects before the tick
+publication boundary. CPU adapters receive a borrowed tick view instead of an
+ordinary query receipt. GPU adapters encode on the renderer-owned device
+against a read-only exported view and fixed effect target without mandatory
+CPU readback on the authority path. The bounded WGSL inspection/effect job
+remains a separate asynchronous tool API.
 
 ## Document map
 
 | File | Contract owned |
 | --- | --- |
 | [architecture.md](architecture.md) | Components, module ownership, schedules, portability, and dependency direction |
-| [public-api.md](public-api.md) | Consumer types, inputs, outputs, invariants, errors, and extension boundary |
+| [public-api.md](public-api.md) | Consumer types, inputs, outputs, invariants, errors, scheduled adapter API, and asynchronous extension boundary |
 | [state-and-storage.md](state-and-storage.md) | Coordinates, material encoding, sparse GPU layout, atomic publication, revisions, and resource bounds |
 | [lifecycles.md](lifecycles.md) | Startup, interest, commands, queries, observations, shutdown, and device loss |
+| [behavior-scheduling.md](behavior-scheduling.md) | Scheduled CPU/GPU behavior hooks, ordering, synchronization, composition, state ownership, and tick publication |
 | [collision-and-presentation.md](collision-and-presentation.md) | Matter-derived collision, surface generation, dressing, and stale-view rules |
 | [persistence.md](persistence.md) | Scar model, checkpoint format, restore, durability, and base reconstruction |
 | [validation.md](validation.md) | Automated, real-GPU, portability, performance, and human evidence obligations |
@@ -82,8 +86,14 @@ the same command path or admits none.
     generation cannot publish success. Recovery returns readiness only if base
     content plus durable/retained scars reconstruct every committed revision;
     loss of a GPU-only dirty scar is terminal and is never hidden as rollback.
-12. External behavior owns all behavioral vocabulary and state. Moria accepts
-    only inspection intents and substrate effects.
+12. External behavior owns all behavioral vocabulary and working state. Moria
+    schedules only bounded stable-view access and substrate-effect proposals;
+    no adapter can mutate authority or bypass validation, composition,
+    revision, receipt, or publication rules.
+13. One scheduled behavior tick pins one committed view for every participant.
+    Post-frontier commands cannot interleave before behavior publication, and
+    adapter ordering never exposes an earlier proposal as committed matter to
+    a later adapter.
 
 ## Selected implementation baseline
 
@@ -111,6 +121,10 @@ the same command path or admits none.
   persistence contract version and migration.
 - Sparse lookup uses a bounded GPU hash page table and per-key version chains.
   Mutation uses copy-on-write slots and one revision-gate publication.
+- Scheduled behavior uses one active tick per world, a builder-validated
+  stable-key order DAG, canonical bounded CPU/GPU view exports, whole-proposal
+  conflict policies, and at most one behavior publication revision per
+  affected volume.
 - Organic and constructed surfaces use GPU dual contouring with
   material-selected feature treatment. Collision continues to use occupied
   material cells, not that contour.
@@ -136,6 +150,7 @@ the same command path or admits none.
 ├── src/
 │   ├── lib.rs
 │   ├── bevy/
+│   ├── behavior/
 │   ├── collision/
 │   ├── command/
 │   ├── config/
@@ -222,8 +237,11 @@ contract tests remain in the ordinary suite.
 
 - Dependency direction is `identity/material/config -> content/volume ->
   storage`, then `storage -> collision -> query`, while `command` and
-  `interest` depend directly on storage. `query`, `command`, and `interest`
-  feed `presentation/persistence/observation/telemetry -> bevy`.
+  `interest` depend directly on storage. `behavior` depends on the public
+  access values, collision kernel, command transaction builder, and storage
+  snapshot interface; none of those lower layers depends on adapters.
+  `query`, `command`, `interest`, and `behavior` feed
+  `presentation/persistence/observation/telemetry -> bevy`.
   `collision` is a private lower-level fact kernel: it must not import public
   query descriptors, partial-result policy, codecs, or receipts. Lower layers
   must not import Bevy ECS, cameras, windows, presentation, or consumer
@@ -234,8 +252,13 @@ contract tests remain in the ordinary suite.
   registers schedules or ECS-facing plugins.
 - Do not create a second wgpu device in the Bevy path. Device-bound resources
   live in the render world and are recreated from `RenderStartup`.
-- Keep backend/runtime types out of the main facade. The optional GPU extension
-  exposes Moria descriptors and opaque handles, not `wgpu::Buffer`.
+- Keep backend/runtime types out of the main facade. The scheduled GPU adapter
+  API is isolated under `moria::bevy::behavior` and deliberately versioned to
+  Bevy 0.19/wgpu 29. It receives a counted Moria-controlled encoder wrapper,
+  read-only exported view, and write-only proposal/feedback targets, never the
+  raw encoder, render queue, or authoritative storage handles. The
+  asynchronous WGSL facility exposes Moria descriptors and opaque handles, not
+  `wgpu::Buffer`.
 - Channels, staging pools, page tables, mesh outputs, and per-request payloads
   must be bounded by `MoriaConfig`. No unbounded channel or implicit allocation
   policy is allowed.
@@ -254,18 +277,23 @@ contract tests remain in the ordinary suite.
   must not reconstruct historical world bounds from the current volume
   directory, and gap snapshots must preserve typed retired pinned members.
 - Extraction records/bytes, live and lifetime volume records, presentation
-  artifact/dirty/job/mesh/instance pools, dressing registrations, and GPU
-  extension registrations/WGSL bytes are separate named bounds. Do not make
-  one pool silently own another.
+  artifact/dirty/job/mesh/instance pools, dressing registrations, scheduled
+  behavior registrations/order edges/view records/proposals/feedback, and
+  asynchronous GPU extension registrations/WGSL bytes are separate named
+  bounds. Do not make one pool silently own another.
 - A command/query type owns its payload until admission succeeds. Queue-full or
   closed errors return the payload unchanged.
-- Public query/interest/result/dressing records and Extension ABI v1 layouts in
-  `public-api.md` are normative. Do not replace closed variants, mandatory
-  revision preconditions, or fixed offsets with implementation-defined blobs.
+- Public query/interest/result/dressing records, scheduled Behavior ABI v1,
+  and asynchronous Extension ABI v1 layouts in `public-api.md` and
+  `behavior-scheduling.md` are normative. Do not replace closed variants,
+  mandatory revision binding, or fixed offsets with implementation-defined
+  blobs.
 - No consumer, example, test harness, or feature may inspect storage internals.
   `tests/support` builds worlds exclusively through public APIs.
-- No physics, damage, gravity, generation recipe, player, camera policy,
-  gameplay content, or world-specific axis assumption belongs in `src/`.
+- No physics, damage, health, resistance, bond, fracture, gravity, force,
+  generation recipe, player, camera policy, gameplay content, or
+  world-specific axis assumption belongs in `src/`. Behavior modules may name
+  only generic access, schedule, proposal, outcome, and lifecycle concepts.
 - New dependencies require a short justification in the commit message and
   must use default features only when each default is required. Keep
   `Cargo.lock` committed.
@@ -280,7 +308,8 @@ contract tests remain in the ordinary suite.
   names.
 - Every state transition and error variant needs a unit or headless-app test.
   Atomic publication, stale preconditions, observation gaps, restore mismatch,
-  output overflow, queue pressure, and device loss require adversarial tests.
+  output overflow, queue pressure, behavior tick ordering/composition,
+  adapter-state nonownership, and device loss require adversarial tests.
 - Test-only fault injection is feature-gated under `test-support` and can fail
   only public production stages. It may not expose a bypass or alternate truth
   path.
@@ -301,7 +330,8 @@ contract tests remain in the ordinary suite.
 | Bounded observation | `observation` | Overflow-to-gap and resnapshot tests |
 | Derived presentation/dressing | `presentation` | Revision install checks and diagnostic visual capture |
 | Persistence scars | `persistence` | Semantic round trip and incompatible-base failures |
-| GPU-oriented behavior seam | `gpu`, `command` | Bounded shader packet/effect integration scenario |
+| Scheduled external behavior seam | `behavior`, `bevy`, `gpu`, `command` | Conventional CPU physics, GPU-resident physics, and CPU/GPU damage-and-bond adversarial adapters |
+| Asynchronous inspection/effect jobs | `gpu`, `query`, `command` | Bounded WGSL packet/effect tool scenario |
 | Telemetry and failure honesty | `telemetry`, all owners | Schema invariants and deliberate failure suite |
 
 ## Open Human Questions
@@ -316,11 +346,12 @@ in [validation.md](validation.md) passes, the public contract harness produces
 a fail-closed evidence report, at least one physical adapter in each claimed
 native backend family passes real-GPU parity and device-loss qualification, and
 the presentation fixture has a recorded human visual decision. Architecture
-feasibility gates P1–P8 are blocking physical-adapter receipts for each claimed
+feasibility gates P1–P9 are blocking physical-adapter receipts for each claimed
 backend family; failure blocks the affected storage, mutation/query, collision,
-materialization, presentation, extension, or checkpoint selection until the
-design is revised or passes. Correctness and performance statuses remain
-separate, and neither can turn the other's failure into a pass. P6 requires
+materialization, presentation, scheduled behavior, asynchronous extension, or
+checkpoint selection until the design is revised or passes. Correctness and
+performance statuses remain separate, and neither can turn the other's failure
+into a pass. P6 requires
 both its 27-artifact local latency fixture and its 13,824-artifact
 maximum-command fair-drain fixture; the local receipt alone is incomplete.
 The local fixture is the eight-corner-cell patch whose halo union is exactly

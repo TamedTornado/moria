@@ -205,7 +205,8 @@ maximum accepted brick count. A brick is not evictable while any of these hold:
 - an interest lease requires its authoritative capability;
 - an admitted command/query references it;
 - a GPU snapshot pin can resolve to its slot;
-- a presentation/extension job has not reached GPU completion;
+- a presentation job, scheduled behavior tick, or asynchronous extension job
+  has not reached GPU completion;
 - it has a dirty scar not retained elsewhere or durably checkpointed;
 - it is being materialized, compacted, or retired.
 
@@ -258,8 +259,13 @@ starting points, not universal performance promises.
 | Presentation artifacts / dirty records | 16,384 / 16,384 | configured |
 | Vertices / indices per brick artifact | 2,048 / 12,288 | fixed v1 maximum |
 | Dressing styles / device instances | 256 / 1,048,576 | configured |
-| GPU extension jobs | 64 | configured |
-| GPU extension registrations / registry bytes | 32 / 4 MiB | configured; 1 MiB WGSL + 128-byte entry point per registration |
+| Scheduled behavior engines / order edges | 16 / 64 | configured and builder-validated DAG |
+| Scheduled behavior view volumes / bricks / cells | 256 / 8,192 / 262,144 | configured aggregate stable-view bounds |
+| Scheduled behavior CPU / GPU view bytes | 8 MiB / 32 MiB | configured; CPU may be zero for GPU-only registration |
+| Scheduled behavior proposals / payload / affected cells / affected bricks / directory effects / conflict checks / feedback | 1,024 / 64 MiB / 262,144 / 4,096 / 16 / 1,048,576 / 1 MiB | configured and wholly reserved/bounded before adapters run |
+| Scheduled GPU adapter dispatches / workgroups | 256 / 1,048,576 | configured counted-encoder limits per tick |
+| Asynchronous GPU extension jobs | 64 | configured |
+| Asynchronous GPU extension registrations / registry bytes | 32 / 4 MiB | configured; 1 MiB WGSL + 128-byte entry point per registration |
 | Candidate effects per extension job | 256 | fixed v1 maximum; batch-reserved before dispatch |
 
 The config must be capable of servicing one maximum legal operation for each
@@ -280,8 +286,9 @@ storage-facing capacity rather than defining a second configuration shape.
 
 ## Pressure policy
 
-Policy is selected for command, query, checkpoint, and extension queues as
-`Reject` or `WaitForPermit`. It never changes an already called `try_` method;
+Policy is selected for command, query, checkpoint, scheduled behavior tick,
+and asynchronous extension queues as `Reject` or `WaitForPermit`. It never
+changes an already called `try_` method;
 it determines whether the corresponding non-try `reserve_*` future waits or
 immediately returns `Full`. Interest has no payload queue and rejects
 synchronously at its lease limit. Interest and presentation scheduling may
@@ -298,13 +305,14 @@ When allocation pressure occurs:
 5. defer background materialization;
 6. reject the requesting admission with exact limiting pool.
 
-Extension registration and volume-key lifetime exhaustion are not transient
-allocation pressure: registration returns its exact record/byte capacity error,
-and a world that has consumed `volume_records` rejects every new stable volume
-key even after older volumes retire. Telemetry exposes current, high-water,
-limit, and rejection/coalescing counts for every pool in the public
-`ResourceLimits`, including extraction, presentation dirty/artifact/instance,
-and extension-registry resources.
+Behavior/extension registration and volume-key lifetime exhaustion are not
+transient allocation pressure: registration returns its exact record/byte
+capacity error, and a world that has consumed `volume_records` rejects every
+new stable volume key even after older volumes retire. Telemetry exposes
+current, high-water, limit, and rejection/coalescing counts for every pool in
+the public `ResourceLimits`, including extraction, presentation
+dirty/artifact/instance, behavior view/proposal/feedback, and
+extension-registry resources.
 
 Moria never blocks a render schedule waiting for capacity.
 
@@ -317,6 +325,10 @@ All device-bound handles contain `DeviceGeneration`. On loss:
 - submitted receipts fail `DeviceLost` and never later succeed;
 - mapped/staging callbacks from the old generation are discarded;
 - no world query returns a fact until recovery rematerializes its scope;
+- every active scheduled behavior tick fails before publication and late
+  adapter callbacks/feedback from the old generation are quarantined;
+- CPU adapter state remains consumer-owned; GPU adapter resources/state are
+  invalid and must be recreated by that adapter before it reports ready;
 - dirty scar data already durably stored is loaded normally;
 - retained dirty scar data that existed only on the lost device cannot be
   claimed recovered.

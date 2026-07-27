@@ -113,6 +113,9 @@ receipt. After admission:
 
 Per-volume FIFO determines preparation order, not necessarily receipt wakeup
 order between volumes. Independent volume commands may execute concurrently.
+An accepted behavior tick captures a command frontier. Commands before that
+frontier drain before its stable view; commands after it remain queued until
+the tick publishes or fails, so ordinary work cannot stale the scheduled view.
 
 Every cancellable operation family uses the same race: cancellation CASes
 `Queued | WaitingForMatter` directly to terminal
@@ -284,10 +287,49 @@ No restored volume is public before all manifest-level checks pass. Individual
 bricks remain cold and materialize as base plus scar under interest. A corrupt
 chunk fails restore rather than failing later as an apparently empty region.
 
-## GPU extension lifecycle
+## Scheduled behavior tick lifecycle
 
 ```text
-registered/validated
+queued
+  -> waiting for captured command frontier
+  -> planning bounded access in declared adapter order
+  -> waiting/materializing authorized matter
+  -> exporting and pinning one stable committed view
+  -> running ordered CPU/GPU adapters
+  -> validating participant batches
+  -> resolving whole-proposal conflicts
+  -> publishing at most one transaction/revision per affected volume
+  -> reporting participant/proposal outcomes
+```
+
+Only one tick is active per world in v1. The tick permit pre-reserves every
+registered participant's maximum view, proposal, transaction, completion, and
+feedback capacity before the first adapter runs. A CPU adapter is invoked
+directly with the mapped borrowed stable view; it never enters the query
+lifecycle. A GPU adapter encodes against the exported read-only view on the
+renderer-owned command stream; validation, composition, preparation, and
+publication require no CPU readback.
+
+Every participant observes the same pinned snapshot. `runs_after` orders
+callbacks/dispatches and consumer-owned stimulus visibility, not Moria truth.
+Conflicts resolve in stable adapter/proposal order by the later adapter's
+declared `RejectLater | ReplaceEarlier | FailTick` policy, always for a whole
+proposal. Selected effects for one volume publish together at one revision or
+all fail for that volume; independent volumes remain independently published.
+
+`AbortTick` discards every proposal when that participant fails.
+`SkipParticipant` discards only that participant and lets remaining adapters
+continue unless another aborting participant failed. A running adapter is not
+automatically retried. Scheduled engine state is never Moria state: rejection
+produces CPU report/GPU feedback, checkpoint excludes it, restore requires the
+adapter to become ready independently, and device loss invalidates GPU engine
+resources while leaving CPU engine state consumer-owned. The complete
+contract is [behavior-scheduling.md](behavior-scheduling.md).
+
+## Asynchronous GPU extension lifecycle
+
+```text
+registered/validated asynchronous WGSL job
   -> extension + worst-case child batch capacity reserved
   -> admitted closed ABI inspection + prior/inline state
   -> packet captured at revisions/ring head with explicit inspection status
@@ -298,7 +340,8 @@ registered/validated
      and every child receipt
 ```
 
-Registration itself consumes bounded world-lifetime descriptor and WGSL bytes;
+This lifecycle is not a substrate-tick hook. Registration itself consumes
+bounded world-lifetime descriptor and WGSL bytes;
 registry exhaustion fails synchronously before pipeline creation. Prior GPU
 state is an immutable lease and each dispatch writes a new bounded state
 generation. State pressure follows extension admission policy, and device loss
@@ -316,19 +359,22 @@ another child and does not create cross-volume atomicity.
 
 If the inspection snapshot becomes stale before an effect prepares, its
 mandatory revision precondition causes conflict. Moria never silently reruns
-external behavior against newer matter.
+the asynchronous extension job against newer matter.
 
 ## Shutdown lifecycle
 
 `shutdown(policy)` is itself accepted once. It:
 
-1. closes all permit waiters and rejects new submissions;
+1. closes all permit waiters, rejects new submissions and behavior ticks, and
+   cancels a queued behavior tick that has not entered `Planning`;
 2. with `CancelNotPrepared`, atomically cancels work still
    `Queued | WaitingForMatter`; otherwise drains it; `Preparing` and later
    always drain;
 3. stops accepting interest updates and withdraws ordinary interest after
    dependent work;
-4. waits for submitted GPU work through renderer completion or terminal loss;
+4. drains a behavior tick that already entered planning, reports its
+   outcome, then waits for other submitted GPU work through renderer completion
+   or terminal loss;
 5. runs the required checkpoint against final committed revisions if requested;
 6. appends final observations and freezes telemetry;
 7. resolves outstanding receipts and the shutdown receipt;
@@ -375,7 +421,9 @@ count (default 1).
 | Lineage/fingerprint mismatch | Restore | IncompatibleBase | Nothing restored |
 | Device loss, durable scars | World | Submitted work fails; Recovering | Unavailable until rebuilt |
 | Device loss, volatile dirty scars | World | UnrecoverableDirtyState | Terminal, no false rollback |
-| External shader failure | Extension request | Extension error | Only earlier ordinary commits remain |
+| Scheduled adapter failure | Behavior participant/tick | Skip or abort per declared policy | No invalid participant effect; abort publishes no behavior effect |
+| Scheduled proposal conflict | Proposal/tick | Whole proposal rejected/replaced or tick failed | Never partial proposal application |
+| External shader failure | Asynchronous extension request | Extension error | Only earlier ordinary commits remain |
 
 ## Time and determinism
 

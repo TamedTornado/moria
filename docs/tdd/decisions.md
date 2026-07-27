@@ -71,16 +71,20 @@ while a synchronous callback avoids imposing a consumer async runtime.
 
 ## T7. GPU behavior uses copied packets and candidate effects
 
-**Decision.** GPU extensions receive bounded, Moria-produced inspection packets
-in extension-owned buffers and write fixed-schema candidate effects. They
-never bind the page table or brick pool. Candidate effects are validated and
-published through normal admission.
+**Decision.** Asynchronous GPU extensions receive bounded, Moria-produced
+inspection packets in extension-owned buffers and write fixed-schema candidate
+effects. They never bind the page table or brick pool. Candidate effects are
+validated and published through normal admission.
 
 **Reason.** This preserves a GPU-to-GPU path without giving a behavior engine
 storage ownership or a privileged mutation route.
 
 **Rejected.** Direct read/write buffer leases are faster to prototype but
 invalidate ownership, bounds, atomicity, and recovery contracts.
+
+**Scope clarification.** T27 supersedes this facility as the primary scheduled
+behavior-engine seam. T7 remains the asynchronous WGSL inspection/effect job
+decision.
 
 ## T8. Sparse full-brick scars
 
@@ -113,10 +117,10 @@ instead of receiving weaker semantics.
 
 ## T11. Reserve the complete GPU-extension effect batch
 
-**Decision.** An extension request reserves its worst-case child command
-records, aggregate payload bytes, and receipt slots before shader dispatch.
-Whole candidate output validation and child admission are all-or-none; admitted
-children then complete independently.
+**Decision.** An asynchronous extension request reserves its worst-case child
+command records, aggregate payload bytes, and receipt slots before shader
+dispatch. Whole candidate output validation and child admission are
+all-or-none; admitted children then complete independently.
 
 **Reason.** One ordinary command permit cannot bound a shader that may emit
 many effects. Pre-reservation preserves normal admission without a privileged
@@ -166,9 +170,10 @@ dressing presentation-only and outside persistence authority.
 
 ## T16. Closed GPU extension ABI v1
 
-**Decision.** GPU extensions use fixed 32-bit packet/snapshot/inspection,
-opaque-state, diagnostic, candidate, and patch-run layouts. Inspection and
-effect kinds are closed; every effect carries an exact captured revision.
+**Decision.** Asynchronous GPU extensions use fixed 32-bit
+packet/snapshot/inspection, opaque-state, diagnostic, candidate, and patch-run
+layouts. Inspection and effect kinds are closed; every effect carries an exact
+captured revision.
 
 **Reason.** Named-but-opaque packet types cannot support external WGSL or
 layout validation. A fixed bounded ABI preserves GPU-to-GPU inspection and
@@ -290,3 +295,98 @@ descriptor or diagnostic allocation transfers across a callback return.
 by the same port. Borrowed identity and a fixed error record make the ownership
 boundary structural, including invalid and adversarial source behavior, while
 leaving consumer-internal allocation outside Moria accounting.
+
+## T27. Scheduled stable-view behavior coordination is the primary engine seam
+
+**Decision.** A consumer-triggered substrate tick pins one committed view,
+runs builder-registered CPU/GPU adapters in a validated dependency order,
+resolves bounded whole-proposal conflicts, and publishes selected effects
+before completing the tick. CPU adapters receive a direct borrowed tick view.
+GPU adapters encode on the Bevy renderer-owned device against a read-only
+export and write-only effect target; GPU validation, composition, and
+publication do not require CPU readback. Adapter state is always
+consumer-owned. The prior copied-packet WGSL facility remains an asynchronous
+inspection/effect API and is not the scheduled engine seam.
+
+**Reason.** Ordinary query receipts cannot provide a deliberate pre-publication
+tick boundary, force CPU engines into the wrong lifecycle, and make a
+renderer-resident engine read back merely to participate. A coordinator with
+one pinned view preserves Moria authority, bounds, revisions, receipts, and
+device lifecycle while permitting independently implemented conventional CPU
+and GPU engines.
+
+**Composition.** `runs_after` forms a DAG with stable-key tie order. All
+adapters see the same committed view. The later adapter selects
+`RejectLater`, `ReplaceEarlier`, or `FailTick` for overlaps; each decision
+accepts or rejects a whole proposal. No physics-before-damage order or
+behavior-specific state exists in Moria.
+
+**Rejected.** Direct leases of authoritative storage, a permanent CPU collision
+mirror, mandatory GPU effect readback before publication, and hard-coded named
+behavior phases.
+
+---
+
+## Human review entry — external-behavior boundary
+
+### Verbatim feedback
+
+```text
+TamedTornado (COMMENTED):
+The external-behavior boundary needs another revision before this TDD is approved.
+
+The current design primarily treats external behavior as an asynchronous client: submit a bounded query, await a receipt/readback, calculate behavior, then submit an effect command. The bounded WGSL extension is likewise a submitted inspection/effect job. Those are useful APIs, but they are not the scheduled behavior-engine seam intended by the product design.
+
+Required outcome:
+
+- Define a generic, first-class behavior hook at a deliberate point in Moria's substrate tick. An independently implemented CPU or GPU behavior engine must be able to participate against a stable committed substrate view and return proposed substrate effects before the tick's publication/commit boundary.
+- CPU and GPU are both required integration cases. A CPU engine must not be forced into an ordinary asynchronous query/receipt loop when participating in the tick. A GPU engine must be able to remain on the renderer-owned GPU path without mandatory CPU readback merely to participate.
+- Moria must provide the scheduling, synchronization, bounded-access, admission, conflict, failure, and device-lifecycle contract. External behavior owns its vocabulary and working state.
+- Preserve controlled mutation: an external engine may read only the authorized stable substrate view and may propose effects, but it must not directly mutate authoritative Moria storage or bypass validation, resource bounds, revision safety, receipts, or publication rules.
+- Define ordering/composition when more than one external behavior engine participates. Do not hard-code physics-before-damage as product semantics; adapters should be able to declare ordering through the integration/scheduling contract.
+- Retain the asynchronous query API for inspection, tools, and consumers that do not participate in the substrate tick. Retain or reframe the bounded WGSL inspection/effect facility if useful, but do not present it as the complete general CPU/GPU behavior hook unless it actually satisfies this contract.
+
+Use physics and damage as adversarial proof cases, not as features to implement:
+
+1. A third-party CPU or GPU physics engine owns bodies, velocities, forces, joints, solver state, and policy. At the correct tick phase it can read the substrate collision/material view, execute its solver, update its own state, and propose any substrate changes.
+2. A third-party CPU or GPU damage/fracture engine owns damage accumulation, bond strength, breakage, crumbling, and fracture rules. It may consume engine-specific impacts or other stimuli, inspect the same stable substrate view, retain its own CPU/GPU state, and propose material or structural effects.
+3. Moria must not add rigid-body, damage, health, resistance, bond, fracture, gravity, force, player, or gameplay semantics to its data model. Moria should see only authorized inspection and substrate effects; the cause may be physics, damage, erosion, heat, mining, simulation, or something else.
+4. Behavior state must remain consumer-owned. The TDD must state what happens to CPU and GPU behavior state across checkpointing, device loss, recovery, shutdown, stale revisions, and rejected effects without silently making that state Moria authority.
+
+Do not assume that the previously discussed CPU collision cache or a particular GPU binding layout is required. Those were candidate mechanisms, not approved design. Select and justify the smallest implementation-ready architecture that satisfies the behavior above while preserving Moria's boundedness and authoritative-substrate invariants.
+
+Please revise the architecture, lifecycle/schedule, public API, decisions, and validation contracts consistently. The independent reviewer should specifically try to disprove that a conventional CPU physics adapter, a GPU-resident physics adapter, and an external CPU/GPU damage-and-bond adapter can participate at the proper tick boundary without Moria absorbing their semantics.
+```
+
+### Technical decision and clarification
+
+The scheduled coordinator in T27 and
+[behavior-scheduling.md](behavior-scheduling.md) is the primary external
+behavior seam. It serializes a consumer-triggered tick around an ordinary-
+command frontier, pins one committed material/placement view for all adapters,
+and publishes composed effects before releasing post-frontier work. CPU
+adapters receive a direct borrowed view after scheduler-owned bounded staging.
+GPU adapters own their pipelines and state on Bevy's renderer device and
+encode through a counted Moria-controlled encoder wrapper; the authoritative
+validation/composition/publication path remains GPU-resident.
+
+Access, view bytes/records, proposals, transaction resources, and feedback are
+prebounded. A registration DAG supplies adapter-declared ordering without
+named phases. Conflicts select or reject whole proposals under an explicit
+generic policy. Moria supplies revision binding, receipts, observations,
+failure policy, device-generation quarantine, and recovery readiness while
+never owning adapter vocabulary or state.
+
+The asynchronous query API and the existing fixed-ABI WGSL job remain
+available for tools and nonscheduled consumers. They are explicitly no longer
+presented as the complete behavior-engine seam.
+
+Validation now requires independent adversarial CPU physics-shaped,
+GPU-physics-shaped, and CPU/GPU damage-and-bond-shaped adapters and directs the
+reviewer to try to obtain authoritative storage, force readback onto the GPU
+authority path, bypass bounds/publication, or make Moria absorb their state.
+
+### Unresolved question
+
+None. The review supplies sufficient authority to select this technical
+contract without adding product behavior.

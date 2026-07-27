@@ -88,6 +88,13 @@ Initial overlap in a sweep returns `toi = 0`. Zero displacement is rejected for
 sweep and should use overlap. Moria does not separate bodies, update velocity,
 apply impulses, choose friction, or interpret contact.
 
+The scheduled CPU behavior view reuses this private fact kernel over its
+immutable exported cell set and debits the adapter's declared traversal
+authorization; it does not submit a public query receipt. The scheduled GPU
+view exports the same sample/occupancy truth in canonical cell records.
+Neither path reads the derived surface mesh, and neither adds contact-response
+or behavior state to collision.
+
 ### Ordering and overflow
 
 Hits sort by:

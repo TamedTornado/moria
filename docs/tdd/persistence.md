@@ -13,8 +13,19 @@ material truth:
 - volume retirement tombstones.
 
 It does not record runtime IDs, physical slots, page-table shape, occupancy
-acceleration, mesh/dressing data, cameras, external behavior state, generation
-code, or other consumer state.
+acceleration, mesh/dressing data, cameras, scheduled or asynchronous external
+behavior state, generation code, or other consumer state.
+
+CPU behavior objects, GPU solver buffers, stimuli, and behavior feedback
+history remain consumer-owned. A consumer that needs a coherent combined save
+waits for a `BehaviorTickReceipt`, checkpoints the returned substrate
+revisions through Moria, and checkpoints each adapter's own state through its
+own store/protocol. Moria does not claim atomic durability across those stores.
+On restore, substrate readiness does not enable scheduled ticks until every
+included adapter independently reports its CPU state loaded or its current
+device-generation GPU state recreated. Failure to restore adapter state is an
+adapter readiness failure; Moria never synthesizes, rolls back, or imports it
+into the scar manifest.
 
 V1 exposes only `CheckpointScope::WholeWorld`. A successful manifest contains
 every live volume at the captured frontier and every known retirement

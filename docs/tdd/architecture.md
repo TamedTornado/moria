@@ -9,7 +9,7 @@ material truth.
 ```text
 consumer threads / Bevy main world
         |
-        | owned commands, queries, interests, checkpoint requests
+        | owned commands, queries, interests, behavior ticks, checkpoint requests
         v
 control plane: facade + admission + lifecycle + identities + receipts
         |                                      ^
@@ -19,9 +19,10 @@ Bevy RenderApp / Moria render resources
         |
         +-- sparse authority: page table + brick/scar pools + revisions
         +-- collision/query compute
+        +-- stable behavior-view exports + proposal validation/publication
         +-- presentation derivation
         +-- staging/readback pool
-        +-- GPU extension packet/effect jobs
+        +-- asynchronous GPU inspection/effect jobs
         |
         v
 renderer-owned RenderDevice and RenderQueue
@@ -87,6 +88,15 @@ Owns permits, validation, command payloads, per-volume FIFO ordering, receipts,
 cancellation state, prepared mutation transactions, and terminal outcomes.
 Only this module can request a material or placement commit.
 
+### `behavior`
+
+Owns builder-time CPU/GPU adapter registration, the validated ordering DAG,
+tick frontiers, access planning, stable-view pins and exports, exact-capacity
+CPU/GPU proposal sinks, whole-proposal conflict resolution, participant/tick
+reports, and adapter lifecycle notifications. It builds transactions through
+`command` and `storage`; it cannot publish a revision itself. Adapter-owned
+state remains behind adapter traits and is never a Moria resource.
+
 ### `query`
 
 Owns bounded query descriptors, permits, snapshot acquisition, result codecs,
@@ -131,9 +141,10 @@ Telemetry reads counters and summaries; it exposes no storage handle.
 ### `gpu`
 
 Owns shader layouts, device-generation resources, dispatch encoding, staging
-pools, validation error scopes, completion callbacks, extension packets, and
-layout assertions. It is the only module allowed to turn storage transactions
-into GPU work.
+pools, validation error scopes, completion callbacks, scheduled behavior view/
+proposal/feedback buffers, asynchronous extension packets, and layout
+assertions. It is the only module allowed to turn storage transactions into GPU
+work.
 
 ### `bevy`
 
@@ -160,10 +171,12 @@ Main-world order:
 1. `First`: receive worker/store completions and renderer completion metadata.
 2. `PreUpdate`: update receipts, emit observations, and apply lifecycle
    transitions proven by completions.
-3. `Update`: consumer systems may reserve/submit/cancel work and update
-   interests.
-4. `PostUpdate`: validate admissions, freeze bounded extraction batches, and
-   update presentation entities from already completed artifacts.
+3. `Update`: consumer systems may reserve/submit/cancel work, update interests,
+   provide consumer-owned stimuli to adapters, and request a behavior tick.
+4. `PostUpdate`: validate admissions, capture each accepted behavior tick's
+   ordinary-command frontier, run host-side registration planners when
+   eligible, freeze bounded extraction batches, and update presentation
+   entities from already completed artifacts.
 5. `Last`: snapshot telemetry and advance shutdown coordination.
 
 Render-world order:
@@ -171,13 +184,16 @@ Render-world order:
 1. `ExtractSchedule`: copy only frozen descriptors, payload ranges, interest
    deltas, and IDs. It never copies resident volume content.
 2. `RenderSystems::PrepareResources`: allocate or reserve slots/staging,
-   materialize validated base batches, and prepare copy-on-write transactions.
-3. `RenderSystems::Prepare`: build query, collision, presentation, and
-   extension dispatch descriptors.
+   materialize validated base batches, prepare copy-on-write transactions, and
+   construct pinned behavior-view exports.
+3. `RenderSystems::Prepare`: build query, collision, scheduled behavior,
+   presentation, and asynchronous extension dispatch descriptors.
 4. Root `RenderGraph`: execute camera-independent Moria compute in explicit
    order:
    `materialize -> prepare_mutation -> validate_mutation -> publish_revision
-   -> query/collision -> extension_packet -> presentation`.
+   -> behavior_export -> ordered_gpu_behavior -> behavior_validate_compose
+   -> behavior_publish -> query/collision -> async_extension_packet
+   -> presentation`.
 5. Renderer cleanup: register queue-completion callbacks, map submitted
    readbacks asynchronously, and retire resources whose last submission is
    complete.
@@ -185,20 +201,30 @@ Render-world order:
 Work that does not fit the extraction batch remains queued; it is not silently
 dropped. `extraction_records` and `extraction_bytes` are the exact per-frame
 freeze limits. The byte limit covers owned command/query descriptors and
-payload ranges, extension job ranges, content batches, and completion metadata;
+payload ranges, behavior plan/transition/proposal records, asynchronous
+extension job ranges, content batches, and completion metadata;
 it never includes resident volume data. Both current/high-water counts,
 deferred records/bytes, oldest deferred operation, and extraction-frame lag are
-telemetry. Configuration must fit one maximum enabled patch or extension
-input packet plus inline state, while larger queue contents drain across later
-frames.
+telemetry. Configuration must fit one maximum enabled patch, behavior
+transition record, or asynchronous extension input packet plus inline state,
+while larger queue contents drain across later frames.
 
-For GPU `ObservationDeltas`, the main-world observation owner freezes the
-subscriber's accepted filter, closed empty-or-retained frontier, status,
-cursor, and matching fact-plus-envelope records as one extraction record. The
-CPU subscriber cursor is neither read nor written. The render world only
-encodes that immutable bounded capture into ABI v1 and cannot reinterpret an
-empty frontier, gap, unsupported fact, or maximum-record boundary as another
-state.
+CPU behavior adapters run from the main-world coordinator only after the
+matching stable-view staging map completes. This callback is a scheduled tick
+stage, not an ordinary query/receipt cycle. Consecutive GPU adapters remain in
+the render-world command stream. A declared CPU/GPU ordering edge creates an
+explicit queue-completion, bounded map, or bounded upload transition; GPU-only
+chains do not read material or proposals back to CPU before publication.
+Details and tick serialization are normative in
+[behavior-scheduling.md](behavior-scheduling.md).
+
+For asynchronous GPU `ObservationDeltas`, the main-world observation owner
+freezes the subscriber's accepted filter, closed empty-or-retained frontier,
+status, cursor, and matching fact-plus-envelope records as one extraction
+record. The CPU subscriber cursor is neither read nor written. The render
+world only encodes that immutable bounded capture into ABI v1 and cannot
+reinterpret an empty frontier, gap, unsupported fact, or maximum-record
+boundary as another state.
 
 ## Threading and progress
 
@@ -235,7 +261,8 @@ identity/material/config
              |-> collision -> query
              |-> command
              `-> interest
-        query/command/interest
+        storage/collision/command -> behavior
+        query/command/interest/behavior
              -> presentation/persistence/observation/telemetry
         -> bevy
 ```
@@ -243,10 +270,12 @@ identity/material/config
 `query` is the only public collision-query orchestrator. It converts public
 shapes and result budgets to collision plans; collision returns private facts
 that query turns into `ContactFact` values. `command` and `interest` do not
-depend on query, and collision does not consume query descriptors. The `gpu`
-module is a device implementation leaf used behind storage/collision/
-presentation dispatch traits; it may import their POD plans but none of those
-domain modules imports Bevy render types.
+depend on query, and collision does not consume query descriptors. `behavior`
+uses the private collision kernel against its pinned exported view and uses
+`command` transaction builders, but neither lower layer imports adapter
+traits. The `gpu` module is a device implementation leaf used behind
+storage/collision/behavior/presentation dispatch traits; it may import their
+POD plans but none of those domain modules imports Bevy render types.
 
 The package pins Bevy `=0.19.0`. It uses Bevy renderer wrappers and the
 renderer-compatible wgpu version. Adding an independent wgpu version or
@@ -266,8 +295,9 @@ Expected narrow dependencies are:
 - `serde` only for telemetry/evidence JSON, never as the persistence layout;
 - `tracing` for diagnostics.
 
-No dependency may introduce gameplay, physics, generation, or an async runtime
-into the facade.
+No dependency may introduce gameplay, a physics or damage model, generation,
+or an async runtime into the facade. Independently implemented behavior
+adapters depend on Moria; Moria never depends on their engine crates.
 
 ## Startup ownership and validation
 
@@ -297,8 +327,11 @@ World construction has two phases.
 - presentation artifact/dirty/mesh/instance pools can represent their stated
   fixed maximum artifact, and dirty records reserve one marker for every live
   volume in addition to the job/exact-key partition; and
-- extension registration count/bytes can hold every startup/runtime descriptor
-  within its per-descriptor WGSL and entry-point caps.
+- behavior registration/order/view/proposal/feedback limits can hold every
+  builder adapter and one declared maximum active tick; and
+- asynchronous extension registration count/bytes can hold every
+  startup/runtime descriptor within its per-descriptor WGSL and entry-point
+  caps.
 
 `ValidatedMoria::into_bevy` returns the plugin, configured facade handles, and
 typed startup receipt. Installing that plugin waits for GPU capability
@@ -376,8 +409,16 @@ all public sizes, coordinates, material IDs, byte counts, shader packet
 descriptors, checkpoint offsets, checksums, and decoded enum tags before
 allocation or dispatch.
 
-Consumer GPU extension WGSL is treated as untrusted input to the renderer:
+Consumer asynchronous GPU extension WGSL is treated as untrusted input to the renderer:
 Moria validates it with Naga, accepts only the fixed bind schema and one compute
 entry point, prohibits internal buffer bindings, caps workgroups and output
 records, and captures pipeline/dispatch errors. This limits accidental
 corruption; it does not claim process isolation from malicious native code.
+
+Scheduled GPU adapters are ordinary trusted in-process Rust integrations, not
+shader sandboxes. Their authority is still structurally limited: Moria owns
+submission and exposes only a read-only exported view, write-only proposal and
+feedback targets, and a counted encoder wrapper. A malicious adapter can misuse
+the shared process/device, so this is not a security boundary; qualification
+must still prove that conforming adapters cannot obtain authoritative storage
+or publish around Moria's validation gate.
