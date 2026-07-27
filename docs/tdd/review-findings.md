@@ -1733,3 +1733,133 @@ remains outside Moria accounting and ownership. The public port can now receive
 only pre-reserved sink writes and the exact 195-byte error value; every
 variable source-owned allocation stays behind a borrow. No human-authority
 question is open.
+
+## Auditor Turn — 2026-07-27T20:23:35Z
+
+Mode: approved
+
+Responding to: 2026-07-27T20:19:47Z
+
+### Prior Findings Status
+
+#### F1 — resolved — The public contract remains callable, bounded, and explicit
+
+The facade still selects concrete operations and normative request/result
+types for configuration, interest, content, commands, queries, observations,
+presentation, persistence, GPU extensions, telemetry, and shutdown. Collision
+traversal has separate candidate authorization, and output overflow cannot be
+reported as a partial hit result (`docs/tdd/public-api.md:875-1159,
+1342-1926`; `docs/tdd/collision-and-presentation.md:18-103`).
+
+#### F2 — resolved — Every content-port ownership crossing is now structurally bounded
+
+The earlier exact output sink remains permit-backed and Moria-owned. The
+remaining descriptor and error paths are now closed as claimed:
+`descriptor()` returns `&SourceDescriptor`, Moria copies only accepted bounded
+lineage into canonical ownership, and callback failure returns a 195-byte
+fixed-layout `ContentError` containing at most 192 UTF-8 bytes
+(`docs/tdd/public-api.md:1161-1260,1270-1339`). The 256-byte fixed charge covers
+that complete error and batch state, and the callback cannot return a
+capacity-bearing descriptor, diagnostic, or brick result
+(`docs/tdd/public-api.md:489-499,1288-1331`;
+`docs/tdd/architecture.md:54-63`).
+
+The adversarial evidence now covers an oversized borrowed descriptor without
+ownership transfer, exact canonical copying at 256 lineage bytes, 192/193-byte
+diagnostic boundaries, concurrent failures, and aggregate sink/error
+high-water under `content_response_bytes`
+(`docs/tdd/validation.md:48-68`). This resolves the final concrete defect.
+
+#### F3 — resolved — Persistence read, restore, and whole-world identity remain implementable
+
+Caller-owned bounded read buffers, size discovery/revalidation, exact
+live-volume membership, tombstones, lineage, fingerprint checks, and semantic
+restore evidence remain explicit (`docs/tdd/public-api.md:2244-2387`;
+`docs/tdd/persistence.md:1-254`).
+
+#### F4 — resolved — GPU extension fan-out remains pre-reserved and nonprivileged
+
+The effect-batch permit reserves worst-case ordinary command records, bytes,
+and child completions before dispatch. Whole output validation admits every
+child or none, after which children use ordinary independent receipts
+(`docs/tdd/public-api.md:608-638,2389-2734`).
+
+#### F5 — resolved — Dependency direction remains acyclic
+
+The storage-level collision kernel produces private facts for the public query
+orchestrator and does not import query policy, codecs, or receipts
+(`docs/tdd/architecture.md:77-104,227-270`;
+`docs/tdd/overview.md:221-229`).
+
+#### F6 — resolved — Performance viability remains falsifiable at local and maximum legal scale
+
+P6a uses the physically valid eight-corner/27-artifact fixture, while P6b
+requires bounded fair draining of all 13,824 artifacts from a legal
+512-brick command. Both are blocking on every claimed backend family
+(`docs/tdd/validation.md:361-373,399-423`).
+
+#### F7 — resolved — Material capacity remains internally consistent
+
+Empty ID zero is additional to the permitted 65,535 nonempty registrations in
+runtime layout, configuration, persistence, and boundary tests
+(`docs/tdd/state-and-storage.md:29-55`;
+`docs/tdd/persistence.md:228-247`).
+
+#### F8 — resolved — Cancellation has one testable point of no return
+
+All cancellable operation families race cancellation against the transition
+from queued/waiting to `Preparing`; preparation and every later stage are too
+late, including during shutdown (`docs/tdd/public-api.md:822-837`;
+`docs/tdd/lifecycles.md:87-121,321-339`).
+
+#### F9 — resolved — Long-lived membership and historical observation are explicit
+
+`All` snapshots the live IDs at acceptance for both interest and subscription;
+interest also freezes its brick set, retained facts carry append-time filter
+geometry, and gap snapshots preserve one live or retired record per pinned
+member (`docs/tdd/public-api.md:1125-1153,1827-1858,2069-2128`;
+`docs/tdd/lifecycles.md:55-67,168-216`). The coder's clarification that only
+update or resubscription refreshes membership matches the normative TDD.
+
+#### F10 — resolved — Retained volume names remain canonical and bounded
+
+Both creation paths enforce 1..=96 UTF-8 bytes and retain only exact boxed
+directory/tombstone ownership; persistence encodes the canonical length
+(`docs/tdd/public-api.md:1382-1404`;
+`docs/tdd/persistence.md:93-106,239-247`).
+
+#### F11 — resolved — Empty observation history is representable throughout the contract
+
+The closed `Empty | Retained` frontier is shared by host snapshots, GPU delta
+outcomes, paging/gap rules, and ABI v1. The pre-first-fact and sequence-one
+transition has host, layout, real-GPU, and public-contract evidence
+(`docs/tdd/public-api.md:40-63,1848-1858,2485-2522,2577-2587`;
+`docs/tdd/validation.md:96-103,146-150,194-205,264-274,299-314`).
+
+### New Findings
+
+None. The complete TDD selects concrete ownership, publication, lifecycle,
+failure, bounded-resource, persistence, portability, and validation mechanisms
+without adding product behavior or a privileged consumer path.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+The coder asked no direct question. I verified the claimed borrowed descriptor,
+fixed inline error record, canonical copy, and adversarial evidence against the
+actual TDD. I also confirm the stated snapshot semantics for long-lived `All`
+filters are consistent across the public API, lifecycle, decisions, and tests.
+
+### Notes To Coder
+
+No protected human question is open. T26 records the final ownership choice
+without changing the approved content semantics. The TDD is implementation-
+ready subject to its own blocking physical-adapter, performance, and human
+visual evidence gates.
+
+### Approval
+
+Approved.
