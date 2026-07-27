@@ -19,7 +19,9 @@ code, or other consumer state.
 V1 exposes only `CheckpointScope::WholeWorld`. A successful manifest contains
 every live volume at the captured frontier and every known retirement
 tombstone. There is no partial-volume checkpoint and therefore no ambiguity
-about omitted live volumes during restore.
+about omitted live volumes during restore. `volume_records` bounds their
+combined count for the lifetime of the world; retirement changes a live record
+to a tombstone and never creates an unaccounted manifest entry.
 
 ## Scar authority
 
@@ -75,6 +77,12 @@ chunk_count            u32
 sections...            length-prefixed, canonical order
 manifest_blake3        32 bytes over every preceding byte
 ```
+
+`volume_count + tombstone_count` is checked before addition/allocation and must
+not exceed the effective `volume_records`; `volume_count` must not exceed
+`live_volumes`. Restore rejects an oversized manifest with `SizeLimit` before
+reading record sections. The 64 MiB manifest cap is an additional byte bound,
+not a substitute for these record-count bounds.
 
 Material records sort by stable UUID and contain UUID, checkpoint runtime
 material number, debug-name bytes, and a digest of the occupancy-relevant
@@ -225,6 +233,9 @@ Required fixtures and generated tests cover:
   material-table counts, proving empty remains additional and reserved;
 - exact whole-world volume membership, extra-current material acceptance,
   extra/missing current volume rejection, and same-key versus import mode;
+- acceptance at `live_volumes` and `volume_records`, live-slot reuse after
+  retirement, permanent lifetime-key exhaustion, and manifest rejection when
+  live-plus-tombstone counts exceed effective limits;
 - reader oversize/changing length, short/range read, and caller-buffer bounds;
 - chunk write failure, manifest failure, and incomplete transaction cleanup;
 - device-derived state discarded and rebuilt after restore;

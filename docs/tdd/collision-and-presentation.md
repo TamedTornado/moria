@@ -108,9 +108,23 @@ the finite domain the value is canonical empty.
 
 Mutating a boundary cell marks its brick and every face/edge/corner neighbor
 whose halo includes that cell dirty. This is at most 27 artifact jobs. The
-affected job set is reserved before the mutation publishes, or presentation
-work records explicit pressure and remains stale/absent; truth publication does
-not depend on mesh capacity.
+27 bound applies to one local brick neighborhood, not to a whole command. A
+legal command may affect 512 mutually separated bricks and therefore invalidate
+up to `512 * 27 = 13,824` distinct artifact keys. The control plane enumerates
+and deduplicates those keys during command validation with fixed maximum
+scratch, but truth publication never waits for presentation job slots.
+
+Invalidations enter `presentation_dirty_records`. At default limits all 13,824
+keys fit. With a smaller configured pool or concurrent invalidations, exact
+keys coalesce into one `(volume, dirty_revision)` marker; the scheduler then
+enumerates only currently interested artifacts in bounded
+`presentation_artifacts` pages and compares their source revision. This can
+increase rebuild work but cannot lose a stale/current transition. At most
+`presentation_jobs` are submitted concurrently; the remainder stay as bounded
+dirty/artifact state and drain fairly by priority then stable volume/brick
+order. Telemetry distinguishes exact invalidations, volume coalescing, pending
+dirty records, scheduled jobs, completed-current artifacts, and superseded
+targets.
 
 ## Dual-contouring surface derivation
 
@@ -161,13 +175,12 @@ make a region materially cold.
 
 ## Material presentation inputs
 
-`SurfaceDescriptor` contains:
-
-- `SurfaceClass`;
-- Bevy material asset handle or a Moria neutral diagnostic material;
-- optional bounded triplanar texture handles and scale;
-- roughness/metallic/tint values used only for rendering;
-- zero or more dressing style IDs.
+`SurfaceDescriptor` is embedded in `MaterialDefinition` and contains
+`SurfaceClass`, one Bevy material handle or explicit neutral diagnostic input,
+optional bounded triplanar handles/scale, and finite
+roughness/metallic/tint values. Dressing is not an unresolved style-ID list on
+this descriptor: the separate builder-time `DressingDescriptor` registry owns
+a stable style key and an exact bounded material-key filter.
 
 These inputs have no occupancy semantics. A missing asset fails presentation
 for the affected material/artifact, not material registration or collision.
@@ -181,23 +194,30 @@ Dressing is generated only on current surface artifacts:
 1. enumerate candidate surface triangles;
 2. seed a counter-based PRNG with volume key, brick coordinate, matter
    revision, and style key;
-3. select points using descriptor density and material filter;
+3. select points using descriptor density, coverage range, and exact material
+   filter;
 4. anchor each instance to source triangle coordinates plus revision;
-5. write at most the configured instance capacity.
+5. write at most both the descriptor's 4,096-instance maximum and the
+   configured global instance capacity.
 
 Density, orientation, and scale are consumer presentation inputs, not
 procedural world content. Instances have no material identity or occupancy.
 
 On supporting matter change, all old anchors in affected artifacts become
 stale with the surface and are replaced/removed under the same view policy.
-Overflow fails the dressing artifact; it never emits an unreported subset as
-current. A consumer requiring independent query/mutation/collision registers a
-material volume instead of dressing.
+Descriptor/style registration is callable only through
+`MoriaBuilder::register_dressing_style`; duplicate/unknown style or material
+keys, invalid ranges, and registry capacity fail validation explicitly.
+Missing mesh/material assets fail the affected presentation artifact with a
+typed asset error. Instance overflow fails the dressing artifact; it never
+emits an unreported subset as current. A consumer requiring independent
+query/mutation/collision registers a material volume instead of dressing.
 
 ## Presentation resource pressure
 
-Presentation has independent vertex/index/instance pools and LRU eviction.
-Eviction order is:
+Presentation has independently bounded artifact metadata, dirty records,
+vertex/index buffers, dressing instances, and in-flight job slots. LRU
+eviction follows this order:
 
 1. obsolete submitted output after GPU completion;
 2. nonvisible stale artifacts;

@@ -172,7 +172,14 @@ Render-world order:
    complete.
 
 Work that does not fit the extraction batch remains queued; it is not silently
-dropped. Extraction has configurable count and byte limits and reports lag.
+dropped. `extraction_records` and `extraction_bytes` are the exact per-frame
+freeze limits. The byte limit covers owned command/query descriptors and
+payload ranges, extension job ranges, content batches, and completion metadata;
+it never includes resident volume data. Both current/high-water counts,
+deferred records/bytes, oldest deferred operation, and extraction-frame lag are
+telemetry. Configuration must fit one maximum enabled patch or extension
+input packet plus inline state, while larger queue contents drain across later
+frames.
 
 ## Threading and progress
 
@@ -259,6 +266,13 @@ World construction has two phases.
 - static/dynamic mode matches allowed placement command policy;
 - persistence is configured if dirty-state retirement is enabled;
 - observation and staging limits can hold one maximum legal record.
+- live-volume and lifetime volume-record limits cover every initial
+  registration, with lifetime records no smaller than live records;
+- extraction can freeze one maximum enabled operation;
+- presentation artifact/dirty/mesh/instance pools can represent their stated
+  fixed maximum artifact and bounded invalidation fallback; and
+- extension registration count/bytes can hold every startup/runtime descriptor
+  within its per-descriptor WGSL and entry-point caps.
 
 `ValidatedMoria::into_bevy` returns the plugin, configured facade handles, and
 typed startup receipt. Installing that plugin waits for GPU capability

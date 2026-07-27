@@ -226,8 +226,10 @@ contract tests remain in the ordinary suite.
   query descriptors, partial-result policy, codecs, or receipts. Lower layers
   must not import Bevy ECS, cameras, windows, presentation, or consumer
   behavior concepts.
-- Only `bevy` and `gpu` may use Bevy render APIs. Only `bevy` registers
-  schedules or ECS-facing plugins.
+- Only `bevy` and `gpu` may use Bevy render APIs. `material` may name the
+  public Bevy asset-handle types selected by `SurfaceDescriptor` and
+  `DressingDescriptor`, but may not access renderer state. Only `bevy`
+  registers schedules or ECS-facing plugins.
 - Do not create a second wgpu device in the Bevy path. Device-bound resources
   live in the render world and are recreated from `RenderStartup`.
 - Keep backend/runtime types out of the main facade. The optional GPU extension
@@ -235,8 +237,15 @@ contract tests remain in the ordinary suite.
 - Channels, staging pools, page tables, mesh outputs, and per-request payloads
   must be bounded by `MoriaConfig`. No unbounded channel or implicit allocation
   policy is allowed.
+- Extraction records/bytes, live and lifetime volume records, presentation
+  artifact/dirty/job/mesh/instance pools, dressing registrations, and GPU
+  extension registrations/WGSL bytes are separate named bounds. Do not make
+  one pool silently own another.
 - A command/query type owns its payload until admission succeeds. Queue-full or
   closed errors return the payload unchanged.
+- Public query/interest/result/dressing records and Extension ABI v1 layouts in
+  `public-api.md` are normative. Do not replace closed variants, mandatory
+  revision preconditions, or fixed offsets with implementation-defined blobs.
 - No consumer, example, test harness, or feature may inspect storage internals.
   `tests/support` builds worlds exclusively through public APIs.
 - No physics, damage, gravity, generation recipe, player, camera policy,
@@ -295,4 +304,6 @@ feasibility gates P1–P8 are blocking physical-adapter receipts for each claime
 backend family; failure blocks the affected storage, mutation/query, collision,
 materialization, presentation, extension, or checkpoint selection until the
 design is revised or passes. Correctness and performance statuses remain
-separate, and neither can turn the other's failure into a pass.
+separate, and neither can turn the other's failure into a pass. P6 requires
+both its 27-artifact local latency fixture and its 13,824-artifact
+maximum-command fair-drain fixture; the local receipt alone is incomplete.

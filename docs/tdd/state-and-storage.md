@@ -230,7 +230,8 @@ starting points, not universal performance promises.
 | Limit | Default | Hard v1 request maximum |
 | --- | ---: | ---: |
 | Consumer-registered nonempty materials | 4,096 | 65,535 (plus reserved empty ID 0) |
-| Registered/live volumes | 1,024 | 65,535 |
+| Concurrently live volumes | 1,024 | 65,535 |
+| Lifetime volume records (live + tombstones) | 4,096 | 65,535 |
 | Active interest leases | 64 | 4,096 |
 | Bricks per interest | 4,096 | 65,536 |
 | Detailed resident bricks | 32,768 (64 MiB samples) | adapter/config bound |
@@ -250,16 +251,26 @@ starting points, not universal performance promises.
 | In-flight staging maps / bytes | 8 / 32 MiB | configured |
 | Content requests / response bytes | 64 / 32 MiB | configured |
 | Persistence requests / staged bytes | 8 / 64 MiB | configured |
+| Extraction records / bytes per frame | 2,048 / 32 MiB | configured |
 | Presentation jobs | 1,024 | configured |
+| Presentation artifacts / dirty records | 16,384 / 16,384 | configured |
 | Vertices / indices per brick artifact | 2,048 / 12,288 | fixed v1 maximum |
+| Dressing styles / device instances | 256 / 1,048,576 | configured |
 | GPU extension jobs | 64 | configured |
+| GPU extension registrations / registry bytes | 32 / 4 MiB | configured; 1 MiB WGSL + 128-byte entry point per registration |
 | Candidate effects per extension job | 256 | fixed v1 maximum; batch-reserved before dispatch |
 
 The config must be capable of servicing one maximum legal operation for each
 enabled capability. For example, enabling patch mutations with a command byte
-budget below one maximum patch is a configuration error, not a runtime
-deadlock. The field-level public schema, adapter-clamp rules, and exact
-cross-limit relationships are normative in
+budget or extraction batch below one maximum patch is a configuration error,
+not a runtime deadlock. `live_volumes` bounds concurrent directories;
+`volume_records` bounds every stable key accepted for the world lifetime, and
+retirement converts rather than frees that record. Presentation invalidation
+uses the bounded dirty-record pool; when it cannot retain individual keys it
+coalesces them to one volume dirty epoch and later enumerates only bounded
+active-interest artifacts, so pressure loses precision but never loses an
+eventual rebuild obligation. The field-level public schema, adapter-clamp
+rules, and exact cross-limit relationships are normative in
 [public-api.md](public-api.md#configuration-schema); this table summarizes
 storage-facing capacity rather than defining a second configuration shape.
 
@@ -276,12 +287,20 @@ and telemetry records each skipped target.
 
 When allocation pressure occurs:
 
-1. reclaim completed staging/version resources;
+1. reclaim completed extraction/staging/version resources;
 2. compact homogeneous/reverted bricks;
 3. retire eligible presentation/dressing;
 4. evict eligible authoritative bricks;
 5. defer background materialization;
 6. reject the requesting admission with exact limiting pool.
+
+Extension registration and volume-key lifetime exhaustion are not transient
+allocation pressure: registration returns its exact record/byte capacity error,
+and a world that has consumed `volume_records` rejects every new stable volume
+key even after older volumes retire. Telemetry exposes current, high-water,
+limit, and rejection/coalescing counts for every pool in the public
+`ResourceLimits`, including extraction, presentation dirty/artifact/instance,
+and extension-registry resources.
 
 Moria never blocks a render schedule waiting for capacity.
 

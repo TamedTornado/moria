@@ -143,3 +143,34 @@ contact results.
 
 **Reason.** This gives one acyclic direction and keeps collision truth reusable
 without coupling storage traversal to receipt or public result policy.
+
+## T14. Separate live-volume and lifetime-key capacities
+
+**Decision.** `live_volumes` bounds concurrent directory entries, while
+`volume_records` bounds every stable key accepted for the world's lifetime.
+Retirement frees only the live slot and preserves one bounded tombstone record.
+
+**Reason.** Reusing a retired stable key would make checkpoint membership and
+restore ambiguous. A separate lifetime bound keeps key history and manifests
+finite without preventing ordinary live-slot reuse.
+
+## T15. Builder-time dressing registry
+
+**Decision.** Surface inputs are embedded in `MaterialDefinition`; derived
+dressing is registered separately on `MoriaBuilder` with a stable style key,
+exact material-key filter, bounded descriptor, and Bevy asset handles.
+
+**Reason.** One style can serve several materials and consumes an independent
+instance pool. A callable registry removes unresolved style IDs while keeping
+dressing presentation-only and outside persistence authority.
+
+## T16. Closed GPU extension ABI v1
+
+**Decision.** GPU extensions use fixed 32-bit packet/snapshot/inspection,
+opaque-state, diagnostic, candidate, and patch-run layouts. Inspection and
+effect kinds are closed; every effect carries an exact captured revision.
+
+**Reason.** Named-but-opaque packet types cannot support external WGSL or
+layout validation. A fixed bounded ABI preserves GPU-to-GPU inspection and
+state while allowing Moria to validate and translate effects into ordinary
+commands without exposing storage.

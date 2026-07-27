@@ -9,21 +9,32 @@ must remain.
 ```rust
 pub struct MoriaHandle { /* Send + Sync */ }
 pub struct WorldHandle { /* Send + Sync, opaque generation */ }
+pub struct ValidatedMoria { /* consumed installation plan */ }
+pub struct MoriaPlugin { /* Bevy Plugin */ }
+pub struct CommandPermit { /* owned queue reservation */ }
+pub struct QueryPermit { /* owned queue reservation */ }
+pub struct CheckpointPermit { /* owned queue reservation */ }
+pub struct ExtensionPermit { /* owned queue/job reservation */ }
+pub struct EffectBatchPermit { /* owned child-command batch reservation */ }
 
 pub struct WorldId(u64);
 pub struct VolumeId(u64);
+#[repr(transparent)]
 pub struct MaterialId(u16);
 pub struct InterestId(u64);
 pub struct SubscriberId(u64);
 pub struct CommandId(u64);
 pub struct QueryId(u64);
 pub struct ExtensionId(u64);
+pub struct GpuStateId(u64);
+pub struct DressingStyleId(u32);
 pub struct OperationId(u64);
 
 pub struct WorldKey(uuid::Uuid);
 pub struct VolumeKey(uuid::Uuid);
 pub struct MaterialKey(uuid::Uuid);
 pub struct ExtensionKey(uuid::Uuid);
+pub struct DressingStyleKey(uuid::Uuid);
 pub struct CheckpointKey(uuid::Uuid);
 
 pub struct VolumeRevision(NonZeroU64);
@@ -46,6 +57,10 @@ impl MoriaBuilder {
         &mut self,
         definition: MaterialDefinition,
     ) -> Result<MaterialId, RegistrationError>;
+    pub fn register_dressing_style(
+        &mut self,
+        descriptor: DressingDescriptor,
+    ) -> Result<DressingStyleId, RegistrationError>;
     pub fn register_volume(
         &mut self,
         definition: VolumeDefinition,
@@ -112,9 +127,43 @@ pub struct MaterialDefinition {
     pub opaque_metadata: Vec<u8>,        // <= config.limits.max_material_metadata_bytes
 }
 
+pub struct SurfaceDescriptor {
+    pub class: SurfaceClass,
+    pub material: SurfaceMaterialInput,
+    pub triplanar: Option<TriplanarTextures>,
+    pub tint_linear_rgba: [f32; 4],
+    pub roughness: f32,                   // finite, 0..=1
+    pub metallic: f32,                    // finite, 0..=1
+}
+
+pub enum SurfaceMaterialInput {
+    Bevy(bevy::asset::Handle<bevy::pbr::StandardMaterial>),
+    NeutralDiagnostic,                   // only used when fallback policy permits
+}
+
+pub struct TriplanarTextures {
+    pub albedo: bevy::asset::Handle<bevy::image::Image>,
+    pub normal: Option<bevy::asset::Handle<bevy::image::Image>>,
+    pub meters_per_repeat: f32,           // finite and > 0
+}
+
 pub enum SurfaceClass {
     Organic,
     Constructed,
+}
+
+pub struct DressingDescriptor {
+    pub key: DressingStyleKey,
+    pub debug_name: String,              // 1..=96 UTF-8 bytes
+    pub materials: Vec<MaterialKey>,      // sorted unique, 1..=64
+    pub mesh: bevy::asset::Handle<bevy::mesh::Mesh>,
+    pub material: bevy::asset::Handle<bevy::pbr::StandardMaterial>,
+    pub density_per_square_meter: f32,   // finite, 0..=4,096
+    pub coverage_range: [u8; 2],         // inclusive, 128 <= min <= max
+    pub scale_range: [f32; 2],           // finite, 0 < min <= max <= 64
+    pub yaw_range_radians: [f32; 2],     // finite, min <= max
+    pub normal_offset: f32,              // finite local meters
+    pub max_instances_per_artifact: u32, // 1..=4,096
 }
 
 pub struct VolumeDefinition {
@@ -132,10 +181,70 @@ pub struct VolumeDefinition {
 Opaque metadata is returned only through material registry inspection. Moria
 does not interpret it and does not upload it to occupancy kernels.
 
+Surface inputs are embedded by value in each material registration. Dressing
+uses a separate builder-time registry because one style may filter several
+materials and owns independent mesh/material assets. `materials` is the exact
+material filter; every key must resolve by `validate`, and no material outside
+that list receives the style. Duplicate style keys, exhausted
+`dressing_styles`, invalid ranges, unknown material keys, or a descriptor whose
+per-artifact maximum exceeds the configured instance pool are structured
+`RegistrationError`/`ConfigurationErrors`. V1 has no runtime presentation
+registration or mutation.
+
+Asset handles may be registered before their assets finish loading. A missing
+or removed asset makes the affected artifact
+`PresentationError::AssetUnavailable { style, asset_kind }`; it does not fail
+material truth or collision. `NeutralDiagnostic` is rendered only when the
+consumer selected diagnostic fallback.
+
+```rust
+pub enum RegistrationError {
+    DuplicateMaterial(MaterialKey),
+    DuplicateVolume(VolumeKey),
+    DuplicateDressingStyle(DressingStyleKey),
+    MaterialCapacity { limit: u32 },
+    LiveVolumeCapacity { limit: u32 },
+    VolumeRecordCapacity { limit: u32 },
+    DressingStyleCapacity { limit: u32 },
+    InvalidDefinition(Vec<Violation>),
+}
+
+pub struct ConfigurationErrors {
+    pub violations: Vec<Violation>,      // deterministic field-path order
+}
+
+pub struct StaleHandleError {
+    pub kind: StaleHandleKind,
+}
+
+pub enum StaleHandleKind {
+    World,
+    Volume,
+    Material,
+    Subscriber,
+    Extension,
+    GpuState,
+}
+
+pub struct ShaderDiagnostic {
+    pub stage: ShaderStage,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    pub message: String,                 // <=1,024 UTF-8 bytes
+}
+
+pub enum ShaderStage {
+    Parse,
+    Validate,
+    Pipeline,
+}
+```
+
 ### Configuration schema
 
 Every field below is public and constructible. `MoriaConfig::default()` supplies
-the stated defaults; zero is invalid except where a capability is disabled.
+the stated defaults; zero is invalid except where a capability or the optional
+dressing subfeature is explicitly disabled below.
 Count fields are `u32`, byte fields are `u64`, and conversion to platform
 `usize` is checked.
 
@@ -150,7 +259,7 @@ pub struct MoriaConfig {
 
 pub struct CapabilityConfig {
     pub presentation: bool,              // default true
-    pub persistence: bool,               // default false; enabled by store/restore
+    pub persistence: bool,               // default false; must be explicitly enabled
     pub gpu_extensions: bool,             // default false; also needs feature
 }
 
@@ -176,10 +285,44 @@ pub struct GpuCapacityLimit {
     pub minimum: u32,
 }
 
+pub struct EffectiveConfig {
+    pub requested: MoriaConfig,
+    pub capabilities: CapabilityConfig,
+    pub overload: OverloadPolicies,
+    pub workers: WorkerConfig,
+    pub presentation: PresentationConfig,
+    pub limits: Vec<EffectiveLimit>,     // exactly one per ResourceKind
+}
+
+pub struct EffectiveLimit {
+    pub resource: ResourceKind,
+    pub requested: u64,
+    pub minimum: Option<u64>,
+    pub effective: u64,
+    pub disposition: LimitDisposition,
+}
+
+pub enum LimitDisposition {
+    Exact,
+    AdapterClamped { adapter_max: u64 },
+}
+
+pub struct AdapterCapabilityReport {
+    pub backend: String,
+    pub adapter: String,
+    pub driver: String,
+    pub device_type: String,
+    pub features: Vec<String>,
+    pub downlevel_flags: Vec<String>,
+    pub numeric_limits: Vec<(String, u64)>,
+    pub software_fallback: bool,
+}
+
 pub struct ResourceLimits {
     pub nonempty_materials: u32,
     pub max_material_metadata_bytes: u32,
     pub live_volumes: u32,
+    pub volume_records: u32,
     pub interest_leases: u32,
     pub bricks_per_interest: u32,
     pub detailed_bricks: GpuCapacityLimit,
@@ -200,10 +343,18 @@ pub struct ResourceLimits {
     pub content_response_bytes: u64,
     pub persistence_requests: u32,
     pub persistence_staged_bytes: u64,
+    pub extraction_records: u32,
+    pub extraction_bytes: u64,
     pub presentation_jobs: u32,
+    pub presentation_artifacts: u32,
+    pub presentation_dirty_records: u32,
     pub mesh_vertices: u32,
     pub mesh_indices: u32,
+    pub dressing_styles: u32,
+    pub dressing_instances: GpuCapacityLimit,
     pub extension_jobs: u32,
+    pub extension_registrations: u32,
+    pub extension_registry_bytes: u64,
     pub extension_packet_bytes: u64,
     pub extension_state_bytes: u64,
     pub extension_candidate_effects: u32,
@@ -228,6 +379,7 @@ maximum legal operation, or violates a cross-limit.
 | `nonempty_materials` | 4,096 | 65,535; empty ID 0 is additional |
 | `max_material_metadata_bytes` | 4 KiB | 1 MiB per registration |
 | `live_volumes` | 1,024 | 65,535 |
+| `volume_records` | 4,096 | 65,535; `>= live_volumes`; counts every live key and retained tombstone for the world's lifetime |
 | `interest_leases` / `bricks_per_interest` | 64 / 4,096 | 4,096 / 65,536 |
 | `detailed_bricks: GpuCapacityLimit` | 32,768 / 8,192 | `min(u32::MAX, adapter allocation/2,048)`; segmented by binding limit |
 | `page_keys: GpuCapacityLimit` | 131,072 / 32,768 | largest power of two within adapter allocation and `u32`; live load <=70% |
@@ -241,32 +393,50 @@ maximum legal operation, or violates a cross-limit.
 | `staging_maps` / `staging_bytes: GpuCapacityLimit` | 8 / 32 MiB desired, 8 MiB minimum | maps 1..=256; bytes <=1 GiB and adapter allocation; covers largest enabled readback chunk |
 | `content_requests` / `content_response_bytes` | 64 / 32 MiB | 4,096 / 1 GiB; bytes >= one detailed brick |
 | `persistence_requests` / `persistence_staged_bytes` | 8 / 64 MiB | 256 / 1 GiB; staged bytes >= 8 MiB chunk decode bound when enabled |
+| `extraction_records` / `extraction_bytes` | 2,048 / 32 MiB | 65,536 / 1 GiB; bytes cover one maximum enabled patch or extension input packet plus inline state and records are at least 1 |
 | `presentation_jobs` | 1,024 | 65,536; zero only when presentation disabled |
+| `presentation_artifacts` / `presentation_dirty_records` | 16,384 / 16,384 | 1,048,576 each; both `>= presentation_jobs`; artifact records cover visible/building status, dirty records cover exact invalidations and may collapse to one volume marker under pressure; both zero only when presentation is disabled |
 | `mesh_vertices` / `mesh_indices` | 2,097,152 / 12,582,912 | `u32` and adapter allocation bound; each covers one maximum artifact when enabled |
+| `dressing_styles` / `dressing_instances: GpuCapacityLimit` | 256 / 1,048,576 desired, 65,536 minimum | 4,096 styles / adapter allocation and `u32` instances; instances cover one descriptor's `max_instances_per_artifact`; both may be zero together to disable dressing only |
 | `extension_jobs` | 64 | 4,096; zero only when extensions disabled |
-| `extension_packet_bytes` / `extension_state_bytes` | 16 MiB / 1 MiB | fixed v1 maxima 64 MiB / 4 MiB |
+| `extension_registrations` / `extension_registry_bytes` | 32 / 4 MiB | 1,024 / 64 MiB; owns all registered WGSL and entry-point bytes |
+| `extension_packet_bytes` / `extension_state_bytes` | 16 MiB / 1 MiB | fixed v1 pool maxima 64 MiB / 4 MiB; state pool holds at least one prior+next pair |
 | `extension_candidate_effects` | 256 | fixed v1 maximum 256 and `<= command_records` |
 
 The fixed request maxima remain: 32,768 cells and 512 bricks per matter
 command, 16 MiB patch payload, 262,144 cells per region read, 4,096 collision
 hits, 256 world-scope volumes, 2,048 vertices/12,288 indices per brick artifact,
-and 256 candidate effects. They are exported in `contract_limits`; they are
-not independently configurable.
+13,824 unique halo invalidations per matter command, 4,096 dressing instances
+per artifact, 1 MiB WGSL and 128 UTF-8 bytes for one extension entry point, and
+256 candidate effects. They are exported in
+`contract_limits`; they are not independently configurable.
 
 `PresentationConfig` defaults to `stale_view_policy = DisplayStale`,
 `retry_count = 1` (legal `0..=3`), and
 `diagnostic_fallback = false`. It contains no camera or content policy.
 
-Supplying a checkpoint store or restore request requires
-`capabilities.persistence = true`; enabling persistence without a store is a
-configuration error. Enabling GPU extensions requires the Cargo feature,
-nonzero extension limits, and a command queue capable of reserving the
-configured worst-case batch. Disabling presentation requires all presentation
-pool/job fields to be zero and makes presentation interest an explicit
-`CapabilityDisabled` error.
+Supplying a checkpoint store or restore request requires the consumer to set
+`capabilities.persistence = true`; neither call mutates the capability flag.
+Enabling persistence without a store is a configuration error. Enabling GPU
+extensions requires the Cargo feature, nonzero extension limits, extraction
+bytes large enough for one maximum configured packet, and a command queue
+capable of reserving the configured worst-case batch. Disabling presentation
+requires all presentation artifact, dirty, mesh, dressing, and job pool fields
+to be zero and makes presentation interest an explicit `CapabilityDisabled`
+error.
 
-`EffectiveConfig` mirrors every requested field and records each exact
-effective value plus `Exact | AdapterClamped { requested, adapter_max }`.
+With presentation enabled, `dressing_styles == 0` is legal only when
+`dressing_instances.desired == minimum == 0`; registering a style then returns
+`DressingStyleCapacity { limit: 0 }`. With dressing enabled, registry count and
+instance desired/minimum are nonzero and the effective instance pool holds at
+least one descriptor's `max_instances_per_artifact`. Extension registry bytes
+must be at least 1 MiB + 128 bytes when extensions are enabled, so one maximum
+legal descriptor is representable.
+
+`EffectiveConfig.requested` mirrors every requested field. Its `limits` vector
+records each numeric `ResourceLimits` field in `ResourceKind` order plus
+`Exact | AdapterClamped { adapter_max }`; the remaining public config records
+are repeated as their exact effective values.
 It is returned by startup, available through
 `MoriaHandle::effective_config()`, and embedded in telemetry/evidence. Values
 not marked adapter-negotiated must equal their request. No clamp can weaken an
@@ -286,13 +456,56 @@ half-open and validated with checked arithmetic. `WorldPoint` and
 `WorldVector` contain finite `f32` values. World queries transform into each
 volume's local address space with its committed placement.
 
+```rust
+pub struct CellCoord { pub x: i32, pub y: i32, pub z: i32 }
+pub struct BrickCoord { pub x: i32, pub y: i32, pub z: i32 }
+pub struct CellAabb { pub min: CellCoord, pub max: CellCoord }
+pub struct WorldPoint { pub x: f32, pub y: f32, pub z: f32 }
+pub struct WorldVector { pub x: f32, pub y: f32, pub z: f32 }
+pub struct WorldAabb { pub min: WorldPoint, pub max: WorldPoint }
+
+pub struct RigidPlacement {
+    pub translation: WorldVector,
+    pub rotation_xyzw: [f32; 4],
+}
+
+pub enum VolumeMode { Static, Dynamic }
+
+pub enum RevisionPrecondition {
+    AnyCommitted,
+    Exact(VolumeRevision),
+}
+
+pub enum MinimumRevision {
+    AnyCommitted,
+    AtLeast { volume: VolumeId, revision: VolumeRevision },
+    Exact { volume: VolumeId, revision: VolumeRevision },
+}
+
+#[repr(C)]
+pub struct MaterialSample {
+    pub material: MaterialId,
+    pub coverage: u8,
+    pub flags: u8,
+}
+
+#[repr(transparent)]
+pub struct Correlation([u8; 16]);
+```
+
+`Correlation::NONE` is all zeroes; `Correlation::from_bytes` and
+`Correlation::as_bytes` construct/inspect the fixed 16-byte value. It is
+copied into command, observation, checkpoint diagnostic, and candidate-effect
+records. It has no separately allocated payload and is never interpreted by
+Moria.
+
 `RigidPlacement` contains translation and a unit quaternion. Construction
 normalizes only within a small documented tolerance; zero, non-finite, scale,
 and shear inputs are rejected. Static volumes reject placement commands.
 
 Every region method takes explicit bounds. It either accepts the complete
 request, rejects it with `SupportedBounds`, or honors an explicit
-`PartialPolicy::Allow { max_items }`. Silent clipping is forbidden.
+`PartialPolicy::Allow { max_omitted_regions }`. Silent clipping is forbidden.
 
 ## Admission, permits, and receipts
 
@@ -309,6 +522,10 @@ pub enum TryReserveError {
     Full { available_records: u32, available_bytes: u64 },
     Closed,
     PayloadTooLarge { requested: u64, limit: u64 },
+}
+
+pub struct ReserveFuture<P> {
+    /* Future<Output = Result<P, ReserveError>> + Send */
 }
 
 impl WorldHandle {
@@ -344,12 +561,12 @@ impl WorldHandle {
 
     pub fn try_reserve_extension(
         &self,
-        packet_bytes: u64,
+        job_bytes: u64,
     ) -> Result<ExtensionPermit, TryReserveError>;
 
     pub fn reserve_extension(
         &self,
-        packet_bytes: u64,
+        job_bytes: u64,
     ) -> ReserveFuture<ExtensionPermit>;
 
     pub fn try_reserve_effect_batch(
@@ -366,8 +583,11 @@ impl WorldHandle {
 }
 ```
 
-A command/query/checkpoint/extension permit reserves one record and the
-declared bytes in that operation's queue. An `EffectBatchPermit` reserves
+A command/query/checkpoint permit reserves one record and the declared bytes in
+that operation's queue. An extension permit reserves one job and the complete
+job allocation (header, packet, two state ranges, candidates, diagnostics, and
+effect payload); it must fit the configured packet/state and descriptor effect
+bounds. An `EffectBatchPermit` reserves
 `max_effects` ordinary command records, their aggregate encoded payload bytes,
 and the same number of child receipt/completion slots. Dropping an unused
 permit releases all capacity.
@@ -412,6 +632,104 @@ pub enum ReceiptStatus<T> {
     Ready(T),
     Failed(OperationError),
 }
+
+pub enum CancelRequest {
+    Requested,
+    AlreadyTerminal,
+}
+
+pub enum OperationStage {
+    Queued,
+    WaitingForMatter,
+    Preparing,
+    Submitted,
+    AwaitingReadback,
+    AwaitingPersistence,
+    Recovering,
+}
+
+pub enum WorldState {
+    Configured,
+    Starting,
+    Ready,
+    Recovering,
+    ShuttingDown,
+    Stopped,
+    Failed,
+}
+
+pub enum Retryability {
+    Never,
+    AfterInputChange,
+    AfterPressureRelief,
+    AfterRecovery,
+    Immediate,
+}
+
+pub struct OperationError {
+    pub operation: OperationId,
+    pub scope: OperationScope,
+    pub retryability: Retryability,
+    pub device_generation: Option<DeviceGeneration>,
+    pub revision_changed: bool,
+    pub kind: OperationErrorKind,
+    pub diagnostic: String,
+}
+
+pub enum OperationScope {
+    World(WorldId),
+    Volume(VolumeId),
+    Region { volume: VolumeId, bounds: CellAabb },
+    Checkpoint(CheckpointKey),
+    Extension(ExtensionId),
+}
+
+pub enum OperationErrorKind {
+    Validation,
+    Conflict { expected: VolumeRevision, current: VolumeRevision },
+    Unavailable,
+    BudgetExhausted(ResourceKind),
+    OutputOverflow { required: u64, limit: u64 },
+    Content(ContentErrorKind),
+    GpuValidation,
+    OutOfMemory,
+    DeviceLost,
+    Readback,
+    Decode,
+    Persistence(PersistenceErrorKind),
+    CancelledBeforeSubmission,
+    ShuttingDown,
+    InternalInvariant,
+}
+
+pub struct Violation {
+    pub path: String,                    // <=128 UTF-8 bytes
+    pub code: ViolationCode,
+    pub supported: Option<SupportedBounds>,
+    pub diagnostic: String,              // <=512 UTF-8 bytes
+}
+
+pub enum ViolationCode {
+    InvalidValue,
+    InvalidBounds,
+    TooLarge,
+    MissingIdentity,
+    DuplicateIdentity,
+    StaleHandle,
+    LiveVolumeCapacity,
+    VolumeRecordCapacity,
+    RetiredVolumeKey,
+    CapabilityDisabled,
+    CrossLimit,
+}
+
+pub struct SupportedBounds {
+    pub maximum_records: Option<u32>,
+    pub maximum_bytes: Option<u64>,
+    pub maximum_cells: Option<u32>,
+    pub maximum_bricks: Option<u32>,
+    pub maximum_volumes: Option<u16>,
+}
 ```
 
 Receipts are cloneable observers of one shared terminal state. Dropping every
@@ -419,29 +737,11 @@ observer does not cancel work. `request_cancel` returns `Requested` only; the
 terminal receipt distinguishes `CancelledBeforeSubmission` from an operation
 that was already submitted and therefore continues.
 
-Stages are `Queued`, `WaitingForMatter`, `Preparing`, `Submitted`,
-`AwaitingReadback`, `AwaitingPersistence`, and `Recovering`. A stage is
-diagnostic, not a latency promise.
-
-`OperationError` is a non-exhaustive top-level category carrying operation ID,
-scope, retryability, device generation, whether any revision changed, and one
-of:
-
-- `Validation`
-- `Conflict { expected, current }`
-- `Unavailable`
-- `BudgetExhausted`
-- `OutputOverflow`
-- `Content`
-- `GpuValidation`
-- `OutOfMemory`
-- `DeviceLost`
-- `Readback`
-- `Decode`
-- `Persistence`
-- `Cancelled`
-- `ShuttingDown`
-- `InternalInvariant`
+An operation stage is diagnostic, not a latency promise.
+`OperationErrorKind` is `#[non_exhaustive]` for source compatibility, while all
+v1 variants and their fields are listed above. `Violation` vectors are sorted
+by `path` then `code` and bounded by the submitted record's field count; they
+never contain arbitrary consumer payloads.
 
 A failed matter mutation always reports `revision_changed = false`.
 
@@ -565,7 +865,12 @@ pub enum ExtensionRegistrationError {
     DuplicateKey,
     InvalidDescriptor(Vec<Violation>),
     ShaderValidation(ShaderDiagnostic),
-    ExceedsConfiguredLimit,
+    RegistryFull { registrations: u32, limit: u32 },
+    RegistryBytes {
+        requested: u64,
+        available: u64,
+        per_descriptor_limit: u64,
+    },
     WorldNotAccepting(WorldState),
 }
 
@@ -580,13 +885,31 @@ structured types specified above and in the failure table; none is replaced by
 a string. Every error exposes its stable category plus a human-readable
 diagnostic generated from the same fields.
 
-`RegistryPageRequest { after: Option<MaterialKey>, max_records, max_bytes }`
-is bounded by `nonempty_materials`, the `QueryPermit`, and
-`query_result_bytes`.
-`MaterialRegistryPage` is a stable-key-sorted owned vector of
-`MaterialRegistration { id, key, debug_name, presentation, opaque_metadata }`,
-the registry digest, and `next_after`. It never splits a record: if the first
-eligible registration exceeds `max_bytes`, it returns
+```rust
+pub struct RegistryPageRequest {
+    pub after: Option<MaterialKey>,
+    pub max_records: u32,
+    pub max_bytes: u64,
+}
+
+pub struct MaterialRegistryPage {
+    pub records: Vec<MaterialRegistration>,
+    pub registry_digest: [u8; 32],
+    pub next_after: Option<MaterialKey>,
+}
+
+pub struct MaterialRegistration {
+    pub id: MaterialId,
+    pub key: MaterialKey,
+    pub debug_name: String,
+    pub presentation: SurfaceDescriptor,
+    pub opaque_metadata: Vec<u8>,
+}
+```
+
+The request is bounded by `nonempty_materials`, the `QueryPermit`, and
+`query_result_bytes`. The page is stable-key sorted and owned. It never splits
+a record: if the first eligible registration exceeds `max_bytes`, it returns
 terminal `OperationError::OutputOverflow` with the required one-record size.
 Repeated pages therefore provide the stated opaque-metadata inspection path
 without an unbounded registry allocation or an unreserved concurrent copy.
@@ -603,17 +926,67 @@ bitflags! {
 }
 
 pub struct InterestRequest {
-    pub scope: InterestScope,            // one volume-local or bounded world AABB
+    pub scope: InterestScope,
     pub capabilities: InterestCapabilities,
     pub priority: InterestPriority,      // Background | Normal | Urgent
     pub max_bricks: u32,
+}
+
+pub enum InterestScope {
+    VolumeLocal { volume: VolumeId, bounds: CellAabb },
+    World {
+        bounds: WorldAabb,
+        volumes: BoundedVolumeFilter,
+    },
+}
+
+pub enum InterestPriority {
+    Background,
+    Normal,
+    Urgent,
+}
+
+pub enum BoundedVolumeFilter {
+    Include(Vec<VolumeId>),              // sorted unique, <= volumes_per_filter
+    All { max_volumes: u16 },            // 1..=min(256, volumes_per_filter)
+}
+
+pub struct AcceptedInterest {
+    pub id: InterestId,
+    pub scope: InterestScope,
+    pub capabilities: InterestCapabilities,
+    pub priority: InterestPriority,
+    pub resolved_bricks: u32,
+}
+
+pub struct InterestState {
+    pub capabilities: Vec<CapabilityReadiness>, // one record per requested bit
+}
+
+pub struct CapabilityReadiness {
+    pub capability: InterestCapability,
+    pub ready_bricks: u32,
+    pub total_bricks: u32,
+    pub state: CapabilityState,
+}
+
+pub enum InterestCapability {
+    Inspection,
+    Collision,
+    Presentation,
+}
+
+pub enum CapabilityState {
+    Pending,
+    Ready { snapshots: Vec<VolumeSnapshotRef> },
+    Failed { regions: Vec<UnavailableRegion> },
 }
 
 pub struct InterestLease { /* Send + Sync */ }
 
 impl InterestLease {
     pub fn id(&self) -> InterestId;
-    pub fn accepted(&self) -> &AcceptedInterest;
+    pub fn accepted(&self) -> AcceptedInterest;
     pub fn state(&self) -> InterestState;
     pub fn update(
         &self,
@@ -632,6 +1005,12 @@ Interest declarations use the configured `interest_leases` slots and return
 and therefore no wait policy. A consumer may retry after receiving a resource-
 pressure observation.
 
+Every vector above is bounded by `volumes_per_filter`, `max_bricks`, and the
+three-bit capability set. `AcceptedInterest.scope` is the normalized,
+fully accepted request (including sorted filters), not a silently clipped
+scope. `CapabilityReadiness.ready_bricks == total_bricks` is required for
+`Ready`; a failed region is never counted ready.
+
 `Urgent` changes ordering only; it cannot exceed budgets or preempt an admitted
 transaction.
 
@@ -645,6 +1024,59 @@ pub trait BaseContentSource: Send + Sync + 'static {
         request: BaseBrickRequest,
         cancel: &CancellationToken,
     ) -> Result<BaseBrickBatch, ContentError>;
+}
+
+pub struct ContentLineage {
+    pub family: uuid::Uuid,
+    pub version: u32,
+    pub opaque: Vec<u8>,                 // <=256 bytes
+}
+
+pub struct ReconstructionFingerprint(pub [u8; 32]);
+
+pub struct SourceDescriptor {
+    pub lineage: ContentLineage,
+    pub reconstruction: ReconstructionFingerprint,
+}
+
+pub struct BaseBrickRequest {
+    pub volume: VolumeKey,
+    pub lineage: ContentLineage,
+    pub reconstruction: ReconstructionFingerprint,
+    pub bricks: Vec<BrickCoord>,         // sorted unique, <= content batch bound
+    pub intersections: Vec<CellAabb>,    // one per brick
+    pub material_registry_digest: [u8; 32],
+    pub maximum_encoded_bytes: u64,
+}
+
+pub struct BaseBrickBatch {
+    pub descriptor: SourceDescriptor,
+    pub bricks: Vec<BaseBrickResult>,    // exact request order/count
+    pub encoded_bytes: u64,
+}
+
+pub enum BaseBrickResult {
+    Homogeneous(MaterialSample),
+    Detailed(Box<[MaterialSample; 512]>),
+}
+
+pub struct ContentError {
+    pub kind: ContentErrorKind,
+    pub retryability: Retryability,
+    pub diagnostic: String,
+}
+
+pub enum ContentErrorKind {
+    Unavailable,
+    InvalidBatch,
+    Cancelled,
+    Panicked,
+}
+
+pub struct CancellationToken { /* Clone + Send + Sync */ }
+
+impl CancellationToken {
+    pub fn is_cancelled(&self) -> bool;
 }
 ```
 
@@ -689,7 +1121,18 @@ pub enum MatterCommand {
 
 pub struct MaterialPatch {
     pub bounds: CellAabb,
-    pub encoding: PatchEncoding, // dense row-major or sorted non-overlapping runs
+    pub encoding: PatchEncoding,
+}
+
+pub enum PatchEncoding {
+    Dense(Vec<MaterialSample>),
+    Runs(Vec<MaterialRun>),
+}
+
+pub struct MaterialRun {
+    pub start_index: u32,
+    pub length: NonZeroU32,
+    pub sample: MaterialSample,
 }
 
 pub struct MatterApplied {
@@ -704,8 +1147,10 @@ pub struct MatterApplied {
 Canonical removal is `Fill` with `MaterialSample::EMPTY`; place/replace is
 `Fill` with a registered nonempty sample. `Patch` covers consumer stamps.
 Patch coordinates are volume-local. Dense order is X-fastest, then Y, then Z.
-Runs must be sorted, non-overlapping, inside bounds, and collectively within
-the configured cell/byte limits.
+Dense length must equal the checked cell count. Run indices use that same
+linear order; runs must be sorted, non-overlapping, inside the dense length,
+and collectively within the configured cell/byte limits. Cells not covered by
+a run are unchanged.
 
 One command targets exactly one volume. Admission verifies identity, bounds,
 materials, static structure, permit, and current precondition. Cold target
@@ -778,6 +1223,17 @@ work and checkpoint obligations, commits a tombstone revision, emits an
 observation, and invalidates the runtime handle. Durable tombstones prevent a
 saved key from being accidentally reused.
 
+`live_volumes` bounds concurrently live directory entries.
+`volume_records` separately bounds all stable keys ever accepted by the world,
+including current live volumes and retained retirement tombstones. Retiring a
+volume releases one live slot but never releases its lifetime record. A create
+at the live limit is synchronously invalid with
+`ViolationCode::LiveVolumeCapacity`; a create after lifetime-key exhaustion is
+`ViolationCode::VolumeRecordCapacity` with the supported limit. Neither enters
+GPU work, and a retired key is always `ViolationCode::RetiredVolumeKey`, even
+if live capacity is available. The whole-world manifest therefore contains at most
+`volume_records` live-plus-tombstone entries.
+
 Create, move, and retire do not share atomicity with matter commands or another
 volume. Their receipts state whether a revision changed on failure.
 
@@ -795,11 +1251,121 @@ pub enum Query {
 }
 
 pub struct QueryOptions {
-    pub scope: QueryScope,                // one volume or bounded world scope
     pub minimum: MinimumRevision,
-    pub readiness: ReadinessPolicy,       // Pending | Materialize
-    pub partial: PartialPolicy,           // Deny by default
+    pub readiness: ReadinessPolicy,
+    pub partial: PartialPolicy,
     pub max_results: u32,
+}
+
+pub enum ReadinessPolicy {
+    Pending,
+    Materialize,
+}
+
+pub enum PartialPolicy {
+    Deny,
+    Allow { max_omitted_regions: u16 },
+}
+
+pub enum QueryScope {
+    VolumeCells { volume: VolumeId, bounds: CellAabb },
+    WorldBounds {
+        bounds: WorldAabb,
+        volumes: BoundedVolumeFilter,
+    },
+}
+
+pub enum SampleAddress {
+    VolumeCell { volume: VolumeId, cell: CellCoord },
+    WorldPoint {
+        point: WorldPoint,
+        volumes: BoundedVolumeFilter,
+    },
+}
+
+pub struct SampleQuery {
+    pub address: SampleAddress,
+    pub options: QueryOptions,
+}
+
+pub enum RegionEncoding {
+    Dense,
+    HomogeneousRuns,
+}
+
+pub struct RegionQuery {
+    pub scope: QueryScope,
+    pub encoding: RegionEncoding,
+    pub options: QueryOptions,
+}
+
+pub enum OccupancyTarget {
+    Point(SampleAddress),
+    Region(QueryScope),
+    Shape {
+        shape: CollisionShape,
+        volumes: BoundedVolumeFilter,
+    },
+}
+
+pub struct OccupancyQuery {
+    pub target: OccupancyTarget,
+    pub include_first: u16,              // 0..=min(max_results, 4,096)
+    pub options: QueryOptions,
+}
+
+pub struct WorldSegment {
+    pub start: WorldPoint,
+    pub end: WorldPoint,
+}
+
+pub struct TraceQuery {
+    pub segment: WorldSegment,
+    pub volumes: BoundedVolumeFilter,
+    pub options: QueryOptions,
+}
+
+pub enum CollisionShape {
+    Sphere { center: WorldPoint, radius: f32 },
+    Aabb(WorldAabb),
+    Capsule {
+        a: WorldPoint,
+        b: WorldPoint,
+        radius: f32,
+    },
+}
+
+pub struct OverlapQuery {
+    pub shape: CollisionShape,
+    pub volumes: BoundedVolumeFilter,
+    pub options: QueryOptions,
+}
+
+pub struct SweepQuery {
+    pub shape_at_start: CollisionShape,
+    pub displacement: WorldVector,
+    pub volumes: BoundedVolumeFilter,
+    pub options: QueryOptions,
+}
+
+bitflags! {
+    pub struct SnapshotContents: u8 {
+        const VOLUME_STATE = 0b0001;
+        const REGION_LIFECYCLE = 0b0010;
+        const MATERIAL_SAMPLES = 0b0100;
+        const OCCUPANCY = 0b1000;
+    }
+}
+
+pub enum SnapshotScope {
+    SubscriptionGap { subscriber: SubscriberId, max_bricks: u32 },
+    Regions(Vec<QueryScope>),            // sorted, non-overlapping, <=256
+}
+
+pub struct SnapshotQuery {
+    pub scope: SnapshotScope,
+    pub contents: SnapshotContents,
+    pub options: QueryOptions,
 }
 
 pub enum QueryAvailability {
@@ -827,24 +1393,167 @@ pub enum QueryCompleteness {
     Complete,
     PartialRequested {
         coverage: CoverageMask,
-        omitted: Vec<QueryScope>,
+        omitted: Vec<UnavailableRegion>,
     },
+}
+
+pub struct CoverageMask {
+    pub bricks: Vec<BrickCoverage>,
+}
+
+pub struct BrickCoverage {
+    pub volume: VolumeId,
+    pub brick: BrickCoord,
+    pub inspected: bool,
+}
+
+pub struct RequiredRegion {
+    pub scope: QueryScope,
+    pub reason: RequiredReason,
+}
+
+pub enum RequiredReason {
+    Cold,
+    Materializing,
+    MinimumRevision,
+}
+
+pub struct UnavailableRegion {
+    pub scope: QueryScope,
+    pub reason: UnavailableReason,
+}
+
+pub enum UnavailableReason {
+    FailedContent,
+    RetiredVolume,
+    RevisionUnavailable,
+    CapabilityDisabled,
+    Budget,
+    DeviceUnavailable,
+}
+
+pub struct InspectedRegion {
+    pub scope: QueryScope,
+    pub revision: VolumeRevision,
+}
+
+pub struct VolumeSnapshotRef {
+    pub volume: VolumeId,
+    pub key: VolumeKey,
+    pub revision: VolumeRevision,
+    pub placement: RigidPlacement,
 }
 
 pub enum QueryResult {
     Samples(Vec<SampleFact>),
-    Region(RegionSamples),               // row-major or homogeneous runs
+    Region(RegionSamples),
     Occupancy(OccupancyFact),
     Trace(Vec<ContactFact>),
     Overlap(Vec<ContactFact>),
     Sweep(Vec<ContactFact>),
     Snapshot(WorldSnapshot),
 }
+
+pub struct SampleFact {
+    pub volume: VolumeId,
+    pub revision: VolumeRevision,
+    pub cell: CellCoord,
+    pub sample: MaterialSample,
+    pub world_center: WorldPoint,
+}
+
+pub struct RegionSamples {
+    pub volumes: Vec<VolumeRegionSamples>,
+}
+
+pub struct VolumeRegionSamples {
+    pub volume: VolumeId,
+    pub revision: VolumeRevision,
+    pub bounds: CellAabb,
+    pub encoding: RegionSampleEncoding,
+}
+
+pub enum RegionSampleEncoding {
+    Dense(Vec<MaterialSample>),
+    HomogeneousRuns(Vec<RegionRun>),
+}
+
+pub struct RegionRun {
+    pub start_index: u32,
+    pub length: NonZeroU32,
+    pub sample: MaterialSample,
+}
+
+pub struct OccupancyFact {
+    pub occupied: bool,
+    pub first: Vec<OccupiedCellFact>,
+}
+
+pub struct OccupiedCellFact {
+    pub volume: VolumeId,
+    pub revision: VolumeRevision,
+    pub cell: CellCoord,
+    pub sample: MaterialSample,
+}
+
+pub struct ContactFact {
+    pub volume: VolumeId,
+    pub revision: VolumeRevision,
+    pub material: MaterialId,
+    pub cell: CellCoord,
+    pub world_point: WorldPoint,
+    pub world_normal: WorldVector,
+    pub penetration_or_toi: f32,
+}
+
+pub struct WorldSnapshot {
+    pub scope: SnapshotScope,
+    pub observation_head: ObservationSequence,
+    pub volumes: Vec<VolumeStateSnapshot>,
+    pub regions: Vec<RegionStateSnapshot>,
+    pub samples: Vec<SampleFact>,
+    pub occupancy: Vec<OccupiedCellFact>,
+    pub resume: Option<GapResumeToken>,
+}
+
+pub struct VolumeStateSnapshot {
+    pub volume: VolumeId,
+    pub key: VolumeKey,
+    pub revision: VolumeRevision,
+    pub placement: RigidPlacement,
+    pub mode: VolumeMode,
+}
+
+pub struct RegionStateSnapshot {
+    pub volume: VolumeId,
+    pub bounds: CellAabb,
+    pub state: RegionLifecycleState,
+}
+
+pub enum RegionLifecycleState {
+    Cold,
+    Requested,
+    Materializing,
+    Ready { revision: VolumeRevision },
+    Retiring,
+    Failed { retryability: Retryability },
+}
+
+pub struct GapResumeToken { /* opaque subscriber/scope/head digest */ }
 ```
 
-All query results include query ID, actual inspected bounds, device generation,
-a sorted vector of `(VolumeId, VolumeRevision, RigidPlacement)`, completeness,
-and result-specific facts.
+Every concrete query embeds exactly one `QueryOptions`; there is no implicit
+default attached by `submit_query`. `max_results` must be nonzero except for an
+occupancy request with `include_first = 0`, and cannot exceed the fixed limit
+for that query family or its permit bytes. World filters, query scopes, and
+snapshot region vectors are normalized and validated before admission.
+Collision inputs require finite values, positive radii, a nonzero trace segment
+or sweep displacement, and complete shape bounds inside the supported checked
+coordinate range.
+
+All query outcomes include query ID, actual inspected bounds, device
+generation, a sorted `VolumeSnapshotRef` vector, completeness, and
+result-specific facts.
 
 - `Sample` returns every volume sample covering a world point, or the one
   addressed local sample. Overlapping volumes are preserved.
@@ -859,6 +1568,14 @@ and result-specific facts.
   time-of-impact facts without moving anything.
 - `Snapshot` returns lifecycle/revision/placement summaries and may include
   bounded material data for observation-gap recovery.
+
+`SnapshotScope::SubscriptionGap` is accepted only while that subscriber is in
+`NeedsSnapshot`. The result scope is the exact normalized subscription scope
+and `GapResumeToken` binds subscriber ID, scope digest, gap head, captured
+observation head, and captured revisions. Explicit region snapshots have
+`resume = None`. `resume_after` rejects a token from another subscriber,
+scope, or an older gap; this is the complete race-closing contract and does not
+depend on caller-provided sequence arithmetic.
 
 Supported collision shapes are sphere, axis-aligned box, and capsule. Inputs
 are finite and nondegenerate. Trace/sweep results sort by parametric distance,
@@ -878,8 +1595,10 @@ All vectors are bounded by the permit, `max_results`, and fixed request
 maxima; decoding an excess count is `OutputOverflow`.
 
 `PartialPolicy::Deny` either returns complete facts or a non-success
-availability/error. `Allow` returns an explicit coverage mask, omitted scopes,
-and `Complete | PartialRequested`; hitting a result cap without prior partial
+availability/error. `Allow` returns one `BrickCoverage` for every resolved
+brick, explicit unavailable omitted regions, and
+`Complete | PartialRequested`; the coverage vector is bounded by the request's
+resolved brick maximum. Hitting a result cap without prior partial
 authorization is `OutputOverflow`, not success.
 
 ## Observation
@@ -887,13 +1606,157 @@ authorization is `OutputOverflow`, not success.
 ```rust
 pub struct Subscription {
     pub volumes: BoundedVolumeFilter,
-    pub local_or_world_bounds: Option<QueryAabb>,
+    pub bounds: Option<ObservationBounds>,
     pub kinds: ObservationKinds,
+}
+
+pub enum ObservationBounds {
+    VolumeLocal { volume: VolumeId, bounds: CellAabb },
+    World(WorldAabb),
+}
+
+bitflags! {
+    pub struct ObservationKinds: u16 {
+        const MATTER = 0x0001;
+        const VOLUME = 0x0002;
+        const LIFECYCLE = 0x0004;
+        const PRESENTATION = 0x0008;
+        const CHECKPOINT = 0x0010;
+        const PRESSURE = 0x0020;
+        const DEVICE = 0x0040;
+    }
 }
 
 pub enum ObservationItem {
     Fact(Observation),
     Gap(ObservationGap),
+}
+
+pub struct Observation {
+    pub sequence: ObservationSequence,
+    pub fact: ObservationFact,
+}
+
+pub enum ObservationFact {
+    MatterCommitted {
+        command: CommandId,
+        volume: VolumeId,
+        affected: CellAabb,
+        revision: VolumeRevision,
+        correlation: Correlation,
+    },
+    VolumeCreated {
+        command: CommandId,
+        volume: VolumeId,
+        key: VolumeKey,
+        revision: VolumeRevision,
+        correlation: Correlation,
+    },
+    VolumeMoved {
+        command: CommandId,
+        volume: VolumeId,
+        revision: VolumeRevision,
+        placement: RigidPlacement,
+        correlation: Correlation,
+    },
+    VolumeRetired {
+        command: CommandId,
+        key: VolumeKey,
+        terminal_revision: VolumeRevision,
+        correlation: Correlation,
+    },
+    RegionLifecycle(RegionStateSnapshot),
+    Presentation {
+        volume: VolumeId,
+        brick: BrickCoord,
+        state: PresentationState,
+    },
+    Checkpoint {
+        key: CheckpointKey,
+        outcome: CheckpointObservation,
+    },
+    ResourcePressure(ResourcePressureFact),
+    Device {
+        generation: DeviceGeneration,
+        state: DeviceObservationState,
+    },
+}
+
+pub enum CheckpointObservation {
+    Durable { revisions: Vec<(VolumeKey, VolumeRevision)> },
+    Failed { retryability: Retryability },
+}
+
+pub struct ResourcePressureFact {
+    pub resource: ResourceKind,
+    pub used: u64,
+    pub limit: u64,
+    pub action: PressureAction,
+}
+
+pub enum PressureAction {
+    Deferred,
+    Rejected,
+    Coalesced,
+    EvictedDerived,
+    EvictedAuthority,
+}
+
+pub enum ResourceKind {
+    Materials,
+    MaterialMetadataBytes,
+    LiveVolumes,
+    VolumeRecords,
+    InterestLeases,
+    BricksPerInterest,
+    DetailedBricks,
+    PageKeys,
+    PageVersions,
+    VersionsPerBrick,
+    DirtyScars,
+    CommandRecords,
+    CommandPayloadBytes,
+    QueryRecords,
+    QueryResultBytes,
+    ObservationFacts,
+    Subscribers,
+    VolumesPerFilter,
+    StagingMaps,
+    StagingBytes,
+    ContentRequests,
+    ContentResponseBytes,
+    PersistenceRequests,
+    PersistenceStagedBytes,
+    ExtractionRecords,
+    ExtractionBytes,
+    PresentationJobs,
+    PresentationArtifacts,
+    PresentationDirtyRecords,
+    MeshVertices,
+    MeshIndices,
+    DressingStyles,
+    DressingInstances,
+    ExtensionJobs,
+    ExtensionRegistrations,
+    ExtensionRegistryBytes,
+    ExtensionPacketBytes,
+    ExtensionStateBytes,
+    ExtensionCandidateEffects,
+}
+
+pub enum DeviceObservationState {
+    Lost,
+    Recovering,
+    Ready,
+    Failed,
+}
+
+pub struct ObservationGap {
+    pub last_delivered: Option<ObservationSequence>,
+    pub oldest_retained: ObservationSequence,
+    pub current_head: ObservationSequence,
+    pub scope: Subscription,
+    pub trustworthy_revisions: Vec<(VolumeId, VolumeRevision)>,
 }
 
 pub enum SubscriptionStart {
@@ -926,6 +1789,13 @@ scope, and last trustworthy revisions known at the cursor. The subscriber must
 obtain a bounded `Snapshot` and call `resume_after(snapshot)`; no later facts
 are delivered before that.
 
+Checkpoint revision vectors and gap revision vectors are stable-key/runtime-ID
+sorted and bounded by `volume_records` and `volumes_per_filter` respectively.
+`ResourceKind` is the closed set of every field in `ResourceLimits`, so
+pressure on extraction, lifetime volume records, presentation artifacts/dirty
+records/instances, or extension registry storage is observable through the
+same fact.
+
 Observations are not a command bus. A subscriber receives no storage or
 mutation privilege.
 
@@ -948,22 +1818,47 @@ pub enum PresentationState {
     Stale { visible: VolumeRevision, target: VolumeRevision },
     Failed { target: VolumeRevision, error: PresentationError },
 }
+
+pub enum PresentationError {
+    AssetUnavailable {
+        style: Option<DressingStyleKey>,
+        asset_kind: PresentationAssetKind,
+    },
+    OutputOverflow { resource: ResourceKind, required: u64, limit: u64 },
+    InvalidGeometry,
+    GpuValidation,
+    DeviceLost,
+}
+
+pub enum PresentationAssetKind {
+    SurfaceMaterial,
+    TriplanarAlbedo,
+    TriplanarNormal,
+    DressingMesh,
+    DressingMaterial,
+}
 ```
 
 The Bevy adapter owns render entities and mesh assets and tags them with opaque
 volume/brick/revision components for diagnostics. These components do not grant
-query access. Consumers may supply Bevy material handles through presentation
-registration, but Moria validates that every runtime material has a rendering
-input before presentation interest becomes ready.
+query access. Surface registration is the `MaterialDefinition.presentation`
+value, and dressing registration is
+`MoriaBuilder::register_dressing_style`; there is no unnamed presentation
+registration path. When presentation is enabled, validation requires every
+style filter key to resolve and every material to have a valid surface
+descriptor before presentation interest can become ready.
 
-Derived dressing uses a bounded `DressingDescriptor`: stable style key,
-material filter, density, scale/orientation ranges, and consumer mesh/material
-handles. It has no occupancy. Matter-backed objects use ordinary volume
-creation instead.
+Each dressing descriptor is fixed-size except its 1..=64 material-key filter
+and 96-byte name. Descriptor count is bounded by `dressing_styles`; generated
+instances are bounded by both `max_instances_per_artifact` and the global
+`dressing_instances` pool. Dressing has no occupancy. Matter-backed objects use
+ordinary volume creation instead.
 
 ## Persistence API
 
 ```rust
+pub struct ChunkDigest(pub [u8; 32]);
+
 pub struct PersistenceError {
     pub kind: PersistenceErrorKind,
     pub retryability: Retryability,
@@ -1111,12 +2006,43 @@ The optional `gpu-extension` feature is deliberately descriptor based:
 ```rust
 pub struct GpuExtensionDescriptor {
     pub key: ExtensionKey,
-    pub wgsl: String,
-    pub entry_point: String,
-    pub max_invocations: u32,
-    pub max_observations: u32,
-    pub max_candidate_effects: u32,
-    pub max_effect_payload_bytes: u32,   // aggregate encoded child commands
+    pub wgsl: String,                    // 1..=1 MiB UTF-8 bytes
+    pub entry_point: String,             // 1..=128 UTF-8 bytes
+    pub max_invocations: u32,            // 1..=1,048,576
+    pub max_inspection_records: u32,     // 1..=262,144
+    pub max_candidate_effects: u32,      // 0..=256
+    pub max_effect_payload_bytes: u32,   // 0..=command_payload_bytes
+    pub state_bytes: u32,                // 0..=min(4 MiB, extension_state_bytes / 2)
+}
+
+pub enum GpuInspectionQuery {
+    Samples {
+        scope: QueryScope,
+        maximum_records: u32,
+        minimum: MinimumRevision,
+        readiness: ReadinessPolicy,
+    },
+    Occupancy {
+        scope: QueryScope,
+        maximum_records: u32,
+        minimum: MinimumRevision,
+        readiness: ReadinessPolicy,
+    },
+    Lifecycle {
+        scope: QueryScope,
+        maximum_records: u32,
+    },
+    ObservationDeltas {
+        subscriber: SubscriberId,
+        after: ObservationSequence,
+        maximum_records: u32,
+    },
+}
+
+pub enum GpuStateInput {
+    Zeroed,
+    Inline(Vec<u8>),
+    Previous(GpuStateOutput),
 }
 
 pub struct GpuExtensionRequest {
@@ -1130,7 +2056,24 @@ pub struct GpuExtensionDispatched {
     pub extension: ExtensionId,
     pub snapshot: Vec<VolumeSnapshotRef>,
     pub diagnostics: ExtensionDiagnostics,
+    pub state: Option<GpuStateOutput>,
     pub effects: Vec<AdmittedEffect>,
+}
+
+pub struct ExtensionDiagnostics {
+    pub flags: u32,
+    pub counters: [u32; 8],
+    pub inspection_records: u32,
+    pub produced_effects: u32,
+    pub effect_payload_bytes: u32,
+}
+
+pub struct GpuStateOutput {
+    /* Clone + Send + Sync lease */
+    pub id: GpuStateId,
+    pub extension: ExtensionId,
+    pub device_generation: DeviceGeneration,
+    pub bytes: u32,
 }
 
 pub enum AdmittedEffect {
@@ -1145,11 +2088,115 @@ pub enum AdmittedEffect {
 }
 ```
 
-Registration validates WGSL and the fixed ABI. A request first captures a
-committed bounded inspection snapshot into an extension-owned packet:
-header/revisions, requested material samples or occupancy records, lifecycle
-deltas, and opaque consumer state. The shader may write only its private state,
-diagnostics, and candidate `Fill`/bounded-run `Patch`/`Move` effect records.
+Registration is world-lifetime and consumes one `extension_registrations`
+record plus `wgsl.len() + entry_point.len()` from
+`extension_registry_bytes`; there is no unbounded pipeline or descriptor
+cache. Reaching either limit returns the corresponding
+`ExtensionRegistrationError` without compiling a pipeline. Registration
+validates WGSL and the fixed ABI. A request captures exactly one closed
+`GpuInspectionQuery` into an extension-owned packet. `maximum_records` must be
+nonzero and fit the packet permit, descriptor maximum, and fixed public query
+limit; unsupported partial coverage is rejected rather than clipped.
+
+When `descriptor.state_bytes > 0`, `GpuStateInput::Inline` must contain exactly
+that many bytes; `Zeroed` creates that many zero bytes, and `Previous` must name the same
+extension, byte count, world, and current device generation. Shader-written
+state remains in an extension-owned GPU buffer and returns as an opaque
+`Some(GpuStateOutput)`; it is accepted by a later request but grants no buffer
+access. A state ID becomes stale on device loss or world shutdown. State is
+external-behavior working data, is not checkpointed, and never affects Moria
+truth unless a candidate effect is admitted. For `state_bytes == 0`, only
+`Zeroed` is valid and the output state is `None`.
+
+`Previous` owns a cloned immutable state lease until submission; each dispatch
+writes a distinct next-state allocation, so concurrent requests may safely
+branch from one prior state. Dropping the last `GpuStateOutput` clone makes its
+bytes reclaimable after the last GPU reader completes. Live prior/next states
+and in-flight state ranges together may not exceed `extension_state_bytes`;
+pressure rejects/waits through the extension permit policy and never allocates
+an unbounded state history. For a descriptor with zero candidate capacity,
+`try_reserve_effect_batch(0, 0)` returns a zero-capacity permit without
+consuming command records; any nonzero candidate output is invalid.
+
+### Extension ABI v1
+
+All ABI words are 32-bit little-endian values, every offset is from extension
+job-allocation byte zero and divisible by four, and all reserved words must be
+zero on input and output. Rust mirrors are
+`#[repr(C)] + Pod + Zeroable`; layout tests assert each offset and total size
+against WGSL constants. An extension declares only Moria bind group 0:
+read/write control header, read-only packet records/input state, read/write
+next-state, write-only candidate records, and write-only effect payload. These
+are nonoverlapping bounded ranges in an extension-owned job allocation; no
+range aliases Moria storage. Any other group/binding is rejected by Naga
+validation.
+
+The 128-byte packet header is:
+
+| Byte | Field |
+| ---: | --- |
+| 0 | magic `0x4d4f5249` |
+| 4 | ABI version `1` |
+| 8 | inspection kind: samples `1`, occupancy `2`, lifecycle `3`, observation delta `4` |
+| 12 | flags; v1 input is zero |
+| 16, 20 | snapshot count, inspection record count |
+| 24, 28 | state byte count, candidate capacity |
+| 32, 36 | output candidate count (initially zero), diagnostic word count (`8`) |
+| 40, 44 | effect-payload capacity, output payload bytes (initially zero) |
+| 48 | total packet bytes |
+| 52..63 | reserved zero |
+| 64, 68 | snapshot-record offset, inspection-record offset |
+| 72, 76 | input-state offset, output-state offset |
+| 80, 84 | candidate-record offset, effect-payload offset |
+| 88, 92 | device generation low/high words |
+| 96, 100 | operation ID low/high words |
+| 104..127 | reserved zero |
+
+Snapshot records are 64 bytes: runtime volume ID at 0, revision at 8,
+translation `[f32; 4]` at 16, quaternion `[f32; 4]` at 32, and stable
+`VolumeKey` bytes at 48. Sample and occupancy records are 32 bytes: snapshot
+index at 0, signed local cell XYZ at 4/8/12, packed
+`material:u16|coverage:u8|flags:u8` at 16, occupancy `0|1` at 20, and reserved
+zero through 31. Lifecycle records are 32 bytes: snapshot index at 0, signed
+brick XYZ at 4/8/12, lifecycle tag at 16, retryability tag at 20, and reserved
+zero. Observation-delta records are 64 bytes and contain sequence at 0,
+closed observation-kind tag at 8, runtime volume ID at 16, revision at 24,
+correlation bytes at 32, and kind-specific scalar data at 48; observations
+whose complete fact does not fit this fixed record are rejected for this GPU
+inspection variant and remain available through the CPU observation API.
+
+Candidate records are fixed 128-byte slots:
+
+| Byte | Field |
+| ---: | --- |
+| 0 | kind: unused `0`, fill `1`, patch-runs `2`, move `3` |
+| 4 | flags; v1 zero |
+| 8 | runtime volume ID `u64` |
+| 16 | mandatory exact expected `VolumeRevision` `u64`; zero is invalid |
+| 24 | 16-byte `Correlation` |
+| 40, 44, 48 | target min XYZ `i32` |
+| 52, 56, 60 | target max XYZ `i32` |
+| 64 | packed material sample |
+| 68, 72 | effect-payload offset and byte length |
+| 76 | reserved zero |
+| 80 | placement translation `[f32; 4]` |
+| 96 | placement quaternion `[f32; 4]` |
+| 112..127 | reserved zero |
+
+Fill uses target/sample and has zero payload. Patch-runs uses target plus a
+payload slice of 20-byte records
+`{ start_index:u32, length:u32, sample:u32, reserved:[u32;2] }`; runs use the
+same X-fastest rules as `MaterialPatch`, and both reserved words are zero.
+Move uses placement and requires target/sample/payload fields to be zero.
+Every kind carries the mandatory exact revision precondition from the captured
+snapshot. Create, retire, dense patches, and any unknown kind are not extension
+ABI effects; consumers submit them through the ordinary CPU facade.
+
+The shader may write only next-state bytes, eight consumer-defined diagnostic
+counter words/flags,
+candidate count/records, and effect payload. It cannot change the snapshot,
+inspection records, capacities, IDs, or offsets. Diagnostics are copied as the
+fixed `ExtensionDiagnostics`; next state remains GPU-owned.
 
 The request's batch permit must reserve at least the descriptor's declared
 `max_candidate_effects`, not merely an expected count, and enough aggregate
@@ -1159,14 +2206,21 @@ The extension queue permit independently bounds packet/state/diagnostic work.
 Registration rejects a descriptor whose candidate count exceeds
 `extension_candidate_effects`, whose aggregate effect bytes exceed
 `command_payload_bytes`, or whose worst record exceeds the fixed matter-command
-limits.
+limits. It also rejects WGSL/entry-point sizes above their per-descriptor
+limits, zero/excess invocation or observation counts, state above
+`extension_state_bytes`, or a descriptor that cannot fit one extraction batch.
 
-Moria checks output count, coordinates, material IDs, revision preconditions,
-record lengths, and aggregate bytes on GPU, copies only compact outcome
-metadata to the control plane, then validates the entire candidate array on the
-host. Any invalid record, overflow, duplicate effect slot, or mismatch with the
-batch reservation fails the extension receipt and admits zero child commands.
-No command ID is assigned before whole-array validation succeeds.
+Moria checks output count, offsets/alignment, reserved words, coordinates,
+material IDs/flags, mandatory revision preconditions, record lengths, and
+aggregate bytes on GPU. It then copies the 64-byte outcome/diagnostic block and
+exactly the produced fixed candidate records/effect payload through the bounded
+staging pool; host validation decodes that same bounded transport
+representation into ordinary owned commands. Readback is therefore at most
+`64 + 128 * produced_count + produced_payload_bytes`, never the inspection
+packet or material samples. Any invalid record, overflow, duplicate effect
+slot, or mismatch with the batch reservation fails the extension receipt and
+admits zero child commands. No command ID is assigned before whole-array
+validation succeeds.
 
 After successful validation, Moria converts every candidate into an ordinary
 `MatterCommand` or `VolumeCommand`, consumes the matching reserved record/byte
@@ -1187,17 +2241,57 @@ use the ordinary query/observation/command APIs.
 
 ## Telemetry
 
+```rust
+pub struct TelemetrySnapshot {
+    pub world: WorldId,
+    pub state: WorldState,
+    pub device_generation: Option<DeviceGeneration>,
+    pub effective_config: Option<EffectiveConfig>,
+    pub resources: Vec<ResourceUsage>,   // exactly one per ResourceKind
+    pub lifecycle_regions: [u64; 6],     // Cold..Failed enum order
+    pub active_interests: u32,
+    pub operation_stages: [u64; 7],      // OperationStage enum order
+    pub observation_backlog: u32,
+    pub observation_gaps: u64,
+    pub presentation_states: [u64; 5],   // Absent..Failed enum order
+    pub maximum_truth_view_revision_lag: u64,
+    pub dirty_scar_bricks: u32,
+    pub checkpoint_frontier_lag: u64,
+    pub extension_packet_bytes: u64,
+    pub extension_effect_readback_bytes: u64,
+}
+
+pub struct ResourceUsage {
+    pub resource: ResourceKind,
+    pub requested: u64,
+    pub effective: u64,
+    pub used: u64,
+    pub high_water: u64,
+    pub waiting_or_deferred: u64,
+    pub rejected: u64,
+    pub coalesced: u64,
+}
+```
+
+Additional latency counters use fixed buckets versioned in the evidence schema.
+`ResourceUsage` is the normative pool accounting shape, and its vector must
+contain every `ResourceKind` in enum order even when the value is zero or its
+capability is disabled.
+
 `WorldHandle::telemetry()` returns an immutable aggregate snapshot containing:
 
 - world/device state and adapter capability context;
 - lifecycle region counts and active interest by priority/capability;
 - configured versus used detail/scar/page/mesh/staging capacity;
+- live versus lifetime volume records; extraction records/bytes; presentation
+  artifact, dirty-record, dressing-style, and instance capacity;
 - queue records/bytes, high-water marks, rejection, and latency histograms;
 - command/query stages and terminal outcomes;
 - observation ring use/gaps;
 - presentation state and truth-to-view revision lag;
 - checkpoint frontier/progress/dirty coverage;
-- extension packet/effect bytes and readback bytes;
+- extension registration/registry bytes, packet/state/effect bytes, stale state
+  IDs, and candidate/diagnostic readback bytes;
 - resource-pressure decisions.
 
 Coordinates, raw samples, shader buffers, and consumer opaque metadata are not

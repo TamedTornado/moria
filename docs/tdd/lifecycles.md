@@ -111,6 +111,12 @@ Create/retire failure reports any committed directory revision. Matter-command
 failure always commits no revision. Move uses the same prepare/publish rule as
 matter but changes only directory state.
 
+Create consumes one concurrent `live_volumes` slot and one permanent
+`volume_records` slot. Retire releases only the live slot and converts the
+permanent record into a tombstone. Live capacity is retryable after retirement;
+lifetime record exhaustion is nonretryable for new keys in that world and is
+reported before admission.
+
 ## Query lifecycle
 
 ```text
@@ -185,6 +191,15 @@ Commits may supersede queued builds before submission. Submitted obsolete
 builds finish but are discarded by source-revision comparison. Failure never
 changes truth or collision.
 
+One command can enqueue at most 13,824 unique halo-invalidated artifact keys,
+not 27. Exact invalidations drain through at most `presentation_jobs`
+concurrent slots. If dirty-record pressure coalesces them to a volume marker,
+bounded scans of active `presentation_artifacts` recreate the exact current
+target set. Within one priority, stable volume/brick ordering plus a rotating
+cursor guarantees that a continuously interested, nonsuperseded artifact is
+eventually scheduled; newer commits may replace its target revision but cannot
+starve the artifact indefinitely.
+
 Placement-only revisions reuse mesh buffers and update render transforms after
 the placement commit. Their presentation status becomes current for the new
 revision only when the tagged entity transform is installed.
@@ -228,13 +243,20 @@ chunk fails restore rather than failing later as an apparently empty region.
 ```text
 registered/validated
   -> extension + worst-case child batch capacity reserved
-  -> admitted bounded inspection
+  -> admitted closed ABI inspection + prior/inline state
   -> packet captured at revisions
   -> external shader submitted
   -> whole candidate output validated
   -> every child admitted or zero children admitted
-  -> extension dispatch outcome with every child receipt
+  -> extension dispatch outcome with diagnostics, next-state lease,
+     and every child receipt
 ```
+
+Registration itself consumes bounded world-lifetime descriptor and WGSL bytes;
+registry exhaustion fails synchronously before pipeline creation. Prior GPU
+state is an immutable lease and each dispatch writes a new bounded state
+generation. State pressure follows extension admission policy, and device loss
+makes every old state lease stale without changing material truth.
 
 Before dispatch, `EffectBatchPermit` reserves the descriptor's worst-case
 ordinary command record count, aggregate encoded payload bytes, and child
