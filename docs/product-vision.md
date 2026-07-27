@@ -50,27 +50,28 @@ Voxel worlds only work when several hard systems agree as **explicit, shareable
 contracts**: sparse material truth, bounded inspection, mutation admission,
 streaming lifecycle, collision against matter rather than presentation,
 persistence of world matter plus edits, GPU-resident representation of that
-matter, measurable presentation derived from truth, and seams so a physics
-engine can plug in without privileged access to voxel storage.
+matter, measurable presentation derived from truth, and generic seams so
+external behavior can plug in without privileged access to voxel storage.
 
 Moria exists so material worlds can be consumed without each game rebuilding
 those contracts, and without hiding them behind a single privileged demo.
 
 **The product’s infrastructural claim:** a consumer can obtain a continuous
-three-dimensional material world (including movable, damageable voxel volumes
-such as players and enemies), inspect and mutate it only through supported
-interfaces, keep authoritative matter **GPU-resident** for scale and
-gameplay-enabling work, and trust that what they see and collide with is a view
-of the **same** authoritative matter—while gravity, force, material strength,
-and related physical response are **supportable through exposed bindings**, not
-owned as a substrate physics simulator.
+three-dimensional material world, including movable material volumes, inspect
+and mutate it only through supported interfaces, keep authoritative matter
+**GPU-resident** for scale and gameplay-enabling work, and trust that what they
+see and collide with is a view of the **same** authoritative matter. External
+plug-ins may implement physics, damage, or other behavior by observing that
+truth and requesting admitted changes, but the substrate does not prescribe
+their concepts, state, rules, or outcomes.
 
 **World generation is not part of the substrate identity.** How a game fills or
 seeds sparse material volumes is a consumer- or game-dependent algorithm that
 runs *on top of* the substrate. The substrate provides storage, query,
-mutation, streaming, collision-truth seams, physics plug-in bindings,
+mutation, streaming, collision-truth seams, generic behavior-extension seams,
 persistence seams, presentation derivation, and content-injection seams for
-material truth—not a particular generator and not a particular physics engine.
+material truth—not a particular generator, physics engine, damage system, or
+behavior vocabulary.
 
 ---
 
@@ -90,16 +91,16 @@ material truth—not a particular generator and not a particular physics engine.
 
 | Consumer need | What success means |
 | --- | --- |
-| One material world | Occupancy, queries, collision truth, persistence, and (when present) physics plug-ins all read the same authoritative matter—not a private mesh world or a second invented occupancy model. |
+| One material world | Occupancy, queries, collision truth, persistence, and external behavior plug-ins all read the same authoritative matter—not a private mesh world or a second invented occupancy model. |
 | Contracted access only | Install the facade; inspect through public reads; mutate through admitted edits; never require privileged internal paths for harnesses or external crates. |
 | Scale without full residency | Large regions stay tractable: untouched homogeneous volume stays cheap; only the interesting shell and active edits pay detailed cost. |
 | Everywhere mutation | Any material cell the contract exposes can be destroyed or placed; cut faces and scars remain honest matter; presentation rebuilds from truth. |
 | Genuine volumetric depth | Volume along the full third axis is real content—caves, strata, ore, aquifers as material bands, buried structure—not a heightmap floor with painted underground. |
-| Movable material volumes | Dynamic voxel volumes (e.g. combatants as material) can move and take damage under the same truth contracts as static geometry. |
-| Physics without ownership | Material strength, gravity parameters, applied force, and related supportable fields are exposable so a hand-rolled or third-party engine can attach without privileged voxel access. |
+| Movable material volumes | Dynamic voxel volumes can move and be mutated under the same truth contracts as static geometry. External systems decide whether those changes represent physics, damage, or something else. |
+| Behavior without ownership | External systems can observe authoritative matter and request admitted changes without privileged voxel access. They own their concepts, state, and rules. |
 | Tractable scars | Material edits and related world-state scars persist without dumping every cell of an untouched volume. |
 | GPU-scale work | Sparse representation and a command/query boundary keep world matter GPU-resident and support asynchronous GPU work without changing the consumer contract. |
-| Measurable quality | Benchmarks and harnesses can evidence mutation response, streaming, GPU memory behavior, collision-truth honesty, and physics-binding readiness when exercised—without redefining the product as a game. |
+| Measurable quality | Benchmarks and harnesses can evidence mutation response, streaming, GPU memory behavior, collision-truth honesty, and behavior-extension readiness when exercised—without redefining the product as a game. |
 | Content ownership | Consumers inject or drive world content (including their own generation algorithms) through seams; no particular generator is substrate law. |
 | Domain-appropriate look | Fully material volumes can present as coherent for the consumer’s domain (geology, masonry, interiors, etc.); no single overworld aesthetic is mandated. |
 
@@ -122,13 +123,14 @@ The reusable substrate and its public facade:
 6. **Collision and occupancy truth** against voxel matter, not against
    disposable meshes—queries and contacts read material authority so consumers
    and plug-ins do not invent a second world.
-7. **Physics plug-in bindings:** material properties and world seams a physics
-   engine needs—material strength, gravity parameters, applied force, and
-   related supportable fields—exposed so a hand-rolled or third-party engine
-   can attach without privileged voxel access. The substrate does **not** bake
-   in a physics engine.
-8. Support for **dynamic voxel volumes**—matter that moves and can take damage
-   (players, enemies, and similar)—not only static world geometry.
+7. **Generic behavior-extension seams:** external systems can observe
+   authoritative matter and lifecycle changes and request admitted mutations
+   without privileged voxel access. Physics, damage, fracture, health, gravity,
+   force, and similar semantics and state belong entirely to those external
+   systems.
+8. Support for **dynamic voxel volumes**—material volumes that can move and be
+   mutated through the same truth contracts as static world geometry. What
+   movement or mutation means is consumer behavior, not substrate policy.
 9. **Persistence** of material truth plus edit deltas (and related world-state
    scars), without requiring a dump of every cell; how the *base* volume is
    produced is the consumer’s concern.
@@ -156,13 +158,14 @@ The reusable substrate and its public facade:
   mandatory definition of “done.” In-repo generation used only to exercise or
   demonstrate contracts remains a harness concern, not a claim that generation
   is substrate product.
-- **Any physics engine**—hand-rolled or third-party—that integrates through the
-  substrate’s bindings. An acceptable *proof* of those bindings may be a simple
-  physics engine in a harness or consumer; Moria does not need to ship or own
-  one. Gravity response, contact resolution as a simulation loop, force-driven
-  crumbling dynamics, and similar runtime physics remain plug-in / consumer
-  concerns; the substrate makes them supportable, not mandatory substrate
-  deliverables.
+- **Behavior systems such as physics and damage.** A hand-rolled or third-party
+  system may integrate through the substrate’s generic extension seams, but
+  Moria does not ship or own its behavioral vocabulary, state model, or rules.
+  Gravity, force, contact response, health, resistance, damage types, fracture,
+  crumbling, and similar behavior remain plug-in / consumer concerns. An
+  optional proof may demonstrate that a plug-in can observe truth and submit
+  admitted changes; it does not make any particular behavior model a substrate
+  deliverable.
 
 ### Downstream (not this product)
 
@@ -170,8 +173,8 @@ Actual games and game layers, including but not limited to: player control,
 characters, skeletal animation, game-specific presentation, combat rules, AI
 behavior, economy, building policy, the System / LLM layer, spells, gas
 pricing, agent labor, building UI / blueprints as gameplay, mechanisms as game
-entities—and **which** procedural or authored generation pipeline a game uses
-and **which** physics engine it chooses.
+entities—and **which** procedural or authored generation pipeline and behavior
+systems a game uses.
 
 Freeform ship and station games (and their design/combat fiction) are
 **future-consumer examples**, not current delivery or validation targets.
@@ -189,8 +192,8 @@ implementation plan.
 
 Occupancy, queries, collision truth, and persistence run against voxel matter.
 Meshes, surface dressing, and debug geometry are **derived and disposable**.
-Physics engines, when present, also consume material truth through public
-bindings rather than a private mesh world. Derived geometry is never
+External behavior systems also consume material truth through public seams
+rather than a private mesh world. Derived geometry is never
 serialized as world authority.
 
 ### 5.2 Contracted consumption
@@ -226,20 +229,20 @@ required current deliverable shape.
 
 ### 5.6 Dynamic voxel volumes
 
-The world is not static geometry alone. The substrate must support voxel
-volumes that move and can take damage (for example, players and enemies as
-material volumes), so games can treat combatants as matter under the same truth
-contracts rather than as overlays disconnected from the world.
+The world is not static geometry alone. The substrate must support material
+volumes that move and can be mutated, so games can represent moving matter
+under the same truth contracts rather than as overlays disconnected from the
+world. Physics, damage, and other rules that cause those changes remain
+external behavior.
 
-### 5.7 Physics-ready bindings, not a baked-in engine
+### 5.7 Behavior-extension seams, not behavior policy
 
-The substrate exposes bindings and material data a physics engine needs to plug
-in—material strength, gravity, force, and related supportable fields—whether
-the consumer hand-rolls an engine or adopts one. Runtime physics simulation is
-**not** a substrate-owned product; a simple engine is an acceptable proof of the
-seams, not a required deliverable. Collision and occupancy **truth** against
-voxel matter remains a substrate concern so plug-ins and consumers share one
-material world.
+External systems can observe authoritative matter and submit admitted changes
+through stable public seams. The substrate does not define physics or damage
+concepts, canonical behavioral fields, simulation state, or response rules. A
+proof plug-in may demonstrate the seam without becoming a required engine or
+behavior model. Collision and occupancy **truth** against voxel matter remains
+a substrate concern so plug-ins and consumers share one material world.
 
 ### 5.8 Cheap scars over full dumps
 
@@ -260,10 +263,10 @@ the async-capable boundary do not.
 ### 5.10 Measurable substrate quality
 
 Benchmarks and harnesses can evidence mutation response, streaming, GPU memory
-behavior, collision-truth honesty, physics-binding readiness when exercised,
+behavior, collision-truth honesty, behavior-extension readiness when exercised,
 and related contracts without redefining the product as a game. Harness-side
-generation or a proof physics plug-in used for tests or demos does not make
-generation or a physics engine a substrate requirement.
+generation or a proof behavior plug-in used for tests or demos does not make
+generation, physics, or damage behavior a substrate requirement.
 
 ### 5.11 World-dependent presentation
 
@@ -289,8 +292,8 @@ crate splits, or milestones.
 | Public inspection | Bounded reads, queries, snapshots, telemetry, or events—never privileged storage paths. |
 | Streaming lifecycle | Active and cold regions remain tractable; large worlds do not require permanent full residency. |
 | Collision / occupancy truth | Contacts and occupancy queries read material authority, not disposable meshes. |
-| Physics plug-in surface | Strength, gravity, force, and related supportable fields are exposable for external engines. |
-| Dynamic material volumes | Movable, damageable voxel volumes share the same truth contracts as static world matter. |
+| Generic behavior extension | External systems observe authoritative matter and request admitted changes; their concepts, state, and rules remain external. |
+| Dynamic material volumes | Movable, externally mutable voxel volumes share the same truth contracts as static world matter. |
 | Persistence of scars | Edit deltas and related world-state scars persist without full-volume dumps. |
 | Derived presentation | Surfaces and surface dressing rebuild from truth; derived geometry is not authority. |
 | Object / clutter registration | Matter-backed assemblies (vegetation, micro-objects, similar) can register without baking into one terrain slab. |
@@ -331,9 +334,11 @@ implementation checklists):
   mandate.
 - **Volume-general contracts** are required even though ship/station *content*
   is not current delivery or validation.
-- **Dynamic voxel volumes** are a binding product capability.
-- **Physics is adjacent, not baked in.** Bindings and supportable material data
-  are required; owning or shipping a physics engine is not.
+- **Dynamic voxel volumes** are a binding product capability; their behavior is
+  not substrate policy.
+- **Physics and damage are adjacent, not baked in.** Generic observation and
+  admitted-mutation seams are required; behavior-specific concepts, state,
+  fields, and rules remain external.
 - **Generation is not substrate product.** Procedural / deterministic world
   generation is game-dependent and lives above the substrate.
 - **GPU residency and an async-capable command/query boundary** are binding
@@ -357,8 +362,8 @@ implementation checklists):
 7. **Scars are first-class persistence.** Edits survive without full dumps.
 8. **Residency does not break contracts.** GPU-resident work and async
    completion remain behind the public command/query boundary.
-9. **Physics engines are guests.** They attach through bindings; they do not
-   own voxel storage.
+9. **Behavior systems are guests.** They attach through generic seams, own
+   their state and rules, and do not own voxel storage.
 10. **Content algorithms are guests.** Generators and fill strategies run on
     seams; they are not substrate law.
 
@@ -371,8 +376,8 @@ requirements.
 
 - **Contracts over spectacle.** Evidence shows that inspection, mutation,
   streaming, collision truth, persistence, GPU-resident behavior, and (when
-  exercised) physics bindings hold—not that a particular forest postcard or
-  character controller exists.
+  exercised) generic behavior-extension seams hold—not that a particular
+  forest postcard or character controller exists.
 - **Same-interface proof.** Harnesses must use the public facade available to
   external games. Privileged internal paths invalidate the proof.
 - **Mutation is the honesty test.** Dig and place (or equivalent admitted
@@ -389,12 +394,12 @@ requirements.
   painted floors.
 - **Measurable substrate quality.** Benchmarks and evidence capture mutation
   response, streaming, GPU memory behavior, collision-truth honesty, and
-  physics-binding readiness when exercised—with machine context so results are
-  comparable. Specific performance numbers, demo routes, and acceptance scenes
-  belong to harness/TDD design, not this vision.
-- **Optional physics proof.** A simple physics plug-in may demonstrate
-  bindings; shipping or owning that engine is not required for product
-  completeness.
+  behavior-extension readiness when exercised—with machine context so results
+  are comparable. Specific performance numbers, demo routes, and acceptance
+  scenes belong to harness/TDD design, not this vision.
+- **Optional behavior proof.** A simple external plug-in may demonstrate that
+  it can observe truth and submit admitted changes. It must not cause the
+  substrate to acquire physics, damage, or another behavior vocabulary.
 - **Optional walkable harness.** A walkable third-person proof may make
   claims undeniable to humans; its controls, characters, assets, curated
   routes, content palettes, and generation pipelines are harness particulars,
@@ -415,11 +420,10 @@ Explicitly out of product scope:
 - **Baking deterministic or procedural world generation into the substrate** as
   product identity. Generation algorithms are game-dependent and run on top of
   the substrate; consumers own them.
-- **Baking in a hand-rolled or third-party physics engine** as product
-  identity. Material strength, gravity, force, and related fields must be
-  *supportable* via plug-in bindings; the engine that consumes them is
-  adjacent. A simple proof engine is optional demonstration, not required
-  delivery.
+- **Baking in physics, damage, or another behavior model** as product identity.
+  The substrate exposes generic extension seams, not canonical strength,
+  gravity, force, health, resistance, fracture, damage, or solver fields and
+  rules. A proof plug-in is optional demonstration, not required delivery.
 - Implementing excluded layers here: System / LLM, spells, gas / pricing
   policy, combat rules / AI behavior, agent labor, building UI / blueprints as
   gameplay, mechanisms as game entities.
@@ -457,18 +461,18 @@ what the substrate must remain able to support:
 - A fortress / colony game with engineering and designation play.
 - A descent-style roguelike through deep geology.
 - Pure sandboxes.
-- Games whose players and enemies are voxel volumes that move and take damage
-  under the same matter contracts as terrain—using collision truth and physics
-  engines plugged in through substrate bindings (gravity, contact, force-driven
-  failure) without those engines living inside Moria.
+- Games whose players and enemies are voxel volumes that move and are changed
+  under the same matter contracts as terrain, while external physics and damage
+  systems own every behavioral rule and submit their results through admitted
+  mutations.
 - Freeform ship and station volumes (for example a single-captain trading and
   combat game where the hull is real material space rather than abstract slots).
   That fiction motivates everywhere mutation, first-class volumetric depth
   through multi-deck interiors, GPU-resident matter at combat and design scale,
-  physics-ready material bindings under force, and truth-vs-view so damage and
-  salvage stay honest—**without** importing its fiction, UI, mission systems,
-  freeform-hull *delivery*, or a substrate-owned physics stack into current
-  Moria scope.
+  generic behavior-extension seams, and truth-vs-view so externally defined
+  damage and salvage stay honest—**without** importing its fiction, UI, mission
+  systems, freeform-hull *delivery*, or any behavior model into current Moria
+  scope.
 
 A “walkable world” proof shape (curated region, forest, ruin, dig-as-demo) may
 be used by a validation consumer to make substrate claims undeniable. That
@@ -489,9 +493,9 @@ an explicit new human decision.
 | Natural-looking terrain, everywhere mutation, first-class deep Z | **Everywhere mutation and first-class deep Z are binding.** Deep Z means genuine volumetric depth, not heightmap terrain. Natural-looking presentation **depends on the consumer’s world**—coherent material presentation for that domain, not a single natural-overworld mandate. |
 | GPU-resident / asynchronous-GPU-capable architecture | **Yes, binding.** GPU residency is an important product feature: it enables many gameplay capabilities and is a core distinction between Moria and CPU-driven voxel engines. Specific simulations remain design-selected later. |
 | Multi-world freeform volumes (ships / stations) | **Contracts are volume-general** (must not assume gravity-aligned planetary terrain only). **Delivering or specifically validating ships and stations is not current scope**; they remain future-consumer examples. |
-| Dynamic (moving, damageable) voxel volumes | **Yes.** Players and enemies will be voxel volumes that move and can take damage; the substrate must support that class of matter. |
+| Dynamic voxel volumes | **Yes.** The substrate supports material volumes that move and can be mutated under the same truth contracts as static matter. Physics, damage, and other behavior that causes those changes remains external. |
 | Deterministic / procedural world generation | **No.** Generation is an algorithm that runs on top of the substrate and is game-dependent; it must not be baked into substrate identity. |
-| Matter physics (collision for moving entities, gravity, force) | **Bindings yes; engine no.** The substrate exposes plug-in bindings and supportable material data (strength, gravity, force, etc.) so a physics engine can attach—hand-rolled or third-party. A full or hand-rolled physics engine is **not** baked into the substrate; it is **100% adjacent**. An acceptable proof of the bindings is a simple physics engine, but shipping one is not required. Collision/occupancy **truth** against voxel matter remains a substrate concern so plug-ins and consumers share one material world. |
+| Physics and damage behavior | **Generic extension seams yes; behavior policy no.** External systems observe authoritative matter and request admitted changes. They own gravity, force, contact response, health, resistance, damage, fracture, and all related state and rules. Collision/occupancy **truth** against voxel matter remains a substrate concern so plug-ins and consumers share one material world. A proof plug-in is optional; no particular engine or behavior vocabulary is required. |
 
 Older planning language that still titles the effort as “Product One — The
 Walkable World” is superseded on identity by this product vision. Engineering
@@ -499,8 +503,8 @@ docs that list deterministic generation under the public facade describe
 implementation or harness practice; generation is **not** substrate product
 identity. Seed language that listed structural integrity, cave-ins, or rigid
 conversion as non-current remains context for future consumers; this vision
-requires **physics-ready bindings** without importing a substrate-owned physics
-engine, fortress span tables, or fortress UI.
+requires only **generic behavior-extension seams** without importing a
+substrate-owned physics or damage model, fortress span tables, or fortress UI.
 
 ---
 
@@ -508,17 +512,16 @@ engine, fortress span tables, or fortress UI.
 
 None currently open that would change product identity, purpose, or boundary.
 
-Engineering and milestone sequencing—which material properties land first, how
-gravity is parameterized for non-planetary volumes, binding shape for force and
-strength, presentation technique choices, storage layouts, and platform
-engineering constraints—remain design and technical concerns, not
+Engineering and milestone sequencing—including the generic extension
+contract’s technical shape, presentation technique choices, storage layouts,
+and platform engineering constraints—remain design and technical concerns, not
 vision-identity blockers. This document intentionally does not decide them.
 
 If a later design choice would reclassify substrate vs consumer ownership
 (for example promoting full fluid CA, tree felling, structural collapse
-simulation, freeform-hull delivery, or a baked-in physics engine into substrate
-product), that requires an explicit human scope decision—not silent expansion
-from seed implication.
+simulation, freeform-hull delivery, or built-in physics or damage behavior into
+substrate product), that requires an explicit human scope decision—not silent
+expansion from seed implication.
 
 ---
 
