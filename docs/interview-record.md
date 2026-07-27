@@ -1,7 +1,7 @@
 ---
 status: complete
 coverage:
-  Problem Statement: 3/3
+  Problem Statement: 2/2
   1. Product Statement: 1/1
   2. The Seed World: 1/1
   3. Substrate Slice Included: 1/1
@@ -16,13 +16,6 @@ next_note_id: 4
 
 ## Problem Statement
 
-
-### q1: What problem are we solving?
-- status: answered
-- answer: |-
-  *Scope: the voxel substrate, one generated region, and a character who can run around in it. No System, no spells, no gas, no game. This is the tech proven as a product-shaped demo. Everything here references voxel-world-substrate.md; this doc pins down what gets built first, what the seed world contains, and what "done" looks like.*
-  
-  ---
 
 ### q9: What problem are we solving?
 - status: answered
