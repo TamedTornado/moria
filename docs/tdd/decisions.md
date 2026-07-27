@@ -385,6 +385,37 @@ aggregate admission policy.
 
 ---
 
+## T30. Scheduled feedback omits snapshots and distinguishes participant publication
+
+**Decision.** Scheduled ABI v1 keeps its fixed feedback formula and does not
+repeat the prior snapshot revision vector. Proposal outcome records retain
+their original indices, and a GPU adapter owns any prior
+proposal-index-to-snapshot correlation it needs. The participant record uses
+separate flag bits for tick-wide and participant-specific revision change.
+
+**Publication mapping.** On a published terminal path, a participant with no
+proposal surviving into preparation receives `NoSelectedEffect`; one with at
+least one proposal entering preparation receives `Published`, whose boolean is
+true exactly when one of its selected volumes appears in the tick's published
+revision vector. Thus a participant whose selected volumes all fail
+preparation receives `Published { revision_changed: false }` even when an
+independent participant makes the tick-wide value true. A no-publication tick
+uses `DiscardedByTick` for every participant.
+
+**Reason.** Repeating every participant snapshot would add variable feedback
+records solely for correlation data the GPU adapter already had during its
+prior dispatch. Explicitly omitting it preserves bounded fixed feedback while
+keeping terminal outcomes lossless. Separate revision bits prevent a
+tick-wide success from being misreported as a publication by every
+participant.
+
+**Rejected.** Advertising snapshot vectors absent from the wire format,
+inferring participant revision change from the tick-wide bit, and treating a
+participant whose selected transaction failed preparation as having had no
+selected effect.
+
+---
+
 ## Human review entry — external-behavior boundary
 
 ### Verbatim feedback

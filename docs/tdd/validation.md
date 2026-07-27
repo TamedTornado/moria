@@ -74,11 +74,18 @@ window or physical GPU and includes:
   per-volume preparation failure, zero-change success, and post-publication
   report panic each produce the exact disposition, `revision_changed`,
   participant publication/notification, and proposal rejection records.
+  Include a mixed independent-volume case where participant A's only selected
+  volume fails preparation while participant B's volume publishes: A is
+  `Published { revision_changed: false }`, tick-wide `revision_changed` and B's
+  participant value are true, and the two feedback flag bits differ exactly.
   A post-publication panic never changes an admitted proposal receipt;
 - prior GPU feedback double-buffering: first tick is `NoneYet`, the next
   dispatch reads the prior terminal feedback until its submission completes,
   slots never overwrite while pinned, and recovery returns
-  `UnavailablePreviousGeneration` rather than old-generation records;
+  `UnavailablePreviousGeneration` rather than old-generation records. Assert
+  the byte formula contains no snapshot records and that the adapter can
+  reconcile every outcome by retaining its own prior
+  proposal-index-to-snapshot mapping;
 - CPU behavior collision sink: repeated calls, ignored errors, maximum hits,
   one-over output, traversal/call exhaustion, and a callback copying facts into
   its own memory. Moria reuses one exact contact allocation, returns no partial
@@ -238,7 +245,9 @@ offsets/sizes/constants with shader declarations. Negative fixtures cover:
 - golden feedback fixtures map participant abort, two-party conflict fail-tick,
   transition failure with predecessor/successor/stage, preparation failure,
   device loss with a two-word generation, and
-  published-with-notification-failure with exact failed-hook count. Each
+  published-with-notification-failure with exact failed-hook count. Add the
+  mixed independent-volume fixture in which tick flag bit 0 is set while
+  participant A's flag bit 2 is clear and participant B's bit 2 is set. Each
   fixture round-trips to the corresponding Rust disposition, cause,
   participant publication/notification, proposal outcome, flags, and unused
   zero fields; changing any required/unused field fails at feedback validation.
@@ -442,7 +451,14 @@ let the adapter reconcile while Moria neither rolls state back nor checkpoints
 it. Force another participant's `AbortTick`, a `FailTick` conflict, and a
 post-publication CPU report panic; assert the exact tick/participant/proposal
 outcomes and `revision_changed` in both the Rust report and next-tick GPU
-feedback. The GPU assertion includes both engine/proposal pairs for
+feedback. Also force A's selected volume to fail preparation while B's
+independent volume publishes; assert A is
+`Published { revision_changed: false }`, B is
+`Published { revision_changed: true }`, tick-wide revision change is true,
+and the feedback flags encode all three values without inference. The adapter
+must reconcile by prior proposal index from consumer-owned retained state;
+the feedback binding contains no snapshot-vector record. The GPU assertion
+includes both engine/proposal pairs for
 `FailTick`, predecessor/successor/stage for transition failure, the device
 generation pair, preparation failure, disposition, defined flags, and exact
 failed-hook count after publication. Repeat across checkpoint, restore

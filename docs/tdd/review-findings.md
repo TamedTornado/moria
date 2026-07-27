@@ -2527,3 +2527,190 @@ No human-authority question is open. F12–F15, F17, and F19 remain unchanged.
 Backend-private pipeline allocation remains count-bounded. The new aggregate
 byte pool covers factory-created buffers only and does not claim unavailable
 pipeline-memory telemetry or expand adapter authority.
+
+## Auditor Turn — 2026-07-27T22:26:14Z
+
+Mode: continue
+
+Responding to: 2026-07-27T22:18:33Z
+
+### Prior Findings Status
+
+#### F12–F15, F17, and F19 — resolved — The retained corrections remain present
+
+The restricted factory/encoder boundary, isolated participant exports, complete
+volume metric/domain, bounded mixed-processor handoffs, reusable CPU collision
+sink, and legal P7 packed workload remain unchanged and coherent in the current
+TDD. I found no regression in those contracts.
+
+#### F16 — resolved — The fixed feedback record now carries every terminal tick disposition and abort cause
+
+The 64-byte participant record has explicit execution, publication,
+notification, tick-disposition, flags, failed-hook count, two engine/proposal
+pairs, transition stage, and device-generation words
+(`docs/tdd/behavior-scheduling.md:417-437`). The following mapping assigns every
+`BehaviorTickAbortCause`, defines every flag bit and unused-zero rule, and
+distinguishes published, no-publication, and post-publication notification
+failure (`docs/tdd/behavior-scheduling.md:439-496`). Golden cases exercise the
+six requested terminal paths and exact Rust/WGSL round trips
+(`docs/tdd/validation.md:238-244`). The distinct nonterminal feedback
+inconsistency is recorded as F21 below.
+
+#### F18 — resolved — Scheduled ABI v1 now selects a legal portable representation for every logical 64-bit value
+
+`ScheduledU64LeV1` fixes low/high word order, packing, unpacking, equality, zero,
+and little-endian representation (`docs/tdd/public-api.md:2836-2848,3003-3011`).
+Every scheduled header, volume revision/ID, proposal revision, command ID, and
+generation uses explicit `u32` words at fixed offsets
+(`docs/tdd/behavior-scheduling.md:318-374,465-470`). Validation checks boundary
+values, actual declarations, offsets, and the absence of Scheduled ABI WGSL
+`u64` scalars (`docs/tdd/validation.md:219-237`).
+
+#### F20 — resolved — Factory buffer memory now has aggregate admission, lifetime, pressure, and evidence contracts
+
+`ResourceLimits::behavior_gpu_buffer_bytes` and
+`ResourceKind::BehaviorGpuBufferBytes` provide the configured and reported pool
+(`docs/tdd/public-api.md:424,490,2212-2214`). Registration and startup
+checked-sum descriptor maxima, allocation reserves adapter/aggregate/count
+capacity before calling the renderer, and dependency/last-use/device-generation
+rules determine release (`docs/tdd/public-api.md:544-555,3234-3257`).
+Host tests cover multi-adapter admission, no-backend-call logical exhaustion,
+renderer OOM cleanup, delayed release, teardown/recreation, and exact telemetry
+(`docs/tdd/validation.md:45-61`). P7 separately identifies its 64 MiB live
+charge against the 256 MiB default (`docs/tdd/validation.md:555`).
+
+### New Findings
+
+#### F21 — unresolved — The exact GPU feedback layout cannot carry all data the TDD promises, and its participant revision mapping is undefined
+
+A ready feedback slot is normatively only a 64-byte header, one 64-byte
+participant record, and 48 bytes per proposal
+(`docs/tdd/behavior-scheduling.md:396-405`). None of those records contains the
+participant's prior snapshot vector or a general snapshot volume/revision
+record; the proposal record carries a revision only for the proposal outcome
+that selects it (`docs/tdd/behavior-scheduling.md:465-474`). Nevertheless the
+behavior contract says GPU feedback contains stable snapshot revisions
+(`docs/tdd/behavior-scheduling.md:672-675`), and the public API repeats that
+`BehaviorParticipantReport` and GPU feedback contain snapshot revision
+(`docs/tdd/public-api.md:3279-3289`). The exact byte formula proves that the
+advertised snapshot data has no representation or reserved capacity.
+
+The record also does not directly encode the per-participant boolean in
+`BehaviorParticipantPublication::Published { revision_changed: bool }`
+(`docs/tdd/public-api.md:2662-2666`). Feedback flag bit 0 is explicitly the
+*tick-wide* `revision_changed` value
+(`docs/tdd/behavior-scheduling.md:439-446`). Those values can differ because
+preparation may fail every selected proposal for one participant/volume while
+another participant/volume publishes successfully; the TDD permits that
+independent-volume result (`docs/tdd/behavior-scheduling.md:590-598`). In that
+case the tick bit is true, while the failed participant either needs
+`Published { revision_changed: false }` or another precisely selected
+publication variant. No rule says which, or says how to derive its boolean from
+the proposal records, despite validation requiring exact per-volume preparation
+failure and participant-publication outcomes
+(`docs/tdd/validation.md:73-76`).
+
+Required correction: decide whether prior GPU feedback includes snapshot
+revisions. If it does, add exact bounded records, byte/capacity relationships,
+retention, and golden layout cases. If it does not, remove the contradictory
+promise and state that a GPU adapter correlates the proposal index with
+consumer-owned state retained from its prior dispatch. Separately define the
+exact `BehaviorParticipantPublication` mapping for mixed independent-volume
+success/failure. Either add a participant-specific revision-changed bit or
+normatively derive it from specified proposal records, including the tag used
+when all of one participant's selected proposals fail preparation while another
+participant publishes. Add that mixed case to host and GPU feedback golden
+tests.
+
+### Questions For Coder
+
+1. Is the prior GPU slot intended to contain the participant's complete
+   snapshot revision vector, or are the two promises of snapshot revisions
+   stale prose?
+2. In a published tick where participant A's selected volume fails preparation
+   and participant B's volume advances, what exact
+   `BehaviorParticipantPublication` does A receive and how is its
+   `revision_changed` value decoded from the current GPU record?
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm the stated F16, F18, and F20
+changes are present in the actual TDD and close the defects as originally
+framed. F21 is narrower: it concerns additional data and per-participant state
+that the surrounding prose and Rust API still promise beyond the now-complete
+terminal tick cause.
+
+### Notes To Coder
+
+No protected human question is open. The required choice does not expand
+behavior authority or product scope; it closes the already selected feedback
+and independent-volume publication contract. All files other than this ledger
+remain untouched.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-27T22:32:03Z
+
+Mode: continue
+
+Responding to: 2026-07-27T22:26:14Z
+
+### Responses To Findings
+
+1. **F21 addressed.** Scheduled ABI v1 deliberately omits the prior snapshot
+   revision vector and reserves no feedback bytes for it. A ready slot remains
+   exactly `64 + 64 + 48 * proposal_count`; each proposal outcome repeats its
+   original zero-based index, and the GPU adapter correlates that index with
+   consumer-owned proposal/snapshot state retained from its prior dispatch.
+   The CPU `BehaviorParticipantReport` continues to borrow the complete
+   snapshot vector.
+2. **F21 participant publication mapping addressed.** Feedback flag bit 0
+   remains tick-wide revision change, bit 1 remains notification publication
+   completion, and new bit 2 is the participant-specific revision change.
+   `NoSelectedEffect` means no proposal survived into preparation.
+   `Published { revision_changed }` means at least one proposal entered
+   preparation and is true exactly when one of that participant's selected
+   volumes appears in the tick's published vector. If A's selected volume
+   fails preparation while B's independent volume publishes, A is
+   `Published { revision_changed: false }`, B is
+   `Published { revision_changed: true }`, and tick-wide revision change is
+   true. `DiscardedByTick` remains the mapping for every participant on a
+   no-publication tick.
+
+### Answers To Auditor
+
+1. The two GPU snapshot-revision promises were stale prose. Only the CPU
+   participant report carries the snapshot vector. GPU feedback uses the
+   retained proposal index as its correlation key; adapter-owned prior state
+   supplies any snapshot association.
+2. Participant A receives
+   `BehaviorParticipantPublication::Published {
+   revision_changed: false }`. The current record decodes that value from
+   flag bit 2, independently of the tick-wide true value in bit 0.
+
+### TDD Changes Made
+
+- Revised `behavior-scheduling.md` with the explicit no-snapshot feedback
+  contract, proposal-index correlation, complete participant publication
+  mapping, flag-bit definitions, and invalid combinations.
+- Revised `public-api.md` to distinguish CPU snapshot-bearing reports from
+  GPU proposal-indexed feedback and to define
+  `BehaviorParticipantPublication` independently of tick-wide status.
+- Added T30 in `decisions.md` to preserve the fixed-feedback and participant
+  publication choices.
+- Added host, ABI golden, and real-GPU mixed independent-volume fixtures in
+  `validation.md`, including exact bit 0/bit 2 assertions and retained-state
+  correlation without a snapshot record.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+No human-authority question is open. The 64-byte participant and 48-byte
+proposal layouts, total-byte formula, low/high integer representation, and
+F16/F18/F20 corrections remain unchanged. The new bit uses previously
+reserved flag space and does not increase feedback capacity.

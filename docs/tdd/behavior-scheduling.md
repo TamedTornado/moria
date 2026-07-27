@@ -402,7 +402,13 @@ reserved words. `Ready` has `participant_count == 1`; its total bytes are
 `total_bytes == 64`; the current generation pair remains present so absence
 cannot be confused with an old ready record. A ready header is followed by one
 fixed 64-byte participant/terminal-decision record and one fixed 48-byte
-record per proposal.
+record per proposal. Scheduled ABI v1 feedback deliberately contains no
+snapshot vector and reserves no bytes for one. `proposal_count` is the number
+of indexed proposal outcomes retained from this participant's prior dispatch,
+and every proposal record repeats its original zero-based proposal index. A
+GPU adapter correlates those indices with proposal/snapshot state it retained
+in its own factory-created resources from that dispatch; Moria neither owns
+nor repeats that consumer state in feedback.
 After the terminal publication/no-publication decision and all CPU report hooks
 return or panic, Moria finalizes the current feedback slot, including any
 post-decision notification failure. That slot becomes binding 4 on the
@@ -436,14 +442,36 @@ participant record is:
 | 56 | `cause_generation_low_or_zero:u32` |
 | 60 | `cause_generation_high_or_zero:u32` |
 
-`flags` defines exactly bit 0 as the tick's `revision_changed` and bit 1 as
-this participant notification's `publication_was_complete`; bits 2..31 are
-zero. Bit 1 is set only with
+`flags` defines exactly bit 0 as the tick-wide `revision_changed`, bit 1 as
+this participant notification's `publication_was_complete`, and bit 2 as this
+participant publication's `revision_changed`; bits 3..31 are zero. Bit 1 is
+set only with
 `notification == FailedAfterTerminalDecision`. `failed_hook_count` is the
 tick-wide number of report hooks that returned an error or panicked after the
 terminal decision; it is nonzero for
 `PublishedWithNotificationFailure` and may also record notification failures
 after `NoPublication` without changing that abort disposition.
+
+Participant publication is derived before the record is encoded:
+
+- `DiscardedByTick { cause }` is used for every participant when the tick
+  disposition is `NoPublication { cause }`; publication tag 3 carries the same
+  cause through the participant record and flag bit 2 is clear.
+- `NoSelectedEffect` is used on a published terminal path when no proposal
+  from that participant survived validation and conflict composition into the
+  preparation set; publication tag 2 and flag bit 2 are clear.
+- `Published { revision_changed }` is used on a published terminal path when
+  at least one proposal from that participant entered preparation.
+  `revision_changed` is true exactly when at least one such proposal belongs to
+  a volume listed in the tick's published revision vector; publication tag 1
+  stores that boolean in flag bit 2. If all of the participant's selected
+  volumes fail preparation, the result is therefore
+  `Published { revision_changed: false }`, even when another participant's
+  independent volume publishes and makes tick-wide flag bit 0 true.
+
+Publication tag 1 is invalid unless the participant had a selected proposal;
+tags 2 and 3 are invalid with flag bit 2 set. Thus bit 0 and bit 2 may differ
+and neither is inferred from the other.
 
 `abort_cause == ParticipantAbort` stores the engine in A.
 `ConflictFailTick` stores the earlier engine/proposal in A and the later pair
@@ -453,7 +481,7 @@ closed transition stage. `DeviceLost` stores only its generation pair.
 is zero; a nonzero unused field is invalid. `Published` and
 `PublishedWithNotificationFailure` require `abort_cause == 0`;
 `NoPublication` requires one nonzero closed abort cause and a clear
-revision-changed bit. This mapping is lossless for
+tick-wide and participant revision-changed bit. This mapping is lossless for
 `BehaviorTickDisposition`, `BehaviorTickAbortCause`,
 `BehaviorParticipantPublication`, and `BehaviorNotificationOutcome`; it
 exposes the `BehaviorParticipantExecution` variant plus its closed failure
@@ -669,10 +697,13 @@ Adapter state is explicitly outside Moria authority:
   Moria calls adapter shutdown hooks after the last report, but does not save
   or discard consumer state on the consumer's behalf.
 
-The CPU report and GPU feedback contain tick ID, stable snapshot revisions,
+The CPU report contains tick ID, the participant's stable snapshot revisions,
 participant status, proposal selection/rejection, assigned command IDs,
-terminal revision when known, and failure category.
-They contain no behavior-specific payload.
+terminal revision when known, and failure category. GPU feedback contains the
+same terminal participant/proposal facts except for the snapshot vector: it
+uses the retained prior proposal index as the correlation key, and the adapter
+owns any snapshot/proposal state needed to interpret that key. Neither form
+contains behavior-specific payload.
 
 ## Adversarial integration cases
 

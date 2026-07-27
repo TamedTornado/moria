@@ -2773,6 +2773,17 @@ when publication completed, the disposition to
 `PublishedWithNotificationFailure`; it never applies `AbortTick`
 retroactively or replaces an existing no-publication cause.
 
+`BehaviorParticipantPublication` is not a tick-wide alias. On a published
+terminal path, `NoSelectedEffect` means no proposal from that participant
+survived into preparation. If at least one did, the participant receives
+`Published { revision_changed }`; the boolean is true exactly when one of that
+participant's selected volumes appears in `BehaviorTickCompleted::published`.
+It is false when all of that participant's selected volume transactions fail
+preparation, even if an independent participant publishes and makes the
+tick-wide `BehaviorTickCompleted::revision_changed` true. On
+`NoPublication`, every participant receives `DiscardedByTick` with the same
+cause.
+
 `BehaviorEngineDescriptor` is copied into exact bounded registration storage.
 The builder rejects duplicate keys, unresolved ordering keys, cycles, an
 execution/trait mismatch, access outside configured maxima, or aggregate
@@ -3210,6 +3221,14 @@ pub struct BehaviorProposalReport {
 }
 ```
 
+`BehaviorPriorFeedback::Ready::proposals` is the count of fixed outcome
+records from this adapter's preceding dispatch. Each record carries the
+original zero-based proposal index. Scheduled ABI v1 does not copy the prior
+`VolumeSnapshotRef` vector into feedback; a GPU adapter that needs it retains
+its own proposal-index-to-snapshot correlation in factory-created,
+consumer-owned state. This retained state is not checkpointed or interpreted
+by Moria and becomes invalid with its device generation.
+
 Factory usage variants map to fixed safe unions:
 `StorageRead = STORAGE | COPY_SRC`,
 `StorageReadWrite = STORAGE | COPY_SRC | COPY_DST`,
@@ -3277,16 +3296,20 @@ without material or proposal readback.
 Outcome metadata is made CPU-visible later for typed receipts.
 
 `BehaviorParticipantReport` borrows coordinator-owned snapshot/proposal arrays;
-no capacity-bearing report collection crosses the callback. It and GPU
-feedback records contain only tick, snapshot revision, participant status,
-proposal selection/rejection, command ID, published revision, and failure
-category. The GPU terminal decision is not reduced: its documented 64-byte
-participant record losslessly maps the terminal tick disposition, every
-`BehaviorTickAbortCause`, participant publication/notification, exact
-failed-hook count, and defined flags. Scheduled logical 64-bit fields use
-`ScheduledU64LeV1` low/high words throughout. Variable Rust failure detail
-remains CPU-report-only; GPU feedback exposes its closed category and does not
-promise unavailable-region vectors or diagnostic text.
+no capacity-bearing report collection crosses the callback. The CPU report
+therefore includes the participant's snapshot revision vector. GPU feedback
+does not include that vector: it contains tick, participant status,
+proposal-indexed selection/rejection, command ID, published revision, and
+failure category, and the adapter correlates each index with consumer-owned
+state retained from its prior dispatch. The GPU terminal decision is not
+reduced: its documented 64-byte participant record losslessly maps the
+terminal tick disposition, every `BehaviorTickAbortCause`, participant
+publication/notification, tick-wide and participant-specific
+`revision_changed`, exact failed-hook count, and defined flags. Scheduled
+logical 64-bit fields use `ScheduledU64LeV1` low/high words throughout.
+Variable Rust failure detail remains CPU-report-only; GPU feedback exposes its
+closed category and does not promise snapshot vectors, unavailable-region
+vectors, or diagnostic text.
 Moria does not roll back adapter-owned state when a proposal is rejected.
 Adapters reconcile from this report/feedback according to their own policy.
 
