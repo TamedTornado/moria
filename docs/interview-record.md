@@ -2,7 +2,6 @@
 status: complete
 coverage:
   Problem Statement: 2/2
-  4. The Player: 1/1
   5. Performance Targets (the actual product spec): 1/1
   6. Milestones (demoable, in order): 1/1
   7. What Product One Buys: 1/1
@@ -51,19 +50,6 @@ next_note_id: 4
   
   Moria is only the voxel-world substrate. Broader game, System, LLM, spell, gas,
   combat, AI, and building intent is deliberately absent and out of scope.
-
-## 4. The Player
-
-
-### q5: What should we know about 4. The Player?
-- status: answered
-- answer: |-
-  - **Third-person character controller**: run, sprint, jump, swim (surface paddle), collision against the *voxel truth* (capsule vs. brick occupancy, not vs. render mesh — this matters: it proves the mesh is a view).
-  - **Camera**: free-orbit third person for the demo — the Diablo lock comes with the ARPG, and a free camera sells the world better. Underground: camera collision + a simple light attached to the character.
-  - **Traversal must exercise Z**: walkable cave route, climbable-by-jumping rock shelves, the ruin's intact staircase. If the player can go from canopy-level cliff top to -40m cave floor in one continuous run, the continuous-3D claim is made.
-  - **Debug palette** (keys, not UI): dig sphere, place material sphere, wireframe/brick-boundary view, raw-voxel view toggle, streaming-ring visualizer, time-of-day slider.
-  
-  ---
 
 ## 5. Performance Targets (the actual product spec)
 
