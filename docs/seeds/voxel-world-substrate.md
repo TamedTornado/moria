@@ -1,6 +1,11 @@
 # Voxel World Substrate — Design Specification
 
-*Companion to system-substrate-pivot.md. This doc details the world layer: a natural-looking surface world (trees, bushes, grass, rocks, water) over a fully mutable voxel substrate that supports Minecraft-grade dig/build anywhere, deep-Z underground play, and reuse as the foundation for Moria/Dwarf Fortress–style building and adventure games. The System (LLM) hooks are noted where they attach, but this substrate must stand alone as an engine layer with zero LLM dependency.*
+*Companion to
+[`gpu-resident-substrate.md`](gpu-resident-substrate.md). This is a broad
+architecture reference for natural-world consumers of the voxel substrate. It
+contains game examples and future extension ideas that are nonbinding unless
+selected by [`project-boundary.md`](project-boundary.md) or a later explicit
+decision. Moria itself has zero game or LLM dependency.*
 
 ---
 
@@ -10,7 +15,10 @@
 2. **Mutable everywhere, all the way down.** Any voxel can be destroyed, moved, or placed. Dig a mine under your house. Collapse a cliff into a river. Nothing is decorative geometry sitting outside the material world.
 3. **Deep Z is first-class.** The underground is content, not a skybox floor. Cave systems, strata, ore, buried ruins, and the Moria fantasy: descending levels of increasingly dangerous depth.
 4. **Substrate, not game.** Clean layering so the same crate stack supports: the System ARPG, a DF-style fortress/colony game, a Moria-style descent roguelike, or a pure sandbox. Game rules live above the substrate; the substrate provides matter, physics, queries, and mutation.
-5. **GPU-resident** per the pivot doc: brick pool, CA sim, FleX-pattern coupling (commands in, stale mirror + events out). This doc doesn't relitigate that — it builds on it.
+5. **GPU-resident architecture direction** per
+   [`gpu-resident-substrate.md`](gpu-resident-substrate.md): sparse brick
+   storage and a command/query boundary that can support asynchronous GPU work.
+   Specific simulations remain nonbinding until selected for a Moria milestone.
 
 ---
 
@@ -39,7 +47,9 @@ Voxel size for the world grid: **25cm** (4 voxels/meter). Fine enough that crate
 
 ## 3. Storage: Bricks, Palettes, Columns
 
-Extends the two-level brick grid from the pivot doc with what a *natural world* specifically needs.
+Extends the two-level brick-grid direction in
+[`gpu-resident-substrate.md`](gpu-resident-substrate.md) with what a *natural
+world* specifically needs.
 
 ### 3.1 Brick pool
 - **16³ voxel bricks** (4m cubes at 25cm). Top-level table maps brick coordinates → pool index or a **homogeneous sentinel** (this entire brick is air / stone / water — one palette entry, zero pool cost).
@@ -99,7 +109,11 @@ The rule: **everything that can burn, break, or block is voxel-backed. Everythin
 
 ### 5.1 Trees — voxel objects
 Trees are *not* terrain voxels and *not* decorations. Each tree is a **voxel object**: its own small brick set (trunk = wood material with density; canopy = leaf material, low density, high flammability) registered in the world grid via an object layer (grid cells reference object ID + local offset). Why objects rather than baked-into-terrain:
-- **Falling.** Cut the trunk (integrity check on the object's own support graph, §8) → the whole object converts to a **rigid-body proxy** (its voxel set becomes a dynamic body via the particle/rigid layer from the pivot doc), falls with physics, deals impact damage, then re-voxelizes where it lands or breaks into log items. Trees falling on things is non-negotiable for both the ARPG and the DF fantasy.
+- **Future consumer concept, not current Moria scope — falling.** A downstream
+  game could convert a disconnected tree into a rigid-body proxy through a
+  separately specified particle/rigid layer. Moria does not acquire tree
+  felling, rigid conversion, damage, or re-voxelization requirements from this
+  example.
 - **Growth.** A tree object carries a growth script/stage; the state nibble drives canopy expansion by swapping stamped voxel patterns. Saplings → trees over game time; the System can author new species as (voxel stamp generator + growth rule + material entries).
 - Generation: species chosen by biome, placed by Poisson-disk on the column index, stamped lazily with the brick they'd occupy.
 
@@ -124,7 +138,9 @@ Full per-voxel fluid CA at 25cm over kilometers is not happening, and doesn't ne
 
 1. **Bodies** (lakes, seas, still reservoirs): stored as *volumes* — per-column water level in the column index + brick-level water material fills. Zero sim cost while undisturbed. Rendering is a surface at the level plane.
 2. **Coarse flow** (rivers, floods, drained dams): CA on the **brick aggregate layer** — per-brick fluid volume + flow momentum between the 6 neighbors, DF-style pressure rules. Runs only on *active* fluid bricks (sparsity again). When the player breaches a dam, the affected bricks activate, the flood propagates at brick resolution (4m cells — coarse but dramatic and correct), and fine voxel water levels within each brick are interpolated for rendering/interaction.
-3. **Fine splash** (spell impacts, waterfalls, blood, potions): PBD particles from the pivot doc's dynamic matter layer, emitted at boundaries, settling back into brick volumes.
+3. **Future consumer concept, not current Moria scope — fine splash.** A
+   separately specified dynamic-matter layer could emit particles at fluid
+   boundaries and settle them back into brick volumes.
 
 Interactions route through material rules: water brick-flow into a fire brick quenches it (state nibble), into a magma brick creates obsidian voxels + steam particles (the DF classic, essentially free once the rule table exists), through a soil brick raises wetness → mud material swap. **Aquifer breach** = digging opens a face into a saturated stratum → that brick joins the active fluid set with inflow. The Moria/DF building game gets its full hydrological toybox — wells, channels, floodgates, magma forges — from these three tiers plus player-placeable gate/pump mechanisms (§9).
 
@@ -136,13 +152,16 @@ Thin but present, because the surface world reads as "normal" only if it *behave
 - **Day/night + seasons** driving light, growth-rule ticks, and snow-line elevation.
 - **Weather fronts** as region-level states (the System can also *author* weather as events): rain writes wetness to exposed surface bricks + fills water tables; storms add lightning strikes (ignition events); drought lowers body levels.
 - **Fire ecology**: lightning + dry-season wetness floor → natural wildfires that the brick CA propagates and rain extinguishes. The world demonstrates the matter rules *to* the player before the player exploits them — Noita's legibility principle at landscape scale.
-- All ambient sim runs on aggregates/columns (cheap) and only concretizes to voxels in active range — with the System-as-far-LOD adjudicating anything beyond, per the pivot doc.
+- A downstream game may use aggregates or columns outside active voxel range.
+  Any System or LLM adjudication is a game-layer concern and is not part of
+  Moria.
 
 ---
 
 ## 8. Structural Integrity & Cave-ins
 
-Upgraded from the pivot doc's sketch, because building games lean on this hard:
+The following is a future building-game extension, not a current Moria
+requirement:
 
 - **Support graph at brick granularity**, refined per-voxel only in boundary bricks. Each solid brick tracks support class: *grounded* (connected to basement via solid bricks), *anchored* (connected to grounded within material-dependent span), *unsupported*.
 - **Material span tables**: wood beams span further than stone, stone further than dirt, granular materials span ~0. This single table is the difference between "physics puzzle" and "building game" — players learn that oak beams let them roof a 6m hall and iron lets them do 12m.
