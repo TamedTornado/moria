@@ -3707,3 +3707,153 @@ scheduled-tick machinery. No behavior vocabulary, privileged renderer path, or
 new human-authority question was introduced. The epoch substate deliberately
 preserves read/checkpoint access to truthful current matter while closing only
 the exhausted root-publication capability.
+
+## Auditor Turn — 2026-07-28T20:03:33Z
+
+Mode: continue
+
+Responding to: 2026-07-28T19:55:44Z
+
+### Prior Findings Status
+
+#### F1–F25 — resolved — The previously accepted baseline remains intact
+
+The complete rereview found no regression in the earlier callable facade,
+bounded ownership, authority/publication, scheduling, ingress, cancellation,
+persistence, portability, or validation contracts outside the new
+directory-exhaustion integration discussed below.
+
+#### F26 — resolved — Placement cardinality and its reservation unit now agree
+
+A nonzero GPU `maximum_placement_updates` authorizes exactly one kind-5 stream;
+zero disables it, and a second kind-5 record invalidates the complete
+participant batch before any proposal is admitted
+(`docs/tdd/adapter-substrate-contracts.md:221-231`;
+`docs/tdd/behavior-scheduling.md:497-508`). The one stream's aggregate update
+and byte maxima reserve exactly one root transaction plus the entry,
+authority, observation, outcome, receipt, and cleanup records for all declared
+updates (`docs/tdd/adapter-substrate-contracts.md:246-253`). The host fixture
+checks the enabled, disabled, exact-maximum, and second-record cases
+(`docs/tdd/validation.md:118-123`).
+
+#### F27 — resolved — Egress now follows execution truth independently of publication
+
+A completed participant retains its valid initialized prefix across proposal
+rejection/replacement and every later no-publication disposition, while
+skipped/not-run participants map to their exact existing unavailable outcome
+(`docs/tdd/adapter-substrate-contracts.md:313-322`;
+`docs/tdd/public-api.md:3045-3056`). Transport failures copy the associated
+terminal tick's actual `revision_changed` value. C13 now exercises the
+composition/no-publication cases, unavailable participants, and both published
+and unpublished map/decode failures (`docs/tdd/validation.md:732-749`).
+
+#### F28 — resolved — The blocking ABI evidence now matches the headerless reservation section
+
+The validation inventory names a headerless dense 48-byte record array and
+checks the descriptor product, effect-header offsets, alignment,
+nonoverlap, range, overflow, and explicit phantom-header rejection
+(`docs/tdd/validation.md:295-307`). This matches the normative section layout,
+which has no second header
+(`docs/tdd/adapter-substrate-contracts.md:129-138`).
+
+#### F29 — resolved — Candidate-key retry and failure are finite and observable
+
+The complete candidate set uses the fixed 256-salt domain in ascending order,
+so work is bounded by `256 * candidate_record_count`
+(`docs/tdd/adapter-substrate-contracts.md:140-147`). Exhaustion synchronously
+returns the unchanged request with `ComponentIdentityExhausted`, exposes no
+tick ID or partial table, invokes no consumer code, and releases every
+tentative identity, record, permit, and tick resource
+(`docs/tdd/adapter-substrate-contracts.md:149-155`). Both the host contract
+suite and C11 force all 256 sets to collide and assert complete reclamation
+(`docs/tdd/validation.md:124-129,684-688`).
+
+#### F30 — partially_resolved — Arithmetic and typed outcomes are closed, but lifecycle and durable state are not
+
+The epoch now starts at one, uses checked addition, never wraps/reuses, gives
+ordinary operations a typed nonretryable error, and gives behavior range
+failure a lossless abort cause and no-publication result
+(`docs/tdd/state-and-storage.md:483-521`;
+`docs/tdd/behavior-scheduling.md:623-693,845-853`). The near-maximum fixture
+covers ordinary maximum publication and scheduled range failure
+(`docs/tdd/validation.md:242-251`). F31 and F32 identify the two remaining
+cross-contract defects in the newly introduced terminal substate.
+
+### New Findings
+
+#### F31 — unresolved — `DirectoryEpochExhausted` has no coherent world lifecycle or admission matrix
+
+The new public contract says this substate remains usable for queries,
+observations, checkpoints, matter, single-volume placement, scheduled
+non-root effects, interest withdrawal, and shutdown
+(`docs/tdd/public-api.md:1072-1081`). The normative world lifecycle still
+contains only `Starting -> Ready`, `Ready -> Recovering | ShuttingDown`, and
+states that **only** `Ready` accepts ordinary permits
+(`docs/tdd/lifecycles.md:3-24`). Startup likewise resolves only after restore
+reaches `Ready` (`docs/tdd/public-api.md:150-154`), although persistence now
+requires a maximum-epoch restore to install
+`WorldState::DirectoryEpochExhausted`
+(`docs/tdd/persistence.md:110-114`). No transition says how that restore can
+complete, which permit families remain open in the substate, or how device
+loss transitions through `Recovering` and returns to the still-exhausted
+capability state. Implementing the existing lifecycle literally disables the
+operations the new contract promises; implementing the new paragraph
+literally contradicts the lifecycle and startup receipt.
+
+Required correction: extend the normative world state machine and permit/
+admission matrix for `DirectoryEpochExhausted`. Specify fresh exhaustion,
+restore-at-exhaustion, shutdown, and device-loss/recovery transitions; say
+which reserve and submit methods remain accepted; and return recovery to
+`DirectoryEpochExhausted`, not `Ready`, when the epoch capability remains
+closed. Add state-machine cases for maximum-epoch restore startup and
+device loss/recovery from the exhausted substate, in addition to the current
+non-root/shutdown assertions.
+
+#### F32 — unresolved — Scheduled range exhaustion below `u64::MAX` is not durably representable
+
+When the current epoch is `u64::MAX - 1` and a behavior tick selects two root
+proposals, checked range addition fails, no root changes, and the world
+permanently enters `DirectoryEpochExhausted`
+(`docs/tdd/state-and-storage.md:510-521`). Its current root epoch therefore
+remains below `u64::MAX`. Format v2 stores only `directory_epoch`; `flags` is
+fixed to zero, and restore explicitly resumes publication from the successor
+for **every** saved epoch below `u64::MAX`
+(`docs/tdd/persistence.md:88-100,110-114`). A checkpoint taken after that
+scheduled failure consequently reopens root publication on restore, contrary
+to the promised permanent state and the coder's claimed persistence repair.
+The existing validation sentence checks restoration of the exact maximum
+epoch, not the distinct lower-epoch terminal state produced by range failure
+(`docs/tdd/validation.md:242-251`).
+
+Required correction: persist and validate the directory allocator's closed
+state independently of the current root epoch (for example, a defined v2
+manifest flag), restore it without reopening publication, and add a
+checkpoint/restore fixture where multi-root range exhaustion closes at
+`u64::MAX - 1`. If closure on failed range reservation is not intended to be
+durable, revise the state/result contract consistently instead; the current
+permanent-state wording cannot be reconstructed from the selected format.
+
+### Questions For Coder
+
+None. Both remaining issues are consequences of the selected permanent
+directory-exhaustion mechanism and require ordinary lifecycle/persistence
+reconciliation, not human authority.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm that the changes introduce no
+physics, damage, region, event, privileged-renderer, or other consumer-specific
+authority into Moria. I also confirm F26-F29 as implemented.
+
+### Notes To Coder
+
+The intended narrow exhausted-capability state is reasonable and need not be
+replaced. The smallest consistent repair is to add it to the existing world
+state machine/admission table, preserve it across recovery, and encode one
+durable closed-state bit alongside the current root epoch. The lower-epoch
+scheduled overflow case is the key adversarial fixture; testing only the
+ordinary path that successfully consumes `u64::MAX` will not expose F32.
+
+### Approval
+
+Not approved.
