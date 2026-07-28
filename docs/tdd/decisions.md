@@ -451,7 +451,9 @@ Please revise the architecture, lifecycle/schedule, public API, decisions, and v
 
 The scheduled coordinator in T27 and
 [behavior-scheduling.md](behavior-scheduling.md) is the primary external
-behavior seam. It serializes a consumer-triggered tick around an ordinary-
+behavior seam. It serializes a consumer-triggered tick around an ordinary
+command frontier, drains pre-frontier work, and pins one committed substrate
+view through behavior publication or terminal failure.
 Each adapter receives only its separately authorized filtered export from that
 frontier. GPU adapters own their algorithms/state in resources created through
 the restricted renderer-backed factory and encode through a counted
@@ -478,3 +480,138 @@ authority path, bypass bounds/publication, or make Moria absorb their state.
 
 None. The review supplies sufficient authority to select this technical
 contract without adding product behavior.
+
+---
+
+## T31. Scheduled ticks own bounded participant-addressed consumer ingress
+
+**Decision.** Each behavior descriptor declares `None | Optional | Required`
+opaque current input and a maximum of at most 1 MiB. One tick request may
+carry one exact byte slice per participant. Its permit reserves every declared
+record, host byte, and GPU upload/device maximum before any planner runs.
+Planners and CPU callbacks borrow the same immutable bytes. GPU participants
+receive those bytes through ordered, completion-confirmed upload to read-only
+group-0 binding 5.
+
+**Failure contract.** Unknown/stale participants, duplicates, input supplied
+to `None`, missing required input, and capacity overflow reject synchronously
+with the request unchanged. Cancellation releases ingress before planning.
+Upload failure or device loss is terminal before any adapter executes. Moria
+does not interpret a timestep, force, body, control, damage, or any other
+vocabulary.
+
+**Reason.** Adapter-to-adapter handoffs cannot provide current consumer input
+to the first participant. A participant-addressed ingress removes dummy
+predecessors and shared-state side channels while keeping bytes, allocation,
+GPU visibility, and failure within the existing tick admission boundary.
+
+**Rejected.** Unbounded request blobs, a fake source adapter, undocumented
+global state, raw GPU upload handles, and input readback on the authority path.
+
+## T32. Scheduled v1 has controlled GPU adaptation, no create/split, and synchronous CPU execution
+
+**Decision.** The GPU trait is for a purpose-built or substantially adapted,
+Moria-conforming adapter using only the restricted factory, fixed six-binding
+group-0 ABI, counted encoder, and Moria-owned submission. It is not a drop-in
+interface for arbitrary pre-existing engine resources or command submission.
+Scheduled effects remain fill, patch, move, and retire; create and atomic
+volume splitting are unavailable. CPU planners/adapters execute synchronously
+on the Bevy main thread while the frontier is held.
+
+**Consequences.** A fracture/debris-shaped adapter can edit, move, or retire
+existing volumes, but newly created independent volumes require later ordinary
+control-plane commands and cannot be claimed as part of the tick transaction.
+A slow CPU adapter stalls the main-world update; P10 is a fixed feasibility
+gate, not a latency promise for arbitrary consumer code. `StorageRead` factory
+buffers include `COPY_DST` so their documented staging initialization is legal
+while shader access remains read-only.
+
+**Rejected.** Passing `BaseContentSource` through the scheduled wire ABI,
+inventing a worker architecture, accepting raw external GPU resources, and
+creating a staging-copy destination without `COPY_DST`.
+
+---
+
+## Human review entry — bounded behavior ingress and scheduled boundary
+
+### Verbatim feedback
+
+```text
+TamedTornado (COMMENTED):
+The TDD is close, but one contract gap and several smaller defects need another revision before approval.
+
+## Human decision: purpose-built GPU adapters are sufficient
+
+Moria does **not** need to import arbitrary pre-existing GPU physics engines, raw external GPU resources, or an engine-owned command/submission model. We expect a GPU behavior engine to be written for Moria or substantially adapted to Moria's restricted factory, fixed group-0 ABI, and counted encoder. Preserve that controlled boundary.
+
+Please make the prose precise: this supports an independently implemented, Moria-conforming GPU behavior adapter. Do not imply drop-in integration with an arbitrary existing GPU engine, and do not weaken the no-raw-device/resource/encoder guarantees.
+
+## Required: bounded consumer-to-adapter input on every tick
+
+The architecture says consumers may provide consumer-owned stimuli before requesting a behavior tick, but the callable contract does not provide that route:
+
+- `BehaviorTickRequest` contains only `correlation`;
+- `BehaviorPlanContext` contains only tick and correlation;
+- the GPU tick context exposes the substrate view, prior feedback, adapter handoffs, and encoder, but no current consumer input; and
+- existing handoffs only connect registered adapters.
+
+The first CPU or GPU adapter therefore has no defined, admitted route for timestep/step parameters, forces, impulses, runtime body changes, control input, damage events, or other consumer-owned stimuli. Requiring a fake predecessor adapter or an undocumented shared-state side channel is not acceptable.
+
+Add a generic bounded ingress contract:
+
+1. Each participant may declare a maximum opaque per-tick consumer-input capacity.
+2. `BehaviorTickRequest` supplies per-participant opaque inputs.
+3. `BehaviorTickPermit` reserves all input records/bytes before any planner or adapter runs.
+4. CPU participants receive a borrowed immutable input slice.
+5. GPU participants receive the same bytes through an ordered upload and read-only binding. Reusing the existing incoming-handoff transport with a reserved consumer-ingress source is acceptable if the ABI and ownership remain unambiguous.
+6. Moria must not interpret time, forces, damage, bodies, or any other input vocabulary.
+7. Missing required input, unknown participant, duplicate input, over-capacity input, cancellation, upload failure, and device loss must have closed fail-before-execution outcomes.
+8. Validation must vary input across ticks and prove that both the first CPU adapter and the first GPU adapter consume it without a dummy participant, hidden allocation, raw GPU access, or authority-path readback.
+
+## Scheduled create/split limitation
+
+Scheduled v1 currently supports fill, patch, move, and retire but excludes create. That means fracture can remove or edit matter, but cannot atomically turn one volume into newly created independently moving volumes.
+
+Do not silently promise that scheduled adapters can propose “any substrate changes.” Unless a small bounded data-only create effect fits the existing volume/content/persistence authority cleanly, explicitly narrow the v1 contract: scheduled volume creation/splitting is not atomic and remains a later ordinary control-plane operation. State the consequence for fracture/debris adapters and add a validation assertion so implementation cannot accidentally overclaim it. Do not transport a Rust `BaseContentSource` through the scheduled ABI merely to make the wording pass.
+
+## Concrete contract repairs
+
+1. `BehaviorGpuBufferUsage::StorageRead` maps to `STORAGE | COPY_SRC`, while `initialize_buffer` says it initializes through a staging copy. A copy destination requires `COPY_DST`. Correct the usage or define a distinct legal creation-time initialization mechanism, and test the backend usage flags.
+2. `behavior-scheduling.md` says the stable view contains “authorized bounded material records,” but the documented CPU/GPU ABI contains volume and cell/sample records, not a material-definition table. Correct the wording or define the missing table. Consumer-owned behavior properties must remain outside Moria.
+3. Repair the truncated sentence in `decisions.md` ending with “around an ordinary-”.
+4. The CPU adapter currently executes directly from the main-world coordinator and can stall the Bevy main thread while the frontier is held. Make that v1 execution/latency choice explicit and add a CPU or mixed-adapter feasibility scenario. Do not invent a worker architecture solely to avoid documenting the chosen behavior.
+
+Update architecture, public API, lifecycle, decisions, ABI text, configuration bounds, and validation consistently. The reviewer should specifically try to disprove bounded first-participant ingress and verify that the purpose-built GPU adapter boundary remains restricted.
+```
+
+### Technical decision and clarification
+
+T31 adds one optional or required opaque input record per registered
+participant. `BehaviorTickRequest` owns exact participant-addressed slices;
+`BehaviorTickPermit` reserves the checked sum of all descriptor record/host
+byte and GPU ingress maxima before planning. The planner and CPU callback
+borrow the same immutable bytes. GPU participants receive them only through
+ordered, completion-confirmed upload to the new read-only scheduled group-0
+binding 5. Structural input errors reject without a tick; cancellation,
+upload failure, and device loss have closed no-adapter-execution outcomes.
+Moria assigns no behavior vocabulary to these bytes.
+
+T32 preserves the controlled GPU authority boundary as the human directed.
+The supported case is an independently implemented adapter written for or
+substantially adapted to Moria's restricted factory, fixed six-binding group-0
+ABI, counted encoder, and Moria-owned submission. No raw external GPU
+resource/device/encoder or arbitrary engine-owned submission path was added.
+
+Scheduled v1 remains fill, patch, move, and retire only. Fracture/debris-shaped
+adapters cannot atomically create split volumes; later ordinary create commands
+have separate sources, admission, receipts, and revisions. The CPU callback is
+explicitly synchronous on the Bevy main thread while the frontier is held, and
+P10 is the blocking fixed CPU/mixed feasibility workload. `StorageRead` now
+includes `COPY_DST` for legal staging initialization; the stable-view wording
+now names only volume and cell sample/occupancy records; and the prior
+truncated decision sentence is complete.
+
+### Unresolved question
+
+None. The human feedback resolves the consequential GPU integration boundary,
+and the remaining choices are fully specified engineering contracts.

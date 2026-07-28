@@ -18,8 +18,9 @@ behavior state, generation code, or other consumer state.
 
 CPU behavior objects, factory-created GPU solver resources, and the semantic
 contents of stimuli remain consumer-owned. Moria-owned handoff staging and
-prior-feedback transport slots are ephemeral coordination records and are
-never checkpointed. A consumer that needs a coherent combined save
+prior-feedback transport slots, accepted per-tick input records, and GPU input
+upload allocations are ephemeral coordination records and are never
+checkpointed. A consumer that needs a coherent combined save
 waits for a `BehaviorTickReceipt`, checkpoints the returned substrate
 revisions through Moria, and checkpoints each adapter's own state through its
 own store/protocol. Moria does not claim atomic durability across those stores.
@@ -28,6 +29,11 @@ included adapter independently reports its CPU state loaded or its current
 device-generation GPU state recreated. Failure to restore adapter state is an
 adapter readiness failure; Moria never synthesizes, rolls back, or imports it
 into the scar manifest.
+
+Scheduled v1 cannot create a volume. If a consumer reacts to one tick by later
+creating debris or split volumes through ordinary commands, only successfully
+committed ordinary creations appear in a later whole-world checkpoint; they
+are not retroactively part of the behavior tick's atomic publication.
 
 V1 exposes only `CheckpointScope::WholeWorld`. A successful manifest contains
 every live volume at the captured frontier and every known retirement

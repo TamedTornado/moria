@@ -262,6 +262,7 @@ starting points, not universal performance promises.
 | Scheduled behavior engines / order edges | 16 / 64 | configured and builder-validated DAG |
 | Scheduled behavior view volumes / bricks / cells | 256 / 8,192 / 262,144 | configured sum of isolated per-participant views from one pinned frontier |
 | Scheduled behavior CPU / GPU view bytes | 8 MiB / 32 MiB | configured aggregate export pools; each GPU participant binding also fits the adapter limit |
+| Scheduled behavior input records / host bytes / GPU ingress bytes | 16 / 4 MiB / 4 MiB | configured opaque per-participant current input; complete descriptor maxima are reserved before planning and GPU bytes use ordered read-only uploads |
 | Scheduled behavior CPU collision calls / contacts / bytes | 128 / 4,096 / 320 KiB | configured aggregate calls plus one reusable exact 80-byte contact-slot sink |
 | Scheduled behavior handoff maps / bytes | 4 / 24 MiB | configured Moria-owned host/device/staging transport; payload meaning remains consumer-owned |
 | Scheduled behavior proposals / payload / affected cells / affected bricks / directory effects / conflict checks / feedback | 1,024 / 64 MiB / 262,144 / 4,096 / 16 / 1,048,576 / 1 MiB | configured and wholly reserved/bounded before adapters run |
@@ -314,7 +315,7 @@ capacity error, and a world that has consumed `volume_records` rejects every
 new stable volume key even after older volumes retire. Telemetry exposes
 current, high-water, limit, and rejection/coalescing counts for every pool in
 the public `ResourceLimits`, including extraction, presentation
-dirty/artifact/instance, behavior view/collision/handoff/proposal/feedback/
+dirty/artifact/instance, behavior input/view/collision/handoff/proposal/feedback/
 opaque-resource/live-factory-buffer-byte/WGSL, and extension-registry
 resources. Factory buffer bytes remain charged after logical handle drop while
 a bind group or in-flight submission depends on them; capacity returns only
@@ -335,8 +336,9 @@ All device-bound handles contain `DeviceGeneration`. On loss:
 - an active scheduled behavior tick without confirmed revision-gate completion
   reports typed no-publication device loss; a confirmed publication remains
   published; late adapter callbacks, mapped handoffs, and feedback from the old
-  generation are quarantined; the first recovered GPU tick receives typed
-  `UnavailablePreviousGeneration` feedback;
+  generation are quarantined; old-generation consumer-input uploads are also
+  quarantined and cannot reach an adapter; the first recovered GPU tick
+  receives typed `UnavailablePreviousGeneration` feedback;
 - CPU adapter state remains consumer-owned; GPU adapter resources/state are
   invalid and must be recreated by that adapter before it reports ready;
 - dirty scar data already durably stored is loaded normally;

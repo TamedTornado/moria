@@ -290,10 +290,13 @@ chunk fails restore rather than failing later as an apparently empty region.
 ## Scheduled behavior tick lifecycle
 
 ```text
-queued
+owned request
+  -> validating complete per-participant consumer input
+  -> queued
   -> waiting for captured command frontier
   -> planning bounded access in declared adapter order
   -> waiting/materializing authorized matter
+  -> uploading and confirming every GPU participant input
   -> exporting per-participant filtered views from one pinned commit frontier
   -> running ordered CPU/GPU adapters
   -> transferring declared bounded opaque handoffs
@@ -304,13 +307,27 @@ queued
 ```
 
 Only one tick is active per world in v1. The tick permit pre-reserves every
-registered participant's maximum view, proposal, collision scratch/calls,
-handoff host/device/staging/maps, transaction, completion, and double-buffered
-feedback capacity before the first adapter runs. A CPU adapter is invoked
+registered participant's maximum input record/host bytes/GPU upload transport,
+view, proposal, collision scratch/calls, handoff host/device/staging/maps,
+transaction, completion, and double-buffered feedback capacity before the
+first planner runs. Unknown, duplicate, unexpected, missing required, or
+over-capacity input rejects synchronously and invokes no planner/adapter.
+Cancellation before `Planning` releases all ingress; upload failure or device
+loss is confirmed before `RunningAdapters`, so no adapter executes with absent
+or partial current input. A CPU adapter is invoked
 directly with the mapped borrowed stable view; it never enters the query
 lifecycle. A GPU adapter encodes against the exported read-only view on the
 renderer-owned command stream; validation, composition, preparation, and
 publication require no CPU readback.
+The planner and CPU tick context borrow the same immutable participant bytes.
+GPU binding 5 receives those exact bytes through the ordered upload; Moria
+never interprets their vocabulary.
+
+CPU planners and adapters run synchronously on the Bevy main thread while the
+frontier is pinned. V1 has no worker handoff, preemption, or deadline for that
+callback, so consumer latency can stall the main-world update and hold
+post-frontier commands. This is explicit selected behavior, measured by P10
+for a fixed proof adapter rather than hidden behind a worker claim.
 
 Every participant observes only its own planned cells/volumes, but every
 record refers to the same pinned commit frontier. `runs_after` orders
@@ -322,6 +339,11 @@ Conflicts resolve in stable adapter/proposal order by the later adapter's
 declared `RejectLater | ReplaceEarlier | FailTick` policy, always for a whole
 proposal. Selected effects for one volume publish together at one revision or
 all fail for that volume; independent volumes remain independently published.
+The closed scheduled effect set is fill, patch, move, and retire. It cannot
+create a volume or atomically split one existing volume into newly created
+independent volumes. A consumer may submit later ordinary create commands
+after the tick; each follows the separate command lifecycle and cannot be
+reported as part of the scheduled publication.
 
 `AbortTick` discards every proposal when that participant fails.
 `SkipParticipant` discards only that participant and lets remaining adapters
@@ -438,6 +460,8 @@ count (default 1).
 | Device loss, durable scars | World | Submitted work fails; Recovering | Unavailable until rebuilt |
 | Device loss, volatile dirty scars | World | UnrecoverableDirtyState | Terminal, no false rollback |
 | Scheduled adapter/transition failure before publication | Behavior participant/tick | Skip or typed `NoPublication` abort per declared policy | No invalid participant effect; abort publishes no behavior effect |
+| Scheduled consumer input missing/unknown/duplicate/oversized | Behavior request | Synchronous `SubmitError::Invalid` with exact violation and unchanged request | No tick ID, planner, upload, or adapter execution |
+| Scheduled consumer-input upload failure/device loss | Behavior participant/tick | Tick-global `NoPublication(PreparationFailure)` with `ConsumerInputUpload`, or typed device-loss no-publication | No adapter executes and no behavior effect publishes |
 | Scheduled proposal conflict | Proposal/tick | Whole proposal rejected/replaced or tick failed | Never partial proposal application |
 | Scheduled report-hook failure after publication | Behavior notification | `PublishedWithNotificationFailure` | Already published effects and receipts remain valid |
 | External shader failure | Asynchronous extension request | Extension error | Only earlier ordinary commits remain |

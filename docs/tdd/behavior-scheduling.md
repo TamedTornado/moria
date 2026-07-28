@@ -9,12 +9,20 @@ facility.
 A scheduled adapter participates inside a Moria substrate tick against one
 stable committed view and returns proposed substrate effects before that
 tick's publication boundary.
+The GPU surface supports an independently implemented, Moria-conforming
+behavior adapter that is purpose-built or substantially adapted to the
+restricted factory, fixed group-0 ABI, counted encoder, and Moria-owned
+submission lifecycle. It is not a drop-in import seam for an arbitrary
+pre-existing GPU engine, its raw external resources, or its engine-owned
+command/submission model.
 
 Moria owns tick admission, view construction, ordering, synchronization,
 proposal capacity, validation, conflict resolution, authoritative publication,
 receipts, observations, and device lifecycle notification.
-An adapter owns its vocabulary, stimuli, algorithms, working state, and any
-CPU or GPU resources used to compute its proposals.
+An adapter owns its vocabulary, stimuli, algorithms, working state, and CPU
+resources used to compute its proposals. GPU state participating through this
+seam is consumer-owned in meaning but must be allocated through Moria's
+restricted factory.
 Moria never stores or interprets bodies, velocities, forces, joints, damage,
 health, resistance, bonds, fracture, gravity, players, or gameplay policy.
 
@@ -37,10 +45,13 @@ volume retirement publication wait behind the active behavior tick.
 The tick then follows this state machine:
 
 ```text
-Queued
+OwnedRequest
+  -> ValidatingConsumerInputs
+  -> Queued
   -> WaitingForFrontier(F)
   -> Planning
   -> WaitingForMatter
+  -> UploadingGpuInputs
   -> ExportingStableView(S)
   -> RunningAdapters(S)
   -> ValidatingProposals(S)
@@ -52,7 +63,9 @@ Queued
 
 `S` is the coordinator's pinned union of
 `(VolumeId, VolumeRevision, RigidPlacement, cell_size, local_domain)` plus the
-authorized bounded material records. Each participant receives a distinct
+authorized bounded volume records and cell sample/occupancy records. It
+contains no material-definition table and no consumer-owned behavior
+properties. Each participant receives a distinct
 filtered export `S_i` containing only the volumes and cells admitted by that
 participant's plan. All `S_i` records refer to the same pinned revisions in
 `S`; “same view” means the same commit frontier, not permission to inspect
@@ -62,6 +75,16 @@ Moria pins the referenced page versions and placements from
 An earlier adapter's proposals never alter any later `S_i`.
 Adapter order can coordinate consumer-owned stimuli or working state, but it
 does not create an uncommitted alternate Moria view.
+
+Each participant may declare one opaque per-tick consumer input with a fixed
+maximum and `None | Optional | Required` policy. The accepted tick owns at
+most one exact byte slice per participant. Moria does not parse or classify
+those bytes as time, steps, forces, impulses, bodies, controls, damage, or any
+other vocabulary. This is a consumer-to-participant ingress, not an adapter
+edge: the first participant in the DAG receives it without a dummy
+predecessor. The participant's planner and CPU callback borrow the same
+immutable slice; a GPU participant receives those bytes through the ordered
+binding-5 upload defined below.
 
 After every selected proposal is prepared, Moria publishes at most one new
 revision per affected volume.
@@ -88,6 +111,8 @@ Each descriptor has:
 
 - a stable `BehaviorEngineKey` and bounded debug name;
 - `Cpu` or `Gpu` execution;
+- a `None | Optional | Required` opaque consumer-input policy and maximum
+  bytes;
 - a maximum access envelope and maximum per-tick scopes, volumes, bricks,
   cells, proposals, proposal payload bytes, affected cells/bricks, and
   directory effects;
@@ -111,6 +136,10 @@ inspect Moria matter.
 This permits a CPU adapter and planner to share CPU-owned body state, while a
 GPU registration can use a constant conservative planner and keep its detailed
 working set GPU-resident.
+The planner also borrows its participant's current consumer-input bytes, so
+input-dependent access planning needs no shared-state side channel.
+The paired presence boolean distinguishes an omitted optional input from a
+present empty slice; required input is validated as present before planning.
 A fully GPU-resident engine may register a stable maximum envelope and let its
 own GPU state discard irrelevant exported records; it is not required to
 read back its body list to plan a narrower scope.
@@ -134,6 +163,16 @@ The planner and adapter return only fixed-layout `BehaviorAdapterError` values
 with an inline diagnostic. No variable scope collection, error string, or
 other owned allocation crosses a callback return; incomplete/over-capacity
 sink use poisons that participant before view construction.
+
+Before `Planning`, submission validates the entire input set against the
+registered table and the already-held tick permit. Unknown or stale
+participants, duplicates, input supplied to `None`, missing `Required` input,
+per-participant overflow, or aggregate record/byte overflow rejects the
+request synchronously and returns it unchanged. No tick ID is assigned and no
+planner or adapter runs. Accepted slices are immutable and charged until their
+last CPU borrow or GPU upload use. Cancellation that wins before `Planning`
+drops them and releases host, staging, device, and record permits before its
+terminal result is visible.
 
 The exported canonical record is:
 
@@ -177,6 +216,7 @@ GPU binding can address a record outside its participant's `S_i`.
 coordinator when the stable CPU view is ready.
 It receives a borrowed `CpuBehaviorView`, a borrowed tick context, and a
 Moria-owned exact-capacity `BehaviorEffectSink`.
+The tick context contains that participant's immutable current consumer input.
 The view offers iteration, exact sample lookup, occupied-cell iteration, and
 the same bounded shape/trace/sweep helpers used by public collision queries.
 Those helpers run over this immutable exported view and debit the adapter's
@@ -197,13 +237,30 @@ advance past it until the callback returns or fails.
 This readback is a cost of selecting a CPU adapter, not a second authoritative
 CPU mirror or a persistent collision cache.
 
+V1 invokes both `plan_tick` and `run_tick` synchronously on the Bevy main
+thread. The committed frontier and post-frontier command barrier remain held
+for the complete callback. Moria supplies no preemption, deadline, or worker
+offload: a slow or blocked CPU adapter stalls that main-world update and
+extends the behavior tick. The consumer must keep its callback within its own
+frame/update budget; the mixed feasibility gate measures Moria overhead and a
+fixed proof adapter but is not a latency guarantee for arbitrary consumer
+algorithms. Moving CPU adapter execution to workers would require a later
+threading/state-ownership contract and is not implied by this TDD.
+
 The effect sink is preallocated from the tick's aggregate proposal reservation.
-It accepts fixed fill/move/retire values and borrows dense samples or run
-records long enough to copy them into already reserved storage.
+It accepts fixed fill, patch, move, and retire values and borrows dense samples
+or run records long enough to copy them into already reserved storage.
 It assigns `Exact` for the addressed member of `S`.
 Scheduled v1 excludes create because its consumer-owned Rust content source is
 a control-plane registration, not a stable-view-derived CPU/GPU value;
 consumers retain the ordinary create command.
+Therefore a scheduled fracture/debris-shaped adapter can remove, patch, move,
+or retire existing volumes but cannot atomically split one volume into newly
+created independently moving volumes. Creation is a later ordinary
+control-plane operation behind the tick frontier, with its own admission,
+receipt, source registration, and revision ordering. No Rust
+`BaseContentSource` or source descriptor is transported through the scheduled
+effect sink or GPU ABI.
 The sink rejects over-capacity records or bytes immediately and poisons only
 that participant batch.
 The callback cannot return a capacity-bearing effect collection or source
@@ -220,6 +277,10 @@ It never holds a world lock while calling adapter code.
 Bevy 0.19/wgpu 29 device generation.
 The integration API is deliberately version-coupled and isolated under
 `moria::bevy::behavior`; no wgpu type enters the core facade.
+An engine must implement or substantially adapt an adapter to this contract.
+An arbitrary engine that requires its own device, raw buffers, command encoder,
+submission queue, or nonconforming group-0 layout is not compatible without
+that adaptation.
 
 On device startup or recovery, Moria calls `create_device_state` with a
 restricted `BehaviorGpuResourceFactory`.
@@ -267,6 +328,8 @@ provides:
 
 - the immutable `BehaviorGpuViewV1` bind group and record counts;
 - a write-only fixed-schema `BehaviorGpuEffectTargetV1`;
+- the immutable current opaque consumer input uploaded into the dedicated
+  ingress binding;
 - read-only incoming and write-only outgoing opaque handoff targets;
 - the prior terminal feedback for this participant as read-only input;
 - the current `DeviceGeneration`; and
@@ -281,6 +344,20 @@ revision, or mesh buffers.
 Consecutive GPU adapters are encoded in declared order in one command stream.
 Moria inserts ordered passes and bounded handoff copies between them when an
 ordering edge declares an opaque payload.
+
+Consumer ingress is independent of handoffs. Before `RunningAdapters`, Moria
+records every GPU participant input as a staging copy into its dedicated
+tick-local device range, validates the complete header/range set, and submits
+the uploads in participant order on the renderer queue. It waits
+asynchronously for their completion metadata before entering
+`RunningAdapters`; no Bevy schedule blocks on that wait. The corresponding
+read-only binding becomes visible before that participant's dispatch. Moria
+preflights every upload before any CPU callback or GPU dispatch starts, so an
+upload error produces `NoPublication(PreparationFailure)`, records
+`ConsumerInputUpload` for the addressed participant, and device loss produces
+the existing `NoPublication(DeviceLost)`; no adapter executes in either case.
+No input is recovered through readback, and an adapter cannot mutate
+or retain Moria's ingress allocation after the consuming submission.
 
 The GPU effect ABI uses fixed records for fill, run patch, move, and retire.
 Each record addresses a supplied snapshot index; Moria supplies the exact
@@ -297,7 +374,7 @@ and telemetry, but that readback is not on the tick's authority path.
 ### Scheduled GPU ABI v1
 
 The scheduled GPU ABI is deliberately smaller than exposing Moria storage.
-Moria supplies bind group 0 with exactly five storage bindings:
+Moria supplies bind group 0 with exactly six storage bindings:
 
 | Binding | Access | Contents |
 | ---: | --- | --- |
@@ -306,15 +383,23 @@ Moria supplies bind group 0 with exactly five storage bindings:
 | 2 | read-only | packed incoming opaque-handoff table and payloads, or a valid empty header |
 | 3 | read-write | packed outgoing opaque-handoff table and zero-initialized payload capacities |
 | 4 | read-only | the participant's prior-feedback header and records, or a typed no-prior-feedback header |
+| 5 | read-only | current opaque consumer-input header and payload, or a valid absent optional/none header |
 
 The adapter may use bind groups 1 and above for its own resources.
 Moria supplies the bind-group layout and bind group; it never supplies the
 underlying authoritative buffers.
-The view, effect, and handoff allocations are tick-local and charged to
-`behavior_gpu_view_bytes`, `behavior_proposal_bytes`, and
-`behavior_handoff_bytes`. Prior/current feedback uses a Moria-owned
+The view, effect, handoff, and consumer-input allocations are tick-local and charged to
+`behavior_gpu_view_bytes`, `behavior_proposal_bytes`,
+`behavior_handoff_bytes`, and `behavior_gpu_input_bytes`, respectively.
+Accepted host input ownership is charged separately to
+`behavior_input_records` and `behavior_input_bytes`. Prior/current feedback uses a Moria-owned
 double-buffered per-participant allocation charged to
 `behavior_feedback_bytes`.
+GPU ingress charges exactly
+`2 * align4(64 + descriptor.maximum_consumer_input_bytes)` before planning:
+one staging and one device range. Both are retained until upload completion;
+the staging range then returns, while the device range remains through the
+participant's consuming submission.
 All words are little-endian, offsets are four-byte aligned, and Rust/WGSL
 layout assertions are mandatory. WGSL has no Scheduled ABI `u64` field.
 Every logical 64-bit ID, revision, tick, or generation is the exact
@@ -331,6 +416,7 @@ separate `u32` members. Headers use these exact byte offsets:
 | `BehaviorEffectHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 engine:u32`, `12 proposal_capacity:u32`, `16 payload_capacity:u32`, `20 output_proposal_count:u32`, `24 output_payload_bytes:u32`, `28 reserved0:u32`, `32 tick_low:u32`, `36 tick_high:u32`, `40 generation_low:u32`, `44 generation_high:u32`, `48 reserved:[u32;4]` |
 | `BehaviorHandoffHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 direction:u32`, `12 engine:u32`, `16 edge_count:u32`, `20 descriptor_offset:u32`, `24 payload_offset:u32`, `28 total_bytes:u32`, `32 tick_low:u32`, `36 tick_high:u32`, `40 generation_low:u32`, `44 generation_high:u32`, `48 reserved:[u32;4]` |
 | `BehaviorFeedbackHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 availability:u32`, `12 engine:u32`, `16 source_tick_low:u32`, `20 source_tick_high:u32`, `24 generation_low:u32`, `28 generation_high:u32`, `32 participant_count:u32`, `36 proposal_count:u32`, `40 total_bytes:u32`, `44 reserved:[u32;5]` |
+| `BehaviorInputHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 engine:u32`, `12 presence:u32`, `16 payload_bytes:u32`, `20 total_bytes:u32`, `24 tick_low:u32`, `28 tick_high:u32`, `32 generation_low:u32`, `36 generation_high:u32`, `40 reserved:[u32;6]` |
 
 The 112-byte volume record has offsets `0 volume_low:u32`,
 `4 volume_high:u32`, `8 revision_low:u32`, `12 revision_high:u32`,
@@ -384,6 +470,16 @@ mismatch.
 Create is not representable in scheduled ABI v1 because its required
 consumer-owned Rust content-source object cannot cross a scheduled effect
 record; a consumer may submit the ordinary `VolumeCommand::Create`.
+
+The 64-byte input header contains magic `MORI`, ABI version 1, participant
+engine ID, closed presence (`Absent=0`, `Present=1`), payload byte count,
+total byte count, tick ID, device generation, and zero reserved words.
+`Absent` requires zero payload bytes and `total_bytes == 64`; it is invalid for
+a `Required` participant. `Present` permits an empty payload, sets
+`total_bytes` to `align4(64 + payload_bytes)`, and stores the exact current
+consumer bytes starting at offset 64 with zero alignment padding. The payload
+must not exceed the participant descriptor maximum or its effective binding
+range. The shader sees no schema or type tag beyond these transport fields.
 
 The 64-byte handoff header uses magic `MORH`, ABI version 1, direction,
 participant engine ID, edge count, descriptor offset, payload offset, total
@@ -514,7 +610,8 @@ overlap `1`, replaced `2`, invalid `3`, participant-failed `4`,
 preparation-failed `5`, and tick-aborted `6`. Failure and tick-abort category
 tags are: none `0`; planning `1`, unavailable `2`, access-limit `3`,
 effect-limit `4`, invalid-proposal `5`, panicked `6`, GPU-validation `7`,
-transition `8`, device-lost `9`, not-ready-generation `10`, shutdown `11`;
+transition `8`, device-lost `9`, not-ready-generation `10`, shutdown `11`,
+consumer-input-upload `12`;
 abort cause participant-abort `1`, conflict-fail-tick `2`,
 transition-failure `3`, device-lost `4`, and preparation-failure `5`.
 Transition stages are none `0`, CPU-write `1`, upload `2`, GPU-validate `3`,
@@ -562,6 +659,9 @@ A GPU-only chain performs no mandatory CPU readback.
 
 Before the tick enters `RunningAdapters`, Moria atomically reserves:
 
+- one input record and the declared maximum host bytes for every input-capable
+  participant, plus each GPU participant's 64-byte header, aligned device
+  payload range, staging range, and upload completion record;
 - every participant's declared maximum proposal records and payload bytes;
 - the declared aggregate affected cells, bricks, moves, and retires;
 - ordinary command completion/observation records for that aggregate maximum;
@@ -575,7 +675,11 @@ Before the tick enters `RunningAdapters`, Moria atomically reserves:
 
 If the reservation cannot be made, the tick remains queued or fails according
 to `behavior_ticks` overload policy; no adapter runs with partial capacity.
-Unused proposal and payload capacity is released after validation.
+Unused input capacity is released after request validation; accepted host
+bytes remain charged through the participant's planner/CPU borrow or completed
+GPU upload, and device ingress remains charged through the consuming
+submission. Unused proposal and payload capacity is released after proposal
+validation.
 
 Each participant output is all-or-none at validation.
 An invalid record admits no proposal from that participant.
@@ -638,6 +742,18 @@ change; other volumes remain independent and the tick disposition is still
 If several failures occur and any failed participant selected `AbortTick`, the
 tick aborts.
 Moria never retries an adapter callback or reruns a shader automatically.
+
+Consumer-input structural failures occur synchronously before admission and
+therefore have no tick outcome. Cancellation that wins the pre-`Planning`
+race resolves through the ordinary cancellation error with no adapter
+execution. GPU ingress upload/validation completes before
+`RunningAdapters`; a closed `ConsumerInputUpload` participant failure produces
+`NoPublication(PreparationFailure)`, while device loss produces
+`NoPublication(DeviceLost)`. Neither path invokes any planner after the
+failure is known or any CPU/GPU adapter for that tick. Input preflight is
+tick-global and deliberately does not apply `SkipParticipant`, because doing
+so would let another adapter execute after only a partial ingress set was
+confirmed.
 
 Every admitted tick that enters `Planning` resolves its receipt with a
 `BehaviorTickCompleted`, including a no-publication abort; execution failure is
@@ -709,15 +825,17 @@ contains behavior-specific payload.
 
 A conventional CPU physics adapter may keep bodies, velocities, forces,
 joints, solver caches, and policy in its own Rust state.
-It plans bounded body regions, receives a direct borrowed tick view, runs its
-solver without a query receipt, updates its state, and proposes movement or
-matter edits through the exact-capacity sink.
+As the first and only participant it receives changing opaque current input in
+its planner and tick context, plans bounded body regions, receives a direct
+borrowed tick view, runs its solver without a query receipt, updates its state,
+and proposes movement or matter edits through the exact-capacity sink.
 
 A GPU-resident physics adapter may keep all of those concepts in its own
 factory-created opaque renderer-device resources.
-It reads the exported stable material/occupancy bind group, runs its pipelines
-on Moria's ordered encoder, updates its own buffers, and writes proposal
-records.
+As the first and only participant it reads changing opaque current input from
+group-0 binding 5 plus the exported stable material/occupancy bind group, runs
+its pipelines on Moria's ordered encoder, updates its own buffers, and writes
+proposal records.
 Moria validates and publishes them without reading material or solver state
 back to the CPU.
 
@@ -729,6 +847,10 @@ If it consumes impact data produced by a physics adapter, both adapters share
 an ordering edge with an opaque bounded handoff;
 Moria transports bytes but neither defines nor interprets the impact
 vocabulary.
+If its consumer wants new debris volumes, the scheduled adapter cannot create
+or atomically split them. It may propose edits to existing matter and the
+consumer may later submit ordinary create commands, which are independently
+admitted and cannot be described as part of the scheduled tick transaction.
 
 An independent reviewer must implement or mock the CPU physics, GPU physics,
 CPU damage-and-bond, and GPU damage-and-bond variants through the public
@@ -743,6 +865,12 @@ adapter traits and attempt to disprove:
 5. inability to obtain a render device, raw resource/encoder, submit
    independently, read another participant's export, or bind/mutate
    authoritative Moria storage; and
-6. absence of physics, damage, bond, or gameplay fields in Moria types.
+6. absence of physics, damage, bond, or gameplay fields in Moria types;
+7. bounded changing consumer input reaches the first CPU and first GPU
+   participant without a dummy predecessor, shared-state side channel,
+   allocation beyond the ingress permit, raw GPU access, or authority-path
+   readback; and
+8. scheduled fracture/debris claims do not include atomic volume creation or
+   split.
 
 Any counterexample blocks the behavior-hook architecture claim.

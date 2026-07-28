@@ -2786,3 +2786,88 @@ ordinary engineering choice is being deferred.
 ### Approval
 
 Approved.
+
+## Coder Turn — human-review revision
+
+Mode: continue
+
+Responding to: TamedTornado (COMMENTED)
+
+### Responses To Human Review
+
+1. **Purpose-built GPU boundary clarified.** The scheduled GPU trait now
+   explicitly supports an independently implemented adapter written for or
+   substantially adapted to Moria's restricted factory, fixed group-0 ABI,
+   counted encoder, and Moria-owned submission. It does not claim drop-in
+   support for arbitrary pre-existing engines, raw external GPU resources, or
+   an engine-owned command/submission model. All no-raw-device/resource/encoder
+   guarantees remain binding.
+2. **Bounded first-participant ingress added.** Every descriptor declares
+   `None | Optional | Required` opaque current input and a maximum. One tick
+   request carries exact participant-addressed slices. Its permit reserves all
+   input records, host bytes, and GPU staging/device ranges before planning.
+   The planner and CPU callback borrow the same immutable bytes; a GPU
+   participant receives them through ordered, completion-confirmed upload to
+   read-only group-0 binding 5. No predecessor or behavior vocabulary is
+   required.
+3. **Ingress failures close before execution.** Unknown/stale participant,
+   duplicate, unexpected, missing required, and over-capacity records reject
+   synchronously with the request unchanged and no tick ID. Cancellation
+   releases the input before planning. Upload failure produces tick-global
+   `NoPublication(PreparationFailure)` with
+   `ConsumerInputUpload`, and device loss produces the existing typed
+   no-publication loss; no adapter executes on either transport failure.
+4. **Scheduled create/split narrowed.** Scheduled v1 remains fill, patch, move,
+   and retire only. A fracture/debris-shaped adapter cannot atomically create
+   split volumes. New volumes are later ordinary control-plane commands with
+   separate sources, admission, receipts, revisions, and persistence
+   membership. No Rust `BaseContentSource` is transported through the
+   scheduled sink or ABI.
+5. **Concrete defects repaired.** `StorageRead` now maps to
+   `STORAGE | COPY_SRC | COPY_DST`, preserving read-only shader access while
+   making staging initialization legal. Stable-view prose now names volume and
+   cell sample/occupancy records rather than a nonexistent material-definition
+   table. The truncated `decisions.md` sentence is complete. CPU planners and
+   adapters are explicitly synchronous on the Bevy main thread while the
+   frontier is held, and blocking feasibility gate P10 covers a fixed
+   CPU-to-GPU workload.
+
+### Concrete TDD Evidence
+
+- `public-api.md` defines input policy/maxima, exact input request records,
+  input-specific violation codes, permit ownership, planner/CPU borrows,
+  `BehaviorInputHeaderV1`, binding-5 metadata, resource kinds/configuration
+  bounds, upload failure, and the corrected backend buffer usages.
+- `behavior-scheduling.md` defines input admission and lifetimes, planner/CPU
+  delivery, the six-binding scheduled ABI, exact 64-byte input header, ordered
+  upload/completion, no-interpretation rule, no-adapter-execution failures,
+  purpose-built GPU compatibility, scheduled create/split limits, and the
+  synchronous main-thread CPU choice.
+- `architecture.md`, `lifecycles.md`, `state-and-storage.md`, and
+  `persistence.md` reconcile schedule order, resource ownership/telemetry,
+  cancellation/device-loss cleanup, checkpoint exclusion, and later ordinary
+  creation.
+- `validation.md` requires first/only CPU and GPU participants to consume
+  varying current input without dummy adapters, hidden allocation, raw GPU
+  access, or authority-path readback; tests every input failure; validates the
+  fifth scheduled header/sixth binding and exact backend usage flags; rejects
+  atomic scheduled create/split claims; and adds blocking P10 main-thread/
+  mixed feasibility evidence.
+- `decisions.md` preserves all existing entries, repairs the truncated prior
+  interpretation, adds T31–T32, and appends the complete supplied human
+  feedback separately from technical interpretation.
+- `overview.md` updates binding invariants, implementation baseline,
+  traceability, intended `AGENTS.md`, and completion gates to require bounded
+  ingress, the restricted Moria-conforming GPU adapter boundary, no scheduled
+  create/split, exact group-0 binding ownership, and P10.
+
+### Questions For Reviewer
+
+None.
+
+### Notes To Reviewer
+
+The input is a byte transport only. Moria still has no timestep, force, body,
+control, damage, fracture, debris, or other behavior field. The scheduled GPU
+surface remains controlled and cannot accept raw resources or independent
+submission authority.

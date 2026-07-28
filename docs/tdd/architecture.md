@@ -9,7 +9,8 @@ material truth.
 ```text
 consumer threads / Bevy main world
         |
-        | owned commands, queries, interests, behavior ticks, checkpoint requests
+        | owned commands, queries, interests, behavior ticks + participant inputs,
+        | checkpoint requests
         v
 control plane: facade + admission + lifecycle + identities + receipts
         |                                      ^
@@ -91,7 +92,8 @@ Only this module can request a material or placement commit.
 ### `behavior`
 
 Owns builder-time CPU/GPU adapter registration, the validated ordering DAG,
-tick frontiers, access planning, stable-view pins and exports, exact-capacity
+tick frontiers, bounded opaque consumer ingress, access planning, stable-view
+pins and exports, exact-capacity
 CPU/GPU proposal sinks, whole-proposal conflict resolution, participant/tick
 reports, and adapter lifecycle notifications. It builds transactions through
 `command` and `storage`; it cannot publish a revision itself. Adapter-owned
@@ -176,10 +178,11 @@ Main-world order:
 2. `PreUpdate`: update receipts, emit observations, and apply lifecycle
    transitions proven by completions.
 3. `Update`: consumer systems may reserve/submit/cancel work, update interests,
-   provide consumer-owned stimuli to adapters, and request a behavior tick.
-4. `PostUpdate`: validate admissions, capture each accepted behavior tick's
-   ordinary-command frontier, run host-side registration planners when
-   eligible, freeze bounded extraction batches, and update presentation
+   and request a behavior tick carrying per-participant opaque inputs.
+4. `PostUpdate`: activate each already input-validated behavior tick's
+   admission-captured ordinary-command frontier, run host-side registration
+   planners with borrowed current input when eligible, freeze bounded
+   extraction batches, and update presentation
    entities from already completed artifacts.
 5. `Last`: snapshot telemetry and advance shutdown coordination.
 
@@ -195,7 +198,8 @@ Render-world order:
 4. Root `RenderGraph`: execute camera-independent Moria compute in explicit
    order:
    `materialize -> prepare_mutation -> validate_mutation -> publish_revision
-   -> behavior_export_participants -> ordered_gpu_behavior_and_handoffs
+   -> behavior_upload_consumer_inputs -> behavior_export_participants
+   -> ordered_gpu_behavior_and_handoffs
    -> behavior_validate_compose
    -> behavior_publish -> query/collision -> async_extension_packet
    -> presentation`.
@@ -203,7 +207,8 @@ Render-world order:
    readbacks asynchronously, and retire resources whose last submission is
    complete.
 
-A behavior tick containing alternating CPU/GPU batches may span several Bevy
+A behavior tick containing GPU consumer-input uploads or alternating CPU/GPU
+batches may span several Bevy
 updates and renderer submissions. The root graph runs only the currently ready
 GPU batch, a GPU-to-CPU handoff completes through renderer cleanup and the next
 main-world `First`/`PreUpdate`, and a later CPU-to-GPU handoff is frozen again
@@ -214,7 +219,7 @@ waiting for a map or CPU callback.
 Work that does not fit the extraction batch remains queued; it is not silently
 dropped. `extraction_records` and `extraction_bytes` are the exact per-frame
 freeze limits. The byte limit covers owned command/query descriptors and
-payload ranges, behavior plan/transition/proposal records, asynchronous
+payload ranges, behavior input/plan/transition/proposal records, asynchronous
 extension job ranges, content batches, and completion metadata;
 it never includes resident volume data. Both current/high-water counts,
 deferred records/bytes, oldest deferred operation, and extraction-frame lag are
@@ -222,7 +227,15 @@ telemetry. Configuration must fit one maximum enabled patch, behavior
 transition record, or asynchronous extension input packet plus inline state,
 while larger queue contents drain across later frames.
 
-CPU behavior adapters run from the main-world coordinator only after their
+Before any adapter executes, every GPU participant input is copied from its
+accepted exact host slice through a pre-reserved staging/device range, validated,
+submitted in stable participant order, and confirmed complete. Upload failure
+produces tick-global `NoPublication(PreparationFailure)` with a closed
+participant failure, and device loss aborts with no adapter execution; neither
+can turn missing bytes into an empty successful input.
+
+CPU behavior adapters run synchronously on the Bevy main thread from the
+main-world coordinator only after their
 filtered stable-view staging map completes. This callback is a scheduled tick
 stage, not an ordinary query/receipt cycle. Consecutive GPU adapters remain in
 the render-world command stream and bind only their own filtered export.
@@ -231,6 +244,11 @@ slots: CPU-to-GPU performs an ordered upload, GPU-to-CPU performs completion,
 copy, map, decode, view-drop, and unmap before the successor callback.
 Ordering-only edges allocate no payload. GPU-only chains do not read material
 or proposals back to CPU before publication.
+The v1 coordinator does not offload or preempt CPU planners/adapters. It holds
+the pinned frontier and post-frontier barrier until they return, so a slow
+consumer callback stalls the main-world update. P10 qualifies the fixed
+CPU/mixed proof workload; arbitrary adapter latency remains the consumer's
+responsibility.
 Details and tick serialization are normative in
 [behavior-scheduling.md](behavior-scheduling.md).
 
@@ -342,10 +360,13 @@ World construction has two phases.
 - extraction can freeze one maximum enabled operation;
 - presentation artifact/dirty/mesh/instance pools can represent their stated
   fixed maximum artifact, and dirty records reserve one marker for every live
-  volume in addition to the job/exact-key partition; and
+  volume in addition to the job/exact-key partition;
 - behavior registration/order/per-participant-view/collision/handoff/proposal/
   double-feedback limits can hold every builder adapter and one declared
-  maximum active tick; and
+  maximum active tick;
+- behavior consumer-input record/host byte limits cover every input-capable
+  participant maximum, and GPU ingress bytes cover every GPU input header,
+  aligned payload, and staging/device transport;
 - asynchronous extension registration count/bytes can hold every
   startup/runtime descriptor within its per-descriptor WGSL and entry-point
   caps.
@@ -364,7 +385,9 @@ minimum in deterministic public records rather than returning the first error.
 
 Required GPU capabilities are compute shaders, storage buffers, buffer-to-
 buffer copies, at least four writable storage bindings for mutation, and the
-configured binding/allocation limits. Optional timestamps and indirect
+configured binding/allocation limits. Enabling a GPU behavior participant also
+requires at least six storage-buffer bindings in one shader stage for the
+fixed group-0 ABI. Optional timestamps and indirect
 dispatch are enabled only when reported and have semantic fallbacks.
 Adapter-negotiated capacities use `effective = min(desired, adapter_legal)`;
 startup fails instead of clamping below the consumer's declared minimum or one
@@ -436,8 +459,11 @@ Scheduled GPU adapters are ordinary trusted in-process Rust integrations, not
 shader sandboxes. Their authority is still structurally limited: Moria owns
 submission and the resource registry and exposes only a participant-filtered
 read-only export, write-only proposal/outgoing-handoff targets, read-only
-incoming handoff/prior feedback, a restricted opaque resource factory, and a
-counted encoder wrapper. A malicious native application can misuse its shared
+incoming handoff/prior feedback/current consumer ingress, a restricted opaque
+resource factory, and a counted encoder wrapper. This supports a purpose-built
+or substantially adapted Moria-conforming integration; it does not import an
+arbitrary pre-existing engine's raw resources or command/submission model.
+A malicious native application can misuse its shared
 process/device through unrelated Bevy access, so this is not a security
 boundary; qualification must still prove that the scheduled public surface
 cannot yield raw resources, another participant's export, authoritative
