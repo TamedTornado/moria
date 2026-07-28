@@ -71,6 +71,8 @@ while a synchronous callback avoids imposing a consumer async runtime.
 
 ## T7. GPU behavior uses copied packets and candidate effects
 
+**Status.** Superseded by the mechanical-simplicity review entry (T34).
+
 **Decision.** Asynchronous GPU extensions receive bounded, Moria-produced
 inspection packets in extension-owned buffers and write fixed-schema candidate
 effects. They never bind the page table or brick pool. Candidate effects are
@@ -82,9 +84,8 @@ storage ownership or a privileged mutation route.
 **Rejected.** Direct read/write buffer leases are faster to prototype but
 invalidate ownership, bounds, atomicity, and recovery contracts.
 
-**Scope clarification.** T27 supersedes this facility as the primary scheduled
-behavior-engine seam. T7 remains the asynchronous WGSL inspection/effect job
-decision.
+**Scope clarification.** T27 superseded this facility as the primary scheduled
+behavior-engine seam, and T34 later retired the remaining asynchronous job.
 
 ## T8. Sparse full-brick scars
 
@@ -116,6 +117,8 @@ the renderer device in the supported path. Unsupported targets fail clearly
 instead of receiving weaker semantics.
 
 ## T11. Reserve the complete GPU-extension effect batch
+
+**Status.** Superseded by the mechanical-simplicity review entry (T34).
 
 **Decision.** An asynchronous extension request reserves its worst-case child
 command records, aggregate payload bytes, and receipt slots before shader
@@ -169,6 +172,8 @@ instance pool. A callable registry removes unresolved style IDs while keeping
 dressing presentation-only and outside persistence authority.
 
 ## T16. Closed GPU extension ABI v1
+
+**Status.** Superseded by the mechanical-simplicity review entry (T34).
 
 **Decision.** Asynchronous GPU extensions use fixed 32-bit
 packet/snapshot/inspection, opaque-state, diagnostic, candidate, and patch-run
@@ -269,6 +274,10 @@ bound alone cannot bound unconstrained `String` capacity or name length.
 
 ## T25. GPU observation deltas are nonadvancing status-bearing reads
 
+**Status.** The GPU-delta facility is superseded by T34. The shared closed
+`ObservationFrontier` representation remains active for ordinary snapshots and
+subscriptions.
+
 **Decision.** GPU delta inspection uses a caller-supplied cursor over one
 subscriber's accepted filter without mutating its CPU cursor. The packet and
 public result distinguish complete, paged, overwritten, and unsupported-fact
@@ -305,8 +314,8 @@ before completing the tick. CPU adapters receive a direct borrowed tick view.
 GPU adapters encode on the Bevy renderer-owned device against a read-only
 export and write-only effect target; GPU validation, composition, and
 publication do not require CPU readback. Adapter state is always
-consumer-owned. The prior copied-packet WGSL facility remains an asynchronous
-inspection/effect API and is not the scheduled engine seam.
+consumer-owned. T34 later retires the initially retained copied-packet WGSL
+facility.
 
 **Reason.** Ordinary query receipts cannot provide a deliberate pre-publication
 tick boundary, force CPU engines into the wrong lifecycle, and make a
@@ -468,9 +477,8 @@ generic policy. Moria supplies revision binding, receipts, observations,
 failure policy, device-generation quarantine, and recovery readiness while
 never owning adapter vocabulary or state.
 
-The asynchronous query API and the existing fixed-ABI WGSL job remain
-available for tools and nonscheduled consumers. They are explicitly no longer
-presented as the complete behavior-engine seam.
+The asynchronous query API remains available for tools and nonscheduled
+consumers. T34 later retires the fixed-ABI WGSL job as a duplicate path.
 
 Validation now requires independent adversarial CPU physics-shaped,
 GPU-physics-shaped, and CPU/GPU damage-and-bond-shaped adapters and directs the
@@ -522,7 +530,7 @@ on the Bevy main thread while the frontier is held.
 **Consequences.** A fracture/debris-shaped adapter can edit, move, or retire
 existing volumes, but newly created independent volumes require later ordinary
 control-plane commands and cannot be claimed as part of the tick transaction.
-A slow CPU adapter stalls the main-world update; P10 is a fixed feasibility
+A slow CPU adapter stalls the main-world update; P9 is a fixed feasibility
 gate, not a latency promise for arbitrary consumer code. `StorageRead` factory
 buffers include `COPY_DST` so their documented staging initialization is legal
 while shader access remains read-only.
@@ -550,7 +558,7 @@ receipt returns `BehaviorTickCompleted` with empty snapshot, proposal, and
 published vectors rather than a generic receipt error. Every participant's
 publication is `DiscardedByTick` and notification is `NotApplicable`.
 Scheduled ABI v1 adds execution tag 3 (`not-run`) and failure tag 13
-(`input-preflight-aborted`), with the failed engine in field A. P10 fixes exact
+(`input-preflight-aborted`), with the failed engine in field A. P9 fixes exact
 patch-run geometry, bytes, affected resources, conflict outcome, revision
 vector, and its two distinct registered oracle samples as packed values
 `0x00FF0001` and `0x00FF0002`, so the selected mixed publication path has one
@@ -563,7 +571,7 @@ ran.
 
 **Rejected.** Planning before upload confirmation, invoking report hooks on a
 preflight abort, attributing another participant's upload failure to every
-participant, or leaving P10 effect kinds and mutation scale harness-defined.
+participant, or leaving P9 effect kinds and mutation scale harness-defined.
 
 ---
 
@@ -641,7 +649,7 @@ Scheduled v1 remains fill, patch, move, and retire only. Fracture/debris-shaped
 adapters cannot atomically create split volumes; later ordinary create commands
 have separate sources, admission, receipts, and revisions. The CPU callback is
 explicitly synchronous on the Bevy main thread while the frontier is held, and
-P10 is the blocking fixed CPU/mixed feasibility workload. `StorageRead` now
+P9 is the blocking fixed CPU/mixed feasibility workload. `StorageRead` now
 includes `COPY_DST` for legal staging initialization; the stable-view wording
 now names only volume and cell sample/occupancy records; and the prior
 truncated decision sentence is complete.
@@ -650,3 +658,41 @@ truncated decision sentence is complete.
 
 None. The human feedback resolves the consequential GPU integration boundary,
 and the remaining choices are fully specified engineering contracts.
+
+---
+
+## Human review entry — mechanical simplicity challenge (T34)
+
+### Verbatim feedback
+
+```text
+Mechanical simplicity challenge (not human authority): Is this as simple as it can be while still satisfying the requirements? If yes, leave the TDD unchanged. If no, revise the TDD to make it the simplest sufficient design.
+```
+
+### Technical decision and clarification
+
+The prior TDD was not the simplest sufficient design because it retained two
+GPU-oriented effect paths: the scheduled behavior coordinator and a separate
+asynchronous copied-packet WGSL inspection/effect facility. The approved design
+requires ordinary asynchronous inspection and a bounded GPU-oriented behavior
+path, but it does not require two GPU effect protocols. The scheduled
+coordinator already supplies the required stable-view, bounded-access,
+GPU-resident, pre-publication integration for Moria-conforming adapters.
+
+V1 therefore removes the copied-packet facility, its `gpu-extension` feature,
+Extension ABI v1, registration API, job/state/effect-batch queues and pools,
+delta-packet cursor protocol, telemetry, lifecycle, validation scenario, and
+performance gate. Ordinary asynchronous queries, observations, snapshots,
+commands, and receipts remain the nonscheduled inspection/tool contract.
+Scheduled Behavior ABI v1 remains the only custom GPU adapter/effect path.
+T7, T11, T16, and T25 are superseded; their entries remain above as design
+history.
+
+This is a mechanical simplification, not a new product decision. It removes an
+optional duplicate mechanism without weakening GPU residency, asynchronous
+consumer access, controlled mutation, boundedness, or the human-selected
+purpose-built scheduled adapter boundary.
+
+### Unresolved question
+
+None.

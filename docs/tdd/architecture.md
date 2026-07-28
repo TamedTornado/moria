@@ -23,7 +23,6 @@ Bevy RenderApp / Moria render resources
         +-- stable behavior-view exports + proposal validation/publication
         +-- presentation derivation
         +-- staging/readback pool
-        +-- asynchronous GPU inspection/effect jobs
         |
         v
 renderer-owned RenderDevice and RenderQueue
@@ -146,8 +145,8 @@ Owns shader layouts, device-generation resources, dispatch encoding, staging
 pools, validation error scopes, completion callbacks, scheduled
 per-participant behavior view/proposal/handoff/prior-feedback buffers, the
 restricted behavior resource factory and its aggregate live-buffer-byte
-semaphore, asynchronous extension packets, and layout assertions. It is the
-only module allowed to turn storage transactions into GPU work. Factory bytes
+semaphore, and layout assertions. It is the only module allowed to turn storage
+transactions into GPU work. Factory bytes
 remain charged through registered dependencies and last submission use;
 device-loss teardown returns the terminal generation's permits before
 replacement state creation.
@@ -195,8 +194,8 @@ Render-world order:
 2. `RenderSystems::PrepareResources`: allocate or reserve slots/staging,
    materialize validated base batches, prepare copy-on-write transactions, and
    construct pinned behavior-view exports.
-3. `RenderSystems::Prepare`: build query, collision, scheduled behavior,
-   presentation, and asynchronous extension dispatch descriptors.
+3. `RenderSystems::Prepare`: build query, collision, scheduled behavior, and
+   presentation dispatch descriptors.
 4. Root `RenderGraph`: execute camera-independent Moria compute in explicit
    order:
    `materialize -> prepare_mutation -> validate_mutation -> publish_revision
@@ -205,8 +204,7 @@ Render-world order:
    `behavior_export_participants
    -> ordered_gpu_behavior_and_handoffs
    -> behavior_validate_compose
-   -> behavior_publish -> query/collision -> async_extension_packet
-   -> presentation`.
+   -> behavior_publish -> query/collision -> presentation`.
 5. Renderer cleanup: register queue-completion callbacks, map submitted
    readbacks asynchronously, and retire resources whose last submission is
    complete.
@@ -225,13 +223,13 @@ waiting for an upload, map, or CPU callback.
 Work that does not fit the extraction batch remains queued; it is not silently
 dropped. `extraction_records` and `extraction_bytes` are the exact per-frame
 freeze limits. The byte limit covers owned command/query descriptors and
-payload ranges, behavior input/plan/transition/proposal records, asynchronous
-extension job ranges, content batches, and completion metadata;
+payload ranges, behavior input/plan/transition/proposal records, content
+batches, and completion metadata;
 it never includes resident volume data. Both current/high-water counts,
 deferred records/bytes, oldest deferred operation, and extraction-frame lag are
 telemetry. Configuration must fit one maximum enabled patch, behavior
-transition record, or asynchronous extension input packet plus inline state,
-while larger queue contents drain across later frames.
+transition record, or content batch, while larger queue contents drain across
+later frames.
 
 Before any consumer planner or adapter executes, every GPU participant input
 is copied from its accepted exact host slice through a pre-reserved
@@ -254,19 +252,11 @@ Ordering-only edges allocate no payload. GPU-only chains do not read material
 or proposals back to CPU before publication.
 The v1 coordinator does not offload or preempt CPU planners/adapters. It holds
 the pinned frontier and post-frontier barrier until they return, so a slow
-consumer callback stalls the main-world update. P10 qualifies the fixed
+consumer callback stalls the main-world update. P9 qualifies the fixed
 CPU/mixed proof workload; arbitrary adapter latency remains the consumer's
 responsibility.
 Details and tick serialization are normative in
 [behavior-scheduling.md](behavior-scheduling.md).
-
-For asynchronous GPU `ObservationDeltas`, the main-world observation owner
-freezes the subscriber's accepted filter, closed empty-or-retained frontier,
-status, cursor, and matching fact-plus-envelope records as one extraction
-record. The CPU subscriber cursor is neither read nor written. The render
-world only encodes that immutable bounded capture into ABI v1 and cannot
-reinterpret an empty frontier, gap, unsupported fact, or maximum-record
-boundary as another state.
 
 ## Threading and progress
 
@@ -375,9 +365,6 @@ World construction has two phases.
 - behavior consumer-input record/host byte limits cover every input-capable
   participant maximum, and GPU ingress bytes cover every GPU input header,
   aligned payload, and staging/device transport;
-- asynchronous extension registration count/bytes can hold every
-  startup/runtime descriptor within its per-descriptor WGSL and entry-point
-  caps.
 
 `ValidatedMoria::into_bevy` returns the plugin, configured facade handles, and
 typed startup receipt. Installing that plugin waits for GPU capability
@@ -453,15 +440,9 @@ every unmet limit/feature and the maximum usable configuration where known.
 ## Security and trust boundary
 
 Moria is an in-process library, not a hostile-code sandbox. It still validates
-all public sizes, coordinates, material IDs, byte counts, shader packet
-descriptors, checkpoint offsets, checksums, and decoded enum tags before
-allocation or dispatch.
-
-Consumer asynchronous GPU extension WGSL is treated as untrusted input to the renderer:
-Moria validates it with Naga, accepts only the fixed bind schema and one compute
-entry point, prohibits internal buffer bindings, caps workgroups and output
-records, and captures pipeline/dispatch errors. This limits accidental
-corruption; it does not claim process isolation from malicious native code.
+all public sizes, coordinates, material IDs, byte counts, scheduled shader
+records, checkpoint offsets, checksums, and decoded enum tags before allocation
+or dispatch.
 
 Scheduled GPU adapters are ordinary trusted in-process Rust integrations, not
 shader sandboxes. Their authority is still structurally limited: Moria owns

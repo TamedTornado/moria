@@ -46,7 +46,7 @@ is an additional reserved sample, so the complete runtime ID space contains
 true only at coverage 128..=255. Coverage is the scalar field used by surface
 derivation; it is not opacity or health.
 
-V1 flags must be zero in content, commands, checkpoint data, and extension
+V1 flags must be zero in content, commands, checkpoint data, and scheduled
 effects. Reserving the byte allows a later contract-version migration without
 accidentally interpreting current data.
 
@@ -163,7 +163,7 @@ For a command proposed at revision `N + 1`:
 The publication write is the linearization point. Queries encoded before it
 see `N`; queries encoded after it see `N + 1`. Command submissions for a volume
 are serialized, so a normal command cannot race the compare; the compare is
-still required to catch stale extension work and invariant defects.
+still required to catch stale scheduled proposals and invariant defects.
 
 No ordinary error can occur after the publication gate while leaving the world
 usable but the receipt failed. If queue/device execution becomes unknowable,
@@ -205,8 +205,8 @@ maximum accepted brick count. A brick is not evictable while any of these hold:
 - an interest lease requires its authoritative capability;
 - an admitted command/query references it;
 - a GPU snapshot pin can resolve to its slot;
-- a presentation job, scheduled behavior tick, or asynchronous extension job
-  has not reached GPU completion;
+- a presentation job or scheduled behavior tick has not reached GPU
+  completion;
 - it has a dirty scar not retained elsewhere or durably checkpointed;
 - it is being materialized, compacted, or retired.
 
@@ -268,9 +268,6 @@ starting points, not universal performance promises.
 | Scheduled behavior proposals / payload / affected cells / affected bricks / directory effects / conflict checks / feedback | 1,024 / 64 MiB / 262,144 / 4,096 / 16 / 1,048,576 / 1 MiB | configured and wholly reserved/bounded before adapters run |
 | Scheduled behavior GPU buffers / live buffer bytes / pipelines / bind groups / WGSL bytes | 256 / 256 MiB / 64 / 256 / 4 MiB | configured aggregate opaque factory resources; buffer bytes use a 64 MiB minimum and 1 GiB/adapter-max clamp, while WGSL is charged before parse |
 | Scheduled GPU adapter dispatches / workgroups | 256 / 1,048,576 | configured counted-encoder limits per tick |
-| Asynchronous GPU extension jobs | 64 | configured |
-| Asynchronous GPU extension registrations / registry bytes | 32 / 4 MiB | configured; 1 MiB WGSL + 128-byte entry point per registration |
-| Candidate effects per extension job | 256 | fixed v1 maximum; batch-reserved before dispatch |
 
 The config must be capable of servicing one maximum legal operation for each
 enabled capability. For example, enabling patch mutations with a command byte
@@ -290,8 +287,8 @@ storage-facing capacity rather than defining a second configuration shape.
 
 ## Pressure policy
 
-Policy is selected for command, query, checkpoint, scheduled behavior tick,
-and asynchronous extension queues as `Reject` or `WaitForPermit`. It never
+Policy is selected for command, query, checkpoint, and scheduled behavior tick
+queues as `Reject` or `WaitForPermit`. It never
 changes an already called `try_` method;
 it determines whether the corresponding non-try `reserve_*` future waits or
 immediately returns `Full`. Interest has no payload queue and rejects
@@ -309,15 +306,15 @@ When allocation pressure occurs:
 5. defer background materialization;
 6. reject the requesting admission with exact limiting pool.
 
-Behavior/extension registration and volume-key lifetime exhaustion are not
-transient allocation pressure: registration returns its exact record/byte
-capacity error, and a world that has consumed `volume_records` rejects every
-new stable volume key even after older volumes retire. Telemetry exposes
+Behavior registration and volume-key lifetime exhaustion are not transient
+allocation pressure: registration returns its exact record/byte capacity
+error, and a world that has consumed `volume_records` rejects every new stable
+volume key even after older volumes retire. Telemetry exposes
 current, high-water, limit, and rejection/coalescing counts for every pool in
 the public `ResourceLimits`, including extraction, presentation
-dirty/artifact/instance, behavior input/view/collision/handoff/proposal/feedback/
-opaque-resource/live-factory-buffer-byte/WGSL, and extension-registry
-resources. Factory buffer bytes remain charged after logical handle drop while
+dirty/artifact/instance, and behavior input/view/collision/handoff/proposal/
+feedback/opaque-resource/live-factory-buffer-byte/WGSL resources. Factory
+buffer bytes remain charged after logical handle drop while
 a bind group or in-flight submission depends on them; capacity returns only
 after dependency drop and last-use completion. Device-loss recreation begins
 only after the terminal generation's aggregate byte charge reaches zero.

@@ -205,19 +205,6 @@ Gap recovery:
 This closes the race between snapshot and resume without retaining every
 intermediate event.
 
-GPU observation-delta capture is a separate read cursor supplied per request.
-It pins the subscriber's accepted membership/filter but neither observes nor
-changes the CPU cursor state. Each capture freezes an
-`Empty | Retained { oldest, head }` frontier and returns `Complete`,
-`MoreAvailable`, `NeedsSnapshot`, or `UnsupportedFact` in both the ABI header
-and public outcome. An empty frontier is a successful zero-record
-`Complete` page with a `None` cursor; it is not a gap. A nonempty capture scans
-retained fact-plus-envelope records through its head. A gap or matching
-nonrepresentable fact emits zero records, forbids candidate effects, and never
-skips the boundary. Recovery takes a bounded non-resuming
-`SubscriptionState` snapshot and restarts after that snapshot's optional head;
-only an independently gapped CPU cursor uses `resume_after`.
-
 ## Presentation lifecycle
 
 For each interested brick artifact:
@@ -331,7 +318,7 @@ never interprets their vocabulary.
 CPU planners and adapters run synchronously on the Bevy main thread while the
 frontier is pinned. V1 has no worker handoff, preemption, or deadline for that
 callback, so consumer latency can stall the main-world update and hold
-post-frontier commands. This is explicit selected behavior, measured by P10
+post-frontier commands. This is explicit selected behavior, measured by P9
 for a fixed proof adapter rather than hidden behind a worker claim.
 
 Every participant observes only its own planned cells/volumes, but every
@@ -368,41 +355,6 @@ until dependencies/last use are terminally released; recovery recreates
 adapter state only after that generation's aggregate charge reaches zero. The
 complete contract is
 [behavior-scheduling.md](behavior-scheduling.md).
-
-## Asynchronous GPU extension lifecycle
-
-```text
-registered/validated asynchronous WGSL job
-  -> extension + worst-case child batch capacity reserved
-  -> admitted closed ABI inspection + prior/inline state
-  -> packet captured at revisions/ring head with explicit inspection status
-  -> external shader submitted
-  -> whole candidate output validated
-  -> every child admitted or zero children admitted
-  -> extension dispatch outcome with diagnostics, next-state lease,
-     and every child receipt
-```
-
-This lifecycle is not a substrate-tick hook. Registration itself consumes
-bounded world-lifetime descriptor and WGSL bytes;
-registry exhaustion fails synchronously before pipeline creation. Prior GPU
-state is an immutable lease and each dispatch writes a new bounded state
-generation. State pressure follows extension admission policy, and device loss
-makes every old state lease stale without changing material truth.
-
-Before dispatch, `EffectBatchPermit` reserves the descriptor's worst-case
-ordinary command record count, aggregate encoded payload bytes, and child
-completion slots. Candidate output is a batch with all-or-none validation and
-all-or-none child admission. Invalid output assigns no command IDs and commits
-nothing. A smaller valid output releases unused capacity immediately; the
-outer receipt returns all child receipts in output order. Those effects then
-remain independent public commands unless the external system encoded one
-bounded patch command. A later conflict/failure of one child does not undo
-another child and does not create cross-volume atomicity.
-
-If the inspection snapshot becomes stale before an effect prepares, its
-mandatory revision precondition causes conflict. Moria never silently reruns
-the asynchronous extension job against newer matter.
 
 ## Shutdown lifecycle
 
@@ -473,7 +425,6 @@ count (default 1).
 | Scheduled consumer-input upload failure/device loss | Behavior participant/tick | Tick-global `NoPublication(PreparationFailure)` with the addressed participant `Skipped(ConsumerInputUpload)` and all others `NotRun(InputPreflightAborted)`, or typed device-loss no-publication with all `NotRun(DeviceLost)` | Empty snapshot/proposal/publication vectors; no planner, adapter, or report hook executes and no behavior effect publishes |
 | Scheduled proposal conflict | Proposal/tick | Whole proposal rejected/replaced or tick failed | Never partial proposal application |
 | Scheduled report-hook failure after publication | Behavior notification | `PublishedWithNotificationFailure` | Already published effects and receipts remain valid |
-| External shader failure | Asynchronous extension request | Extension error | Only earlier ordinary commits remain |
 
 ## Time and determinism
 

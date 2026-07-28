@@ -40,8 +40,7 @@ declared order, and composes bounded proposed effects before the tick
 publication boundary. CPU adapters receive a borrowed tick view instead of an
 ordinary query receipt. GPU adapters encode on the renderer-owned device
 against a read-only exported view and fixed effect target without mandatory
-CPU readback on the authority path. The bounded WGSL inspection/effect job
-remains a separate asynchronous tool API.
+CPU readback on the authority path.
 Each tick may also carry one bounded opaque current input per participant.
 Moria reserves the complete ingress before planning, lends the same immutable
 bytes to CPU planning/execution, and uploads them into the fixed read-only GPU
@@ -54,7 +53,7 @@ for an arbitrary engine's raw device/resources or command/submission model.
 | File | Contract owned |
 | --- | --- |
 | [architecture.md](architecture.md) | Components, module ownership, schedules, portability, and dependency direction |
-| [public-api.md](public-api.md) | Consumer types, inputs, outputs, invariants, errors, scheduled adapter API, and asynchronous extension boundary |
+| [public-api.md](public-api.md) | Consumer types, inputs, outputs, invariants, errors, and scheduled adapter API |
 | [state-and-storage.md](state-and-storage.md) | Coordinates, material encoding, sparse GPU layout, atomic publication, revisions, and resource bounds |
 | [lifecycles.md](lifecycles.md) | Startup, interest, commands, queries, observations, shutdown, and device loss |
 | [behavior-scheduling.md](behavior-scheduling.md) | Scheduled CPU/GPU behavior hooks, ordering, synchronization, composition, state ownership, and tick publication |
@@ -282,9 +281,7 @@ contract tests remain in the ordinary suite.
   exhaustion must reject before renderer allocation. Terminal-generation
   charges reach zero before recovery recreates adapter state. The
   `StorageRead` factory usage includes `COPY_DST` because initialization is a
-  staging copy; shader bindings remain read-only. The
-  asynchronous WGSL facility exposes Moria descriptors and opaque handles, not
-  `wgpu::Buffer`.
+  staging copy; shader bindings remain read-only.
 - Channels, staging pools, page tables, mesh outputs, and per-request payloads
   must be bounded by `MoriaConfig`. No unbounded channel or implicit allocation
   policy is allowed.
@@ -297,24 +294,19 @@ contract tests remain in the ordinary suite.
   may cross the port. Keep the sink charged until install or failure cleanup
   and drop.
 - Retained observation facts carry their fixed append-time filter envelope.
-  GPU delta reads freeze an independent closed
-  `Empty | Retained { oldest, head }` frontier plus cursor/status and never
-  mutate the ordinary subscriber cursor or skip a gap/unsupported fact. Polling
-  must not reconstruct historical world bounds from the current volume
+  Polling must not reconstruct historical world bounds from the current volume
   directory, and gap snapshots must preserve typed retired pinned members.
 - Extraction records/bytes, live and lifetime volume records, presentation
   artifact/dirty/job/mesh/instance pools, dressing registrations, scheduled
   behavior registrations/order edges/per-participant input records and host/
   GPU bytes/views/collision scratch/handoff maps and bytes/proposals/
-  double-buffered feedback/factory buffer
-  counts and live bytes, and
-  asynchronous GPU extension registrations/WGSL bytes are separate named
-  bounds. Do not make one pool silently own another.
+  double-buffered feedback/factory buffer counts and live bytes are separate
+  named bounds. Do not make one pool silently own another.
 - A command/query type owns its payload until admission succeeds. Queue-full or
   closed errors return the payload unchanged.
-- Public query/interest/result/dressing records, scheduled Behavior ABI v1,
-  and asynchronous Extension ABI v1 layouts in `public-api.md` and
-  `behavior-scheduling.md` are normative. Do not replace closed variants,
+- Public query/interest/result/dressing records and scheduled Behavior ABI v1
+  layouts in `public-api.md` and `behavior-scheduling.md` are normative. Do not
+  replace closed variants,
   mandatory revision binding, or fixed offsets with implementation-defined
   blobs. Scheduled group 0 has exactly six bindings; binding 5 is the
   participant's current read-only opaque input and cannot be replaced by a
@@ -332,7 +324,7 @@ contract tests remain in the ordinary suite.
   record; consumers use the later ordinary create control plane.
 - CPU behavior planners/adapters execute synchronously on the Bevy main thread
   while the tick frontier is held. Do not imply worker execution, preemption,
-  or an adapter latency guarantee; P10 is only the fixed CPU/mixed feasibility
+  or an adapter latency guarantee; P9 is only the fixed CPU/mixed feasibility
   gate.
 - Complete and confirm all scheduled GPU consumer-input uploads before invoking
   any behavior access planner. Input preflight is the behavior family's
@@ -377,7 +369,6 @@ contract tests remain in the ordinary suite.
 | Derived presentation/dressing | `presentation` | Revision install checks and diagnostic visual capture |
 | Persistence scars | `persistence` | Semantic round trip and incompatible-base failures |
 | Scheduled external behavior seam | `behavior`, `bevy`, `gpu`, `command` | Purpose-built Moria-conforming CPU/GPU physics- and damage-shaped adapters proving first-participant ingress, isolated views, restricted GPU handles, both mixed-processor handoffs, prior feedback, typed abort outcomes, and no atomic scheduled create/split |
-| Asynchronous inspection/effect jobs | `gpu`, `query`, `command` | Bounded WGSL packet/effect tool scenario |
 | Telemetry and failure honesty | `telemetry`, all owners | Schema invariants and deliberate failure suite |
 
 ## Open Human Questions
@@ -392,10 +383,10 @@ in [validation.md](validation.md) passes, the public contract harness produces
 a fail-closed evidence report, at least one physical adapter in each claimed
 native backend family passes real-GPU parity and device-loss qualification, and
 the presentation fixture has a recorded human visual decision. Architecture
-feasibility gates P1–P10 are blocking physical-adapter receipts for each claimed
+feasibility gates P1–P9 are blocking physical-adapter receipts for each claimed
 backend family; failure blocks the affected storage, mutation/query, collision,
-materialization, presentation, scheduled behavior, asynchronous extension, or
-checkpoint selection until the design is revised or passes. Correctness and
+materialization, presentation, scheduled behavior, or checkpoint selection
+until the design is revised or passes. Correctness and
 performance statuses remain separate, and neither can turn the other's failure
 into a pass. P6 requires
 both its 27-artifact local latency fixture and its 13,824-artifact

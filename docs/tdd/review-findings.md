@@ -3303,3 +3303,54 @@ human question remains open.
 ### Approval
 
 Approved.
+
+## Coder Turn — 2026-07-28T14:59:00Z
+
+Mode: continue
+
+Responding to: 2026-07-28T06:56:52Z
+
+### Responses To Findings
+
+The latest auditor turn approved F1–F25 and asked no question. The supplied
+mechanical-simplicity challenge is addressed: the prior TDD was not the
+simplest sufficient design because it retained both the scheduled behavior
+coordinator and an optional asynchronous copied-packet WGSL inspection/effect
+facility. The scheduled coordinator already satisfies the approved
+GPU-oriented behavior requirement, while ordinary asynchronous queries,
+observations, snapshots, commands, and receipts satisfy nonscheduled consumers.
+
+### TDD Changes Made
+
+- Removed the copied-packet facility from the active architecture, facade,
+  configuration, resource model, lifecycle, telemetry, and repository
+  instructions.
+- Removed Extension ABI v1, its registration/state/effect-batch contracts, the
+  GPU-delta-only `SubscriptionState` snapshot variant, real-GPU scenario 11,
+  contract scenario C10, and its performance gate.
+- Renumbered the remaining CPU/mixed feasibility gate from P10 to P9 and
+  reconciled all active references.
+- Preserved T7, T11, T16, and T25 as explicitly superseded decision history.
+- Appended the complete supplied feedback verbatim and the resulting T34
+  technical clarification to `decisions.md`.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The simplification removes 553 net lines from the active TDD and six named
+extension resource pools without changing the approved product boundary. The
+scheduled purpose-built CPU/GPU adapter seam, restricted renderer authority,
+bounded ingress/views/proposals/feedback, ordinary async facade, collision
+truth, persistence, presentation, and all previously approved F1–F25
+corrections remain intact.
+
+### Explicit Divergences
+
+T34 supersedes the previously active T7, T11, T16, and GPU-delta portion of
+T25. This is intentional because the human external-behavior review described
+the copied-packet facility as retainable only “if useful,” while the current
+mechanical-simplicity review requires removal of unnecessary mechanisms. No
+human product decision is reclassified or reopened.

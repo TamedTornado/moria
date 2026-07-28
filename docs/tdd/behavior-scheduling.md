@@ -471,8 +471,8 @@ Each proposal slot is 128 bytes:
 | 112..127 | reserved zero |
 
 Fill uses target/sample and no payload.
-Patch uses the asynchronous extension's 20-byte canonical run record and
-X-fastest indexing.
+Patch uses Scheduled ABI v1's 20-byte canonical run record and X-fastest
+indexing.
 Move uses only placement.
 Retire uses only snapshot index/revision/correlation.
 The adapter copies the revision from the indexed view record; Moria compares it
@@ -652,8 +652,7 @@ nonzero unused fields are validation failures, never forwarded to an adapter.
 
 GPU adapters may retain their own factory-created GPU working state across
 ticks.
-Moria neither allocates that state from `extension_state_bytes` nor returns it
-as a Moria state lease.
+Moria neither interprets that state nor returns it as a Moria state lease.
 Its semantics are consumer-owned, while allocation is enforced and measured by
 the restricted factory registry. Moria does not serialize or interpret the
 bytes.

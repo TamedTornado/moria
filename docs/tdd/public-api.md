@@ -17,8 +17,6 @@ pub struct CheckpointPermit { /* owned queue reservation */ }
 pub struct BehaviorTickPermit {
     /* one tick + every declared input/view/collision/handoff/effect/feedback maximum */
 }
-pub struct ExtensionPermit { /* owned queue/job reservation */ }
-pub struct EffectBatchPermit { /* owned child-command batch reservation */ }
 
 pub struct WorldId(u64);
 pub struct VolumeId(u64);
@@ -30,8 +28,6 @@ pub struct CommandId(u64);
 pub struct QueryId(u64);
 pub struct BehaviorTickId(u64);
 pub struct BehaviorEngineId(u32);
-pub struct ExtensionId(u64);
-pub struct GpuStateId(u64);
 pub struct DressingStyleId(u32);
 pub struct OperationId(u64);
 
@@ -39,7 +35,6 @@ pub struct WorldKey(uuid::Uuid);
 pub struct VolumeKey(uuid::Uuid);
 pub struct MaterialKey(uuid::Uuid);
 pub struct BehaviorEngineKey(uuid::Uuid);
-pub struct ExtensionKey(uuid::Uuid);
 pub struct DressingStyleKey(uuid::Uuid);
 pub struct CheckpointKey(uuid::Uuid);
 
@@ -267,8 +262,6 @@ pub enum StaleHandleKind {
     Volume,
     Material,
     Subscriber,
-    Extension,
-    GpuState,
 }
 
 pub struct ShaderDiagnostic {
@@ -306,7 +299,6 @@ pub struct CapabilityConfig {
     pub presentation: bool,              // default true
     pub persistence: bool,               // default false; must be explicitly enabled
     pub behavior_hooks: bool,             // default false
-    pub gpu_extensions: bool,             // default false; also needs feature
 }
 
 pub enum OverloadPolicy {
@@ -319,7 +311,6 @@ pub struct OverloadPolicies {
     pub queries: OverloadPolicy,          // default WaitForPermit
     pub checkpoints: OverloadPolicy,      // default Reject
     pub behavior_ticks: OverloadPolicy,   // default Reject
-    pub extensions: OverloadPolicy,       // default Reject
 }
 
 pub struct WorkerConfig {
@@ -432,12 +423,6 @@ pub struct ResourceLimits {
     pub behavior_gpu_wgsl_bytes: u64,
     pub behavior_gpu_dispatches: u32,
     pub behavior_gpu_workgroups: u64,
-    pub extension_jobs: u32,
-    pub extension_registrations: u32,
-    pub extension_registry_bytes: u64,
-    pub extension_packet_bytes: u64,
-    pub extension_state_bytes: u64,
-    pub extension_candidate_effects: u32,
 }
 
 pub struct PresentationConfig {
@@ -467,7 +452,7 @@ maximum legal operation, or violates a cross-limit.
 | `page_versions: GpuCapacityLimit` | 262,144 / 65,536 | adapter allocation/entry size and `u32`; `>= page_keys`; covers command reservations |
 | `versions_per_brick` | 8 | 64 |
 | `dirty_scar_bricks: GpuCapacityLimit` | 32,768 / 8,192 | adapter allocation/2,048 and `u32`; `>= max_command_bricks` |
-| `command_records` / `command_payload_bytes` | 1,024 / 64 MiB | 65,536 / 1 GiB; records `>= extension_candidate_effects` when enabled; bytes >= maximum patch |
+| `command_records` / `command_payload_bytes` | 1,024 / 64 MiB | 65,536 / 1 GiB; bytes >= maximum patch |
 | `query_records` / `query_result_bytes` | 256 / 32 MiB | 16,384 / 1 GiB; bytes >= largest enabled query result |
 | `observation_facts` | 4,096 | 1,048,576 |
 | `observation_payload_bytes` | 32 MiB | 1 GiB; `>= 192 + 32 * volume_records` so one maximum checkpoint fact plus its 128-byte filter envelope fits |
@@ -475,7 +460,7 @@ maximum legal operation, or violates a cross-limit.
 | `staging_maps` / `staging_bytes: GpuCapacityLimit` | 8 / 32 MiB desired, 8 MiB minimum | maps 1..=256; bytes <=1 GiB and adapter allocation; covers largest enabled readback chunk |
 | `content_requests` / `content_bricks_per_request` / `content_response_bytes` | 64 / 512 / 32 MiB | 4,096 requests / 4,096 bricks per request / 1 GiB; bytes `>= 2,080 * content_bricks_per_request + 256` |
 | `persistence_requests` / `persistence_staged_bytes` | 8 / 64 MiB | 256 / 1 GiB; staged bytes >= 8 MiB chunk decode bound when enabled |
-| `extraction_records` / `extraction_bytes` | 2,048 / 32 MiB | 65,536 / 1 GiB; bytes cover one maximum enabled patch, scheduled consumer-input header/payload, behavior processor-transition record, or extension input packet plus inline state; records are at least 1 |
+| `extraction_records` / `extraction_bytes` | 2,048 / 32 MiB | 65,536 / 1 GiB; bytes cover one maximum enabled patch, scheduled consumer-input header/payload, or behavior processor-transition record; records are at least 1 |
 | `presentation_jobs` | 1,024 | 65,536; zero only when presentation disabled |
 | `presentation_artifacts` / `presentation_dirty_records` | 16,384 / 16,384 | 1,048,576 each; artifacts `>= presentation_jobs`; dirty records `>= presentation_jobs + live_volumes` and reserve one marker per live-volume slot; both zero only when presentation is disabled |
 | `mesh_vertices` / `mesh_indices` | 2,097,152 / 12,582,912 | `u32` and adapter allocation bound; each covers one maximum artifact when enabled |
@@ -496,10 +481,6 @@ maximum legal operation, or violates a cross-limit.
 | `behavior_gpu_buffers` / `behavior_gpu_buffer_bytes: GpuCapacityLimit` | 256 / 256 MiB desired, 64 MiB minimum | 65,536 handles / `min(1 GiB, adapter max_buffer_size)` aggregate live registered bytes; every descriptor maximum and their checked sum must fit the requested desired value at registration and the effective value at startup |
 | `behavior_gpu_pipelines` / `behavior_gpu_bind_groups` / `behavior_gpu_wgsl_bytes` | 64 / 256 / 4 MiB | 65,536 handles each / 64 MiB borrowed cumulative pipeline source per device creation; descriptor maxima must sum within them |
 | `behavior_gpu_dispatches` / `behavior_gpu_workgroups` | 256 / 1,048,576 | 65,536 / 4,294,967,296 aggregate scheduled adapter dispatches/workgroups per tick; each dimension also obeys the adapter device limit |
-| `extension_jobs` | 64 | 4,096; zero only when extensions disabled |
-| `extension_registrations` / `extension_registry_bytes` | 32 / 4 MiB | 1,024 / 64 MiB; owns all registered WGSL and entry-point bytes |
-| `extension_packet_bytes` / `extension_state_bytes` | 16 MiB / 1 MiB | fixed v1 pool maxima 64 MiB / 4 MiB; state pool holds at least one prior+next pair |
-| `extension_candidate_effects` | 256 | fixed v1 maximum 256 and `<= command_records` |
 
 The fixed request maxima remain: 32,768 cells and 512 bricks per matter
 command, 16 MiB patch payload, 262,144 cells per region read, 8,192 candidate
@@ -510,8 +491,7 @@ per artifact, 256 scheduled behavior engines, 4,096 declared behavior order
 edges, 1 MiB per behavior handoff edge, 65,536 view bricks,
 1,048,576 view cells, 65,536 behavior proposals,
 1 MiB opaque consumer input per behavior participant,
-96 UTF-8 bytes for every debug name, 1 MiB WGSL and 128 UTF-8 bytes for one
-extension entry point, and 256 candidate effects. They are exported in
+and 96 UTF-8 bytes for every debug name. They are exported in
 `contract_limits`; they are not independently configurable.
 
 `PresentationConfig` defaults to `stale_view_policy = DisplayStale`,
@@ -520,26 +500,20 @@ extension entry point, and 256 candidate effects. They are exported in
 
 Supplying a checkpoint store or restore request requires the consumer to set
 `capabilities.persistence = true`; neither call mutates the capability flag.
-Enabling persistence without a store is a configuration error. Enabling GPU
-extensions requires the Cargo feature, nonzero extension limits, extraction
-bytes large enough for one maximum configured packet, and a command queue
-capable of reserving the configured worst-case batch. Disabling presentation
-requires all presentation artifact, dirty, mesh, dressing, and job pool fields
-to be zero and makes presentation interest an explicit `CapabilityDisabled`
-error.
+Enabling persistence without a store is a configuration error. Disabling
+presentation requires all presentation artifact, dirty, mesh, dressing, and
+job pool fields to be zero and makes presentation interest an explicit
+`CapabilityDisabled` error.
 
 Disabling behavior hooks rejects behavior adapter registration/tick
 reservation with `CapabilityDisabled` and leaves the configured capacity
-inactive. It does not disable ordinary queries or the separately configured
-asynchronous `gpu_extensions` facility.
+inactive. It does not disable ordinary queries.
 
 With presentation enabled, `dressing_styles == 0` is legal only when
 `dressing_instances.desired == minimum == 0`; registering a style then returns
 `DressingStyleCapacity { limit: 0 }`. With dressing enabled, registry count and
 instance desired/minimum are nonzero and the effective instance pool holds at
-least one descriptor's `max_instances_per_artifact`. Extension registry bytes
-must be at least 1 MiB + 128 bytes when extensions are enabled, so one maximum
-legal descriptor is representable.
+least one descriptor's `max_instances_per_artifact`.
 
 `EffectiveConfig.requested` mirrors every requested field. Its `limits` vector
 records each numeric `ResourceLimits` field in `ResourceKind` order plus
@@ -733,28 +707,6 @@ impl WorldHandle {
     pub fn reserve_behavior_tick(
         &self,
     ) -> ReserveFuture<BehaviorTickPermit>;
-
-    pub fn try_reserve_extension(
-        &self,
-        job_bytes: u64,
-    ) -> Result<ExtensionPermit, TryReserveError>;
-
-    pub fn reserve_extension(
-        &self,
-        job_bytes: u64,
-    ) -> ReserveFuture<ExtensionPermit>;
-
-    pub fn try_reserve_effect_batch(
-        &self,
-        max_effects: u16,
-        command_payload_bytes: u64,
-    ) -> Result<EffectBatchPermit, TryReserveError>;
-
-    pub fn reserve_effect_batch(
-        &self,
-        max_effects: u16,
-        command_payload_bytes: u64,
-    ) -> ReserveFuture<EffectBatchPermit>;
 }
 ```
 
@@ -764,14 +716,8 @@ record, one input record and the complete declared host bytes for every
 input-capable participant, all required GPU ingress upload/device bytes, and
 all registered per-participant views, reusable CPU collision scratch/calls,
 handoff host/device/staging/maps, proposal, transaction, completion, and
-current/prior feedback maxima before any planner or adapter runs. An
-extension permit reserves one
-job and the complete job allocation (header, packet, two state ranges,
-candidates, diagnostics, and effect payload); it must fit the configured
-packet/state and descriptor effect bounds. An `EffectBatchPermit` reserves
-`max_effects` ordinary command records, their aggregate encoded payload bytes,
-and the same number of child receipt/completion slots. Dropping an unused
-permit releases all capacity.
+current/prior feedback maxima before any planner or adapter runs. Dropping an
+unused permit releases all capacity.
 
 `ReserveFuture<P>` has output `Result<P, ReserveError>`. With the queue's
 configured `WaitForPermit`, it waits in bounded FIFO waiter storage; with
@@ -779,13 +725,10 @@ configured `WaitForPermit`, it waits in bounded FIFO waiter storage; with
 is always immediate regardless of policy. Dropping the future removes its
 waiter. Each queue has at most its configured record count in waiter slots; an
 additional waiter resolves `Full` rather than allocating. Queue close resolves
-every waiter as `Closed`. Effect-batch reservation uses the command queue's
-overload policy because it reserves ordinary child command capacity.
+every waiter as `Closed`.
 
 Submission consumes its permit and owned input. Structural rejection returns
 the input unchanged and releases the submitted operation permit's capacity. A
-rejected `GpuExtensionRequest` still owns its nested `EffectBatchPermit`, so
-the caller may correct/resubmit it or drop it to release child capacity.
 Declared bytes are an upper bound; admission rejects an input whose encoded
 size exceeds them and releases unused bytes immediately after successful
 encoding.
@@ -866,7 +809,6 @@ pub enum OperationScope {
     Region { volume: VolumeId, bounds: CellAabb },
     Checkpoint(CheckpointKey),
     BehaviorTick(BehaviorTickId),
-    Extension(ExtensionId),
 }
 
 pub enum OperationErrorKind {
@@ -974,8 +916,8 @@ pub struct SupportedBounds {
 ```
 
 Receipts are cloneable observers of one shared terminal state. Dropping every
-observer does not cancel work. For command, query, checkpoint, and extension
-operations, the cancellation linearization point is the atomic transition from
+observer does not cancel work. For command, query, and checkpoint operations,
+the cancellation linearization point is the atomic transition from
 `Queued | WaitingForMatter` to `Preparing`. `request_cancel` wins that race by
 installing terminal `CancelledBeforePreparation` and returns `Accepted`; if
 preparation won, it returns `TooLate` with the observed stage and the operation
@@ -986,8 +928,7 @@ before the method returns. Startup and shutdown receipts return
 Every cancellable accepted operation starts in `Queued`, may enter
 `WaitingForMatter`, and must win exactly one transition to `Preparing` before
 it can acquire transaction slots, pin checkpoint versions, freeze a query
-snapshot, enter behavior planning, allocate an extension job, or enter any
-later family-specific stage.
+snapshot, enter behavior planning, or enter any later family-specific stage.
 This rule applies even when an operation needs no GPU dispatch; no family has
 an alternate cancellation boundary.
 
@@ -1070,17 +1011,6 @@ impl WorldHandle {
         request: BehaviorTickRequest,
     ) -> Result<BehaviorTickReceipt, SubmitError<BehaviorTickRequest>>;
 
-    pub fn register_gpu_extension(
-        &self,
-        descriptor: GpuExtensionDescriptor,
-    ) -> Result<ExtensionId, ExtensionRegistrationError>;
-
-    pub fn submit_gpu_extension(
-        &self,
-        permit: ExtensionPermit,
-        request: GpuExtensionRequest,
-    ) -> Result<Receipt<GpuExtensionDispatched>, SubmitError<GpuExtensionRequest>>;
-
     pub fn telemetry(&self) -> TelemetrySnapshot;
 
     pub fn shutdown(
@@ -1102,9 +1032,8 @@ MissingBehaviorInput | UnexpectedBehaviorInput | BehaviorInputTooLarge`,
 returns the complete request unchanged, releases the permit, and assigns no
 tick ID.
 
-`register_gpu_extension` is available only when the Cargo feature and
-configured capability are enabled. `shutdown` is the only accepted operation
-that does not use an ordinary queue permit: the world preallocates exactly one
+`shutdown` is the only accepted operation that does not use an ordinary queue
+permit: the world preallocates exactly one
 shutdown record during startup, and the first call atomically consumes it.
 Later calls return `AlreadyShuttingDown` and may obtain the same receipt
 through `WorldHandle::shutdown_receipt()`.
@@ -1137,20 +1066,6 @@ pub enum ResumeError {
     SnapshotOlderThanGap,
     NotWaitingForSnapshot,
     StaleSubscriber,
-}
-
-pub enum ExtensionRegistrationError {
-    CapabilityDisabled,
-    DuplicateKey,
-    InvalidDescriptor(Vec<Violation>),
-    ShaderValidation(ShaderDiagnostic),
-    RegistryFull { registrations: u32, limit: u32 },
-    RegistryBytes {
-        requested: u64,
-        available: u64,
-        per_descriptor_limit: u64,
-    },
-    WorldNotAccepting(WorldState),
 }
 
 pub enum ShutdownStartError {
@@ -1766,7 +1681,6 @@ bitflags! {
 
 pub enum SnapshotScope {
     SubscriptionGap { subscriber: SubscriberId, max_bricks: u32 },
-    SubscriptionState { subscriber: SubscriberId, max_bricks: u32 },
     Regions(Vec<QueryScope>),            // sorted, non-overlapping, <=256
 }
 
@@ -2036,15 +1950,6 @@ Explicit region snapshots accept live scopes only and therefore return only
 scope, or an older gap; this is the complete race-closing contract and does not
 depend on caller-provided sequence arithmetic.
 
-`SnapshotScope::SubscriptionState` is the non-resuming form used to reconcile
-a nonadvancing GPU observation view. It has the same bounded, exact pinned
-live/retired membership requirement as `SubscriptionGap`, captures
-`observation_frontier`, and has `resume = None`. It is legal regardless of the
-CPU subscriber cursor state and never changes that cursor. Before the first
-fact it returns `ObservationFrontier::Empty`; otherwise it returns the retained
-oldest/head pair. The caller restarts an independent GPU delta read after the
-frontier head, using `after = None` for `Empty`; this reconciles current state
-rather than pretending overwritten or unsupported facts were delivered.
 Explicit region snapshots use the same frontier rule, so a snapshot before
 sequence one is representable without inventing an observation.
 
@@ -2247,12 +2152,6 @@ pub enum ResourceKind {
     BehaviorGpuWgslBytes,
     BehaviorGpuDispatches,
     BehaviorGpuWorkgroups,
-    ExtensionJobs,
-    ExtensionRegistrations,
-    ExtensionRegistryBytes,
-    ExtensionPacketBytes,
-    ExtensionStateBytes,
-    ExtensionCandidateEffects,
 }
 
 pub enum DeviceObservationState {
@@ -2341,8 +2240,7 @@ membership.
 cursor bound. `CurrentHead` records `Some(head)` for a retained frontier and
 `None` for an empty frontier. `Retained(S)` records the checked predecessor of
 `S`, or `None` when `S` is the first world sequence; `S` must still be
-retained. CPU polling and nonadvancing GPU reads therefore share an explicit
-legal start without sharing cursor mutation.
+retained.
 
 Unlike interest brick residency, an optional subscription spatial bound is an
 event predicate over that pinned membership: matter/lifecycle/presentation
@@ -2362,8 +2260,7 @@ fixed-capacity revision array reserved at subscription time, not from an
 unbounded allocation.
 `ResourceKind` is the closed set of every field in `ResourceLimits`, so
 pressure on extraction, lifetime volume records, presentation artifacts/dirty
-records/instances, or extension registry storage is observable through the
-same fact.
+records/instances, or behavior resources is observable through the same fact.
 
 Observations are not a command bus. A subscriber receives no storage or
 mutation privilege.
@@ -3451,359 +3348,6 @@ tick receives `NoneYet`; device recovery receives
 The ABI, layout, retention, and handoff rules are normative in
 [behavior-scheduling.md](behavior-scheduling.md).
 
-## Asynchronous WGSL inspection/effect jobs
-
-This optional facility is an asynchronous inspection/tool consumer.
-It is retained for bounded custom WGSL, observation delta processing, and
-consumers that do not participate in the substrate tick.
-It is not the general scheduled CPU/GPU behavior-engine hook above.
-
-The optional `gpu-extension` feature is deliberately descriptor based:
-
-```rust
-pub struct GpuExtensionDescriptor {
-    pub key: ExtensionKey,
-    pub wgsl: String,                    // 1..=1 MiB UTF-8 bytes
-    pub entry_point: String,             // 1..=128 UTF-8 bytes
-    pub max_invocations: u32,            // 1..=1,048,576
-    pub max_inspection_records: u32,     // 1..=262,144
-    pub max_candidate_effects: u32,      // 0..=256
-    pub max_effect_payload_bytes: u32,   // 0..=command_payload_bytes
-    pub state_bytes: u32,                // 0..=min(4 MiB, extension_state_bytes / 2)
-}
-
-pub enum GpuInspectionQuery {
-    Samples {
-        scope: QueryScope,
-        maximum_records: u32,
-        minimum: MinimumRevision,
-        readiness: ReadinessPolicy,
-    },
-    Occupancy {
-        scope: QueryScope,
-        maximum_records: u32,
-        traversal: TraversalAuthorization,
-        minimum: MinimumRevision,
-        readiness: ReadinessPolicy,
-    },
-    Lifecycle {
-        scope: QueryScope,
-        maximum_records: u32,
-    },
-    ObservationDeltas {
-        subscriber: SubscriberId,
-        after: Option<ObservationSequence>,
-        maximum_records: u32,
-    },
-}
-
-pub enum GpuStateInput {
-    Zeroed,
-    Inline(Vec<u8>),
-    Previous(GpuStateOutput),
-}
-
-pub struct GpuExtensionRequest {
-    pub extension: ExtensionId,
-    pub query: GpuInspectionQuery,
-    pub opaque_state: GpuStateInput,
-    pub effect_batch: EffectBatchPermit,
-}
-
-pub struct GpuExtensionDispatched {
-    pub extension: ExtensionId,
-    pub snapshot: Vec<VolumeSnapshotRef>,
-    pub inspection: GpuInspectionOutcome,
-    pub diagnostics: ExtensionDiagnostics,
-    pub state: Option<GpuStateOutput>,
-    pub effects: Vec<AdmittedEffect>,
-}
-
-pub enum GpuInspectionOutcome {
-    Snapshot,
-    ObservationDeltas(GpuObservationDeltaOutcome),
-}
-
-pub struct GpuObservationDeltaOutcome {
-    pub status: GpuObservationDeltaStatus,
-    pub frontier: ObservationFrontier,
-    pub cursor: Option<ObservationSequence>,
-    pub records: u32,
-}
-
-pub enum GpuObservationDeltaStatus {
-    Complete,
-    MoreAvailable,
-    NeedsSnapshot { requested_after: Option<ObservationSequence> },
-    UnsupportedFact {
-        sequence: ObservationSequence,
-        kind: ObservationFactKind,
-    },
-}
-
-pub enum ObservationFactKind {
-    MatterCommitted,
-    VolumeCreated,
-    VolumeMoved,
-    VolumeRetired,
-    RegionLifecycle,
-    Presentation,
-    Checkpoint,
-    ResourcePressure,
-    Device,
-}
-
-pub struct ExtensionDiagnostics {
-    pub flags: u32,
-    pub counters: [u32; 8],
-    pub inspection_records: u32,
-    pub produced_effects: u32,
-    pub effect_payload_bytes: u32,
-}
-
-pub struct GpuStateOutput {
-    /* Clone + Send + Sync lease */
-    pub id: GpuStateId,
-    pub extension: ExtensionId,
-    pub device_generation: DeviceGeneration,
-    pub bytes: u32,
-}
-
-pub enum AdmittedEffect {
-    Matter {
-        command: CommandId,
-        receipt: Receipt<MatterApplied>,
-    },
-    Volume {
-        command: CommandId,
-        receipt: Receipt<VolumeApplied>,
-    },
-}
-```
-
-Registration is world-lifetime and consumes one `extension_registrations`
-record plus `wgsl.len() + entry_point.len()` from
-`extension_registry_bytes`; there is no unbounded pipeline or descriptor
-cache. Reaching either limit returns the corresponding
-`ExtensionRegistrationError` without compiling a pipeline. Registration
-validates WGSL and the fixed ABI. A request captures exactly one closed
-`GpuInspectionQuery` into an extension-owned packet. `maximum_records` must be
-nonzero and fit the packet permit, descriptor maximum, and fixed public query
-limit; unsupported partial coverage is rejected rather than clipped.
-
-`ObservationDeltas` is an independent, nonadvancing read of the retained
-observation ring using only the named subscriber's accepted membership, kinds,
-spatial predicate, and immutable `FilterEnvelopeV1` records. It never reads,
-advances, gaps, or resumes the subscriber's CPU cursor. `after` is legal only
-when it is at or after `accepted().initial_after` (with `None` ordered before
-every sequence) and no later than the atomically captured frontier head.
-For `ObservationFrontier::Empty`, only `after = None` is legal. Otherwise the
-extension receipt fails `OperationErrorKind::Validation` before shader
-dispatch. A stale subscriber is likewise a validation failure.
-
-Capture atomically records the closed `ObservationFrontier`. For
-`Retained { oldest, head }`, it scans in sequence order only through `head`.
-Nonmatching facts advance the scan cursor using their retained envelopes but
-emit no record. Matching supported facts emit in order. If `maximum_records`
-fills before the scan reaches the head, status is `MoreAvailable` and `cursor`
-is the greatest sequence examined without skipping the next matching fact; the
-caller pages with that exact cursor. Reaching the head is `Complete` and
-`cursor = Some(head)`.
-
-`ObservationFrontier::Empty` with `after = None` is a distinct successful
-capture: status is `Complete`, `records = 0`, and `cursor = None`. It is not a
-gap. After sequence one is appended, another read from `after = None` examines
-that first fact. For a nonempty frontier, `after = None` means "before sequence
-one"; if `oldest` is greater than sequence one, its successor was overwritten
-and the status is `NeedsSnapshot`.
-
-If the successor of `after` has been overwritten, status is `NeedsSnapshot`,
-the packet has zero observation records, and `cursor = after`. If a matching
-fact has no complete ABI v1 representation, status is `UnsupportedFact`, the
-packet has zero records, and `cursor` plus `sequence` identify that first
-unsupported fact; no later fact is scanned or silently skipped. In either
-status the shader is dispatched so it can observe the status, but candidate
-count and payload must remain zero or the whole extension fails GPU validation.
-The CPU owner reconciles through an ordinary bounded
-`SnapshotScope::SubscriptionState`, then restarts this independent view after
-the snapshot frontier head, or from `None` when that frontier is `Empty`. It
-does not call `resume_after` unless the ordinary CPU subscriber independently
-entered `NeedsSnapshot`.
-
-When `descriptor.state_bytes > 0`, `GpuStateInput::Inline` must contain exactly
-that many bytes; `Zeroed` creates that many zero bytes, and `Previous` must name the same
-extension, byte count, world, and current device generation. Shader-written
-state remains in an extension-owned GPU buffer and returns as an opaque
-`Some(GpuStateOutput)`; it is accepted by a later request but grants no buffer
-access. A state ID becomes stale on device loss or world shutdown. State is
-external-behavior working data, is not checkpointed, and never affects Moria
-truth unless a candidate effect is admitted. For `state_bytes == 0`, only
-`Zeroed` is valid and the output state is `None`.
-
-`Previous` owns a cloned immutable state lease until submission; each dispatch
-writes a distinct next-state allocation, so concurrent requests may safely
-branch from one prior state. Dropping the last `GpuStateOutput` clone makes its
-bytes reclaimable after the last GPU reader completes. Live prior/next states
-and in-flight state ranges together may not exceed `extension_state_bytes`;
-pressure rejects/waits through the extension permit policy and never allocates
-an unbounded state history. For a descriptor with zero candidate capacity,
-`try_reserve_effect_batch(0, 0)` returns a zero-capacity permit without
-consuming command records; any nonzero candidate output is invalid.
-
-### Extension ABI v1
-
-All ABI words are 32-bit little-endian values, every offset is from extension
-job-allocation byte zero and divisible by four, and all reserved words must be
-zero on input and output. Rust mirrors are
-`#[repr(C)] + Pod + Zeroable`; layout tests assert each offset and total size
-against WGSL constants. An extension declares only Moria bind group 0:
-read/write control header, read-only packet records/input state, read/write
-next-state, write-only candidate records, and write-only effect payload. These
-are nonoverlapping bounded ranges in an extension-owned job allocation; no
-range aliases Moria storage. Any other group/binding is rejected by Naga
-validation.
-
-The 128-byte packet header is:
-
-| Byte | Field |
-| ---: | --- |
-| 0 | magic `0x4d4f5249` |
-| 4 | ABI version `1` |
-| 8 | inspection kind: samples `1`, occupancy `2`, lifecycle `3`, observation delta `4` |
-| 12 | inspection status: non-delta `0`, delta complete `1`, more available `2`, needs snapshot `3`, unsupported fact `4` |
-| 16, 20 | snapshot count, inspection record count |
-| 24, 28 | state byte count, candidate capacity |
-| 32, 36 | output candidate count (initially zero), diagnostic word count (`8`) |
-| 40, 44 | effect-payload capacity, output payload bytes (initially zero) |
-| 48 | total packet bytes |
-| 52 | unsupported observation-kind tag, otherwise zero |
-| 56..63 | reserved zero |
-| 64, 68 | snapshot-record offset, inspection-record offset |
-| 72, 76 | input-state offset, output-state offset |
-| 80, 84 | candidate-record offset, effect-payload offset |
-| 88, 92 | device generation low/high words |
-| 96, 100 | operation ID low/high words |
-| 104, 108 | delta oldest-retained sequence; zero for an empty frontier or non-delta inspection |
-| 112, 116 | delta captured-head sequence; zero for an empty frontier or non-delta inspection |
-| 120, 124 | delta cursor: scanned-through, requested-after, or unsupported sequence according to status; zero represents `None` |
-
-For delta inspection, oldest and head are either both zero
-(`ObservationFrontier::Empty`) or both nonzero
-(`ObservationFrontier::Retained`); a one-zero/one-nonzero header is invalid.
-Thus an empty complete history is encoded as delta kind, `Complete`, zero
-records, and zero in all three sequence fields. This cannot be confused with
-`NeedsSnapshot`, whose nonempty captured frontier and distinct status are
-mandatory.
-
-Snapshot records are 64 bytes: runtime volume ID at 0, revision at 8,
-translation `[f32; 4]` at 16, quaternion `[f32; 4]` at 32, and stable
-`VolumeKey` bytes at 48. Sample and occupancy records are 32 bytes: snapshot
-index at 0, signed local cell XYZ at 4/8/12, packed
-`material:u16|coverage:u8|flags:u8` at 16, occupancy `0|1` at 20, and reserved
-zero through 31. Lifecycle records are 32 bytes: snapshot index at 0, signed
-brick XYZ at 4/8/12, lifecycle tag at 16, retryability tag at 20, and reserved
-failure-kind tag at 24 (`0` for nonfailed, otherwise the closed
-`RegionFailureKind` tags: content `1`, invalid content `2`, budget `3`, device
-lost `4`, revision unavailable `5`, retired `6`, internal invariant `7`) with
-the closed `ContentErrorKind` or `ResourceKind` tag at 28 where applicable,
-zero otherwise. Observation-delta records are 128 bytes. Their common prefix is
-sequence `u64` at 0, closed kind/flags words at 8/12, runtime volume ID at 16,
-revision or terminal revision at 24, command ID (or zero) at 32, and the
-16-byte correlation at 40. Bytes 56..127 are a zero-filled tagged payload:
-matter stores the local affected AABB; create/retire store the stable volume
-key; move stores translation `[f32; 4]` and quaternion `[f32; 4]`;
-presentation stores brick XYZ, state/error tags, and visible/target revisions;
-resource pressure stores resource tag, used/limit `u64`, and action; device
-stores generation and state. The fixed complete v1 tags are therefore
-`MatterCommitted`, `VolumeCreated`, `VolumeMoved`, `VolumeRetired`,
-`Presentation`, `ResourcePressure`, and `Device`.
-`RegionLifecycle` (bounded diagnostic) and `Checkpoint` (variable revision
-vector) are explicitly unsupported v1 delta facts. They cause the
-`UnsupportedFact` boundary only when they match the accepted filter/kinds;
-irrelevant facts may be scanned past.
-
-Candidate records are fixed 128-byte slots:
-
-| Byte | Field |
-| ---: | --- |
-| 0 | kind: unused `0`, fill `1`, patch-runs `2`, move `3` |
-| 4 | flags; v1 zero |
-| 8 | runtime volume ID `u64` |
-| 16 | mandatory exact expected `VolumeRevision` `u64`; zero is invalid |
-| 24 | 16-byte `Correlation` |
-| 40, 44, 48 | target min XYZ `i32` |
-| 52, 56, 60 | target max XYZ `i32` |
-| 64 | packed material sample |
-| 68, 72 | effect-payload offset and byte length |
-| 76 | reserved zero |
-| 80 | placement translation `[f32; 4]` |
-| 96 | placement quaternion `[f32; 4]` |
-| 112..127 | reserved zero |
-
-Fill uses target/sample and has zero payload. Patch-runs uses target plus a
-payload slice of 20-byte records
-`{ start_index:u32, length:u32, sample:u32, reserved:[u32;2] }`; runs use the
-same X-fastest rules as `MaterialPatch`, and both reserved words are zero.
-Move uses placement and requires target/sample/payload fields to be zero.
-Every kind carries the mandatory exact revision precondition from the captured
-snapshot. Create, retire, dense patches, and any unknown kind are not extension
-ABI effects; consumers submit them through the ordinary CPU facade.
-
-The shader may write only next-state bytes, eight consumer-defined diagnostic
-counter words/flags,
-candidate count/records, and effect payload. It cannot change the snapshot,
-inspection records, capacities, IDs, or offsets. Diagnostics are copied as the
-fixed `ExtensionDiagnostics`; next state remains GPU-owned.
-
-The request's batch permit must reserve at least the descriptor's declared
-`max_candidate_effects`, not merely an expected count, and enough aggregate
-encoded command payload bytes for the worst-case records permitted by the
-descriptor. This reservation happens before packet capture or shader dispatch.
-The extension queue permit independently bounds packet/state/diagnostic work.
-Registration rejects a descriptor whose candidate count exceeds
-`extension_candidate_effects`, whose aggregate effect bytes exceed
-`command_payload_bytes`, or whose worst record exceeds the fixed matter-command
-limits. It also rejects WGSL/entry-point sizes above their per-descriptor
-limits, zero/excess invocation or observation counts, state above
-`extension_state_bytes`, or a descriptor that cannot fit one extraction batch.
-
-Moria checks output count, offsets/alignment, reserved words, coordinates,
-material IDs/flags, mandatory revision preconditions, record lengths, and
-aggregate bytes on GPU. It then copies the 64-byte outcome/diagnostic block and
-exactly the produced fixed candidate records/effect payload through the bounded
-staging pool; host validation decodes that same bounded transport
-representation into ordinary owned commands. Readback is therefore at most
-`64 + 128 * produced_count + produced_payload_bytes`, never the inspection
-packet or material samples. Any invalid record, overflow, duplicate effect
-slot, or mismatch with the batch reservation fails the extension receipt and
-admits zero child commands. No command ID is assigned before whole-array
-validation succeeds.
-
-For delta statuses `NeedsSnapshot` and `UnsupportedFact`, output validation
-additionally requires candidate count and effect payload bytes to remain zero.
-The returned `GpuInspectionOutcome` is decoded from the same fixed header and
-must agree with its public query, captured bounds, record count, and status;
-an empty `Complete` packet can therefore never be confused with a gap,
-unsupported boundary, or capacity page.
-
-After successful validation, Moria converts every candidate into an ordinary
-`MatterCommand` or `VolumeCommand`, consumes the matching reserved record/byte
-slice, assigns a normal command ID, and returns every child receipt in
-`GpuExtensionDispatched.effects` in shader output order. Unused record, byte,
-and completion capacity is released immediately after the produced count and
-encoded sizes are validated. The outer extension receipt completes at this
-all-children-admitted milestone; it does not wait for child completion. Each
-child can then apply, conflict, be cancelled before preparation, or fail
-independently under the normal per-volume queue. Thus validation/admission is
-all-or-none while terminal effects are deliberately independent. Cross-volume
-atomicity is not implied.
-
-The packet/effect buffers are not Moria storage and contain only the explicitly
-requested bounded snapshot. No extension receives page-table, brick-pool,
-scar-pool, presentation, or renderer buffer handles. CPU-oriented
-asynchronous consumers use the ordinary query/observation/command APIs;
-scheduled CPU adapters use the direct tick view defined above.
-
 ## Telemetry
 
 ```rust
@@ -3827,8 +3371,6 @@ pub struct TelemetrySnapshot {
     pub behavior_view_bytes: u64,
     pub behavior_proposal_bytes: u64,
     pub behavior_feedback_bytes: u64,
-    pub extension_packet_bytes: u64,
-    pub extension_effect_readback_bytes: u64,
 }
 
 pub struct ResourceUsage {
@@ -3869,8 +3411,6 @@ were aggregate pools.
   CPU/GPU handoff maps/bytes, isolated view/collision/proposal/feedback bytes,
   conflicts, skipped/failed participants, and factory-enforced external GPU
   bytes/counts;
-- extension registration/registry bytes, packet/state/effect bytes, stale state
-  IDs, and candidate/diagnostic readback bytes;
 - resource-pressure decisions.
 
 Coordinates, raw samples, shader buffers, and consumer opaque metadata are not
