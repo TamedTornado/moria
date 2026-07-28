@@ -131,14 +131,18 @@ results contain copied values and do not pin GPU versions.
 
 Every snapshot first acquires a checked nonzero `WorldDirectoryEpoch` and its
 immutable root slot, then resolves the volume entries and revisions in that
-root. Ordinary commits may publish a structurally shared root with one changed
-entry. Scheduled placement streams and extract-components are the only closed
-operations that prepare several entries and install them with one root/epoch
-gate per proposal. Multiple root-affecting proposals in a tick form a stable
-root chain and publish in participant/proposal order. Failure may reject one
-proposal while another valid proposal publishes under its policy, but device
-loss before confirmation exposes none of the tick's candidate roots and never
-part of one proposal.
+root. Ordinary create, retirement, and directory-structure replacement publish
+a structurally shared root; ordinary matter and single-volume placement
+commits update the immutable authority version selected by the existing live
+entry and do not consume a directory epoch. Scheduled placement streams and
+extract-components are the only closed operations that prepare several entries
+and install them with one root/epoch gate per proposal. Multiple
+root-affecting proposals across participants, and multiple extraction
+proposals from one participant, form a stable participant/proposal-order root
+chain. Each GPU participant may contribute at most one placement-stream root.
+Failure may reject one proposal while another valid proposal publishes under
+its policy, but device loss before confirmation exposes none of the tick's
+candidate roots and never part of one proposal.
 
 The portable directory is a four-level, 32-way immutable-topology radix tree
 keyed by a 16-bit lifetime `VolumeRecordIndex`, not by the reusable runtime
@@ -478,13 +482,42 @@ truth and return to ready.
 
 ## Integer and generation exhaustion
 
-Operation IDs, revisions, table generations, slot generations, and observation
-sequences use checked increments. Exhaustion closes the narrowest affected
-scope:
+Operation IDs, revisions, world-directory epochs, table generations, slot
+generations, and observation sequences use checked increments. Exhaustion
+closes the narrowest affected scope:
 
 - slot generation exhaustion permanently retires that slot;
 - operation/observation exhaustion closes the world to new admissions;
 - volume revision exhaustion fails that volume;
+- world-directory epoch exhaustion moves the world permanently to
+  `WorldState::DirectoryEpochExhausted`: the current immutable root remains
+  readable and checkpointable, and non-root-changing operations may continue,
+  but no create, retirement, directory rebuild, placement stream, component
+  extraction, or other root publication can be admitted or prepared;
 - device generation exhaustion requires process restart.
+
+The directory epoch starts at one. Every root publication obtains its exact
+next epoch with checked addition and no value is reused. An ordinary
+root-changing operation that cannot obtain its epoch fails with
+`OperationErrorKind::DirectoryEpochExhausted`,
+`Retryability::Never`, and `revision_changed = false`; a later structurally
+root-changing submission returns
+`SubmitError::WorldNotAccepting { state:
+WorldState::DirectoryEpochExhausted, .. }`. Read-only queries, observation,
+checkpointing of the current root, interest withdrawal, and shutdown remain
+legal.
+
+After behavior composition selects `N` root proposals, the coordinator
+checked-adds `N` to the current epoch before preparing any candidate root. If
+the range does not fit, none of those proposals or any other proposal in the
+tick publishes: the tick completes as
+`NoPublication { cause: DirectoryEpochExhausted }`, every otherwise selected
+proposal is `TickAborted` with that cause, `revision_changed = false`, and the
+world enters `DirectoryEpochExhausted`. If the range fits, roots consume the
+reserved consecutive values in participant/proposal order. A publication that
+legitimately consumes `u64::MAX` succeeds and then enters the same terminal
+state before another root-changing operation can prepare. Already reserved
+older operations may finish in allocator order; no later reservation is
+created after the allocator closes.
 
 No counter wraps, and no physical identity becomes a public stable key.

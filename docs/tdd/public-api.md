@@ -484,7 +484,7 @@ maximum legal operation, or violates a cross-limit.
 | `material_metadata_bytes` | 16 MiB | 1 GiB retained aggregate; `>= max_material_metadata_bytes` |
 | `live_volumes` | 1,024 | 65,535 |
 | `volume_records` | 4,096 | 65,535; `>= live_volumes`; counts every live key and retained tombstone for the world's lifetime |
-| `directory_roots: GpuCapacityLimit` | 64 desired / 4 minimum | 2,048 and adapter allocation/64; includes the current root, prepared proposal roots, and reader-pinned old roots |
+| `directory_roots: GpuCapacityLimit` | 64 desired / 4 minimum | 2,048 and adapter allocation/64; includes the current root, reader-pinned old roots, one prepared root per extraction-proposal maximum, and one per GPU descriptor with placement enabled |
 | `directory_nodes: GpuCapacityLimit` | 524,288 desired / 32,768 minimum | 4,194,304 and aggregate adapter allocation/128; segmented bindings, with four 128-byte radix nodes per changed entry as the conservative proposal bound |
 | `directory_entry_versions: GpuCapacityLimit` | 131,072 desired / 8,192 minimum | 1,048,576 and aggregate adapter allocation/128; segmented bindings, with every prepared or reader-pinned 128-byte entry version charged |
 | `volume_authority_versions: GpuCapacityLimit` | 262,144 desired / 65,536 minimum | 4,194,304 and aggregate adapter allocation/64; immutable revision/placement/content-root versions selected through portable `atomic<u32>` entry gates |
@@ -517,13 +517,13 @@ maximum legal operation, or violates a cross-limit.
 | `behavior_collision_calls` / `behavior_collision_contacts` / `behavior_collision_bytes` | 128 / 4,096 / 320 KiB | 4,096 / fixed 4,096 / 320 KiB; calls are aggregate per tick, while one reusable exact 80-byte slot per contact structurally bounds CPU helper output |
 | `behavior_handoff_maps` / `behavior_handoff_bytes: GpuCapacityLimit` | 4 / 24 MiB desired, 3 MiB minimum | 256 maps / 1 GiB and adapter allocation; startup reserves at most three times every declared edge capacity for host/device/staging representations, and every individual device binding fits the adapter binding limit |
 | `behavior_proposal_records` / `behavior_proposal_bytes` | 1,024 / 64 MiB | 65,536 / 1 GiB aggregate; each GPU participant's effect allocation fits one storage binding, aggregate declared maxima fit, and command/transaction completion capacity covers the same tick |
-| `behavior_effect_cells` / `behavior_effect_bricks` / `behavior_directory_effects` | 262,144 / 4,096 / 16 | 1,048,576 / 65,536 / 1,024 aggregate per tick; each proposal still obeys ordinary command maxima and aggregate declared adapter maxima must fit |
+| `behavior_effect_cells` / `behavior_effect_bricks` / `behavior_directory_effects` | 262,144 / 4,096 / 16 | 1,048,576 / 65,536 / 1,024 aggregate per tick; each proposal still obeys ordinary command maxima; directory effects count ordinary scheduled move/retire effects, while separately named placement/extraction pools and `directory_roots` cover their closed multi-volume roots |
 | `behavior_conflict_checks` | 1,048,576 | 4,294,967,296 candidate whole-proposal overlap comparisons per tick; overflow fails before publication |
 | `behavior_feedback_bytes: GpuCapacityLimit` | 1 MiB desired / 128 KiB minimum | 64 MiB and adapter allocation; holds two slots for every GPU participant, each containing a 64-byte header, one 64-byte terminal participant record, and its maximum 48-byte proposal records |
 | `behavior_gpu_buffers` / `behavior_gpu_buffer_bytes: GpuCapacityLimit` | 256 / 256 MiB desired, 64 MiB minimum | 65,536 handles / `min(1 GiB, adapter max_buffer_size)` aggregate live registered bytes; every descriptor maximum and their checked sum must fit the requested desired value at registration and the effective value at startup |
 | `behavior_gpu_pipelines` / `behavior_gpu_bind_groups` / `behavior_gpu_wgsl_bytes` | 64 / 256 / 4 MiB | 65,536 handles each / 64 MiB borrowed cumulative pipeline source per device creation; descriptor maxima must sum within them |
 | `behavior_gpu_dispatches` / `behavior_gpu_workgroups` | 256 / 1,048,576 | 65,536 / 4,294,967,296 aggregate scheduled adapter dispatches/workgroups per tick; each dimension also obeys the adapter device limit |
-| `behavior_placement_updates` / `behavior_placement_bytes` | 65,536 / 4 MiB | 1,048,576 / 64 MiB; bytes `>= 64 * updates`; complete aggregate descriptor maxima fit |
+| `behavior_placement_updates` / `behavior_placement_bytes` | 65,536 / 4 MiB | 1,048,576 / 64 MiB; bytes `>= 64 * updates`; complete aggregate descriptor maxima fit, and each nonzero descriptor maximum covers one stream rather than multiplying by proposal slots |
 | `behavior_component_extraction_proposals` / `behavior_component_extraction_children` / `behavior_component_extraction_assignment_cells` / `behavior_component_extraction_child_bricks` / `behavior_component_extraction_bytes` | 16 / 256 / 262,144 / 4,096 / 32 MiB | 1,024 / 4,096 / 1,048,576 / 65,536 / 256 MiB; children also fit reserved live/lifetime directory records and all transfer/scar/page pools |
 | `behavior_egress_maps` / `behavior_egress_receipts` / `behavior_egress_records` | 16 / 64 / 16,384 | 256 / 4,096 / 1,048,576; maps cover one active tick's enabled participants, receipts bound retained terminal/pending results, and aggregate descriptor record maxima fit |
 | `behavior_egress_device_bytes: GpuCapacityLimit` / `behavior_egress_staging_bytes: GpuCapacityLimit` / `behavior_egress_host_bytes` | 16 MiB desired, 1 MiB minimum / 16 MiB desired, 1 MiB minimum / 16 MiB | 256 MiB and adapter allocation / 256 MiB and adapter allocation / 256 MiB; device capacity covers `align4(80 + maximum_bytes)` per enabled adapter, while staging and decoded-host pools cover exact payload maxima |
@@ -893,6 +893,7 @@ pub enum WorldState {
     Configured,
     Starting,
     Ready,
+    DirectoryEpochExhausted,
     Recovering,
     ShuttingDown,
     Stopped,
@@ -944,6 +945,7 @@ pub enum OperationErrorKind {
     Startup(StartupFailure),
     Behavior(BehaviorEngineFailure),
     BehaviorEgress(BehaviorEgressFailure),
+    DirectoryEpochExhausted,
     CancelledBeforePreparation,
     ShuttingDown,
     InternalInvariant,
@@ -1014,6 +1016,7 @@ pub enum ViolationCode {
     MissingBehaviorInput,
     UnexpectedBehaviorInput,
     BehaviorInputTooLarge,
+    ComponentIdentityExhausted,
     StaleHandle,
     LiveVolumeCapacity,
     VolumeRecordCapacity,
@@ -1065,6 +1068,17 @@ bounded by the closed required-feature list plus the numeric config fields.
 and one `LimitRequirement` for every unmet minimum, so startup never collapses
 renderer absence, adapter insufficiency, and restore failure into
 `Unavailable`.
+
+`WorldState::DirectoryEpochExhausted` is a terminal capability substate, not
+loss of the current world. Root-changing create/retire/directory-rebuild
+submissions return `SubmitError::WorldNotAccepting` in that state; a previously
+admitted ordinary root operation fails
+`OperationErrorKind::DirectoryEpochExhausted` with
+`Retryability::Never` and `revision_changed = false`. Queries,
+observations, current-root checkpoints, non-root matter/single-volume
+placement operations, interest withdrawal, and shutdown remain callable.
+Scheduled ticks remain callable for non-root effects; selecting a root effect
+produces the typed tick-wide exhaustion outcome defined below.
 
 A failed matter mutation always reports `revision_changed = false`.
 
@@ -2672,7 +2686,7 @@ pub struct BehaviorEngineDescriptor {
     pub maximum_proposal_bytes: u64,
     pub maximum_effect_cells: u32,
     pub maximum_effect_bricks: u32,
-    pub maximum_directory_effects: u32,
+    pub maximum_directory_effects: u32,      // ordinary move/retire only
     pub maximum_collision_calls: u32,       // zero for GPU
     pub maximum_collision_contacts: u32,    // zero for GPU
     pub handoffs_to: Vec<BehaviorHandoffDescriptor>,
@@ -2686,7 +2700,7 @@ pub struct BehaviorEngineDescriptor {
     pub maximum_gpu_wgsl_bytes: u64,           // zero for CPU
     pub maximum_gpu_dispatches: u32,          // zero for CPU
     pub maximum_gpu_workgroups: u64,          // zero for CPU
-    pub maximum_placement_updates: u32,       // zero for CPU
+    pub maximum_placement_updates: u32,       // zero disables; nonzero authorizes one stream
     pub maximum_component_extraction_proposals: u32,      // zero for CPU
     pub maximum_component_extraction_children: u32,       // per proposal; zero for CPU
     pub maximum_component_extraction_assignment_cells: u32, // zero for CPU
@@ -2802,6 +2816,7 @@ pub enum BehaviorTickAbortCause {
     },
     DeviceLost { generation: DeviceGeneration },
     PreparationFailure,
+    DirectoryEpochExhausted,
 }
 
 pub struct BehaviorParticipantOutcome {
@@ -3026,6 +3041,19 @@ prefix. The host-byte permit returns only after the receipt's retained terminal
 result and every result/byte handle clone are dropped. Thus consumer retention
 applies ordinary bounded backpressure and can never cause early buffer reuse or
 unaccounted byte duplication.
+
+For an enabled egress lane, `BehaviorParticipantExecution::Completed` always
+leaves the admission's egress receipt eligible to complete from a valid
+initialized prefix. Proposal rejection/replacement and a later tick-wide
+`NoPublication` do not make that prefix unavailable.
+`BehaviorParticipantExecution::Skipped` and `NotRun` map one-for-one to the
+existing `BehaviorEgressParticipantUnavailable` variants and deliver no
+prefix. Any egress `OperationError`, including mapping or decoding failure
+after independently confirmed publication, sets `revision_changed` to the
+associated `BehaviorTickCompleted::revision_changed`: it is false for every
+`NoPublication` disposition and otherwise exactly the tick-wide committed
+revision-change value. Egress receipt completion may therefore wait for the
+tick's terminal publication decision, but publication never waits for egress.
 
 `BehaviorDiagnostic::try_from_str` accepts at most 192 UTF-8 bytes and rejects
 193 rather than truncating; reserved is always zero. The diagnostic is exactly
@@ -3690,6 +3718,24 @@ and releases every host/device/staging charge before returning
 submitted GPU ranges remain charged through completion or generation
 quarantine.
 
+For a GPU descriptor, nonzero `maximum_placement_updates` authorizes exactly
+one `PlacementStream` proposal per tick, and the aggregate stream payload must
+fit both `64 * maximum_placement_updates` and the participant's declared
+proposal-byte maximum. A second placement-stream proposal is not another
+allocation unit: it invalidates the complete participant batch.
+Registration and effective-config validation reserve one root transaction and
+the declared update-count worth of directory entry versions, authority
+versions, observations, outcome/receipt records, and cleanup for each GPU
+descriptor with placement enabled. CPU descriptors keep the field zero.
+
+For each extraction-capable descriptor, behavior submission performs the
+bounded candidate-key preflight defined in
+[adapter-substrate-contracts.md](adapter-substrate-contracts.md) before
+admission succeeds. Exhausting all 256 complete-set salt attempts returns
+`SubmitError::Invalid` with
+`ViolationCode::ComponentIdentityExhausted`, the original
+`BehaviorTickRequest`, and no public tick ID. No planner or adapter is invoked.
+
 Current GPU feedback is finalized only after the terminal publication decision
 and CPU report hooks, then retained in one of two Moria-owned per-participant
 slots. The next `encode_tick` receives
@@ -3702,6 +3748,10 @@ The Scheduled ABI v2 effect-buffer reservation/egress subranges,
 component-extraction public results, placement stream, directory epoch, opaque
 egress receipt ordering, resource relationships, and failure outcomes are normative in
 [adapter-substrate-contracts.md](adapter-substrate-contracts.md).
+
+`WorldDirectoryEpoch` is never zero, wrapped, or reused. The terminal
+directory-exhaustion state and result mapping are normative in
+[state-and-storage.md](state-and-storage.md#integer-and-generation-exhaustion).
 
 ## Asynchronous WGSL inspection/effect jobs
 

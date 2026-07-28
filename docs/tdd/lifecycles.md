@@ -352,7 +352,9 @@ all fail for that volume. Ordinary independent volumes remain independently
 published. The closed scheduled effect set is fill, patch, move, retire,
 placement stream, and extract components. Placement stream and extract
 components are the only multi-volume exceptions and use one
-`WorldDirectoryEpoch` gate per proposal. Extract components can publish only pre-reserved
+`WorldDirectoryEpoch` gate per proposal. A GPU participant may emit at most
+one placement-stream proposal per tick; its declared update count/bytes and
+one root transaction cover that complete stream. Extract components can publish only pre-reserved
 dynamic children made from samples already owned by one pinned source;
 arbitrary create and `BaseContentSource` transport remain unavailable.
 
@@ -484,10 +486,14 @@ count (default 1).
 | Scheduled proposal conflict | Proposal/tick | Whole proposal rejected/replaced or tick failed | Never partial proposal application |
 | Scheduled report-hook failure after publication | Behavior notification | `PublishedWithNotificationFailure` | Already published effects and receipts remain valid |
 | Scheduled component-extraction validation/conservation/capacity failure | Component-extraction proposal | Typed proposal rejection or tick failure under participant policy | Old directory epoch remains current; no child identity or sample becomes visible |
+| Component candidate-key salt exhaustion | Behavior request | Synchronous `SubmitError::Invalid` with `ComponentIdentityExhausted` and unchanged request | No public tick ID, partial candidate table, planner/adapter execution, lifetime record, or leaked permit |
 | Scheduled component-extraction device loss before/after gate | Behavior tick/world | Typed no-publication loss before the gate; applied result plus normal dirty-state recovery after it | Never parent/child partial visibility or rollback |
+| World-directory epoch exhaustion | World/root-changing operation | Ordinary operation fails `DirectoryEpochExhausted`; a scheduled range failure is typed no-publication; later root-changing submissions reject in `WorldState::DirectoryEpochExhausted` | Current root remains readable/checkpointable; no epoch wraps/reuses and no partial root chain publishes |
 | Placement-stream invalid/stale/duplicate entry | Placement proposal | Whole stream rejected | No placement/revision in the stream changes |
+| Second placement stream from one participant | Behavior participant | Complete participant batch invalid; pre-reserved egress becomes participant-unavailable | No proposal admitted and the one-stream root/update reservation is not multiplied |
 | Opaque egress zero/exact output | Egress receipt | Ready with exact prefix, including explicit zero | Publication outcome unchanged |
 | Opaque egress overflow/map/decode/device loss | Egress receipt | Closed failure with no truncated bytes | Publication outcome remains independently reported |
+| Completed-participant proposal rejection or tick abort with valid egress | Egress receipt | Ready with exact prefix; error paths copy tick-wide `revision_changed` | Egress is execution-based and does not relabel independent publication truth |
 | External shader failure | Asynchronous extension request | Extension error | Only earlier ordinary commits remain |
 
 ## Time and determinism

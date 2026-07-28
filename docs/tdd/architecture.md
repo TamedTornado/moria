@@ -372,8 +372,10 @@ World construction has two phases.
 - volume domains and coordinate conversions cannot overflow;
 - placements are finite and rigid;
 - versioned directory root/node/entry/authority pools can hold the current
-  directory, every declared root-affecting proposal's conservative
-  four-nodes-per-entry preparation, and configured reader-retained generations;
+  directory, every extraction proposal maximum plus exactly one placement
+  stream for each GPU descriptor with placement enabled, each root
+  transaction's conservative four-nodes-per-entry preparation, and configured
+  reader-retained generations;
 - every externally registered volume has a content source and exact
   reconstruction fingerprint; restored derived-extraction children instead have
   validated persisted derived bases and provenance;

@@ -162,13 +162,16 @@ schema, coarse/full simulation, events, and every behavior meaning.
   bounded opaque consumer ingress, processor handoffs, and prior feedback,
   whole-proposal conflict policies, and at most one behavior publication
   revision per affected volume. Scheduled ABI v2 adds only two multi-volume
-  substrate effects: a compact placement stream and bounded extraction of
-  source-owned samples into pre-identified child volumes. Arbitrary scheduled
-  create and `BaseContentSource` transport remain forbidden.
+  substrate effects: at most one compact placement stream per GPU participant
+  per tick and bounded extraction of source-owned samples into pre-identified
+  child volumes. Arbitrary scheduled create and `BaseContentSource` transport
+  remain forbidden.
 - One checked `WorldDirectoryEpoch` root gate atomically publishes each
   component-extraction or placement-stream proposal. Per-volume revisions
   remain consumer freshness identities; unrelated root proposals keep
-  independent ordered gates and receipts.
+  independent ordered gates and receipts. Epochs never wrap or reuse;
+  exhaustion permanently closes root publication while preserving the current
+  root for reads and checkpointing.
 - GPU adapters may declare an optional fixed-stride opaque CPU-egress lane.
   Moria stages and delivers initialized prefixes asynchronously without
   interpreting records or routing GPU-to-GPU handoffs through the CPU.
@@ -344,7 +347,9 @@ contract tests remain in the ordinary suite.
   updates/bytes, opaque-egress records/device/staging/host bytes/maps/receipts,
   and
   asynchronous GPU extension registrations/WGSL bytes are separate named
-  bounds. Do not make one pool silently own another.
+  bounds. One enabled placement maximum covers one stream and one root
+  transaction; do not multiply it by general proposal slots or make one pool
+  silently own another.
 - A command/query type owns its payload until admission succeeds. Queue-full or
   closed errors return the payload unchanged.
 - Public query/interest/result/dressing records, scheduled Behavior ABI v2,

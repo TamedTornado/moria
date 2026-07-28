@@ -54,9 +54,11 @@ limits.
 Tick admission atomically reserves the participant effect range and all
 ordinary resources that its declared worst case can consume.
 This includes child identities and volume records, copy-on-write page/brick
-and scar capacity, one directory publication transaction per root-changing
-proposal, placement records, egress working/staging/host bytes, map slots,
-receipts, observations, and cleanup records.
+and scar capacity, one directory publication transaction per extraction
+proposal plus one for each GPU participant whose nonzero placement maximum
+authorizes its single placement stream, placement records, egress
+working/staging/host bytes, map slots, receipts, observations, and cleanup
+records.
 Admission never holds a partial reservation while waiting for another pool.
 If the complete reservation is unavailable, the tick waits or is rejected
 under its existing overload policy and no adapter executes.
@@ -135,10 +137,21 @@ checked arithmetic.
 It has no second header because the scheduled effect header already supplies
 the section offset and length and the descriptor supplies the dimensions.
 
-Stable keys are derived deterministically from the world key, tick,
-participant, proposal slot, candidate slot, and a collision-retry salt.
-The complete candidate set is checked against live keys, retained tombstones,
-and itself before dispatch.
+Stable keys are derived deterministically from the world key, the would-be
+tick identity, participant, proposal slot, candidate slot, and one shared
+collision-retry salt for the complete candidate set. The salt domain is
+exactly the 256 `u8` values `0..=255`, encoded canonically as a `u32` input to
+the derivation. For each salt in ascending order, Moria derives the complete
+dense candidate set and checks it against live keys, retained tombstones, and
+itself. The first collision-free set wins, so preflight performs at most
+`256 * candidate_record_count` key derivations.
+
+If all 256 sets collide, behavior-tick submission fails synchronously with
+`ViolationCode::ComponentIdentityExhausted`, returns the request unchanged,
+and exposes no tick ID. The internally reserved would-be tick identity is not
+reused. Every tentative runtime ID, stable key, lifetime/live record, byte
+permit, and tick resource is released as one failed admission; no planner or
+adapter executes and no partial candidate table is visible.
 Only published keys become durable lifetime records.
 
 ### Conservation, frames, and atomic publication
@@ -206,7 +219,12 @@ checkpointed by Moria.
 ## Placement stream for persistent adapters
 
 `PlacementStream` is one scheduled proposal containing a bounded,
-stable-compacted array of rigid placement updates.
+stable-compacted array of rigid placement updates. A GPU participant with
+`maximum_placement_updates > 0` may emit at most one kind-5 proposal in a
+tick; zero disables kind 5. A second kind-5 record makes the participant batch
+invalid with `BehaviorEngineFailure::InvalidProposal`, so no proposal is
+admitted and the participant's pre-reserved egress receipt terminates with
+`BehaviorEgressParticipantUnavailable::Skipped` carrying that same failure.
 Every entry names a distinct dynamic volume in the participant's pinned
 `VolumeRecords` view and includes its expected revision.
 Moria rejects the complete stream for a duplicate volume, stale revision,
@@ -227,6 +245,12 @@ PlacementUpdateV2 (64 bytes)
 
 One validated stream publishes all addressed directory entries through one
 directory epoch and advances each addressed volume revision once.
+The descriptor's `maximum_placement_updates` and the matching byte maximum
+cover the aggregate contents of this one stream, not each proposal slot.
+Admission reserves exactly one alternate directory root transaction for the
+participant, plus worst-case entry/authority versions, observations, proposal
+outcome, receipt, and cleanup for all declared updates. Extraction proposals
+retain their independently counted root transactions.
 `PlacementStreamApplied` reports the updated volume/revision pairs in
 ascending snapshot-index order.
 The mechanism avoids host enumeration and one ordinary move command per body;
@@ -286,6 +310,17 @@ Mapping, envelope decode, cancellation, shutdown, participant-not-run, and
 device loss have distinct terminal outcomes listed in
 [public-api.md](public-api.md).
 
+Egress availability is determined by execution and transport validity, not by
+proposal selection or publication. A participant recorded as
+`BehaviorParticipantExecution::Completed` receives its valid initialized
+prefix even when all of its proposals are rejected or replaced, another
+participant causes `FailTick`/`AbortTick`, or the final disposition is any
+other `NoPublication`. A `Skipped` or `NotRun` participant receives
+`ParticipantUnavailable` with that exact existing reason; an invalid
+participant batch is `Skipped(InvalidProposal)` and its egress is therefore
+unavailable. No publication rejection retroactively converts a valid
+completed-participant prefix into loss.
+
 Effect publication never waits for CPU decoding and may complete while egress
 is pending.
 The working range is reusable after its copy's last GPU use; staging is
@@ -316,6 +351,10 @@ reserved words for aligned
 Sections are nonoverlapping and their checked aligned sum must fit one effective
 storage binding.
 Proposal kind 5 is `PlacementStream`; kind 6 is `ExtractComponents`.
+Kind 5 may occur at most once in one GPU participant's output proposal prefix.
+Validation counts kind-5 records before admitting any proposal from that
+participant and rejects the complete participant batch if the count exceeds
+one or if the descriptor's placement maximum is zero.
 Arbitrary create remains unrepresentable.
 
 The extraction payload uses a 64-byte header, 32-byte piece records, and
@@ -360,8 +399,9 @@ The existing validation layers must prove:
    IDs, old-or-new directory visibility, and query/collision/observation
    agreement;
 2. cancellation, every malformed count/range/reserved word, pool exhaustion,
-   stale revision, device loss on both sides of publication, old-reader
-   reclamation, and unused-candidate cleanup;
+   stale revision, forced exhaustion of all 256 candidate-key salts, device
+   loss on both sides of publication, old-reader reclamation, and
+   unused-candidate cleanup;
 3. checkpoint/restore and cold rematerialization of derived children without a
    consumer source;
 4. disconnected and overlapping CPU regions, one-time classification,
@@ -371,8 +411,9 @@ The existing validation layers must prove:
    Moria placement;
 6. fixed-dispatch feasibility at the declared maximum on every claimed backend
    family;
-7. byte-exact egress for zero, one, exact capacity, multiple ticks, and
-   adapter-unknown schemas; and
+7. byte-exact egress for zero, one, exact capacity, multiple ticks,
+   adapter-unknown schemas, rejected/replaced proposals, and tick-wide
+   no-publication after participant execution; and
 8. explicit overflow, mapping/decode failure, cancellation, shutdown, device
    loss, ordered delivery, and no early resource reuse.
 

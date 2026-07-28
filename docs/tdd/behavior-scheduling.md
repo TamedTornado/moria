@@ -97,9 +97,12 @@ do.
 Different volumes retain the product's independent-publication rule.
 The closed exceptions are a placement stream and component extraction, each of
 which publishes its own prepared directory-entry set under one
-`WorldDirectoryEpoch` root gate. Multiple such proposals form a stable
-participant/proposal-order root chain and keep independent per-proposal
-receipts; they do not turn unrelated volumes into one tick-wide transaction.
+`WorldDirectoryEpoch` root gate. Each GPU participant may emit at most one
+placement stream; it may still emit its descriptor-bounded number of extraction
+proposals. Multiple root proposals across participants and extraction slots
+form a stable participant/proposal-order root chain and keep independent
+per-proposal receipts; they do not turn unrelated volumes into one tick-wide
+transaction.
 Observations are appended before the tick and proposal receipts are awakened.
 Only after publication or terminal failure does Moria release `S` and allow
 post-`F` authoritative commands to prepare.
@@ -497,6 +500,12 @@ X-fastest indexing.
 Move uses only placement.
 Retire uses only snapshot index/revision/correlation.
 Placement stream uses the v2 64-byte placement-update payload.
+Kind 5 may occur at most once in one participant's output prefix and is
+forbidden when `maximum_placement_updates == 0`. Validation counts kind-5
+records before admitting any proposal from that participant; a second record
+or disabled kind makes the complete participant output
+`InvalidProposal`. The one stream's count and bytes are aggregate across all
+of its updates and are not multiplied by `maximum_proposals`.
 Extract-components uses the v2 piece/assignment payload and the pre-reserved
 identity subrange. The shader treats that subrange as read-only. Because
 binding 1 is physically read-write, Moria compares it byte-for-byte with the
@@ -614,10 +623,10 @@ and neither is inferred from the other.
 `ConflictFailTick` stores the earlier engine/proposal in A and the later pair
 in B. `TransitionFailure` stores predecessor in A, successor in B, and the
 closed transition stage. `DeviceLost` stores only its generation pair.
-`PreparationFailure` has no tick-cause payload. The execution mapping below may
-independently use A for a not-run preflight reason. Every field selected by
-neither the abort-cause nor execution mapping is zero; a nonzero unused field
-is invalid. `Published` and
+`PreparationFailure` and `DirectoryEpochExhausted` have no tick-cause
+payload. The execution mapping below may independently use A for a not-run
+preflight reason. Every field selected by neither the abort-cause nor
+execution mapping is zero; a nonzero unused field is invalid. `Published` and
 `PublishedWithNotificationFailure` require `abort_cause == 0`;
 `NoPublication` requires one nonzero closed abort cause and a clear
 tick-wide and participant revision-changed bit. This mapping is lossless for
@@ -680,7 +689,8 @@ effect-limit `4`, invalid-proposal `5`, panicked `6`, GPU-validation `7`,
 transition `8`, device-lost `9`, not-ready-generation `10`, shutdown `11`,
 consumer-input-upload `12`, input-preflight-aborted `13`;
 abort cause participant-abort `1`, conflict-fail-tick `2`,
-transition-failure `3`, device-lost `4`, and preparation-failure `5`.
+transition-failure `3`, device-lost `4`, preparation-failure `5`, and
+directory-epoch-exhausted `6`.
 Transition stages are none `0`, CPU-write `1`, upload `2`, GPU-validate `3`,
 GPU-copy `4`, map `5`, and decode `6`. These constants are shared by Rust/WGSL
 layout tests. Unknown tags, a both-zero pair where a nonzero value is
@@ -743,9 +753,10 @@ At admission, before the tick may transition to
   record,
   assignment/transfer/child-brick byte, provenance/authority version, and one
   alternate directory root per maximum component-extraction proposal;
-- every compact placement entry and one alternate directory entry/root for
-  each GPU participant's permitted placement stream, including its immutable
-  authority versions; and
+- every compact placement entry, entry/authority version, observation,
+  proposal outcome, receipt, cleanup record, and exactly one alternate root
+  transaction for each GPU participant whose nonzero placement maximum permits
+  its single placement stream; and
 - every enabled egress record, device/staging/host byte, map, completion, and
   receipt slot.
 
@@ -762,6 +773,14 @@ after proposal validation.
 Unused component-extraction candidates remain unobservable and release after
 GPU validation and last use. Egress device/staging/host permits follow the
 copy/map/decode/delivery lifetime rather than proposal release.
+
+Before submission succeeds for an extraction-capable tick, Moria derives each
+participant's complete dense candidate-key table with one shared salt from the
+fixed `0..=255` domain. All-attempt collision exhaustion returns the unchanged
+request as `SubmitError::Invalid` with violation code
+`ComponentIdentityExhausted`, exposes no tick ID, releases every tentative
+identity and permit, and invokes no planner or adapter. No dispatch ever
+receives a partial table.
 
 Each participant output is all-or-none at validation.
 An invalid record admits no proposal from that participant.
@@ -823,6 +842,16 @@ failure in any member rejects the complete proposal and publishes none of its
 directory entries; other independent proposals in the tick may still publish
 under the participant failure policy.
 
+After composition, the directory allocator checked-adds the exact selected
+root-proposal count before preparing the first candidate root. Range exhaustion
+publishes no behavior proposal, closes future root publication for the world,
+and completes the tick as
+`NoPublication(DirectoryEpochExhausted)` with every otherwise selected
+proposal marked `TickAborted` and `revision_changed = false`. A range that
+fits is consumed consecutively in participant/proposal order; consuming
+`u64::MAX` succeeds and then closes future root publication. Epochs never wrap
+or reuse.
+
 ## Failure and adapter-owned state
 
 `BehaviorFailurePolicy` is either:
@@ -870,8 +899,8 @@ the complete outcome and the next generation receives
 - `Published`: publication processing completed; `revision_changed` says
   whether any volume advanced;
 - `NoPublication(ParticipantAbort | ConflictFailTick | TransitionFailure |
-  DeviceLost | PreparationFailure)`: no behavior proposal published and
-  `revision_changed` is false; or
+  DeviceLost | PreparationFailure | DirectoryEpochExhausted)`: no behavior
+  proposal published and `revision_changed` is false; or
 - `PublishedWithNotificationFailure`: publication already completed and one or
   more post-publication CPU report hooks failed.
 
@@ -976,6 +1005,14 @@ returns a distinct egress receipt; it never interprets collisions, impacts,
 destruction, scoring, audio, or another event meaning. Zero records, exact
 capacity, overflow,
 mapping failure, and device loss remain distinct.
+The lane is execution-based rather than publication-based: a completed
+participant's valid prefix is delivered when its proposals are rejected or
+replaced and when a later `FailTick`, `AbortTick`, or other
+`NoPublication` discards every behavior effect. A skipped or not-run
+participant instead receives its existing typed
+`ParticipantUnavailable` result. Every egress operation error copies the
+associated terminal tick's `revision_changed` value, so it is false for
+no-publication and truthful after independently confirmed publication.
 
 An independent reviewer must implement or mock the CPU physics, GPU physics,
 CPU damage-and-bond, and GPU damage-and-bond variants through the public

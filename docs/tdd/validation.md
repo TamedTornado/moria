@@ -115,6 +115,18 @@ window or physical GPU and includes:
   source-bound `ExtractComponents` operation can split existing matter. A
   later ordinary create has its own receipt and is excluded from the prior
   tick's published revisions;
+- placement-stream cardinality and reservation: zero placement maximum rejects
+  kind 5, one kind-5 proposal at the declared update/byte maximum reserves
+  exactly one root transaction and all update/entry/authority/observation/
+  outcome/receipt/cleanup records, and a second kind-5 record invalidates the
+  complete participant batch without consuming a second root or admitting any
+  proposal;
+- component candidate-key preflight derives complete tables for salts
+  `0..=255` in order. A collision-injection seam forces all 256 complete sets
+  to collide and asserts synchronous
+  `ComponentIdentityExhausted`, unchanged request, no public tick ID,
+  planner, adapter, or partial table, and complete release of every tentative
+  runtime ID, key, lifetime/live record, byte permit, and tick resource;
 - behavior planner/adapter callback ownership: access scopes fill the
   Moria-owned exact-capacity sink, errors use only the fixed inline diagnostic,
   current input is the same borrowed immutable byte sequence in planner and
@@ -227,6 +239,16 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   `Preparing/UploadingGpuInputs` that retains its submitted ranges and drains
   to a complete preflight-or-later report;
 - device-generation callback quarantine and recovery/terminal branches.
+- world-directory epoch exhaustion with an injected near-maximum allocator:
+  an ordinary root-changing operation can publish `u64::MAX` exactly once and
+  then leaves the current root readable/checkpointable while later
+  root-changing submissions reject in `DirectoryEpochExhausted`; in a separate
+  world, a scheduled tick whose selected root count would overflow returns
+  `NoPublication(DirectoryEpochExhausted)`, marks every otherwise selected
+  proposal `TickAborted`, changes no revision/root, and never wraps or reuses
+  an epoch. Checkpoint/restore preserves the exact maximum epoch and terminal
+  substate rather than resetting it. Non-root operations and shutdown retain
+  their documented behavior.
 
 ### CPU oracle and generated sequences
 
@@ -271,11 +293,18 @@ offsets/sizes/constants with shader declarations. Negative fixtures cover:
   for `Empty`, both are nonzero for `Retained`, one-zero/one-nonzero is rejected,
   and pre-sequence-1 `Complete` has zero records and a zero cursor;
 - every Scheduled ABI v2 host/WGSL size, alignment, offset, and stride:
-  the five retained 64-byte headers, new 64-byte component-reservation header,
-  80-byte egress header, 48-byte reservation record, 32-byte component-piece,
+  the five retained 64-byte headers, the headerless component-reservation
+  section, 80-byte egress header, 48-byte reservation record, 32-byte component-piece,
   24-byte assignment, 64-byte placement update, the 112-byte volume, 24-byte cell, 128-byte
   proposal, 20-byte patch run, 32-byte handoff descriptor, 64-byte feedback
   participant, and 48-byte feedback proposal;
+- the headerless reservation formula is exactly 48 bytes times
+  `maximum_component_extraction_proposals` times
+  `maximum_component_extraction_children` under checked arithmetic; the effect
+  header's aligned `reservation_offset/reservation_bytes` and
+  `egress_offset/egress_bytes` ranges are nonoverlapping and in binding range.
+  A phantom-header offset, wrong product, overflow, misalignment, overlap, or
+  out-of-range end fails at ABI validation;
 - host `[u8; 16]` key/schema fields have the exact same 16 wire bytes as four
   WGSL `u32` words, and egress record strides reject nonmultiples of four;
 - every logical 64-bit scheduled field is declared as adjacent low/high
@@ -294,6 +323,7 @@ offsets/sizes/constants with shader declarations. Negative fixtures cover:
   input, present input above the participant/effective range, invalid
   snapshot/volume indices, changed revisions, invalid
   cell size/domain, cross-participant record access, stale device generation,
+  a second kind-5 record or kind 5 with a zero placement maximum,
   malformed prior feedback, component-extraction duplicate/empty/unreserved
   assignments,
   egress stride/count/overflow mismatch, and old-generation
@@ -314,6 +344,7 @@ offsets/sizes/constants with shader declarations. Negative fixtures cover:
   revision result through the typed receipt plus tick published vector;
 - golden feedback fixtures map participant abort, two-party conflict fail-tick,
   transition failure with predecessor/successor/stage, preparation failure,
+  directory-epoch exhaustion as abort-cause tag 6 with zero cause payload,
   device loss with a two-word generation, and
   published-with-notification-failure with exact failed-hook count. Add the
   two-participant input-upload pre-execution fixture with addressed execution
@@ -650,6 +681,11 @@ page/brick/scar/byte exhaustion, renderer OOM, unused reservations,
 cancellation, shutdown, device loss before and after the gate, and delayed
 old-reader reclamation. Every unpublished identity and resource returns to its
 pool after last use. Passing a source object or inventing a sample fails.
+Force every complete candidate table for salts `0..=255` to collide with a
+live key, tombstone, or another candidate. Submission must return the unchanged
+request with `ComponentIdentityExhausted`, expose no tick ID or partial table,
+invoke no planner/adapter, and release every reserved identity, record, byte,
+receipt, and cleanup slot.
 Retire one published child, reuse its runtime live slot for an unrelated
 volume, and prove the child's lifetime-index tombstone and new live mapping
 remain distinct through query, checkpoint, and restore.
@@ -697,8 +733,20 @@ One-over capacity must return exact overflow with no prefix; saturating-counter
 overflow is a separate failure. Malformed header/stride/count/reserved fields,
 cancellation before preparation, skipped and not-run participants, shutdown,
 map failure, decode failure, and device loss each produce their closed result.
+For a participant that completed with a valid prefix, separately exercise
+`RejectLater`, `ReplaceEarlier`, another participant's `FailTick`, another
+participant's `AbortTick`, and transition/preparation no-publication. The
+same assertion applies to directory-epoch-exhaustion no-publication. The prefix
+remains byte-exact and deliverable in every case even though proposal and tick
+receipts report their independent rejection/disposition. By contrast, the
+skipped and not-run fixtures return
+`ParticipantUnavailable` with the exact existing execution reason and no
+prefix.
 Publication receipts remain independently truthful before egress
-mapping/decoding. Device, working, staging, and host bytes are not reused
+mapping/decoding. Inject map and decode failure after a tick that published and
+assert `OperationError::revision_changed` equals that tick's true value; repeat
+after no-publication and assert false. A published zero-change tick preserves
+false. Device, working, staging, and host bytes are not reused
 before their defined last-use/unmap/drop milestones, and dropping the receipt
 still reclaims them. Clone a ready result and its byte handle, drop the
 original receipt/result, and prove the one shared host slot remains charged

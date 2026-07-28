@@ -62,9 +62,10 @@ restore cannot accidentally resurrect it through current registration.
 
 ## Checkpoint frontier
 
-Admission captures sorted `(VolumeKey, VolumeRevision, Placement)` entries for
-the complete live-volume directory plus the tombstone set. That immutable
-frontier `F` is the checkpoint truth:
+Admission captures the current nonzero `WorldDirectoryEpoch`, sorted
+`(VolumeKey, VolumeRevision, Placement)` entries for the complete live-volume
+directory, and the tombstone set. That immutable frontier `F` is the
+checkpoint truth:
 
 - scar page versions visible at `F` are pinned;
 - later commits allocate later versions and remain dirty;
@@ -91,6 +92,7 @@ minimum_reader_version u16 = 2
 flags                  u32 = 0
 world_uuid             16 bytes
 checkpoint_uuid        16 bytes
+directory_epoch        u64, nonzero
 material_count         u32
 volume_count           u32
 tombstone_count        u32
@@ -104,6 +106,12 @@ not exceed the effective `volume_records`; `volume_count` must not exceed
 `live_volumes`. Restore rejects an oversized manifest with `SizeLimit` before
 reading record sections. The 64 MiB manifest cap is an additional byte bound,
 not a substitute for these record-count bounds.
+
+Restore installs the saved `directory_epoch` with the reconstructed root before
+the world becomes visible. Zero is corrupt. A saved `u64::MAX` epoch restores
+directly into `WorldState::DirectoryEpochExhausted`; it is never reset to one
+or reused. Any lower value resumes checked root publication from exactly its
+successor.
 
 Material records sort by stable UUID and contain UUID, checkpoint runtime
 material number, debug-name bytes, and a digest of the occupancy-relevant

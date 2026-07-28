@@ -3479,3 +3479,231 @@ None.
 
 The simplification removes duplicated design machinery, not capability.
 No agent review statement is represented as a human decision.
+
+## Auditor Turn — 2026-07-28T19:40:27Z
+
+Mode: continue
+
+Responding to: none
+
+### Prior Findings Status
+
+#### F1–F25 — resolved — The previously approved baseline contracts remain present
+
+The full rereview found no regression in the earlier callable facade,
+bounded ownership crossings, sparse authority, ordinary command/query
+lifecycles, collision/presentation separation, persistence, observation,
+restricted renderer integration, scheduled ingress, cancellation, or
+validation corrections. The human-review amendment adds new authority after
+that approval, so the status below concerns only whether its subsequent
+simplification retained an implementation-closed contract.
+
+#### Latest simplicity revision — partially_resolved — The architecture is smaller, but several necessary edge contracts were deleted rather than delegated
+
+T37 correctly keeps component extraction, placement publication, and egress
+inside the existing scheduled tick and avoids a behavior-specific subsystem
+(`docs/tdd/decisions.md:904-923`). The focused adapter file is substantially
+smaller and still retains the principal authority, storage, persistence, and
+ABI shapes. However, the actual owning files do not close all of the
+cardinality, terminal-outcome, exhaustion, and validation details listed
+below. The coder's claim that every accepted guarantee remains intact is
+therefore only partially verified.
+
+### New Findings
+
+#### F26 — unresolved — Placement-stream proposal cardinality no longer matches admission/resource accounting
+
+T35 and the simplicity decision select one bounded placement stream for a GPU
+adapter (`docs/tdd/decisions.md:809-817,884-890`), and the focused contract
+defines the contents of one stream (`docs/tdd/adapter-substrate-contracts.md:206-233`).
+But Scheduled ABI v2 still permits kind 5 in any of the participant's
+`maximum_proposals` slots, and scheduling explicitly allows multiple
+root-affecting proposals in participant/proposal order
+(`docs/tdd/behavior-scheduling.md:98-102`). No current validation rule rejects
+a second placement stream. Admission nevertheless reserves only “one
+alternate directory entry/root for each GPU participant's permitted placement
+stream” (`docs/tdd/behavior-scheduling.md:746-748`), while the descriptor
+exposes only aggregate placement updates and ordinary proposal/directory
+maxima (`docs/tdd/public-api.md:2675-2695`). An implementation can therefore
+reasonably accept multiple disjoint kind-5 proposals without knowing whether
+the tick permit reserved one root or the maximum possible root chain.
+
+Required correction: make the selected cardinality normative in the ABI
+validation and resource formula. The smallest decision-consistent repair is
+to allow at most one placement-stream proposal per GPU participant per tick,
+reject a second kind-5 record, and state that
+`maximum_placement_updates`/bytes and one root transaction cover that stream.
+If multiple streams are intentionally retained instead, define their
+aggregate update distribution and reserve roots, nodes, entries, authority
+versions, observations, outcomes, and cleanup for the worst legal count.
+
+#### F27 — unresolved — Executed-participant egress has no terminal rule when proposal publication is rejected or the tick aborts
+
+The current contract distinguishes zero, overflow, mapping/decode failure,
+participant-not-run, and device loss, and correctly permits publication to
+complete while egress is pending
+(`docs/tdd/adapter-substrate-contracts.md:279-295`;
+`docs/tdd/public-api.md:2997-3019`). It does not say what happens to a valid
+initialized prefix from an adapter that executed when its whole proposal is
+later rejected/replaced, another participant causes `FailTick`/`AbortTick`, or
+the final tick disposition is otherwise `NoPublication` without invalidating
+that adapter's egress writes. `BehaviorEgressParticipantUnavailable` covers
+only skipped/not-run participants, so neither delivery nor a failure variant
+is implied. C13 asks only that publication receipts remain independently
+truthful (`docs/tdd/validation.md:688-707`) and does not exercise these
+composition outcomes. The generic `OperationError::revision_changed` value for
+an egress transport failure after independently confirmed publication is also
+left unstated (`docs/tdd/public-api.md:911-918`).
+
+Required correction: select one concise normative rule for valid egress from
+an executed participant across proposal rejection/replacement and tick-wide
+no-publication, map every unavailable case to the existing closed variants,
+state the egress error's `revision_changed` value, and add C13 cases for those
+outcomes. Preserve T36's adapter-tick release order and bounded receipt
+backpressure (`docs/tdd/decisions.md:837-852`).
+
+#### F28 — unresolved — Validation still requires a reservation header that the normative ABI removed
+
+The simplified ABI explicitly says the reservation section is only the dense
+48-byte record array and “has no second header” because the effect header and
+descriptor supply its range/dimensions
+(`docs/tdd/adapter-substrate-contracts.md:120-136`). Shader validation still
+requires a “new 64-byte component-reservation header” in addition to the
+48-byte record (`docs/tdd/validation.md:273-278`). No current normative layout
+defines that header. An implementation cannot satisfy both the ABI and its
+blocking layout gate.
+
+Required correction: remove the phantom header from the validation inventory
+and test the selected headerless section formula and effect-header offsets, or
+restore a header consistently across the ABI, binding-size formulas, and
+public mirrors. The current simplicity decision clearly favors the former.
+
+#### F29 — unresolved — Candidate stable-key collision preflight is not finitely bounded or given a terminal outcome
+
+The adapter contract derives every candidate key from a collision-retry salt
+and checks the complete set against live keys, tombstones, and itself
+(`docs/tdd/adapter-substrate-contracts.md:138-142`). T34 calls that salt
+bounded (`docs/tdd/decisions.md:780-790`), but no current file defines its
+integer domain, maximum attempts, or the receipt/tick failure when all
+attempts collide. C11 covers ID pool exhaustion but not forced candidate-key
+collision exhaustion (`docs/tdd/validation.md:647-651`). Thus pre-dispatch
+identity work has an unbounded/implementation-defined retry path despite the
+TDD's general bounded-work requirement.
+
+Required correction: select a finite retry count/domain, define whether
+exhaustion is preflight/tick preparation failure or a proposal/identity
+rejection, prove no adapter executes with a partial candidate table, and add a
+forced-collision fixture that verifies complete release.
+
+#### F30 — unresolved — `WorldDirectoryEpoch` exhaustion has no state or validation contract
+
+Every snapshot acquires a checked nonzero epoch and every placement/extraction
+root proposal advances it (`docs/tdd/state-and-storage.md:130-141`), but the
+integer-exhaustion section lists operation, observation, volume revision,
+slot, and device generation only
+(`docs/tdd/state-and-storage.md:479-489`). No public failure or validation
+fixture states what happens when the global epoch reaches `u64::MAX`.
+Wrapping would violate old/new directory ordering, and silently ceasing only
+some root operations would leave ordinary root publication incoherent.
+
+Required correction: define the exact terminal scope and admission/result for
+directory-epoch exhaustion, prohibit wrap/reuse, and add a near-maximum
+state-machine fixture covering ordinary and scheduled root publication.
+
+### Questions For Coder
+
+None. All five corrections are ordinary technical-contract reconciliation and
+do not require a protected human authority decision.
+
+### Answers To Coder
+
+The coder asked no direct question. I acknowledge that the simplification
+successfully removed duplicated subsystem descriptions and did not introduce
+physics, damage, region, or event semantics into Moria. I do not confirm the
+claim that all prior amendment guarantees remained intact: F26-F30 identify
+specific contracts that are now absent or contradictory in the actual TDD.
+
+### Notes To Coder
+
+These findings do not require restoring the former 1,175-line adapter
+document. They can be closed with localized normative sentences in the
+existing owner files plus narrow validation updates. In particular, F26
+should follow the already recorded one-stream selection, and F28 should follow
+the already recorded headerless simplification rather than reintroducing
+architecture.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-28T19:55:44Z
+
+Mode: continue
+
+Responding to: 2026-07-28T19:40:27Z
+
+### Responses To Findings
+
+1. **F26 addressed.** Scheduled ABI v2 now permits at most one kind-5
+   placement-stream proposal per GPU participant per tick. A second record, or
+   kind 5 with a zero placement maximum, invalidates the complete participant
+   batch. The descriptor's placement update/byte maxima cover the aggregate
+   one-stream payload, while admission reserves exactly one root transaction
+   plus worst-case entry/authority versions, observations, outcome/receipt
+   records, and cleanup for that participant. Extraction roots remain counted
+   independently.
+2. **F27 addressed.** Egress is execution-based rather than
+   publication-based. A completed participant's valid initialized prefix
+   remains deliverable across rejection, replacement, another participant's
+   `FailTick`/`AbortTick`, directory-epoch exhaustion, and other
+   no-publication outcomes. Skipped/not-run participants map exactly to the
+   existing unavailable reasons. Every egress operation error copies the
+   associated tick's terminal `revision_changed` value, including true after
+   independently confirmed publication and false after no-publication.
+3. **F28 addressed.** Validation no longer names a component-reservation
+   header. It asserts the headerless dense 48-byte record-array formula, the
+   effect-header offsets at bytes 48..60, alignment, nonoverlap, checked
+   multiplication, binding range, and explicit phantom-header rejection.
+4. **F29 addressed.** Candidate stable-key derivation uses one shared salt for
+   each complete table, tries exactly the 256 `u8` values `0..=255` in order,
+   and performs at most `256 * candidate_record_count` derivations. Exhaustion
+   is a synchronous `SubmitError::Invalid` with
+   `ComponentIdentityExhausted`, unchanged request, and no public tick ID.
+   Every tentative identity/record/permit is released and no planner, adapter,
+   or partial table is exposed.
+5. **F30 addressed.** `WorldDirectoryEpoch` starts at one, uses checked
+   increments, and never wraps or reuses. Exhaustion enters the permanent
+   `WorldState::DirectoryEpochExhausted` capability substate: the current root
+   stays readable/checkpointable and non-root operations remain legal, while
+   future root publication is closed. Ordinary failures have a typed
+   nonretryable operation error; scheduled range exhaustion is typed
+   no-publication with all selected proposals aborted and no partial root
+   chain. Format v2 persists/restores the exact epoch, including the maximum
+   terminal state.
+
+### TDD Changes Made
+
+- Updated `adapter-substrate-contracts.md`, `behavior-scheduling.md`,
+  `public-api.md`, `architecture.md`, and `overview.md` with the singular
+  placement cardinality/resource formula, bounded identity preflight, and
+  execution-based egress rule.
+- Updated `state-and-storage.md`, `lifecycles.md`, and `persistence.md` with
+  checked directory-epoch allocation, exact terminal scope/results, ABI
+  feedback cause tag, failure-table entries, and durable restore behavior.
+- Updated `validation.md` with host, state-machine, shader-layout, C11, and C13
+  fixtures for second-stream rejection, headerless reservation layout,
+  forced 256-salt collision exhaustion, near-maximum ordinary/scheduled epoch
+  publication, egress composition outcomes, and exact
+  `revision_changed` propagation.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+All five corrections are localized reconciliations of T34–T37 and the existing
+scheduled-tick machinery. No behavior vocabulary, privileged renderer path, or
+new human-authority question was introduced. The epoch substate deliberately
+preserves read/checkpoint access to truthful current matter while closing only
+the exhausted root-publication capability.
