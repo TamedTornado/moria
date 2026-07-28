@@ -95,7 +95,8 @@ Owns builder-time CPU/GPU adapter registration, the validated ordering DAG,
 tick frontiers, bounded opaque consumer ingress, access planning, stable-view
 pins and exports, exact-capacity
 CPU/GPU proposal sinks, whole-proposal conflict resolution, participant/tick
-reports, and adapter lifecycle notifications. It builds transactions through
+reports, pre-reserved component-child identities, optional consumer-egress
+receipts, and adapter lifecycle notifications. It builds transactions through
 `command` and `storage`; it cannot publish a revision itself. Adapter-owned
 state remains behind adapter traits and is never a Moria resource.
 
@@ -146,7 +147,8 @@ Owns shader layouts, device-generation resources, dispatch encoding, staging
 pools, validation error scopes, completion callbacks, scheduled
 per-participant behavior view/proposal/handoff/prior-feedback buffers, the
 restricted behavior resource factory and its aggregate live-buffer-byte
-semaphore, asynchronous extension packets, and layout assertions. It is the
+semaphore, component-label validation, egress staging/maps, asynchronous
+extension packets, and layout assertions. It is the
 only module allowed to turn storage transactions into GPU work. Factory bytes
 remain charged through registered dependencies and last submission use;
 device-loss teardown returns the terminal generation's permits before
@@ -205,7 +207,8 @@ Render-world order:
    `behavior_export_participants
    -> ordered_gpu_behavior_and_handoffs
    -> behavior_validate_compose
-   -> behavior_publish -> query/collision -> async_extension_packet
+   -> behavior_publish -> behavior_copy_egress -> query/collision
+   -> async_extension_packet
    -> presentation`.
 5. Renderer cleanup: register queue-completion callbacks, map submitted
    readbacks asynchronously, and retire resources whose last submission is
@@ -252,7 +255,12 @@ slots: CPU-to-GPU performs an ordered upload, GPU-to-CPU performs completion,
 copy, map, decode, view-drop, and unmap before the successor callback.
 Ordering-only edges allocate no payload. GPU-only chains do not read material
 or proposals back to CPU before publication.
-The v1 coordinator does not offload or preempt CPU planners/adapters. It holds
+Atomic component extraction prepares a changed source, pre-reserved child
+pages, and a replacement versioned directory root in that same ordered
+behavior publication phase.
+Optional egress uses the existing handoff staging/map lifecycle after the
+adapter's last write and is never a prerequisite for publication.
+The v2 coordinator does not offload or preempt CPU planners/adapters. It holds
 the pinned frontier and post-frontier barrier until they return, so a slow
 consumer callback stalls the main-world update. P10 qualifies the fixed
 CPU/mixed proof workload; arbitrary adapter latency remains the consumer's
@@ -372,6 +380,11 @@ World construction has two phases.
 - behavior registration/order/per-participant-view/collision/handoff/proposal/
   double-feedback limits can hold every builder adapter and one declared
   maximum active tick;
+- component-child maxima fit live/lifetime volume, page, brick, scar,
+  observation, proposal, affected-cell, and replacement-directory-root
+  capacity;
+- each egress maximum fits one binding plus the existing handoff device,
+  staging, host, map, and receipt pools;
 - behavior consumer-input record/host byte limits cover every input-capable
   participant maximum, and GPU ingress bytes cover every GPU input header,
   aligned payload, and staging/device transport;
@@ -395,7 +408,7 @@ Required GPU capabilities are compute shaders, storage buffers, buffer-to-
 buffer copies, at least four writable storage bindings for mutation, and the
 configured binding/allocation limits. Enabling a GPU behavior participant also
 requires at least six storage-buffer bindings in one shader stage for the
-fixed group-0 ABI. Optional timestamps and indirect
+fixed v2 group-0 ABI. Optional timestamps and indirect
 dispatch are enabled only when reported and have semantic fallbacks.
 Adapter-negotiated capacities use `effective = min(desired, adapter_legal)`;
 startup fails instead of clamping below the consumer's declared minimum or one

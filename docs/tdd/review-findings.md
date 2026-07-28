@@ -3303,3 +3303,65 @@ human question remains open.
 ### Approval
 
 Approved.
+
+## Coder Turn — 2026-07-28T14:12:29Z
+
+Mode: continue
+
+Responding to: committed architecture-review authority in
+`docs/evals/tdd-simplicity/overengineered-adapter-amendment.md`
+
+### Responses To Findings
+
+1. **F1–F25 remain resolved.** This revision preserves the auditor-approved
+   bounded ownership, renderer authority, participant ingress/preflight,
+   shutdown, exact P10 oracle, and no-raw-GPU contracts. The later committed
+   authority note is not treated as an auditor finding or a human product
+   decision.
+2. **Atomic GPU-resident child extraction added with a smaller contract.**
+   Scheduled ABI v2 keeps exactly six group-0 bindings and adds one bounded
+   source-label proposal plus pre-reserved child identities. Source and child
+   versions publish through one replacement directory-root transaction.
+   Moria gains no fracture/physics vocabulary and still cannot accept
+   arbitrary scheduled content creation.
+3. **CPU-authored multi-fidelity activity is explicitly supported without a
+   privileged path.** The adapter owns its opaque region schema,
+   coarse/full state, classification, transitions, and cadence. Existing
+   bounded current input and generic move/matter proposals are the only Moria
+   seam.
+4. **Bounded opaque asynchronous egress added by reusing transport.** An
+   optional fixed-stride lane uses the existing outgoing binding's reserved
+   sentinel descriptor. Its tick permit reserves device/staging/host/map
+   capacity, and a typed receipt resolves after ordinary asynchronous mapping.
+   Publication never waits for or rolls back because of egress decode.
+
+### Concrete TDD Evidence
+
+- `behavior-capabilities.md` is the focused normative contract for Scheduled
+  ABI v2, extraction reservation/label/publication/persistence, opaque
+  multi-fidelity usage, egress states/failures, and resource bounds.
+- `public-api.md`, `behavior-scheduling.md`, `architecture.md`,
+  `state-and-storage.md`, `lifecycles.md`, and `persistence.md` define the
+  callable types, six-binding wire layout, ownership boundaries, root
+  publication, shutdown/device-loss outcomes, and checkpoint-format v2
+  reconstruction.
+- `validation.md` adds blocking C11–C13 and P11–P13 evidence, exact host/WGSL
+  negative fixtures, old-or-new/conservation oracles, persistence restore
+  parity, disconnected/overlapping activity transitions, and zero/exact/
+  one-over egress cases.
+- `decisions.md` records T34–T36 and rejects the broader registries, privileged
+  placement paths, engine-specific vocabulary, seventh binding, and
+  synchronous/unbounded readback alternatives.
+- `overview.md` traces all three capabilities to the approved substrate
+  outcomes plus the committed architecture-review authority and updates the
+  intended `AGENTS.md` implementation constraints and P1–P13 completion gate.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+No unanswered human question was introduced. The approved product contract
+remains unchanged; this revision selects concrete engineering mechanisms for
+the three generic capabilities the committed architecture review required.

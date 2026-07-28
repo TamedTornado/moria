@@ -180,6 +180,30 @@ Collision and presentation installation use that pair. Existing presentation
 geometry may be rigidly transformed to a new placement without remeshing, but
 its entity tag advances only after the placement receipt commits.
 
+## Source-to-child directory transaction
+
+Scheduled ABI v2 component extraction reuses the versioned world-directory
+generation already required for table replacement.
+The tick pre-reserves provisional child runtime/stable identities, every
+source/child page and brick, dirty derived-base coverage, observations,
+receipts, and one replacement root before adapter execution.
+
+After GPU label validation, Moria prepares the changed source and each child in
+unreferenced storage.
+One ordered root compare-and-swap publishes the source at its next revision and
+every child at revision one.
+Old snapshots retain the earlier root and source pages until their last queue
+use completes.
+Failed validation, allocation, comparison, or device execution publishes no
+child and no source edit.
+Unused/failed provisional runtime generations become stale and their UUIDs
+are never reused, but they return live/lifetime record capacity without
+creating a directory record or tombstone.
+
+The complete conservation, canonical child frame, persistence, and outcome
+contract is in
+[behavior-capabilities.md](behavior-capabilities.md#atomic-component-extraction).
+
 ## Occupancy hierarchy
 
 Every detailed brick stores an exact 512-bit occupancy mask plus
@@ -266,6 +290,7 @@ starting points, not universal performance promises.
 | Scheduled behavior CPU collision calls / contacts / bytes | 128 / 4,096 / 320 KiB | configured aggregate calls plus one reusable exact 80-byte contact-slot sink |
 | Scheduled behavior handoff maps / bytes | 4 / 24 MiB | configured Moria-owned host/device/staging transport; payload meaning remains consumer-owned |
 | Scheduled behavior proposals / payload / affected cells / affected bricks / directory effects / conflict checks / feedback | 1,024 / 64 MiB / 262,144 / 4,096 / 16 / 1,048,576 / 1 MiB | configured and wholly reserved/bounded before adapters run |
+| Scheduled behavior component children | 64 | configured; aggregate maximum 1,024 and 256 per extracting participant |
 | Scheduled behavior GPU buffers / live buffer bytes / pipelines / bind groups / WGSL bytes | 256 / 256 MiB / 64 / 256 / 4 MiB | configured aggregate opaque factory resources; buffer bytes use a 64 MiB minimum and 1 GiB/adapter-max clamp, while WGSL is charged before parse |
 | Scheduled GPU adapter dispatches / workgroups | 256 / 1,048,576 | configured counted-encoder limits per tick |
 | Asynchronous GPU extension jobs | 64 | configured |
@@ -321,6 +346,12 @@ resources. Factory buffer bytes remain charged after logical handle drop while
 a bind group or in-flight submission depends on them; capacity returns only
 after dependency drop and last-use completion. Device-loss recreation begins
 only after the terminal generation's aggregate byte charge reaches zero.
+Component-child permits additionally charge live/lifetime identities, pages,
+bricks, scars, observations, receipts, and a replacement root until
+publication or cleanup.
+Consumer egress reuses handoff byte/map pools; its device/staging charge lasts
+through map completion and its exact host charge lasts through the last result
+clone.
 
 Moria never blocks a render schedule waiting for capacity.
 
@@ -339,6 +370,11 @@ All device-bound handles contain `DeviceGeneration`. On loss:
   generation are quarantined; old-generation consumer-input uploads are also
   quarantined and cannot reach an adapter; the first recovered GPU tick
   receives typed `UnavailablePreviousGeneration` feedback;
+- unconfirmed component extraction publishes no replacement directory root;
+  confirmed extraction remains committed and its derived child bases follow
+  the same durable-versus-GPU-only dirty rule as scars;
+- submitted egress fails on loss unless its exact host copy already completed,
+  and late mapped bytes from the old generation are discarded;
 - CPU adapter state remains consumer-owned; GPU adapter resources/state are
   invalid and must be recreated by that adapter before it reports ready;
 - dirty scar data already durably stored is loaded normally;

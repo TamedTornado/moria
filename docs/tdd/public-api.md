@@ -15,7 +15,7 @@ pub struct CommandPermit { /* owned queue reservation */ }
 pub struct QueryPermit { /* owned queue reservation */ }
 pub struct CheckpointPermit { /* owned queue reservation */ }
 pub struct BehaviorTickPermit {
-    /* one tick + every declared input/view/collision/handoff/effect/feedback maximum */
+    /* one tick + every declared input/view/collision/handoff/effect/child/egress/feedback maximum */
 }
 pub struct ExtensionPermit { /* owned queue/job reservation */ }
 pub struct EffectBatchPermit { /* owned child-command batch reservation */ }
@@ -39,6 +39,7 @@ pub struct WorldKey(uuid::Uuid);
 pub struct VolumeKey(uuid::Uuid);
 pub struct MaterialKey(uuid::Uuid);
 pub struct BehaviorEngineKey(uuid::Uuid);
+pub struct ComponentExtractionKey(uuid::Uuid);
 pub struct ExtensionKey(uuid::Uuid);
 pub struct DressingStyleKey(uuid::Uuid);
 pub struct CheckpointKey(uuid::Uuid);
@@ -57,8 +58,11 @@ pub enum ObservationFrontier {
 ```
 
 Runtime IDs are process-local generational handles. A stale ID is rejected
-before GPU work. Stable keys are consumer-supplied and persisted. Numeric
-runtime IDs and physical slot numbers are never durable.
+before GPU work. Registration stable keys are consumer-supplied and persisted.
+The only generated stable keys are a successful component extraction's
+`ComponentExtractionKey` and child `VolumeKey` values; failed provisional
+values are never reused and successful values are persisted. Numeric runtime
+IDs and physical slot numbers are never durable.
 
 Observation sequences start at one. `ObservationFrontier::Empty` means no fact
 has ever been appended. Once the first fact is appended, the frontier is
@@ -423,6 +427,7 @@ pub struct ResourceLimits {
     pub behavior_effect_cells: u32,
     pub behavior_effect_bricks: u32,
     pub behavior_directory_effects: u32,
+    pub behavior_component_children: u32,
     pub behavior_conflict_checks: u64,
     pub behavior_feedback_bytes: GpuCapacityLimit,
     pub behavior_gpu_buffers: u32,
@@ -470,7 +475,7 @@ maximum legal operation, or violates a cross-limit.
 | `command_records` / `command_payload_bytes` | 1,024 / 64 MiB | 65,536 / 1 GiB; records `>= extension_candidate_effects` when enabled; bytes >= maximum patch |
 | `query_records` / `query_result_bytes` | 256 / 32 MiB | 16,384 / 1 GiB; bytes >= largest enabled query result |
 | `observation_facts` | 4,096 | 1,048,576 |
-| `observation_payload_bytes` | 32 MiB | 1 GiB; `>= 192 + 32 * volume_records` so one maximum checkpoint fact plus its 128-byte filter envelope fits |
+| `observation_payload_bytes` | 32 MiB | 1 GiB; covers the larger of `192 + 32 * volume_records` for one maximum checkpoint fact and `256 + 96 * min(behavior_component_children, 256)` for one maximum component-extraction fact, each including its 128-byte filter envelope |
 | `subscribers` / `volumes_per_filter` | 64 / 256 | 4,096 / `min(live_volumes, 256)` |
 | `staging_maps` / `staging_bytes: GpuCapacityLimit` | 8 / 32 MiB desired, 8 MiB minimum | maps 1..=256; bytes <=1 GiB and adapter allocation; covers largest enabled readback chunk |
 | `content_requests` / `content_bricks_per_request` / `content_response_bytes` | 64 / 512 / 32 MiB | 4,096 requests / 4,096 bricks per request / 1 GiB; bytes `>= 2,080 * content_bricks_per_request + 256` |
@@ -482,15 +487,16 @@ maximum legal operation, or violates a cross-limit.
 | `dressing_styles` / `dressing_instances: GpuCapacityLimit` | 256 / 1,048,576 desired, 65,536 minimum | 4,096 styles / adapter allocation and `u32` instances; instances cover one descriptor's `max_instances_per_artifact`; both may be zero together to disable dressing only |
 | `behavior_engines` / `behavior_order_edges` | 16 / 64 | 256 / 4,096; zero together only when behavior hooks are disabled; order DAG storage is fixed at validation |
 | `behavior_scopes_per_engine` | 8 | 256; bounds each host planning result |
-| `behavior_view_volumes` / `behavior_view_bricks` / `behavior_view_cells` | 256 / 8,192 / 262,144 | fixed v1 maxima 256 / 65,536 / 1,048,576; counts the sum of per-participant filtered exports, not a shared readable union |
+| `behavior_view_volumes` / `behavior_view_bricks` / `behavior_view_cells` | 256 / 8,192 / 262,144 | fixed scheduled maxima 256 / 65,536 / 1,048,576; counts the sum of per-participant filtered exports, not a shared readable union |
 | `behavior_cpu_view_bytes` | 8 MiB | 256 MiB; covers aggregate live CPU participant exports, is `<= staging_bytes.effective`, and is zero only when no CPU adapter is registered |
-| `behavior_gpu_view_bytes: GpuCapacityLimit` | 32 MiB desired / 8 MiB minimum | `min(256 MiB, adapter allocation)` aggregate; every participant ABI v1 view independently fits `max_storage_buffer_binding_size` |
+| `behavior_gpu_view_bytes: GpuCapacityLimit` | 32 MiB desired / 8 MiB minimum | `min(256 MiB, adapter allocation)` aggregate; every participant ABI v2 view independently fits `max_storage_buffer_binding_size` |
 | `behavior_input_records` / `behavior_input_bytes` | 16 / 4 MiB | 256 records / 256 MiB host bytes; one record per input-capable participant and the checked sum of every descriptor maximum must fit |
 | `behavior_gpu_input_bytes: GpuCapacityLimit` | 4 MiB desired / 64 KiB minimum | `min(256 MiB, adapter allocation)` aggregate dedicated transport charged as one staging plus one device range for every GPU participant header/aligned declared payload (zero payload for `None`); each device range independently fits `max_storage_buffer_binding_size`; zero only when no GPU participant is registered |
 | `behavior_collision_calls` / `behavior_collision_contacts` / `behavior_collision_bytes` | 128 / 4,096 / 320 KiB | 4,096 / fixed 4,096 / 320 KiB; calls are aggregate per tick, while one reusable exact 80-byte slot per contact structurally bounds CPU helper output |
 | `behavior_handoff_maps` / `behavior_handoff_bytes: GpuCapacityLimit` | 4 / 24 MiB desired, 3 MiB minimum | 256 maps / 1 GiB and adapter allocation; startup reserves at most three times every declared edge capacity for host/device/staging representations, and every individual device binding fits the adapter binding limit |
 | `behavior_proposal_records` / `behavior_proposal_bytes` | 1,024 / 64 MiB | 65,536 / 1 GiB aggregate; each GPU participant's effect allocation fits one storage binding, aggregate declared maxima fit, and command/transaction completion capacity covers the same tick |
 | `behavior_effect_cells` / `behavior_effect_bricks` / `behavior_directory_effects` | 262,144 / 4,096 / 16 | 1,048,576 / 65,536 / 1,024 aggregate per tick; each proposal still obeys ordinary command maxima and aggregate declared adapter maxima must fit |
+| `behavior_component_children` | 64 | 1,024 aggregate pre-reserved child identities; every extracting descriptor declares at most 256 and one tick admits at most one extraction proposal |
 | `behavior_conflict_checks` | 1,048,576 | 4,294,967,296 candidate whole-proposal overlap comparisons per tick; overflow fails before publication |
 | `behavior_feedback_bytes: GpuCapacityLimit` | 1 MiB desired / 128 KiB minimum | 64 MiB and adapter allocation; holds two slots for every GPU participant, each containing a 64-byte header, one 64-byte terminal participant record, and its maximum 48-byte proposal records |
 | `behavior_gpu_buffers` / `behavior_gpu_buffer_bytes: GpuCapacityLimit` | 256 / 256 MiB desired, 64 MiB minimum | 65,536 handles / `min(1 GiB, adapter max_buffer_size)` aggregate live registered bytes; every descriptor maximum and their checked sum must fit the requested desired value at registration and the effective value at startup |
@@ -510,6 +516,9 @@ per artifact, 256 scheduled behavior engines, 4,096 declared behavior order
 edges, 1 MiB per behavior handoff edge, 65,536 view bricks,
 1,048,576 view cells, 65,536 behavior proposals,
 1 MiB opaque consumer input per behavior participant,
+256 component children per extracting participant, one extraction proposal per
+tick, 4,096-byte egress stride, 65,536 egress records, and 64 MiB per egress
+lane,
 96 UTF-8 bytes for every debug name, 1 MiB WGSL and 128 UTF-8 bytes for one
 extension entry point, and 256 candidate effects. They are exported in
 `contract_limits`; they are not independently configurable.
@@ -558,8 +567,9 @@ adapter maxima within those limits, enough command/page/scar/directory
 transaction capacity for the aggregate worst-case proposal set, and enough
 extraction capacity for one maximum transition record. CPU-view bytes may be
 zero only when every registered adapter is GPU. GPU-view bytes may be zero only
-when every adapter is CPU. Handoff maps/bytes may be zero only when no registered
-edge declares a payload. Feedback capacity includes current and prior slots.
+when every adapter is CPU. Handoff maps/bytes may be zero only when no
+registered edge declares a payload and no adapter declares egress. Feedback
+capacity includes current and prior slots.
 `behavior_input_records` must cover every descriptor whose input policy is not
 `None`, and `behavior_input_bytes` must cover the checked sum of their declared
 maxima. `behavior_gpu_input_bytes` must cover
@@ -568,6 +578,13 @@ including a zero-payload absent header for policy `None`: one staging range and
 one device range. It may be zero only when no GPU participant is registered.
 Input capacity is independent of adapter handoff capacity: a participant never
 needs a predecessor merely to receive current consumer bytes.
+`behavior_component_children` must cover the checked sum of descriptor maxima,
+and the same tick reservation must fit live/lifetime volume, page, brick, scar,
+proposal-byte, affected-cell, observation, and receipt capacities.
+Each egress descriptor consumes one synthetic outgoing lane, three byte
+representations, one map, and one receipt from the existing handoff resources;
+handoff maps/bytes may be zero only when neither mixed handoffs nor egress is
+registered.
 GPU buffer/count/pipeline/bind-group/WGSL pools may be zero only when every
 adapter is CPU. For GPU registrations, the checked sum of
 `maximum_owned_gpu_bytes` must fit `behavior_gpu_buffer_bytes.desired` during
@@ -764,7 +781,11 @@ record, one input record and the complete declared host bytes for every
 input-capable participant, all required GPU ingress upload/device bytes, and
 all registered per-participant views, reusable CPU collision scratch/calls,
 handoff host/device/staging/maps, proposal, transaction, completion, and
-current/prior feedback maxima before any planner or adapter runs. An
+current/prior feedback maxima before any planner or adapter runs.
+It also reserves declared component-child identities plus their worst-case
+source/child transaction resources and each optional egress lane's
+device/staging/host/map/receipt maximum.
+An
 extension permit reserves one
 job and the complete job allocation (header, packet, two state ranges,
 candidates, diagnostics, and effect payload); it must fit the configured
@@ -866,6 +887,7 @@ pub enum OperationScope {
     Region { volume: VolumeId, bounds: CellAabb },
     Checkpoint(CheckpointKey),
     BehaviorTick(BehaviorTickId),
+    BehaviorEgress { tick: BehaviorTickId, engine: BehaviorEngineId },
     Extension(ExtensionId),
 }
 
@@ -2140,6 +2162,14 @@ pub enum ObservationFact {
         terminal_revision: VolumeRevision,
         correlation: Correlation,
     },
+    ComponentsExtracted {
+        extraction: ComponentExtractionKey,
+        tick: BehaviorTickId,
+        source: VolumeId,
+        source_revision: VolumeRevision,
+        children: Box<[ExtractedChild]>,
+        correlation: Correlation,
+    },
     RegionLifecycle(RegionStateSnapshot),
     Presentation {
         volume: VolumeId,
@@ -2238,6 +2268,7 @@ pub enum ResourceKind {
     BehaviorEffectCells,
     BehaviorEffectBricks,
     BehaviorDirectoryEffects,
+    BehaviorComponentChildren,
     BehaviorConflictChecks,
     BehaviorFeedbackBytes,
     BehaviorGpuBuffers,
@@ -2316,7 +2347,14 @@ Unused fields are zero and masked out. Matter, lifecycle, and presentation
 facts record their affected local bounds and conservative transformed world
 bounds at the fact revision. Create records the new domain; retirement records
 the last live domain/placement; move records both the prior and new placed
-domain. The envelope is built before an old directory version can be reclaimed,
+domain.
+`ComponentsExtracted` is anchored to its source ID and records the source
+domain before/after publication; that world envelope conservatively contains
+every child at creation. Child IDs in its payload do not expand an accepted
+subscription's snapshotted membership, and a later child-only subscriber
+recovers current truth through a snapshot rather than replaying the parent's
+historical fact.
+The envelope is built before an old directory version can be reclaimed,
 is retained and evicted atomically with its public fact, and is charged to
 `observation_payload_bytes`. It is private filtering metadata, not another
 world-truth representation or a public fact payload.
@@ -2354,6 +2392,9 @@ subscription and closes/drops the old subscriber.
 
 Checkpoint revision vectors and gap revision vectors are stable-key/runtime-ID
 sorted and bounded by `volume_records` and `volumes_per_filter` respectively.
+`ComponentsExtracted` children are slot-sorted, bounded by 256, and charged as
+a fixed 96-byte retained record per child plus the fact/envelope header; this
+is a memory-accounting record, not a persistence or scheduled wire layout.
 Checkpoint vectors and all other variable retained fact payloads are charged
 to `observation_payload_bytes`, as is every fixed filter envelope; overwrite
 advances on whole fact-plus-envelope records until both ring count and byte
@@ -2457,6 +2498,8 @@ pub enum RestoreMismatch {
     VolumeDefinition(VolumeKey),
     Lineage(VolumeKey),
     ReconstructionFingerprint(VolumeKey),
+    ExtractedRegistration(VolumeKey),
+    ExtractedProvenance(VolumeKey),
 }
 
 pub trait CheckpointStore: Send + Sync + 'static {
@@ -2502,7 +2545,7 @@ once. Reads must fill the complete destination or return
 `PersistenceError::UnexpectedEof`; `offset + destination.len()` is checked and
 must not exceed the discovered length. The reader retains ownership of store
 handles, while Moria owns each bounded destination buffer from its persistence
-staging pool. A manifest over `max_manifest_bytes` (64 MiB v1), a chunk over
+staging pool. A manifest over `max_manifest_bytes` (64 MiB v2), a chunk over
 4 MiB encoded, a changing reported length, missing data, or backend I/O failure
 is returned as a distinct persistence error before allocation/decoding. Reader
 methods execute only on persistence workers and never receive a Moria storage
@@ -2545,7 +2588,7 @@ pub struct RestoreApplied {
 ```
 
 The checkpoint frontier is captured when the request is admitted. Later
-commits remain dirty and are excluded. V1 checkpoints are whole-world only:
+commits remain dirty and are excluded. V2 checkpoints are whole-world only:
 the manifest contains every live volume at the captured frontier plus every
 known retirement tombstone. It cannot omit a live volume, and no partial-scope
 variant is reserved.
@@ -2559,14 +2602,22 @@ volume. Its output is `StartupApplied::mode =
 StartupModeApplied::Restored(RestoreApplied)`; startup failure uses the normal
 receipt error with a restore-specific stage and publishes no world directory.
 
-The current live volume registration set must exactly equal the manifest's
-live volume key set. Missing and extra current volumes are both
-`RestoreMismatch::VolumeMembership`; tombstoned keys may not be registered.
-Every persisted material must have a matching current key and
+The current live registration set must exactly equal the manifest's
+`ExternalBase` key set. Missing and extra current external volumes are
+`RestoreMismatch::VolumeMembership`; tombstoned or `ExtractedBase` keys may
+not be registered. Extracted children are reconstructed from their validated
+manifest provenance and complete immutable base, without a consumer
+`BaseContentSource`; registration of such a key is
+`RestoreMismatch::ExtractedRegistration`, and malformed/missing/cyclic parent
+provenance is `RestoreMismatch::ExtractedProvenance`. A parent may be live or
+a retained tombstone with terminal revision at least the recorded extraction
+parent revision; nested children validate in parent-before-child order. Every
+persisted material
+must have a matching current key and
 occupancy-relevant definition. Extra current materials are allowed regardless
 of presentation inputs, because no persisted sample refers to them; they must
 have distinct keys and valid ordinary definitions. There is no
-“presentation-only material” category in v1.
+“presentation-only material” category in v2.
 
 ## Scheduled behavior-engine hook
 
@@ -2588,9 +2639,11 @@ pub struct BehaviorEngineDescriptor {
     pub maximum_effect_cells: u32,
     pub maximum_effect_bricks: u32,
     pub maximum_directory_effects: u32,
+    pub maximum_component_children: u32,    // 0 or 1..=256
     pub maximum_collision_calls: u32,       // zero for GPU
     pub maximum_collision_contacts: u32,    // zero for GPU
     pub handoffs_to: Vec<BehaviorHandoffDescriptor>,
+    pub egress_to_cpu: Option<BehaviorEgressDescriptor>, // GPU only
     pub readiness: BehaviorReadiness,
     pub failure: BehaviorFailurePolicy,
     pub conflict: BehaviorConflictPolicy,
@@ -2612,6 +2665,11 @@ pub enum BehaviorConflictPolicy { RejectLater, ReplaceEarlier, FailTick }
 pub struct BehaviorHandoffDescriptor {
     pub successor: BehaviorEngineKey,
     pub maximum_bytes: u32,                 // 1..=1 MiB; opaque to Moria
+}
+
+pub struct BehaviorEgressDescriptor {
+    pub record_stride: NonZeroU32,          // 1..=4,096
+    pub maximum_records: u32,               // 1..=65,536
 }
 
 pub struct BehaviorAccessEnvelope {
@@ -2664,6 +2722,7 @@ pub struct BehaviorTickCompleted {
     pub participants: Vec<BehaviorParticipantOutcome>,
     pub proposals: Vec<BehaviorProposalOutcome>,
     pub published: Vec<(VolumeId, VolumeRevision)>,
+    pub egress: Vec<BehaviorEgressReceipt>,
 }
 
 pub enum BehaviorTickDisposition {
@@ -2732,11 +2791,45 @@ pub enum BehaviorProposalOutcome {
         command: CommandId,
         receipt: Receipt<VolumeApplied>,
     },
+    ExtractedComponents {
+        engine: BehaviorEngineId,
+        proposal: u32,
+        applied: ComponentExtractionApplied,
+    },
     Rejected {
         engine: BehaviorEngineId,
         proposal: u32,
         reason: BehaviorProposalRejection,
     },
+}
+
+pub struct ComponentExtractionApplied {
+    pub extraction: ComponentExtractionKey,
+    pub source: VolumeId,
+    pub source_revision: VolumeRevision,
+    pub children: Box<[ExtractedChild]>,
+    pub correlation: Correlation,
+}
+
+pub struct ExtractedChild {
+    pub slot: u32,
+    pub volume: VolumeId,
+    pub key: VolumeKey,
+    pub revision: VolumeRevision,
+    pub domain: CellAabb,
+    pub placement: RigidPlacement,
+}
+
+pub type BehaviorEgressReceipt = Receipt<BehaviorEgressReady>;
+
+#[derive(Clone)]
+pub struct BehaviorEgressReady {
+    pub tick: BehaviorTickId,
+    pub engine: BehaviorEngineId,
+    pub correlation: Correlation,
+    pub record_stride: NonZeroU32,
+    pub records: u32,
+    pub bytes: Arc<[u8]>,
 }
 
 pub enum BehaviorProposalRejection {
@@ -2802,6 +2895,12 @@ pub struct BehaviorDiagnostic {
 }
 ```
 
+`BehaviorTickCompleted::published` is sorted by runtime `VolumeId` and contains
+every advanced or newly published volume exactly once.
+A successful component extraction therefore contributes the changed source
+and every child at revision one; failed or unused provisional children never
+appear.
+
 `BehaviorDiagnostic::try_from_str` accepts at most 192 UTF-8 bytes and rejects
 193 rather than truncating; reserved is always zero. The diagnostic is exactly
 196 bytes and `BehaviorAdapterError` is exactly 200 bytes.
@@ -2845,6 +2944,9 @@ cause.
 The builder rejects duplicate keys, unresolved ordering keys, cycles, an
 execution/trait mismatch, access outside configured maxima, or aggregate
 proposal/transaction capacity above configured pools.
+`maximum_component_children` is zero or `1..=256`; its checked aggregate must
+fit `behavior_component_children`, live/lifetime volume capacity, and the
+declared affected-cell/effect-brick/proposal bytes before startup.
 `BehaviorConsumerInputPolicy::None` requires a zero maximum;
 `Optional | Required` requires `1..=1 MiB`. The builder checked-sums one record
 and the declared maximum bytes for every input-capable participant against the
@@ -2858,8 +2960,12 @@ map slots must fit the configured handoff pools before startup.
 Topological ties use stable key byte order.
 No named behavior phase exists.
 CPU descriptors require all GPU maxima to be zero and declare collision calls/
-contacts within the configured sink. GPU descriptors set collision maxima to
-zero. Factory allocation must remain within `maximum_owned_gpu_bytes`, and
+contacts within the configured sink and cannot declare CPU egress.
+GPU descriptors set collision maxima to zero.
+An egress descriptor's checked `record_stride * maximum_records` must fit
+64 MiB, one storage binding, and the descriptor/configured handoff byte and map
+limits.
+Factory allocation must remain within `maximum_owned_gpu_bytes`, and
 every counted dispatch/copy plus total workgroups must remain within both
 descriptor and configured tick maxima.
 
@@ -2907,6 +3013,7 @@ pub struct BehaviorCpuTickContext<'a> {
     pub snapshot: &'a [BehaviorVolumeRecordV1],
     pub consumer_input_present: bool,
     pub consumer_input: &'a [u8],
+    pub child_reservations: &'a [BehaviorChildReservationV2],
 }
 
 #[repr(C)]
@@ -2953,16 +3060,24 @@ pub struct BehaviorCellRecordV1 {
 }
 
 #[repr(C)]
-pub struct BehaviorInputHeaderV1 {
+pub struct BehaviorChildReservationV2 {
+    pub slot: u32,
+    pub reserved: u32,
+    pub volume: ScheduledU64LeV1,
+    pub key: [u8; 16],
+}
+
+#[repr(C)]
+pub struct BehaviorInputHeaderV2 {
     pub magic: u32,                       // MORI
-    pub version: u32,                     // 1
+    pub version: u32,                     // 2
     pub engine: u32,
     pub presence: u32,                    // Absent=0, Present=1
     pub payload_bytes: u32,
     pub total_bytes: u32,
     pub tick: ScheduledU64LeV1,
     pub generation: ScheduledU64LeV1,
-    pub reserved: [u32; 6],               // v1 zero
+    pub reserved: [u32; 6],               // v2 zero
 }
 
 pub enum BehaviorCollisionRequest {
@@ -3077,6 +3192,14 @@ impl BehaviorEffectSink<'_> {
         volume: VolumeId,
         correlation: Correlation,
     ) -> Result<u32, BehaviorEffectError>;
+    pub fn extract_components(
+        &mut self,
+        source: VolumeId,
+        bounds: CellAabb,
+        labels: &[u32],
+        child_count: u32,
+        correlation: Correlation,
+    ) -> Result<u32, BehaviorEffectError>;
 }
 ```
 
@@ -3089,8 +3212,8 @@ GPU handoffs use the equivalent header `written_bytes` validation. Handoff
 storage is Moria-owned transport; payload meaning and any durable copy remain
 consumer-owned.
 
-`ScheduledU64LeV1` is the only representation of a logical 64-bit integer in
-Scheduled ABI v1. It is exactly 8 bytes, aligned to 4, with the least
+`ScheduledU64LeV1` remains the only representation of a logical 64-bit integer
+in Scheduled ABI v2. It is exactly 8 bytes, aligned to 4, with the least
 significant `u32` at offset 0 and the most significant `u32` at offset 4.
 `pack(v)` stores `v as u32` and `(v >> 32) as u32`; `unpack` performs the
 inverse. Equality compares both words, and logical zero requires both words to
@@ -3105,11 +3228,13 @@ record.
 `0, 4, 8, 12, 16, 20`. The finite positive cell size and half-open local
 domain are part of every CPU/GPU export, including a volume created after
 adapter registration. Reserved/flags words are zero in v1.
-`BehaviorInputHeaderV1` is exactly 64 bytes with field offsets
+`BehaviorChildReservationV2` is exactly 32 bytes with field offsets
+`0, 4, 8, 16`.
+`BehaviorInputHeaderV2` is exactly 64 bytes with field offsets
 `0, 4, 8, 12, 16, 20, 24, 32, 40`; payload begins at byte 64 and total bytes
 are four-byte aligned. Its presence, size, generation, padding, and failure
 rules are normative in
-[behavior-scheduling.md](behavior-scheduling.md#scheduled-gpu-abi-v1).
+[behavior-capabilities.md](behavior-capabilities.md#scheduled-abi-v2).
 
 `CpuBehaviorView` is valid only for the callback and contains every cell in the
 accepted scopes, including empty cells.
@@ -3126,17 +3251,12 @@ The sink copies or borrows only these fixed/bounded values into its already
 reserved storage; no capacity-bearing proposal collection crosses the callback
 return. It binds matter/move/retire effects to the exact addressed snapshot
 revision and rejects a target outside the authorized view.
-Scheduled ABI v1 deliberately excludes `VolumeCommand::Create` because its
-consumer-owned Rust content-source object is a control-plane registration, not
-a GPU- or stable-view-derived value. Consumers submit create through the
-unchanged ordinary command API.
-Consequently a scheduled fracture/debris-shaped adapter may remove, patch,
-move, or retire existing volumes in its tick, but it cannot atomically split
-one volume into newly created independently moving volumes. Any resulting
-volume creation is a later ordinary control-plane operation with its own
-admission, receipt, and revision ordering after the behavior frontier. No
-`BaseContentSource`, source handle, or source descriptor is transported in the
-scheduled ABI.
+Scheduled ABI v2 still excludes arbitrary `VolumeCommand::Create` because its
+consumer-owned Rust content-source object is a control-plane registration.
+Its sole creation-like operation is the bounded source-owned label transfer in
+[behavior-capabilities.md](behavior-capabilities.md#atomic-component-extraction).
+No `BaseContentSource`, source handle, or source descriptor crosses the
+scheduled sink or wire ABI.
 
 GPU adapters are isolated under the Bevy integration module and deliberately
 use the renderer-compatible API. This trait supports an independently
@@ -3266,6 +3386,8 @@ impl BehaviorGpuTickContext<'_> {
     pub fn view_counts(&self) -> (u32, u32);
     pub fn prior_feedback(&self) -> BehaviorPriorFeedback;
     pub fn consumer_input(&self) -> BehaviorGpuConsumerInput;
+    pub fn child_reservations(&self) -> u32;
+    pub fn egress(&self) -> Option<BehaviorGpuEgress>;
     pub fn incoming_handoff_count(&self) -> u32;
     pub fn outgoing_handoff_count(&self) -> u32;
     pub fn encoder(&mut self) -> &mut BehaviorGpuEncoder<'_>;
@@ -3274,6 +3396,12 @@ impl BehaviorGpuTickContext<'_> {
 pub struct BehaviorGpuConsumerInput {
     pub present: bool,
     pub bytes: u32,
+}
+
+pub struct BehaviorGpuEgress {
+    pub record_stride: NonZeroU32,
+    pub maximum_records: u32,
+    pub maximum_bytes: u32,
 }
 
 pub enum BehaviorPriorFeedback {
@@ -3323,7 +3451,7 @@ pub struct BehaviorProposalReport {
 
 `BehaviorPriorFeedback::Ready::proposals` is the count of fixed outcome
 records from this adapter's preceding dispatch. Each record carries the
-original zero-based proposal index. Scheduled ABI v1 does not copy the prior
+original zero-based proposal index. Scheduled ABI v2 does not copy the prior
 `VolumeSnapshotRef` vector into feedback; a GPU adapter that needs it retains
 its own proposal-index-to-snapshot correlation in factory-created,
 consumer-owned state. This retained state is not checkpointed or interpreted
@@ -3335,7 +3463,7 @@ Factory usage variants map to fixed safe unions:
 `Uniform = UNIFORM | COPY_DST`, and
 `CopyStaging = COPY_SRC | COPY_DST`. No factory-created adapter buffer is
 `MAP_READ`, `MAP_WRITE`, or `INDIRECT`; cross-processor mapping belongs only to
-Moria's handoff pool and indirect dispatch is not exposed in scheduled v1.
+Moria's handoff pool and indirect dispatch is not exposed in scheduled v2.
 `StorageRead` includes `COPY_DST` because `initialize_buffer` uses a Moria
 staging-buffer copy into the destination; the adapter still receives no
 write-capable shader binding for that usage. New buffers are zero-initialized.
@@ -3392,12 +3520,14 @@ copy debits one operation slot and byte budget. The wrapper rejects a
 generation mismatch or Moria authority resource.
 
 CPU and GPU proposal records have identical logical meanings.
-GPU ABI v1 supports fill, run patch, move, and retire against a supplied
-snapshot index.
+GPU ABI v2 supports fill, run patch, move, retire, and one source-bound
+extract-components proposal against a supplied snapshot index.
 Moria GPU kernels validate the entire participant batch, resolve declared
 whole-proposal conflicts, prepare copy-on-write transactions, and publish
 without material or proposal readback.
 Outcome metadata is made CPU-visible later for typed receipts.
+The exact label, identity, directory-root, and egress contracts are in
+[behavior-capabilities.md](behavior-capabilities.md).
 
 `BehaviorParticipantReport` borrows coordinator-owned snapshot/proposal arrays;
 no capacity-bearing report collection crosses the callback. The CPU report
@@ -3546,6 +3676,7 @@ pub enum ObservationFactKind {
     VolumeCreated,
     VolumeMoved,
     VolumeRetired,
+    ComponentsExtracted,
     RegionLifecycle,
     Presentation,
     Checkpoint,
@@ -3717,8 +3848,9 @@ resource pressure stores resource tag, used/limit `u64`, and action; device
 stores generation and state. The fixed complete v1 tags are therefore
 `MatterCommitted`, `VolumeCreated`, `VolumeMoved`, `VolumeRetired`,
 `Presentation`, `ResourcePressure`, and `Device`.
-`RegionLifecycle` (bounded diagnostic) and `Checkpoint` (variable revision
-vector) are explicitly unsupported v1 delta facts. They cause the
+`RegionLifecycle` (bounded diagnostic), `Checkpoint` (variable revision
+vector), and `ComponentsExtracted` (variable bounded child vector) are
+explicitly unsupported v1 delta facts. They cause the
 `UnsupportedFact` boundary only when they match the accepted filter/kinds;
 irrelevant facts may be scanned past.
 
@@ -3827,6 +3959,9 @@ pub struct TelemetrySnapshot {
     pub behavior_view_bytes: u64,
     pub behavior_proposal_bytes: u64,
     pub behavior_feedback_bytes: u64,
+    pub behavior_component_children: u32,
+    pub behavior_egress_pending: u32,
+    pub behavior_egress_bytes: u64,
     pub extension_packet_bytes: u64,
     pub extension_effect_readback_bytes: u64,
 }

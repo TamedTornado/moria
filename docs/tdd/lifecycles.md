@@ -306,12 +306,14 @@ owned request
   -> reporting participant/proposal outcomes
 ```
 
-Only one tick is active per world in v1. The tick permit pre-reserves every
+Only one tick is active per world in v2. The tick permit pre-reserves every
 registered participant's maximum input record/host bytes/GPU upload transport,
 view, proposal, collision scratch/calls, handoff host/device/staging/maps,
-transaction, completion, and double-buffered feedback capacity before the
-first planner runs. Unknown, duplicate, unexpected, missing required, or
-over-capacity input rejects synchronously and invokes no planner/adapter.
+transaction, component-child construction/base bytes, optional egress
+device/staging/host/map bytes, completion, and double-buffered feedback
+capacity before the first planner runs. Unknown, duplicate, unexpected,
+missing required, or over-capacity input rejects synchronously and invokes no
+planner/adapter.
 The atomic transition from waiting at the frontier to GPU input preflight is
 this family's `Preparing` point of no return. Cancellation that wins before it
 releases all ingress; a later cancellation is too late and submitted ranges
@@ -329,7 +331,7 @@ GPU binding 5 receives those exact bytes through the ordered upload; Moria
 never interprets their vocabulary.
 
 CPU planners and adapters run synchronously on the Bevy main thread while the
-frontier is pinned. V1 has no worker handoff, preemption, or deadline for that
+frontier is pinned. V2 has no worker handoff, preemption, or deadline for that
 callback, so consumer latency can stall the main-world update and hold
 post-frontier commands. This is explicit selected behavior, measured by P10
 for a fixed proof adapter rather than hidden behind a worker claim.
@@ -344,11 +346,23 @@ Conflicts resolve in stable adapter/proposal order by the later adapter's
 declared `RejectLater | ReplaceEarlier | FailTick` policy, always for a whole
 proposal. Selected effects for one volume publish together at one revision or
 all fail for that volume; independent volumes remain independently published.
-The closed scheduled effect set is fill, patch, move, and retire. It cannot
-create a volume or atomically split one existing volume into newly created
-independent volumes. A consumer may submit later ordinary create commands
-after the tick; each follows the separate command lifecycle and cannot be
-reported as part of the scheduled publication.
+The closed scheduled effect set is fill, patch, move, retire, and one bounded
+source-owned component extraction. Extraction reserves every child identity
+and storage slot before adapter execution, prepares source and child versions
+off-directory, then publishes their replacement directory root once; failure
+publishes neither source edits nor child identities. It transfers only labeled
+source samples and cannot import new content or a `BaseContentSource`.
+Arbitrary volume creation remains a later ordinary command with a separate
+source, receipt, and revision.
+
+An adapter with declared egress may also initialize its reserved outgoing
+sentinel lane. After its dispatch, Moria validates count/stride/capacity,
+copies the exact fixed-stride prefix to a dedicated staging buffer, and
+publishes the tick without waiting for mapping. The tick result owns one
+`BehaviorEgressReceipt`; its lifecycle is
+`Submitted -> AwaitingReadback -> Ready | Failed`. Mapping/decode failure
+cannot roll back published substrate revisions, and the staging/host charge
+returns only after the last receipt/result clone is dropped.
 
 `AbortTick` discards every proposal when that participant fails.
 `SkipParticipant` discards only that participant and lets remaining adapters
@@ -419,9 +433,9 @@ the asynchronous extension job against newer matter.
    dependent work;
 4. drains a behavior tick that entered `Preparing/UploadingGpuInputs` or any
    later stage to its complete preflight-or-later report; submitted input ranges
-   remain owned until completion or device-generation quarantine, then shutdown
-   waits for other submitted GPU work through renderer completion or terminal
-   loss;
+   and egress staging remain owned until completion or device-generation
+   quarantine, then shutdown waits for other submitted GPU work and accepted
+   egress receipts through decoded delivery or terminal typed failure;
 5. runs the required checkpoint against final committed revisions if requested;
 6. appends final observations and freezes telemetry;
 7. resolves outstanding receipts and the shutdown receipt;
@@ -472,6 +486,8 @@ count (default 1).
 | Scheduled consumer input missing/unknown/duplicate/oversized | Behavior request | Synchronous `SubmitError::Invalid` with exact violation and unchanged request | No tick ID, planner, upload, or adapter execution |
 | Scheduled consumer-input upload failure/device loss | Behavior participant/tick | Tick-global `NoPublication(PreparationFailure)` with the addressed participant `Skipped(ConsumerInputUpload)` and all others `NotRun(InputPreflightAborted)`, or typed device-loss no-publication with all `NotRun(DeviceLost)` | Empty snapshot/proposal/publication vectors; no planner, adapter, or report hook executes and no behavior effect publishes |
 | Scheduled proposal conflict | Proposal/tick | Whole proposal rejected/replaced or tick failed | Never partial proposal application |
+| Component-extraction preparation/capacity failure | Source plus provisional children | Complete extraction rejected | Old directory root remains current; no child identity becomes live |
+| Behavior egress count/stride/overflow/map/decode failure | Egress receipt | Typed terminal error | Published tick revisions remain committed; no partial byte result |
 | Scheduled report-hook failure after publication | Behavior notification | `PublishedWithNotificationFailure` | Already published effects and receipts remain valid |
 | External shader failure | Asynchronous extension request | Extension error | Only earlier ordinary commits remain |
 

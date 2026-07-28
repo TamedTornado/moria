@@ -36,7 +36,7 @@ gates, render meshes, or a queue on which they can publish Moria work.
 
 A behavior tick is consumer-triggered; Moria does not choose a simulation
 frequency or tie it to a camera or wall clock.
-At most one behavior tick is active per world in v1.
+At most one behavior tick is active per world in v2.
 The accepted request establishes an ordinary-command frontier `F`.
 Commands admitted before `F` drain in their normal per-volume order.
 Commands admitted after `F`, later checkpoint-frontier capture, and later
@@ -242,7 +242,7 @@ advance past it until the callback returns or fails.
 This readback is a cost of selecting a CPU adapter, not a second authoritative
 CPU mirror or a persistent collision cache.
 
-V1 invokes both `plan_tick` and `run_tick` synchronously on the Bevy main
+V2 invokes both `plan_tick` and `run_tick` synchronously on the Bevy main
 thread. The committed frontier and post-frontier command barrier remain held
 for the complete callback. Moria supplies no preemption, deadline, or worker
 offload: a slow or blocked CPU adapter stalls that main-world update and
@@ -256,16 +256,14 @@ The effect sink is preallocated from the tick's aggregate proposal reservation.
 It accepts fixed fill, patch, move, and retire values and borrows dense samples
 or run records long enough to copy them into already reserved storage.
 It assigns `Exact` for the addressed member of `S`.
-Scheduled v1 excludes create because its consumer-owned Rust content source is
-a control-plane registration, not a stable-view-derived CPU/GPU value;
-consumers retain the ordinary create command.
-Therefore a scheduled fracture/debris-shaped adapter can remove, patch, move,
-or retire existing volumes but cannot atomically split one volume into newly
-created independently moving volumes. Creation is a later ordinary
-control-plane operation behind the tick frontier, with its own admission,
-receipt, source registration, and revision ordering. No Rust
-`BaseContentSource` or source descriptor is transported through the scheduled
-effect sink or GPU ABI.
+Scheduled v2 excludes arbitrary create because its consumer-owned Rust content
+source is a control-plane registration.
+It adds only the source-bound label-transfer operation in
+[behavior-capabilities.md](behavior-capabilities.md): existing source samples
+may move into pre-reserved dynamic children under one directory-root
+publication.
+No Rust `BaseContentSource` or source descriptor is transported through the
+scheduled effect sink or GPU ABI.
 The sink rejects over-capacity records or bytes immediately and poisons only
 that participant batch.
 The callback cannot return a capacity-bearing effect collection or source
@@ -338,7 +336,9 @@ provides:
 - read-only incoming and write-only outgoing opaque handoff targets;
 - the prior terminal feedback for this participant as read-only input;
 - the current `DeviceGeneration`; and
-- a counted `BehaviorGpuEncoder` controlled by the coordinator.
+- a counted `BehaviorGpuEncoder` controlled by the coordinator;
+- pre-reserved child identities appended to that participant's view; and
+- an optional bounded consumer-egress lane inside its outgoing transport.
 
 `encode_tick` may dispatch factory-owned pipelines with the exported view and
 factory-owned bind groups, or copy between registered behavior buffers,
@@ -370,7 +370,8 @@ update.
 No input is recovered through readback, and an adapter cannot mutate
 or retain Moria's ingress allocation after the consuming submission.
 
-The GPU effect ABI uses fixed records for fill, run patch, move, and retire.
+The GPU effect ABI uses fixed records for fill, run patch, move, retire, and
+one source-bound extract-components proposal.
 Each record addresses a supplied snapshot index; Moria supplies the exact
 revision and rejects any modified revision word.
 Payload ranges, counts, coordinates, material IDs, flags, and reserved words
@@ -382,17 +383,17 @@ adapter's effects.
 Small outcome metadata may be read back later to complete CPU-visible receipts
 and telemetry, but that readback is not on the tick's authority path.
 
-### Scheduled GPU ABI v1
+### Scheduled GPU ABI v2
 
 The scheduled GPU ABI is deliberately smaller than exposing Moria storage.
 Moria supplies bind group 0 with exactly six storage bindings:
 
 | Binding | Access | Contents |
 | ---: | --- | --- |
-| 0 | read-only | this participant's packed stable-view header, volume records, then cell records |
+| 0 | read-only | this participant's packed stable-view header, volume records, cell records, then pre-reserved child identities |
 | 1 | read-write | one effect header, fixed proposal records, then payload bytes |
 | 2 | read-only | packed incoming opaque-handoff table and payloads, or a valid empty header |
-| 3 | read-write | packed outgoing opaque-handoff table and zero-initialized payload capacities |
+| 3 | read-write | packed outgoing opaque-handoff table, optional consumer-egress lane, and zero-initialized payload capacities |
 | 4 | read-only | the participant's prior-feedback header and records, or a typed no-prior-feedback header |
 | 5 | read-only | current opaque consumer-input header and payload, or a valid absent optional/none header |
 
@@ -411,6 +412,13 @@ GPU ingress charges exactly
 one staging and one device range. Both are retained until upload completion;
 the staging range then returns, while the device range remains through the
 participant's consuming submission.
+ABI v2 preserves v1's six bindings and unchanged record sizes.
+It assigns the view header's former reserved words, adds proposal kind 5, and
+assigns the outgoing descriptor's reserved words only for the egress sentinel
+as specified in
+[behavior-capabilities.md](behavior-capabilities.md#scheduled-abi-v2).
+All header version words are 2.
+
 All words are little-endian, offsets are four-byte aligned, and Rust/WGSL
 layout assertions are mandatory. WGSL has no Scheduled ABI `u64` field.
 Every logical 64-bit ID, revision, tick, or generation is the exact
@@ -423,11 +431,11 @@ separate `u32` members. Headers use these exact byte offsets:
 
 | Record | Exact fields |
 | --- | --- |
-| `BehaviorViewHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 tick_low:u32`, `12 tick_high:u32`, `16 generation_low:u32`, `20 generation_high:u32`, `24 engine:u32`, `28 volume_count:u32`, `32 cell_count:u32`, `36 volume_offset:u32`, `40 cell_offset:u32`, `44 total_bytes:u32`, `48 reserved:[u32;4]` |
-| `BehaviorEffectHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 engine:u32`, `12 proposal_capacity:u32`, `16 payload_capacity:u32`, `20 output_proposal_count:u32`, `24 output_payload_bytes:u32`, `28 reserved0:u32`, `32 tick_low:u32`, `36 tick_high:u32`, `40 generation_low:u32`, `44 generation_high:u32`, `48 reserved:[u32;4]` |
-| `BehaviorHandoffHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 direction:u32`, `12 engine:u32`, `16 edge_count:u32`, `20 descriptor_offset:u32`, `24 payload_offset:u32`, `28 total_bytes:u32`, `32 tick_low:u32`, `36 tick_high:u32`, `40 generation_low:u32`, `44 generation_high:u32`, `48 reserved:[u32;4]` |
-| `BehaviorFeedbackHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 availability:u32`, `12 engine:u32`, `16 source_tick_low:u32`, `20 source_tick_high:u32`, `24 generation_low:u32`, `28 generation_high:u32`, `32 participant_count:u32`, `36 proposal_count:u32`, `40 total_bytes:u32`, `44 reserved:[u32;5]` |
-| `BehaviorInputHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 engine:u32`, `12 presence:u32`, `16 payload_bytes:u32`, `20 total_bytes:u32`, `24 tick_low:u32`, `28 tick_high:u32`, `32 generation_low:u32`, `36 generation_high:u32`, `40 reserved:[u32;6]` |
+| `BehaviorViewHeaderV2` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 tick_low:u32`, `12 tick_high:u32`, `16 generation_low:u32`, `20 generation_high:u32`, `24 engine:u32`, `28 volume_count:u32`, `32 cell_count:u32`, `36 volume_offset:u32`, `40 cell_offset:u32`, `44 total_bytes:u32`, `48 child_count:u32`, `52 child_offset:u32`, `56 child_label_capacity:u32`, `60 reserved:u32` |
+| `BehaviorEffectHeaderV2` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 engine:u32`, `12 proposal_capacity:u32`, `16 payload_capacity:u32`, `20 output_proposal_count:u32`, `24 output_payload_bytes:u32`, `28 reserved0:u32`, `32 tick_low:u32`, `36 tick_high:u32`, `40 generation_low:u32`, `44 generation_high:u32`, `48 reserved:[u32;4]` |
+| `BehaviorHandoffHeaderV2` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 direction:u32`, `12 engine:u32`, `16 edge_count:u32`, `20 descriptor_offset:u32`, `24 payload_offset:u32`, `28 total_bytes:u32`, `32 tick_low:u32`, `36 tick_high:u32`, `40 generation_low:u32`, `44 generation_high:u32`, `48 reserved:[u32;4]` |
+| `BehaviorFeedbackHeaderV2` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 availability:u32`, `12 engine:u32`, `16 source_tick_low:u32`, `20 source_tick_high:u32`, `24 generation_low:u32`, `28 generation_high:u32`, `32 participant_count:u32`, `36 proposal_count:u32`, `40 total_bytes:u32`, `44 reserved:[u32;5]` |
+| `BehaviorInputHeaderV2` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 engine:u32`, `12 presence:u32`, `16 payload_bytes:u32`, `20 total_bytes:u32`, `24 tick_low:u32`, `28 tick_high:u32`, `32 generation_low:u32`, `36 generation_high:u32`, `40 reserved:[u32;6]` |
 
 The 112-byte volume record has offsets `0 volume_low:u32`,
 `4 volume_high:u32`, `8 revision_low:u32`, `12 revision_high:u32`,
@@ -439,13 +447,14 @@ The 112-byte volume record has offsets `0 volume_low:u32`,
 `16 sample:u32`, and `20 occupied:u32`. Array strides equal these record
 sizes; no implicit `vec3` layout is used.
 
-The 64-byte view header contains magic `MORB`, ABI version 1, tick ID, device
+The 64-byte view header contains magic `MORB`, ABI version 2, tick ID, device
 generation, participant engine ID, volume count, cell count, volume-record
-offset, cell-record offset, total bytes, and zero-reserved words.
+offset, cell-record offset, total bytes, child-reservation count/offset,
+child-label capacity, and one zero reserved word.
 Volume records and cell records have the exact field order and sizes in
 [public-api.md](public-api.md#scheduled-behavior-engine-hook).
 
-The 64-byte effect header contains magic `MORE`, ABI version 1, participant
+The 64-byte effect header contains magic `MORE`, ABI version 2, participant
 engine ID, proposal capacity, payload capacity, output proposal count, output
 payload byte count, tick ID, device generation, and zero-reserved words.
 Moria initializes output counts to zero.
@@ -453,11 +462,11 @@ Each proposal slot is 128 bytes:
 
 | Byte | Field |
 | ---: | --- |
-| 0 | kind: unused `0`, fill `1`, patch-runs `2`, move `3`, retire `4` |
+| 0 | kind: unused `0`, fill `1`, patch-runs `2`, move `3`, retire `4`, extract-components `5` |
 | 4 | snapshot index `u32` |
 | 8 | exact expected revision low `u32` |
 | 12 | exact expected revision high `u32` |
-| 16 | flags, v1 zero |
+| 16 | flags, v2 zero |
 | 20 | payload offset |
 | 24 | payload byte length |
 | 28 | reserved zero |
@@ -475,14 +484,16 @@ Patch uses the asynchronous extension's 20-byte canonical run record and
 X-fastest indexing.
 Move uses only placement.
 Retire uses only snapshot index/revision/correlation.
+Extract-components uses the target as its source bounds, interprets byte 72 as
+child count, and consumes the exact label array in
+[behavior-capabilities.md](behavior-capabilities.md#scheduled-abi-v2).
 The adapter copies the revision from the indexed view record; Moria compares it
 to the still-pinned revision and rejects the complete participant batch on any
 mismatch.
-Create is not representable in scheduled ABI v1 because its required
-consumer-owned Rust content-source object cannot cross a scheduled effect
-record; a consumer may submit the ordinary `VolumeCommand::Create`.
+Arbitrary create remains unrepresentable because its consumer-owned Rust
+content-source object cannot cross a scheduled effect record.
 
-The 64-byte input header contains magic `MORI`, ABI version 1, participant
+The 64-byte input header contains magic `MORI`, ABI version 2, participant
 engine ID, closed presence (`Absent=0`, `Present=1`), payload byte count,
 total byte count, tick ID, device generation, and zero reserved words.
 `Absent` requires zero payload bytes and `total_bytes == 64`; it is invalid for
@@ -492,15 +503,16 @@ consumer bytes starting at offset 64 with zero alignment padding. The payload
 must not exceed the participant descriptor maximum or its effective binding
 range. The shader sees no schema or type tag beyond these transport fields.
 
-The 64-byte handoff header uses magic `MORH`, ABI version 1, direction,
+The 64-byte handoff header uses magic `MORH`, ABI version 2, direction,
 participant engine ID, edge count, descriptor offset, payload offset, total
 bytes, tick ID, device generation, and zero reserved words. Each 32-byte edge
 descriptor contains the peer engine ID, payload offset/capacity, written byte
-count, closed status, and zero reserved words. Moria initializes outgoing
+count, closed status, and reserved words that are zero except for the declared
+egress sentinel. Moria initializes outgoing
 payloads to zero; `written_bytes <= capacity` and all reserved/header words are
 validated before transfer. Payload bytes are opaque to Moria.
 
-The 64-byte feedback header uses magic `MORF`, ABI version 1, closed availability
+The 64-byte feedback header uses magic `MORF`, ABI version 2, closed availability
 (`NoneYet`, `Ready`, or `UnavailablePreviousGeneration`), engine ID, source
 tick ID, device generation, participant/proposal counts, total bytes, and zero
 reserved words. `Ready` has `participant_count == 1`; its total bytes are
@@ -509,7 +521,7 @@ reserved words. `Ready` has `participant_count == 1`; its total bytes are
 `total_bytes == 64`; the current generation pair remains present so absence
 cannot be confused with an old ready record. A ready header is followed by one
 fixed 64-byte participant/terminal-decision record and one fixed 48-byte
-record per proposal. Scheduled ABI v1 feedback deliberately contains no
+record per proposal. Scheduled ABI v2 feedback deliberately contains no
 snapshot vector and reserves no bytes for one. `proposal_count` is the number
 of indexed proposal outcomes retained from this participant's prior dispatch,
 and every proposal record repeats its original zero-based proposal index. A
@@ -529,6 +541,13 @@ The exact 32-byte handoff descriptor offsets are `0 peer_engine:u32`,
 `4 payload_offset:u32`, `8 capacity:u32`, `12 written_bytes:u32`,
 `16 status:u32`, and `20 reserved:[u32;3]`. The exact 64-byte feedback
 participant record is:
+
+For an ordinary adapter edge, all reserved words remain zero.
+For the optional consumer-egress sentinel, `peer_engine == 0` and the words at
+20, 24, and 28 are respectively record stride, record capacity, and written
+record count.
+The validation, map, receipt, and reuse rules are normative in
+[behavior-capabilities.md](behavior-capabilities.md#opaque-gpu-to-cpu-egress).
 
 | Byte | Field |
 | ---: | --- |
@@ -608,7 +627,11 @@ The exact 48-byte feedback proposal record is `0 status:u32`,
 `44 related_volume_high_or_zero:u32`. `OverlapsEarlier` and
 `ReplacedByLater` use the related engine/proposal pair;
 `PreparationFailed` uses the related volume pair; `TickAborted` refers to the
-complete participant-record abort cause. All unrelated fields are zero.
+complete participant-record abort cause. `ExtractedComponents` uses status
+`4`, zero command ID, the source's new revision, and the source volume; the
+adapter already received every provisional child identity in binding 0, while
+the CPU tick report carries their complete published domains and placements.
+All unrelated fields are zero.
 
 Execution has one additional closed mapping for tick-global input preflight.
 The participant whose upload fails uses
@@ -635,7 +658,7 @@ no-selected-effect `2`, discarded-by-tick `3`; notification delivered `1`,
 not-applicable `2`, failed-after-terminal-decision `3`; tick disposition
 published `1`, no-publication `2`,
 published-with-notification-failure `3`; proposal status admitted matter `1`,
-admitted volume `2`, rejected `3`; proposal reasons none `0`,
+admitted volume `2`, rejected `3`, extracted-components `4`; proposal reasons none `0`,
 overlap `1`, replaced `2`, invalid `3`, participant-failed `4`,
 preparation-failed `5`, and tick-aborted `6`. Failure and tick-abort category
 tags are: none `0`; planning `1`, unavailable `2`, access-limit `3`,
@@ -698,7 +721,11 @@ At admission, before the tick may transition to
 - ordinary command completion/observation records for that aggregate maximum;
 - worst-case copy-on-write page, brick, scar, and directory transaction
   records for the declared effects; and
-- fixed per-proposal outcome records.
+- every declared component child identity plus the source/child page, brick,
+  derived-base, replacement-root, observation, outcome, and receipt maximum;
+- every optional egress lane's device, staging, host, map, and receipt
+  capacity;
+- fixed per-proposal outcome records;
 - the maximum reusable CPU collision sink, aggregate collision-call counters,
   every declared handoff's host/device/staging bytes and required map slots;
   and
@@ -726,6 +753,13 @@ Two placement/retire proposals overlap when they address the same volume.
 A retirement overlaps every proposal for that volume.
 Matter and one placement proposal for the same volume do not overlap and may
 share the volume's tick revision.
+An extract-components proposal overlaps every proposal addressing its source,
+and v2 admits at most one extraction proposal per tick.
+In stable adapter/proposal order, the first otherwise selected extraction is
+eligible and every later extraction receives `Rejected { reason: Invalid }`;
+this global bound does not poison either participant's otherwise valid batch.
+Its pre-reserved child IDs cannot be named by another proposal before
+publication.
 Ordinary create commands remain behind the tick frontier and therefore cannot
 interleave with scheduled composition.
 
@@ -762,6 +796,9 @@ If preparation or publication for one volume fails, every selected proposal
 for that volume receives `PreparationFailed { volume }` with no volume revision
 change; other volumes remain independent and the tick disposition is still
 `Published` if its terminal publication pass completed.
+Component extraction is different: its source and every child form one
+replacement-directory-root transaction, so any member failure rejects the
+complete extraction and publishes none of its identities or source edits.
 
 ## Failure and adapter-owned state
 
@@ -851,6 +888,8 @@ Adapter state is explicitly outside Moria authority:
   `on_device_lost`, recreates only its exported-view/effect resources, and
   calls `create_device_state` for the new generation.
   The adapter must restore or reinitialize its own GPU state and report ready.
+  A submitted egress receipt fails `DeviceLost` unless its map and exact host
+  copy already completed; no old-generation bytes are delivered late.
 - **Recovery:** Moria resumes scheduled ticks only after authoritative matter
   and every included adapter report ready for the current generation.
   Adapter recovery failure is an adapter failure, not recovered Moria truth.
@@ -861,6 +900,8 @@ Adapter state is explicitly outside Moria authority:
   proceeds through planning and later stages.
   Moria calls adapter shutdown hooks after the last report, but does not save
   or discard consumer state on the consumer's behalf.
+  Submitted egress copies drain or resolve typed failure before generation
+  release; a retained ready result remains consumer-owned.
 
 The CPU report contains tick ID, the participant's stable snapshot revisions,
 participant status, proposal selection/rejection, assigned command IDs,
@@ -896,10 +937,22 @@ If it consumes impact data produced by a physics adapter, both adapters share
 an ordering edge with an opaque bounded handoff;
 Moria transports bytes but neither defines nor interprets the impact
 vocabulary.
-If its consumer wants new debris volumes, the scheduled adapter cannot create
-or atomically split them. It may propose edits to existing matter and the
-consumer may later submit ordinary create commands, which are independently
-admitted and cannot be described as part of the scheduled tick transaction.
+If it identifies source components, it may use the one generic
+extract-components proposal.
+Moria sees only closed labels and pre-reserved child identities; connectivity,
+significance, and removal policy remain adapter-owned.
+Arbitrary child content or creation still uses later ordinary commands.
+
+A multi-fidelity proof adapter receives a CPU-authored opaque region schema in
+its existing current input, classifies its own persistent GPU body table once
+against the schema's union, retains its own state through promotion/demotion,
+and continues producing bounded move proposals outside every selected region.
+Moria neither parses the regions nor names coarse/full fidelity.
+
+A GPU proof adapter may also write an unknown fixed-stride record schema into
+its declared consumer-egress lane.
+The tick may publish before that independent receipt maps; empty, exact,
+overflow, readback failure, shutdown, and device loss remain distinguishable.
 
 An independent reviewer must implement or mock the CPU physics, GPU physics,
 CPU damage-and-bond, and GPU damage-and-bond variants through the public
@@ -919,7 +972,12 @@ adapter traits and attempt to disprove:
    participant without a dummy predecessor, shared-state side channel,
    allocation beyond the ingress permit, raw GPU access, or authority-path
    readback; and
-8. scheduled fracture/debris claims do not include atomic volume creation or
-   split.
+8. source-bound extraction conserves every sample, exposes usable child IDs on
+   GPU, and cannot become arbitrary create;
+9. CPU-authored disconnected/overlapping activity data remains opaque while
+   adapter-owned state and coarse move proposals continue across boundaries;
+   and
+10. optional egress is exact, bounded, asynchronous, and never publication
+    authority.
 
 Any counterexample blocks the behavior-hook architecture claim.

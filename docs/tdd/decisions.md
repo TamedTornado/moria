@@ -650,3 +650,65 @@ truncated decision sentence is complete.
 
 None. The human feedback resolves the consequential GPU integration boundary,
 and the remaining choices are fully specified engineering contracts.
+
+---
+
+## T34. Scheduled v2 adds bounded source-owned component extraction
+
+**Authority.** The committed architecture-review authority note
+[`docs/evals/tdd-simplicity/overengineered-adapter-amendment.md`](../evals/tdd-simplicity/overengineered-adapter-amendment.md)
+requires GPU-resident matter to fracture atomically into independently moving
+child volumes without adding physics, damage, weapon, or game semantics.
+
+**Decision.** Preserve the six-binding scheduled seam and add one proposal:
+an adapter labels source cells as keep, transfer to one of pre-reserved child
+identities, or remove. Moria reserves every identity, sparse slot, full
+derived-base brick, scar/root record, observation, and outcome before
+execution. It builds source and child versions off-directory and publishes one
+replacement directory root. Any failure retains the old root and publishes no
+child. Arbitrary create and `BaseContentSource` transport remain excluded.
+
+**Persistence consequence.** Checkpoint format v2 tags external bases and
+extracted bases separately. An extracted base stores every nonempty full brick
+at creation and is reconstructed without a consumer source; later child scars
+are relative to that immutable base.
+
+**Rejected.** A new privileged placement stream, a general scheduled create
+language, engine-specific fracture types, and a multi-dispatch global
+component-labeling algorithm owned by Moria. Connectivity and significance
+remain adapter policy.
+
+## T35. Multi-fidelity activity remains opaque adapter state
+
+**Authority.** The same committed review note requires CPU-authored,
+disconnected and overlapping activity regions with coarse behavior outside
+and full behavior inside.
+
+**Decision.** Use the existing bounded participant input for the CPU-authored
+region bytes and the existing generic move/matter proposals for publication.
+The adapter owns the region schema, deterministic union/classification,
+coarse/full state, transition rules, and update cadence. Moria owns only
+admission, the pinned material view, generic proposal validation, and
+publication.
+
+**Rejected.** Moria activity-region/body/velocity/sleep types, a separate
+activity registry, an internal placement authority, or an engine-named phase.
+Those additions would create product and physics semantics not authorized by
+the approved design.
+
+## T36. GPU-to-CPU adapter egress reuses bounded handoff transport
+
+**Authority.** The same committed review note requires bounded opaque
+asynchronous GPU-to-CPU output.
+
+**Decision.** A GPU descriptor may declare one fixed-stride egress lane. The
+existing outgoing handoff binding reserves `peer_engine == 0` as its sentinel,
+so Scheduled ABI v2 still has exactly six group-0 bindings. Admission reserves
+device, staging, host, map, and receipt capacity. After dispatch, Moria
+validates the initialized count, copies the exact prefix, and returns a typed
+asynchronous receipt holding opaque `Arc<[u8]>`. Tick publication does not
+wait for mapping; egress failure never rolls back committed revisions.
+
+**Rejected.** An unbounded `Vec`, synchronous authority-path readback, a raw
+adapter-owned staging buffer, a seventh scheduled binding, or schema-aware
+decoding in Moria.
