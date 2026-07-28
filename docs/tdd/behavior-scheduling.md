@@ -49,9 +49,9 @@ OwnedRequest
   -> ValidatingConsumerInputs
   -> Queued
   -> WaitingForFrontier(F)
+  -> UploadingGpuInputs
   -> Planning
   -> WaitingForMatter
-  -> UploadingGpuInputs
   -> ExportingStableView(S)
   -> RunningAdapters(S)
   -> ValidatingProposals(S)
@@ -170,9 +170,14 @@ participants, duplicates, input supplied to `None`, missing `Required` input,
 per-participant overflow, or aggregate record/byte overflow rejects the
 request synchronously and returns it unchanged. No tick ID is assigned and no
 planner or adapter runs. Accepted slices are immutable and charged until their
-last CPU borrow or GPU upload use. Cancellation that wins before `Planning`
-drops them and releases host, staging, device, and record permits before its
-terminal result is visible.
+last CPU borrow or GPU upload use. After the command frontier drains, the
+coordinator atomically transitions the tick from cancellable
+`WaitingForFrontier` to `Preparing`, whose first family-specific stage is
+`UploadingGpuInputs`. Cancellation that wins before that transition drops the
+request and releases host, staging, device, and record permits before its
+terminal result is visible. Once upload preflight starts, cancellation is too
+late even though no consumer code has run; Moria must retain each submitted
+range through completion and produce the report defined below.
 
 The exported canonical record is:
 
@@ -345,17 +350,23 @@ Consecutive GPU adapters are encoded in declared order in one command stream.
 Moria inserts ordered passes and bounded handoff copies between them when an
 ordering edge declares an opaque payload.
 
-Consumer ingress is independent of handoffs. Before `RunningAdapters`, Moria
+Consumer ingress is independent of handoffs. Before `Planning`, Moria
 records every GPU participant input as a staging copy into its dedicated
 tick-local device range, validates the complete header/range set, and submits
 the uploads in participant order on the renderer queue. It waits
-asynchronously for their completion metadata before entering
-`RunningAdapters`; no Bevy schedule blocks on that wait. The corresponding
-read-only binding becomes visible before that participant's dispatch. Moria
-preflights every upload before any CPU callback or GPU dispatch starts, so an
-upload error produces `NoPublication(PreparationFailure)`, records
-`ConsumerInputUpload` for the addressed participant, and device loss produces
-the existing `NoPublication(DeviceLost)`; no adapter executes in either case.
+asynchronously for every completion before invoking the first planner; no Bevy
+schedule blocks on that wait. The corresponding read-only binding remains
+valid through that participant's later dispatch. Moria preflights every upload
+before any consumer planner, CPU callback, report hook, or GPU dispatch starts.
+The first non-device upload error in stable participant order produces
+`NoPublication(PreparationFailure)` and records `ConsumerInputUpload` for that
+addressed participant; every other participant is explicitly not run because
+of that tick-global preflight failure. Device loss produces the existing
+`NoPublication(DeviceLost)` and marks every participant not run. Neither path
+invokes consumer code.
+For a CPU-only tick, the empty GPU upload set confirms synchronously at the
+same `Preparing` boundary and planning may follow in the same main-world
+update.
 No input is recovered through readback, and an adapter cannot mutate
 or retain Moria's ingress allocation after the consuming submission.
 
@@ -573,8 +584,10 @@ and neither is inferred from the other.
 `ConflictFailTick` stores the earlier engine/proposal in A and the later pair
 in B. `TransitionFailure` stores predecessor in A, successor in B, and the
 closed transition stage. `DeviceLost` stores only its generation pair.
-`PreparationFailure` has no payload. Every field not selected by that mapping
-is zero; a nonzero unused field is invalid. `Published` and
+`PreparationFailure` has no tick-cause payload. The execution mapping below may
+independently use A for a not-run preflight reason. Every field selected by
+neither the abort-cause nor execution mapping is zero; a nonzero unused field
+is invalid. `Published` and
 `PublishedWithNotificationFailure` require `abort_cause == 0`;
 `NoPublication` requires one nonzero closed abort cause and a clear
 tick-wide and participant revision-changed bit. This mapping is lossless for
@@ -597,10 +610,27 @@ The exact 48-byte feedback proposal record is `0 status:u32`,
 `PreparationFailed` uses the related volume pair; `TickAborted` refers to the
 complete participant-record abort cause. All unrelated fields are zero.
 
+Execution has one additional closed mapping for tick-global input preflight.
+The participant whose upload fails uses
+`Skipped { ConsumerInputUpload }`. Every other participant uses
+`NotRun { InputPreflightAborted { failed_engine } }`; its record has execution
+tag 3, execution-failure tag 13, and stores `failed_engine` in A. A
+device-loss preflight gives every participant
+`NotRun { DeviceLost { generation } }`; execution is 3, execution failure is
+9, and the generation pair is the same pair required by the tick abort cause.
+For execution 1, execution failure and execution-specific fields are zero.
+For execution 2, the failure is the participant's own failure. For execution
+3, only failure tag 9 or 13 is legal. Failure tag 13 requires
+`abort_cause == PreparationFailure`, nonzero A, and zero B/stage/generation;
+tag 9 requires `abort_cause == DeviceLost`, the matching nonzero generation,
+and zero A/B/stage. This execution-specific use of A is independent of the
+tick-abort payload mapping; the failed participant's tag-12 record retains
+zero A because the participant is itself the addressed failure.
+
 ABI tag values are stable: handoff direction incoming `0`, outgoing `1`;
 handoff status empty `0`, ready `1`, failed `2`; feedback availability
 `NoneYet=0`, `Ready=1`, `UnavailablePreviousGeneration=2`; participant
-execution completed `1`, skipped `2`; participant publication published `1`,
+execution completed `1`, skipped `2`, not-run `3`; participant publication published `1`,
 no-selected-effect `2`, discarded-by-tick `3`; notification delivered `1`,
 not-applicable `2`, failed-after-terminal-decision `3`; tick disposition
 published `1`, no-publication `2`,
@@ -611,7 +641,7 @@ preparation-failed `5`, and tick-aborted `6`. Failure and tick-abort category
 tags are: none `0`; planning `1`, unavailable `2`, access-limit `3`,
 effect-limit `4`, invalid-proposal `5`, panicked `6`, GPU-validation `7`,
 transition `8`, device-lost `9`, not-ready-generation `10`, shutdown `11`,
-consumer-input-upload `12`;
+consumer-input-upload `12`, input-preflight-aborted `13`;
 abort cause participant-abort `1`, conflict-fail-tick `2`,
 transition-failure `3`, device-lost `4`, and preparation-failure `5`.
 Transition stages are none `0`, CPU-write `1`, upload `2`, GPU-validate `3`,
@@ -657,7 +687,8 @@ A GPU-only chain performs no mandatory CPU readback.
 
 ## Proposal admission and composition
 
-Before the tick enters `RunningAdapters`, Moria atomically reserves:
+At admission, before the tick may transition to
+`Preparing/UploadingGpuInputs`, Moria atomically reserves:
 
 - one input record and the declared maximum host bytes for every input-capable
   participant, plus each GPU participant's 64-byte header, aligned device
@@ -675,11 +706,14 @@ Before the tick enters `RunningAdapters`, Moria atomically reserves:
 
 If the reservation cannot be made, the tick remains queued or fails according
 to `behavior_ticks` overload policy; no adapter runs with partial capacity.
-Unused input capacity is released after request validation; accepted host
-bytes remain charged through the participant's planner/CPU borrow or completed
-GPU upload, and device ingress remains charged through the consuming
-submission. Unused proposal and payload capacity is released after proposal
-validation.
+Unused input capacity is released after request validation. Accepted GPU host
+and staging bytes remain charged through confirmed preflight upload, and each
+device ingress range remains charged through its consuming submission.
+Accepted CPU host bytes remain charged through the participant's planner and
+CPU callback. On preflight failure, all unsubmitted input is released
+immediately and submitted ranges are released only after completion or
+old-generation quarantine. Unused proposal and payload capacity is released
+after proposal validation.
 
 Each participant output is all-or-none at validation.
 An invalid record admits no proposal from that participant.
@@ -744,21 +778,34 @@ tick aborts.
 Moria never retries an adapter callback or reruns a shader automatically.
 
 Consumer-input structural failures occur synchronously before admission and
-therefore have no tick outcome. Cancellation that wins the pre-`Planning`
-race resolves through the ordinary cancellation error with no adapter
-execution. GPU ingress upload/validation completes before
-`RunningAdapters`; a closed `ConsumerInputUpload` participant failure produces
+therefore have no tick outcome. Cancellation that wins the
+`WaitingForFrontier -> Preparing/UploadingGpuInputs` race resolves through the
+ordinary cancellation error with no consumer execution. GPU ingress
+upload/validation completes before `Planning`; a closed
+`ConsumerInputUpload` participant failure produces
 `NoPublication(PreparationFailure)`, while device loss produces
-`NoPublication(DeviceLost)`. Neither path invokes any planner after the
-failure is known or any CPU/GPU adapter for that tick. Input preflight is
+`NoPublication(DeviceLost)`. Neither path invokes any planner, adapter, or
+report hook for that tick. Input preflight is
 tick-global and deliberately does not apply `SkipParticipant`, because doing
 so would let another adapter execute after only a partial ingress set was
 confirmed.
 
-Every admitted tick that enters `Planning` resolves its receipt with a
-`BehaviorTickCompleted`, including a no-publication abort; execution failure is
-not collapsed into the generic operation error and therefore cannot hide
-participant/proposal outcomes. The closed disposition is:
+Every admitted tick that wins the transition to
+`Preparing/UploadingGpuInputs` resolves its receipt with a
+`BehaviorTickCompleted`, including an input-preflight or later no-publication
+abort; execution failure is not collapsed into the generic operation error and
+therefore cannot hide participant/proposal outcomes. An input-preflight abort
+has an empty snapshot, empty proposal vector, empty published vector,
+`NotApplicable` notification for every participant, and does not invoke
+`on_tick_report`. The upload-failed participant is
+`Skipped { ConsumerInputUpload }`; all unaffected participants are
+`NotRun { InputPreflightAborted { failed_engine } }`. A device-loss preflight
+marks every participant `NotRun { DeviceLost { generation } }`. All receive
+`DiscardedByTick` with the tick cause. For an ordinary upload error Moria
+writes matching current-generation double-buffered GPU feedback for a possible
+next tick. Device loss quarantines that storage, so the Rust receipt remains
+the complete outcome and the next generation receives
+`UnavailablePreviousGeneration`. The closed disposition is:
 
 - `Published`: publication processing completed; `revision_changed` says
   whether any volume advanced;
@@ -769,7 +816,8 @@ participant/proposal outcomes. The closed disposition is:
   more post-publication CPU report hooks failed.
 
 Each participant separately records whether it executed, was skipped by its
-own failure, or executed/was ready but was discarded by a tick-wide abort.
+own failure, was not run because tick-global ingress preflight failed, or
+executed/was ready but was discarded by a later tick-wide abort.
 Every otherwise valid proposal discarded by `AbortTick` or `FailTick` receives
   `TickAborted` with the closed cause. Report hooks run only after the terminal
   publication/no-publication decision. A panic is recorded as
@@ -808,8 +856,9 @@ Adapter state is explicitly outside Moria authority:
   Adapter recovery failure is an adapter failure, not recovered Moria truth.
 - **Shutdown:** new ticks are rejected.
   A queued/waiting tick may be cancelled only before its atomic transition to
-  `Planning`, which is the behavior family's `Preparing` boundary; a tick that
-  entered planning drains to report or terminal device failure.
+  `UploadingGpuInputs`, which is the behavior family's `Preparing` boundary; a
+  tick that entered input preflight drains to a complete preflight report or
+  proceeds through planning and later stages.
   Moria calls adapter shutdown hooks after the last report, but does not save
   or discard consumer state on the consumer's behalf.
 

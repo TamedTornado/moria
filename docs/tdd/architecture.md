@@ -180,9 +180,11 @@ Main-world order:
 3. `Update`: consumer systems may reserve/submit/cancel work, update interests,
    and request a behavior tick carrying per-participant opaque inputs.
 4. `PostUpdate`: activate each already input-validated behavior tick's
-   admission-captured ordinary-command frontier, run host-side registration
-   planners with borrowed current input when eligible, freeze bounded
-   extraction batches, and update presentation
+   admission-captured ordinary-command frontier and freeze its GPU-input
+   preflight batch. Only after renderer completion for the whole batch is
+   observed in a later update may this stage run host-side registration
+   planners with borrowed current input and freeze their bounded view plans.
+   It also freezes other bounded extraction batches and updates presentation
    entities from already completed artifacts.
 5. `Last`: snapshot telemetry and advance shutdown coordination.
 
@@ -198,7 +200,9 @@ Render-world order:
 4. Root `RenderGraph`: execute camera-independent Moria compute in explicit
    order:
    `materialize -> prepare_mutation -> validate_mutation -> publish_revision
-   -> behavior_upload_consumer_inputs -> behavior_export_participants
+   -> behavior_upload_consumer_inputs`; after that upload submission is
+   confirmed and main-world planning completes, a later submission runs
+   `behavior_export_participants
    -> ordered_gpu_behavior_and_handoffs
    -> behavior_validate_compose
    -> behavior_publish -> query/collision -> async_extension_packet
@@ -208,13 +212,15 @@ Render-world order:
    complete.
 
 A behavior tick containing GPU consumer-input uploads or alternating CPU/GPU
-batches may span several Bevy
-updates and renderer submissions. The root graph runs only the currently ready
+batches spans multiple Bevy updates and renderer submissions whenever any GPU
+input exists. The upload submission and completion precede every consumer
+planner; a completion callback promotes the tick for planning during the next
+main-world update. The root graph then runs only the currently ready
 GPU batch, a GPU-to-CPU handoff completes through renderer cleanup and the next
 main-world `First`/`PreUpdate`, and a later CPU-to-GPU handoff is frozen again
 in `PostUpdate`/`ExtractSchedule`. The pinned frontier and post-frontier command
 barrier remain held across those updates; Moria never blocks a render schedule
-waiting for a map or CPU callback.
+waiting for an upload, map, or CPU callback.
 
 Work that does not fit the extraction batch remains queued; it is not silently
 dropped. `extraction_records` and `extraction_bytes` are the exact per-frame
@@ -227,12 +233,14 @@ telemetry. Configuration must fit one maximum enabled patch, behavior
 transition record, or asynchronous extension input packet plus inline state,
 while larger queue contents drain across later frames.
 
-Before any adapter executes, every GPU participant input is copied from its
-accepted exact host slice through a pre-reserved staging/device range, validated,
-submitted in stable participant order, and confirmed complete. Upload failure
-produces tick-global `NoPublication(PreparationFailure)` with a closed
-participant failure, and device loss aborts with no adapter execution; neither
-can turn missing bytes into an empty successful input.
+Before any consumer planner or adapter executes, every GPU participant input
+is copied from its accepted exact host slice through a pre-reserved
+staging/device range, validated, submitted in stable participant order, and
+confirmed complete. Upload failure produces tick-global
+`NoPublication(PreparationFailure)` with a closed participant failure for the
+addressed participant plus explicit not-run outcomes for unaffected
+participants. Device loss aborts with every participant not run. Neither case
+invokes consumer code or turns missing bytes into an empty successful input.
 
 CPU behavior adapters run synchronously on the Bevy main thread from the
 main-world coordinator only after their

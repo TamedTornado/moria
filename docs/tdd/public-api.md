@@ -2699,6 +2699,12 @@ pub struct BehaviorParticipantOutcome {
 pub enum BehaviorParticipantExecution {
     Completed,
     Skipped { failure: BehaviorEngineFailure },
+    NotRun { reason: BehaviorParticipantNotRunReason },
+}
+
+pub enum BehaviorParticipantNotRunReason {
+    InputPreflightAborted { failed_engine: BehaviorEngineId },
+    DeviceLost { generation: DeviceGeneration },
 }
 
 pub enum BehaviorParticipantPublication {
@@ -2804,13 +2810,21 @@ Moria's restricted factory; it is never an adapter-supplied capacity claim.
 Planning writes scopes only into the preallocated sink; a failed, incomplete,
 or over-capacity plan transfers no collection ownership.
 
-Once a tick enters `Planning`, its receipt resolves successfully with
+Once a tick atomically enters `Preparing`, whose first behavior-specific stage
+is GPU input preflight, its receipt resolves successfully with
 `BehaviorTickCompleted` even when `disposition` is `NoPublication`; this keeps
 every participant/proposal discard outcome observable. In that variant
 `revision_changed` is false and every otherwise valid discarded proposal is
 `TickAborted` with the same closed cause. Generic receipt failure remains only
-for loss/cancellation before planning or a broken coordinator that cannot
-produce the required report. `on_tick_report` is post-decision: its returned
+for loss/cancellation before input preflight or a broken coordinator that
+cannot produce the required report. An input-preflight failure has empty
+`snapshot`, `proposals`, and `published` vectors. The upload-failed participant
+is `Skipped { ConsumerInputUpload }`; every other participant is
+`NotRun { InputPreflightAborted { failed_engine } }`. On preflight device loss,
+every participant is `NotRun { DeviceLost { generation } }`. All participant
+publications are `DiscardedByTick`, all notifications are `NotApplicable`, and
+no planner, adapter, or `on_tick_report` hook is called. `on_tick_report` is
+post-decision only for ticks that reached planning: its returned
 error or panic changes only `notification` after the terminal decision and,
 when publication completed, the disposition to
 `PublishedWithNotificationFailure`; it never applies `AbortTick`
@@ -3413,15 +3427,20 @@ the permit and remain immutable. The same borrowed bytes are supplied to that
 participant's planner and CPU tick context. For GPU participants Moria records
 an ordered staging copy into the dedicated ingress allocation before
 `RunningAdapters` and exposes it only through scheduled group-0 binding 5.
-All GPU ingress uploads for the tick complete their validation/submission
-preflight before any adapter runs. An upload failure produces the tick-global
+All GPU ingress uploads for the tick complete and are confirmed before any
+planner or adapter runs. An upload failure produces the tick-global
 `NoPublication(PreparationFailure)` outcome and records
 `BehaviorEngineFailure::ConsumerInputUpload` for the addressed participant;
-device loss yields the existing typed no-publication device-loss outcome.
-`SkipParticipant` does not weaken input preflight, and in both cases no adapter
-executes. Cancellation that wins before `Planning` drops the admitted input
+every other participant is
+`NotRun { InputPreflightAborted { failed_engine } }`. Device loss yields the
+existing typed no-publication device-loss outcome and every participant is
+`NotRun { DeviceLost { generation } }`. `SkipParticipant` does not weaken
+input preflight, and in both cases no consumer callback executes. Cancellation
+that wins before the transition to input preflight drops the admitted input
 and releases every host/device/staging charge before returning
-`CancelledBeforePreparation`.
+`CancelledBeforePreparation`; after input preflight starts it is too late, and
+submitted GPU ranges remain charged through completion or generation
+quarantine.
 
 Current GPU feedback is finalized only after the terminal publication decision
 and CPU report hooks, then retained in one of two Moria-owned per-participant

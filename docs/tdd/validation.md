@@ -83,9 +83,15 @@ window or physical GPU and includes:
   the successor policy, and cancellation/device loss releases or quarantines
   every slot;
 - behavior tick outcome closure: `AbortTick`, `FailTick`, transition failure,
+  tick-global input-preflight failure,
   per-volume preparation failure, zero-change success, and post-publication
   report panic each produce the exact disposition, `revision_changed`,
   participant publication/notification, and proposal rejection records.
+  For a two-participant upload failure, the addressed participant is
+  `Skipped(ConsumerInputUpload)`, the peer is
+  `NotRun(InputPreflightAborted { failed_engine })`, both publications are
+  discarded, both notifications are not applicable, all snapshot/proposal/
+  published collections are empty, and no report hook runs.
   Include a mixed independent-volume case where participant A's only selected
   volume fails preparation while participant B's volume publishes: A is
   `Published { revision_changed: false }`, tick-wide `revision_changed` and B's
@@ -166,7 +172,8 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   `TooLate` at every later stage, and noncancellable startup/shutdown receipts;
 - per-volume FIFO and independent-volume concurrency;
 - behavior command-frontier capture, one pinned view for every participant,
-  bounded input capture before planning, isolated per-participant exports,
+  bounded input capture and confirmed GPU upload before planning, isolated
+  per-participant exports,
   direct CPU callback without query
   admission, post-frontier command blocking, CPU-to-GPU and GPU-to-CPU handoff
   milestones, whole-proposal reject/replace/fail
@@ -180,7 +187,9 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   bytes, and prove no prior handoff, shared state, hidden allocation, raw GPU
   access, or authority-path readback supplies them. Input upload validation,
   renderer upload failure, and device loss all terminate before any adapter
-  execution; upload failure is tick-global even for `SkipParticipant`;
+  execution; upload failure is tick-global even for `SkipParticipant`. Assert
+  the exact `UploadingGpuInputs -> Planning` order and that no planner-owned or
+  adapter-owned CPU state changes on either upload failure or device loss;
 - query pending/materialize/minimum/exact revision behavior;
 - observation cursor filtering after several dynamic moves and reclamation of
   their old directory versions, proving retained envelopes still apply
@@ -281,8 +290,13 @@ offsets/sizes/constants with shader declarations. Negative fixtures cover:
   transition failure with predecessor/successor/stage, preparation failure,
   device loss with a two-word generation, and
   published-with-notification-failure with exact failed-hook count. Add the
-  input-upload pre-execution fixture with failure category 12, preparation
-  failure disposition, zero proposal records, and zero adapter dispatches. Add the
+  two-participant input-upload pre-execution fixture with addressed execution
+  tag 2/failure category 12 and unaffected execution tag 3/failure category 13
+  plus the failed engine in A, preparation-failure disposition, not-applicable
+  notifications, zero snapshot/proposal/published records, and zero planner,
+  report-hook, or adapter calls. The device-loss preflight fixture uses
+  execution tag 3/failure category 9 and the exact generation for every
+  participant. Add the
   mixed independent-volume fixture in which tick flag bit 0 is set while
   participant A's flag bit 2 is clear and participant B's bit 2 is set. Each
   fixture round-trips to the corresponding Rust disposition, cause,
@@ -344,7 +358,7 @@ Required tests:
     conflict/tick-abort outcomes, prior-feedback reconciliation,
     old-generation feedback quarantine,
     exact low/high-word integer readback parity for every scheduled
-    header/record, all six terminal-feedback golden outcomes,
+    header/record and all documented terminal-feedback golden outcomes,
     restricted-factory per-adapter and aggregate buffer-byte enforcement,
     drop-after-last-use release, terminal-generation teardown/recreation, and
     logical OOM rejection before a backend allocation,
@@ -499,7 +513,17 @@ borrow the same bytes and the GPU shader reads the exact bytes through binding
 new allocation after the tick permit, raw GPU handle, or authority-path
 readback. Then exercise missing required, unknown, duplicate, one-byte-over,
 cancellation, upload failure, and device loss and prove their closed
-fail-before-adapter-execution outcomes.
+fail-before-adapter-execution outcomes. In the mixed two-participant case,
+fail the GPU upload after the CPU and GPU inputs are admitted but before any
+planner call. Assert the upload-failed GPU participant is
+`Skipped(ConsumerInputUpload)`, the CPU participant is
+`NotRun(InputPreflightAborted { failed_engine })`, both are
+`DiscardedByTick(PreparationFailure)` with `NotApplicable` notification, and
+the tick has empty snapshot/proposal/published vectors. No CPU planner,
+`run_tick`, or `on_tick_report` call may occur. The 64-byte golden records use
+execution tags 2 and 3 respectively; the not-run record uses failure tag 13
+and stores the failed engine in A. Repeat with device loss and require tag 3 /
+failure tag 9 plus the exact generation for every participant.
 
 Declare physics before damage through `runs_after`, then reverse the legal
 order and prove Moria has no hard-coded phase. Transfer opaque impact stimuli
@@ -646,7 +670,7 @@ Correctness for the same workload must pass first.
 | P7 scheduled GPU behavior | Two ordered GPU adapters have disjoint filtered exports at one pinned frontier. Each export contains exactly 128 volume records and 256 full 8³ bricks = 131,072 cell records: `64 + 128×112 + 131,072×24 = 3,160,128` logical initialized bytes; aggregate logical export is exactly 6,320,256 bytes and the configured `behavior_gpu_view_bytes` allocation capacity remains 32 MiB. Together they propose exactly 1,024 valid effects with payload totaling <=1 MiB across four volumes; each declares and owns exactly 32 MiB of factory-registered harness state, so the checked descriptor sum and live charge are exactly 64 MiB against the default effective `behavior_gpu_buffer_bytes = 256 MiB`; no CPU adapter participates. | p95 stable-view-export-to-publication <=33 ms, adapter+validation+composition+publication GPU time <=16 ms when timestamps exist, time/export receipts report exactly 6,320,256 initialized/copied view bytes rather than allocation capacity, zero material/proposal readback before publication, bounded prior feedback only after publication, `BehaviorGpuBufferBytes` reports exactly 64 MiB live and no rejection, and every pool/factory-registry byte remains within declared limits |
 | P8 checkpoint path | 8,192 dirty detailed scars (16 MiB raw), checkpoint concurrent with four mutation streams; in-memory durable test store so storage hardware is excluded | GPU-readback-plus-encode throughput >=64 MiB/s, mutation P2 p95 degrades by <=2×, staged bytes stay within config, and semantic restore parity passes |
 | P9 asynchronous WGSL job | 8 MiB inspection packet, 256 structurally valid candidate effects whose 32,768 record bytes plus payload total <=65,472 bytes, 2 extension jobs in flight; effects touch four volumes | p95 packet-capture-to-all-child-admitted <=50 ms, extension GPU work <=16 ms when timestamps exist, candidate + 64-byte diagnostic readback <=64 KiB/job, and zero inspection-packet/material readback to CPU |
-| P10 scheduled CPU/mixed behavior | One CPU adapter followed by one GPU adapter. Each has a 512-byte required current input that changes every tick; neither obtains that input from a predecessor. The CPU view has 16 volumes and 64 full bricks (32,768 cells), scans every record, writes 64 fixed effects, and emits one 64 KiB CPU-to-GPU handoff. The GPU adapter reads its independently uploaded 512-byte input, consumes that handoff, scans an equally sized disjoint view, and writes 64 fixed effects. Run 100 ticks with the default pools and no other workload. | p95 synchronous main-thread CPU planner+callback <=4 ms; p95 total main-world Moria work for the callback update <=8 ms; p95 frontier-to-publication <=50 ms; every tick consumes the exact current input bytes and publishes the expected effects; input/handoff/view allocations stay within config with no growth after warm-up. The qualification receipt separately reports CPU callback time and total frontier-held time. |
+| P10 scheduled CPU/mixed behavior | Create 32 hot volumes, named `V0..V31` in ascending runtime-ID order, each with four full bricks at local cell bounds `[8b,0,0)..[8(b+1),8,8)` for `b=0..3`. The CPU adapter exclusively views `V0..V15`; the following GPU adapter exclusively views `V16..V31`. Thus each view has exactly 16 volumes, 64 bricks, and 32,768 cells and scans every record. For measured tick `t`, byte `j in 0..512` of CPU input is `(t+j) mod 256` and of independent GPU input is `(t+3j) mod 256`; neither input comes from a predecessor. CPU writes all 65,536 handoff bytes as `handoff[k] = cpu_input[k mod 512] XOR floor(k/512)`. GPU validates that complete pattern. Each adapter emits exactly 64 patch-run proposals in volume-major/brick-min-X order with `Correlation::NONE`, the supplied exact revision, and one proposal per brick. Each proposal has one canonical 20-byte run `{start_index=0, length=512, sample=oracle}` covering that full 8³ target. CPU chooses sample `m1` when `cpu_input[0] & 1 == 0`, else `m2`; GPU chooses `m1` when `(gpu_input[0] XOR handoff[0] XOR handoff[1]) & 1 == 0`, else `m2`. Both samples have coverage 255 and flags 0. Initialize each group opposite its tick-1 oracle; both oracles then alternate, so every target changes each tick. Across both adapters this is exactly 128 proposal records (16,384 bytes), 2,560 payload bytes, 65,536 affected cells, 128 affected bricks, 32 affected volumes, and zero directory effects. Use `RejectLater`; disjoint volume sets mean all 128 are admitted with no conflict/replacement. If starting revisions are `r_i`, measured tick `t in 1..=100` must publish exactly `[(V_i, r_i+t); i=0..31]` in runtime-ID order and no other revision. Run with default pools and no other workload on each forced backend family. | p95 synchronous main-thread CPU planner+callback <=4 ms; p95 total main-world Moria work for the callback update <=8 ms; p95 frontier-to-publication <=50 ms; every tick consumes the exact current input/handoff bytes, admits all 128 proposals, produces the exact oracle samples and 32-entry revision vector, and reports the stated record/payload/cell/brick/directory counts; input/handoff/view/proposal/transaction allocations stay within default config with no growth after warm-up. The qualification receipt separately reports CPU callback time and total frontier-held time. |
 
 These floors deliberately span latency, throughput, memory, density, and
 in-flight pressure. Qualification receipts may also publish stronger

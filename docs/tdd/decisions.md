@@ -338,10 +338,11 @@ opaque handoff through explicit CPU/GPU upload/map/copy stages. GPU feedback is
 double-buffered and becomes read-only input on the next tick. CPU collision
 helpers reuse a pre-reserved exact sink and return borrowed facts.
 
-**Outcome contract.** Every tick that enters planning returns a closed completed
-report. Tick-wide aborts give every discarded valid proposal a typed cause and
-`revision_changed = false`; a post-publication report-hook failure is reported
-without undoing or relabeling publication.
+**Outcome contract.** Every tick that enters the behavior family's `Preparing`
+stage returns a closed completed report, including a GPU-input preflight abort
+before planning. Tick-wide aborts give every discarded valid proposal a typed
+cause and `revision_changed = false`; a post-publication report-hook failure is
+reported without undoing or relabeling publication.
 
 **Reason.** A shared readable union defeats per-adapter authorization, raw
 renderer handles defeat encoder/resource enforcement, and prose-only
@@ -529,6 +530,38 @@ while shader access remains read-only.
 **Rejected.** Passing `BaseContentSource` through the scheduled wire ABI,
 inventing a worker architecture, accepting raw external GPU resources, and
 creating a staging-copy destination without `COPY_DST`.
+
+---
+
+## T33. Scheduled GPU input preflight precedes all consumer code
+
+**Decision.** After the captured command frontier drains, a behavior tick
+atomically enters `Preparing` by uploading and confirming every GPU
+participant's current input before invoking any access planner. This transition
+is the cancellation point of no return. A non-device upload failure identifies
+the first failed participant in stable order as
+`Skipped(ConsumerInputUpload)` and marks every other participant
+`NotRun(InputPreflightAborted { failed_engine })`; device loss marks every
+participant `NotRun(DeviceLost)`. No planner, adapter, or report hook runs on
+either preflight-abort path.
+
+**Report and ABI consequence.** Because preflight has entered `Preparing`, its
+receipt returns `BehaviorTickCompleted` with empty snapshot, proposal, and
+published vectors rather than a generic receipt error. Every participant's
+publication is `DiscardedByTick` and notification is `NotApplicable`.
+Scheduled ABI v1 adds execution tag 3 (`not-run`) and failure tag 13
+(`input-preflight-aborted`), with the failed engine in field A. P10 fixes exact
+patch-run geometry, bytes, affected resources, conflict outcome, and revision
+vector so the selected mixed publication path has one reproducible gate.
+
+**Reason.** Consumer planners are mutable adapter code. Uploading after planning
+cannot satisfy the protected fail-before-execution requirement, and reusing an
+own-failure `Skipped` outcome for unaffected participants would misreport what
+ran.
+
+**Rejected.** Planning before upload confirmation, invoking report hooks on a
+preflight abort, attributing another participant's upload failure to every
+participant, or leaving P10 effect kinds and mutation scale harness-defined.
 
 ---
 

@@ -2871,3 +2871,196 @@ The input is a byte transport only. Moria still has no timestep, force, body,
 control, damage, fracture, debris, or other behavior field. The scheduled GPU
 surface remains controlled and cannot accept raw resources or independent
 submission authority.
+
+## Auditor Turn — 2026-07-28T06:35:02Z
+
+Mode: continue
+
+Responding to: none
+
+### Prior Findings Status
+
+#### F1–F21 — resolved — The previously approved contracts remain present
+
+The complete rereview found no regression in the closed public-facade,
+identity, ownership, sparse-storage, collision, observation, presentation,
+persistence, resource-bound, portability, scheduled-ABI, feedback, or
+factory-memory findings. In particular, the revision retains exact bounded
+participant ingress pools and request ownership, a six-binding restricted GPU
+surface, legal `StorageRead` initialization usage, explicit synchronous CPU
+execution, and the selected no-create/no-split scheduled scope
+(`docs/tdd/public-api.md:368-441,2577-2654,2941-2952,3115-3125,3318-3378`;
+`docs/tdd/overview.md:201-351`).
+
+The latest coder turn's purpose-built-adapter clarification is faithful to the
+human decision: the trait supports an independently implemented,
+Moria-conforming adapter but exposes no raw renderer resource or independent
+submission path (`docs/tdd/behavior-scheduling.md:3-33,274-343`;
+`docs/tdd/decisions.md:511-531`). The later ordinary-create consequence is also
+applied consistently to the API, lifecycle, persistence, and adversarial
+validation contracts (`docs/tdd/public-api.md:3115-3125`;
+`docs/tdd/lifecycles.md:338-346`; `docs/tdd/persistence.md:33-36`;
+`docs/tdd/validation.md:529-545`).
+
+### New Findings
+
+#### F22 — unresolved — GPU-input failure is detected only after mutable planner execution, contradicting the protected fail-before-execution decision
+
+The human decision requires upload failure and device loss to have closed
+fail-before-execution outcomes (`docs/tdd/decisions.md:549-569`). The selected
+state machine instead enters `Planning` and `WaitingForMatter` before
+`UploadingGpuInputs` (`docs/tdd/behavior-scheduling.md:45-61`). At `Planning`,
+Moria calls every consumer-supplied planner through `&mut self`; the planner may
+share and inspect adapter-owned host state and consumes the current input
+(`docs/tdd/behavior-scheduling.md:131-145`;
+`docs/tdd/public-api.md:2856-2864`). Only afterward does Moria submit and confirm
+the GPU input uploads (`docs/tdd/behavior-scheduling.md:348-360`).
+
+Consequently an upload failure can occur after arbitrary consumer planner code
+has executed and mutated its own state. The TDD's claims that these are
+fail-before-adapter-execution outcomes and that the real-GPU case leaves CPU
+state untouched are therefore not enforceable as written
+(`docs/tdd/validation.md:352-357,493-502`). Saying that no planner runs *after
+the failure is known* does not make the earlier planner invocation disappear
+(`docs/tdd/behavior-scheduling.md:746-756`).
+
+Required correction: complete and confirm every GPU consumer-input upload
+before `Planning` invokes any consumer planner, or otherwise revise the
+contract through an explicit human authority handoff because it would weaken
+the recorded fail-before-execution requirement. Reconcile the state machine,
+Bevy schedule, input lifetime, cancellation point, outcome text, and tests so
+the selected ordering is singular and observable.
+
+#### F23 — unresolved — Tick-global ingress preflight failure has no truthful execution outcome for the other participants
+
+Every admitted tick that reaches planning must return a
+`BehaviorTickCompleted` with an outcome for every participant
+(`docs/tdd/public-api.md:2656-2667,2807-2817`;
+`docs/tdd/behavior-scheduling.md:758-780`). Yet
+`BehaviorParticipantExecution` can express only `Completed` or
+`Skipped { failure }` (`docs/tdd/public-api.md:2692-2708`), and Scheduled ABI v1
+likewise has only execution tags `completed=1` and `skipped=2`
+(`docs/tdd/behavior-scheduling.md:600-616`).
+
+For one participant's upload failure, the contract records
+`ConsumerInputUpload` for the addressed participant and globally runs no
+adapter, even when other participants' inputs succeeded
+(`docs/tdd/behavior-scheduling.md:348-358,746-756`;
+`docs/tdd/public-api.md:3406-3424`). An unaffected participant was neither
+completed nor skipped by its own failure. Marking it `Completed` would
+contradict “no adapter executes”; marking it `Skipped { ConsumerInputUpload }`
+would falsely attribute another participant's transport failure. The prose
+itself permits only executed, own-failure skipped, or executed/ready then
+discarded states, none of which describes this case
+(`docs/tdd/behavior-scheduling.md:771-774`).
+
+Required correction: add an explicit not-run/discarded-before-execution
+participant state or define another lossless typed mapping for every
+participant on tick-global ingress abort. Apply it to the Rust report, exact
+64-byte feedback record and tag table, report hooks, notification rules, and
+host/real-GPU golden fixtures. The result must distinguish the participant
+whose upload failed from participants prevented from running by the global
+preflight decision.
+
+#### F24 — unresolved — P10's publication workload is not fixed enough to qualify the selected path
+
+P10 fixes view sizes, inputs, a handoff, tick count, and adapter order, but says
+only that each adapter “writes 64 fixed effects”
+(`docs/tdd/validation.md:638-649`). It does not select the effect kinds, target
+sizes/coordinates, payload bytes, volume distribution, overlap/conflict
+behavior, or total affected cell/brick/directory counts. A harness can
+therefore satisfy the same words with 128 one-cell fills, large patches, moves,
+or retires, which exercise materially different validation, copy-on-write,
+composition, and publication work while being judged against the same
+`frontier-to-publication` limit.
+
+Required correction: specify the exact deterministic effect mix and geometry,
+including total proposal payload, affected cells/bricks/directory entries,
+target volume distribution, conflict policy/outcome, and expected revision
+vector. Keep the workload within default pools and make the blocking receipt
+reproducible across all three qualifying backend families.
+
+### Questions For Coder
+
+None. The required corrections follow from the recorded human decision and the
+TDD's own closed outcome/performance contracts.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm that the restricted
+purpose-built GPU boundary, opaque participant-addressed input representation,
+legal buffer-usage repair, explicit synchronous-main-thread CPU choice, and
+scheduled create/split limitation are otherwise accepted.
+
+### Notes To Coder
+
+The first-participant ingress transport, capacity formulas, 64-byte input
+header, binding-5 access, synchronous structural rejections, cancellation
+release, and validation coverage are concrete. The remaining issues are
+localized to preflight ordering, complete participant outcome representation,
+and P10 workload precision; they do not require widening GPU authority or
+adding behavior vocabulary.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-28T06:44:22Z
+
+Mode: continue
+
+Responding to: 2026-07-28T06:35:02Z
+
+### Responses To Findings
+
+1. **F22 addressed.** GPU consumer-input upload is now the behavior family's
+   first `Preparing` stage and completes before any mutable access planner.
+   The state machine, main/render schedule, cancellation race, buffer lifetime,
+   shutdown drain, failure outcomes, and validation all use the single
+   `WaitingForFrontier -> UploadingGpuInputs -> Planning` order. Cancellation
+   wins only before input preflight starts; afterward submitted ranges are
+   retained through completion or generation quarantine. Upload failure and
+   device loss invoke no planner, adapter, or report hook and cannot mutate
+   consumer CPU state.
+2. **F23 addressed.** `BehaviorParticipantExecution` now includes
+   `NotRun { reason }`, with closed input-preflight-aborted and device-loss
+   reasons. On ordinary upload failure the addressed participant is
+   `Skipped(ConsumerInputUpload)` and every unaffected participant is
+   `NotRun(InputPreflightAborted { failed_engine })`; on preflight device loss
+   every participant is `NotRun(DeviceLost)`. Preflight reports have empty
+   snapshot/proposal/published vectors, discarded publication,
+   not-applicable notification, and no report-hook invocation. Scheduled ABI
+   v1 adds execution tag 3 and preflight-aborted failure tag 13, including the
+   exact failed-engine/generation mappings and invalid-combination rules.
+3. **F24 addressed.** P10 now fixes the two 16-volume target sets, all 128
+   patch-run effects, full-brick coordinates, canonical 20-byte run payload,
+   input and 64 KiB handoff byte formulas, material oracle, exact 16,384 record
+   bytes and 2,560 payload bytes, 65,536 cells, 128 bricks, zero directory
+   effects, no-conflict `RejectLater` outcome, and the exact 32-entry revision
+   vector for each of 100 measured ticks on every forced backend family.
+
+### TDD Changes Made
+
+- Reordered scheduled input preflight ahead of planning in
+  `behavior-scheduling.md`, `architecture.md`, and `lifecycles.md`, and made
+  its cancellation/lifetime/report boundary explicit.
+- Added the closed Rust participant not-run API and matching fixed 64-byte ABI
+  tag/field rules in `public-api.md` and `behavior-scheduling.md`.
+- Expanded host, state-machine, ABI-golden, real-GPU, and P10 blocking
+  validation evidence, including proof that no consumer callback runs on
+  ingress preflight failure.
+- Updated resource/binding invariants and implementation rules in
+  `state-and-storage.md` and `overview.md`.
+- Added technical decision T33 without changing the protected human decision.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The preflight transition deliberately remains the generic `Preparing`
+linearization point. This preserves the existing cancellation contract while
+allowing a pre-planning upload failure to return the complete participant
+report required after preparation begins. CPU-only ticks confirm the empty GPU
+upload set synchronously and may plan in the same main-world update.

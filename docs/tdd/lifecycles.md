@@ -294,9 +294,9 @@ owned request
   -> validating complete per-participant consumer input
   -> queued
   -> waiting for captured command frontier
+  -> uploading and confirming every GPU participant input
   -> planning bounded access in declared adapter order
   -> waiting/materializing authorized matter
-  -> uploading and confirming every GPU participant input
   -> exporting per-participant filtered views from one pinned commit frontier
   -> running ordered CPU/GPU adapters
   -> transferring declared bounded opaque handoffs
@@ -312,9 +312,14 @@ view, proposal, collision scratch/calls, handoff host/device/staging/maps,
 transaction, completion, and double-buffered feedback capacity before the
 first planner runs. Unknown, duplicate, unexpected, missing required, or
 over-capacity input rejects synchronously and invokes no planner/adapter.
-Cancellation before `Planning` releases all ingress; upload failure or device
-loss is confirmed before `RunningAdapters`, so no adapter executes with absent
-or partial current input. A CPU adapter is invoked
+The atomic transition from waiting at the frontier to GPU input preflight is
+this family's `Preparing` point of no return. Cancellation that wins before it
+releases all ingress; a later cancellation is too late and submitted ranges
+remain owned through completion. Upload failure or device loss is confirmed
+before `Planning`, so no consumer planner, adapter, or report hook executes
+with absent or partial current input. The upload-failed participant and every
+participant prevented by the global abort receive distinct execution outcomes.
+A CPU adapter is invoked
 directly with the mapped borrowed stable view; it never enters the query
 lifecycle. A GPU adapter encodes against the exported read-only view on the
 renderer-owned command stream; validation, composition, preparation, and
@@ -461,7 +466,7 @@ count (default 1).
 | Device loss, volatile dirty scars | World | UnrecoverableDirtyState | Terminal, no false rollback |
 | Scheduled adapter/transition failure before publication | Behavior participant/tick | Skip or typed `NoPublication` abort per declared policy | No invalid participant effect; abort publishes no behavior effect |
 | Scheduled consumer input missing/unknown/duplicate/oversized | Behavior request | Synchronous `SubmitError::Invalid` with exact violation and unchanged request | No tick ID, planner, upload, or adapter execution |
-| Scheduled consumer-input upload failure/device loss | Behavior participant/tick | Tick-global `NoPublication(PreparationFailure)` with `ConsumerInputUpload`, or typed device-loss no-publication | No adapter executes and no behavior effect publishes |
+| Scheduled consumer-input upload failure/device loss | Behavior participant/tick | Tick-global `NoPublication(PreparationFailure)` with the addressed participant `Skipped(ConsumerInputUpload)` and all others `NotRun(InputPreflightAborted)`, or typed device-loss no-publication with all `NotRun(DeviceLost)` | Empty snapshot/proposal/publication vectors; no planner, adapter, or report hook executes and no behavior effect publishes |
 | Scheduled proposal conflict | Proposal/tick | Whole proposal rejected/replaced or tick failed | Never partial proposal application |
 | Scheduled report-hook failure after publication | Behavior notification | `PublishedWithNotificationFailure` | Already published effects and receipts remain valid |
 | External shader failure | Asynchronous extension request | Extension error | Only earlier ordinary commits remain |

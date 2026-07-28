@@ -101,10 +101,12 @@ for an arbitrary engine's raw device/resources or command/submission model.
     interleave before behavior publication, and adapter ordering never exposes
     an earlier proposal as committed matter to a later adapter.
 14. Every scheduled consumer input is opaque, participant-addressed, immutable,
-    and fully record/byte/upload-reserved before planning. Missing required,
+    and fully record/byte/upload-reserved before planning. Every GPU upload is
+    also confirmed before any consumer planner is invoked. Missing required,
     unknown, duplicate, oversized, cancelled, upload-failed, and device-lost
-    ingress never executes an affected adapter or becomes an implicit empty
-    success.
+    ingress never executes consumer code or becomes an implicit empty success;
+    an admitted preflight abort truthfully distinguishes its failed participant
+    from every participant that was not run.
 
 ## Selected implementation baseline
 
@@ -332,6 +334,11 @@ contract tests remain in the ordinary suite.
   while the tick frontier is held. Do not imply worker execution, preemption,
   or an adapter latency guarantee; P10 is only the fixed CPU/mixed feasibility
   gate.
+- Complete and confirm all scheduled GPU consumer-input uploads before invoking
+  any behavior access planner. Input preflight is the behavior family's
+  `Preparing` point of no return. A preflight report must use the closed
+  `Skipped` versus `NotRun` participant mapping and exact ABI tags; do not call
+  consumer report hooks on that fail-before-execution path.
 - New dependencies require a short justification in the commit message and
   must use default features only when each default is required. Keep
   `Cargo.lock` committed.
