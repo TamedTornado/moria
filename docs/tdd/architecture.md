@@ -1,0 +1,503 @@
+# Architecture and Ownership
+
+## Component model
+
+Moria has a control plane and a render/compute plane. They communicate through
+bounded, generation-tagged queues. Neither plane is an alternate source of
+material truth.
+
+```text
+consumer threads / Bevy main world
+        |
+        | owned commands, queries, interests, behavior ticks + participant inputs,
+        | checkpoint requests
+        v
+control plane: facade + admission + lifecycle + identities + receipts
+        |                                      ^
+        | bounded prepared work                | bounded completion metadata
+        v                                      |
+Bevy RenderApp / Moria render resources
+        |
+        +-- sparse authority: page table + brick/scar pools + revisions
+        +-- collision/query compute
+        +-- stable behavior-view exports + proposal validation/publication
+        +-- source-and-children extraction and placement-stream publication
+        +-- terminal CPU-egress handoff staging
+        +-- presentation derivation
+        +-- staging/readback pool
+        +-- asynchronous GPU inspection/effect jobs
+        |
+        v
+renderer-owned RenderDevice and RenderQueue
+```
+
+Base-content workers and checkpoint-store workers are subordinate to the
+control plane. They exchange bounded brick batches or chunk blobs; they cannot
+publish truth.
+
+## Module ownership
+
+### `identity`
+
+Owns opaque generational runtime IDs, stable UUID wrappers, monotonic operation
+IDs, and stale-handle validation. It depends only on serialization-free core
+types.
+
+### `material`
+
+Owns `MaterialKey`, runtime `MaterialId`, `MaterialSample`,
+`MaterialDefinition`, occupancy rules, and presentation descriptors. It does
+not own behavioral fields.
+
+### `config`
+
+Owns `MoriaConfig`, validated resource limits, backend capability
+requirements, and overload policies. Validation returns all detected
+configuration errors in deterministic field order.
+
+### `content`
+
+Owns the `BaseContentSource` port, content requests, the permit-backed
+exact-length output sink, reconstruction lineage/fingerprint, base-brick
+validation, the bounded worker pool, and the atomic
+callback-count/response-byte permit. It invokes consumer code only after both
+resources and the complete Moria-owned sink are reserved; consumer code can
+only borrow its immutable descriptor, copy or borrow fixed-size values into
+that sink, and return a fixed inline error record. No variable owned result,
+descriptor, or diagnostic allocation crosses the port. Consumer algorithms
+live behind this port.
+
+### `volume`
+
+Owns volume registration, finite local domain, rigid placement, static/dynamic
+mode, committed revision metadata, and lifecycle summaries. It does not own
+motion policy.
+
+### `interest`
+
+Owns interest leases, requested capabilities, priority, request coalescing, and
+retirement eligibility. Camera entities have no special status.
+
+### `storage`
+
+Owns logical brick keys, page entries, version-chain rules, physical slot
+allocation, dirty/scar metadata, occupancy summaries, snapshot pins, and
+reclamation. It has no Bevy ECS or public consumer types beyond deliberately
+exported value objects.
+
+### `command`
+
+Owns permits, validation, command payloads, per-volume FIFO ordering, receipts,
+cancellation state, prepared mutation transactions, and terminal outcomes.
+Only this module can request a material or placement commit.
+
+### `behavior`
+
+Owns builder-time CPU/GPU adapter registration, the validated ordering DAG,
+tick frontiers, bounded opaque consumer ingress, access planning, stable-view
+pins and exports, exact-capacity
+CPU/GPU proposal sinks, whole-proposal conflict resolution, participant/tick
+reports, and adapter lifecycle notifications. It builds transactions through
+`command` and `storage`; it cannot publish a revision itself. Adapter-owned
+state remains behind adapter traits and is never a Moria resource.
+It also owns generic component-extraction reservations, placement-stream
+records, and opaque egress receipts. It never owns component significance,
+activity-region schemas, fidelity classes, event schemas, or simulation state.
+
+### `query`
+
+Owns bounded query descriptors, permits, snapshot acquisition, result codecs,
+partial-result policy, public contact/result value types, and query receipts.
+It translates public collision-bearing queries into private collision-kernel
+plans and encodes the returned kernel facts; it never calls presentation.
+
+### `collision`
+
+Is a lower-level service consumed by `query`. It owns exact v1 occupancy
+predicates, broad-phase brick traversal, private shape/trace/sweep plans, and
+private kernel facts. It depends on `storage`, `material`, `volume`, and shared
+coordinate values, but never imports `query`, its public descriptors, partial
+policy, result codecs, or receipts. It produces facts, not public responses or
+behavior.
+
+### `observation`
+
+Owns filtered subscriber cursors, the bounded world observation ring, explicit
+gaps, resnapshot coordination, and the fixed append-time spatial filter
+envelope retained with each fact. It never reconstructs historical filtering
+geometry from current directory state. An observation records a committed fact
+only.
+
+### `presentation`
+
+Owns surface and dressing derivation jobs, derived-resource budgets, source
+revision tags, render entity installation, status, and failure/retry. It reads
+committed matter and cannot alter it.
+
+### `persistence`
+
+Owns checkpoint frontiers, scar chunk encoding/decoding, integrity validation,
+the `CheckpointStore` port, restore, and dirty coverage. It does not serialize
+presentation or consumer behavior state.
+
+### `telemetry`
+
+Owns public aggregate snapshots and machine-readable evidence records.
+Telemetry reads counters and summaries; it exposes no storage handle.
+
+### `gpu`
+
+Owns shader layouts, device-generation resources, dispatch encoding, staging
+pools, validation error scopes, completion callbacks, scheduled
+per-participant behavior view/proposal/handoff/prior-feedback buffers, the
+restricted behavior resource factory and its aggregate live-buffer-byte
+semaphore, asynchronous extension packets, and layout assertions. It is the
+only module allowed to turn storage transactions into GPU work. Factory bytes
+remain charged through registered dependencies and last submission use;
+device-loss teardown returns the terminal generation's permits before
+replacement state creation.
+It also owns Scheduled ABI v2 binding-6 identity maps, component-transfer and
+validation scratch, source-and-children directory preparation, placement-stream
+compaction, and terminal CPU-egress edges on the existing handoff transport.
+
+### `bevy`
+
+Owns `MoriaPlugin`, main-world resources/messages, extraction, render-world
+resources, schedule registration, startup/recovery, and render entity
+installation. It is wiring, not domain authority.
+
+## Bevy integration and schedule order
+
+`MoriaPlugin` requires Bevy's render plugin. Its build step installs control
+plane resources in the main world and a render sub-app plugin in `RenderApp`.
+If `RenderApp` is missing, startup fails with
+`OperationErrorKind::Startup(StartupFailure { stage:
+RendererLookup, causes: [RendererUnavailable] })`; simulation-only headless
+apps can use the host oracle/test support but cannot claim a running Moria
+world.
+
+Device-bound layouts, pipelines, pools, and fallback diagnostic assets are
+created in `RenderStartup`. Every resource carries a monotonically increasing
+`DeviceGeneration`. Recovery reruns startup and invalidates all prior handles.
+
+Main-world order:
+
+1. `First`: receive worker/store completions and renderer completion metadata.
+2. `PreUpdate`: update receipts, emit observations, and apply lifecycle
+   transitions proven by completions.
+3. `Update`: consumer systems may reserve/submit/cancel work, update interests,
+   and request a behavior tick carrying per-participant opaque inputs.
+4. `PostUpdate`: activate each already input-validated behavior tick's
+   admission-captured ordinary-command frontier and freeze its GPU-input
+   preflight batch. Only after renderer completion for the whole batch is
+   observed in a later update may this stage run host-side registration
+   planners with borrowed current input and freeze their bounded view plans.
+   It also freezes other bounded extraction batches and updates presentation
+   entities from already completed artifacts.
+5. `Last`: snapshot telemetry and advance shutdown coordination.
+
+Render-world order:
+
+1. `ExtractSchedule`: copy only frozen descriptors, payload ranges, interest
+   deltas, and IDs. It never copies resident volume content.
+2. `RenderSystems::PrepareResources`: allocate or reserve slots/staging,
+   materialize validated base batches, prepare copy-on-write transactions, and
+   construct pinned behavior-view exports.
+3. `RenderSystems::Prepare`: build query, collision, scheduled behavior,
+   presentation, and asynchronous extension dispatch descriptors.
+4. Root `RenderGraph`: execute camera-independent Moria compute in explicit
+   order:
+   `materialize -> prepare_mutation -> validate_mutation -> publish_revision
+   -> behavior_upload_consumer_inputs`; after that upload submission is
+   confirmed and main-world planning completes, a later submission runs
+   `behavior_export_participants
+   -> ordered_gpu_behavior_and_handoffs
+   -> behavior_validate_compose
+   -> behavior_validate_copy_egress
+   -> behavior_prepare_component_extraction_and_placement
+   -> behavior_publish -> query/collision -> async_extension_packet
+   -> presentation`.
+5. Renderer cleanup: register queue-completion callbacks, map submitted
+   readbacks asynchronously, and retire resources whose last submission is
+   complete.
+
+A behavior tick containing GPU consumer-input uploads or alternating CPU/GPU
+batches spans multiple Bevy updates and renderer submissions whenever any GPU
+input exists. The upload submission and completion precede every consumer
+planner; a completion callback promotes the tick for planning during the next
+main-world update. The root graph then runs only the currently ready
+GPU batch, a GPU-to-CPU handoff completes through renderer cleanup and the next
+main-world `First`/`PreUpdate`, and a later CPU-to-GPU handoff is frozen again
+in `PostUpdate`/`ExtractSchedule`. The pinned frontier and post-frontier command
+barrier remain held across those updates; Moria never blocks a render schedule
+waiting for an upload, map, or CPU callback.
+
+Work that does not fit the extraction batch remains queued; it is not silently
+dropped. `extraction_records` and `extraction_bytes` are the exact per-frame
+freeze limits. The byte limit covers owned command/query descriptors and
+payload ranges, behavior input/plan/transition/proposal records, asynchronous
+extension job ranges, content batches, and completion metadata;
+it never includes resident volume data. Both current/high-water counts,
+deferred records/bytes, oldest deferred operation, and extraction-frame lag are
+telemetry. Configuration must fit one maximum enabled patch, behavior
+transition record, or asynchronous extension input packet plus inline state,
+while larger queue contents drain across later frames.
+
+Before any consumer planner or adapter executes, every GPU participant input
+is copied from its accepted exact host slice through a pre-reserved
+staging/device range, validated, submitted in stable participant order, and
+confirmed complete. Upload failure produces tick-global
+`NoPublication(PreparationFailure)` with a closed participant failure for the
+addressed participant plus explicit not-run outcomes for unaffected
+participants. Device loss aborts with every participant not run. Neither case
+invokes consumer code or turns missing bytes into an empty successful input.
+
+CPU behavior adapters run synchronously on the Bevy main thread from the
+main-world coordinator only after their
+filtered stable-view staging map completes. This callback is a scheduled tick
+stage, not an ordinary query/receipt cycle. Consecutive GPU adapters remain in
+the render-world command stream and bind only their own filtered export.
+A declared CPU/GPU handoff edge uses Moria-owned exact host/device/staging
+slots: CPU-to-GPU performs an ordered upload, GPU-to-CPU performs completion,
+copy, map, decode, view-drop, and unmap before the successor callback.
+Ordering-only edges allocate no payload. GPU-only chains do not read material
+or proposals back to CPU before publication.
+Component extraction receives final candidate child IDs in a read-only GPU
+mapping before adapter execution and publishes one source-and-children
+directory-generation transaction without CPU authority-path readback.
+Placement streams fully prevalidate compacted GPU records and publish through
+existing per-volume revision gates. Optional CPU egress reuses the GPU-to-CPU
+handoff map path after its ordered GPU copy; effect publication does not wait
+for CPU decoding.
+The v2 coordinator does not offload or preempt CPU planners/adapters. It holds
+the pinned frontier and post-frontier barrier until they return, so a slow
+consumer callback stalls the main-world update. P10 qualifies the fixed
+CPU/mixed proof workload; arbitrary adapter latency remains the consumer's
+responsibility.
+Details and tick serialization are normative in
+[behavior-scheduling.md](behavior-scheduling.md) and
+[adapter-substrate-contracts.md](adapter-substrate-contracts.md).
+
+For asynchronous GPU `ObservationDeltas`, the main-world observation owner
+freezes the subscriber's accepted filter, closed empty-or-retained frontier,
+status, cursor, and matching fact-plus-envelope records as one extraction
+record. The CPU subscriber cursor is neither read nor written. The render
+world only encodes that immutable bounded capture into ABI v1 and cannot
+reinterpret an empty frontier, gap, unsupported fact, or maximum-record
+boundary as another state.
+
+## Threading and progress
+
+`MoriaHandle`, world handles, permits, and receipts are `Send + Sync`. Methods
+never hold a Moria lock while invoking consumer code. Per-world mutable control
+state is owned by the Bevy main thread; cross-thread submissions enter bounded
+MPMC queues.
+
+Base content and persistence each use a dedicated bounded native worker pool.
+The default is two content workers and one persistence worker; configuration
+allows 1–8 each. Worker callbacks receive cancellation tokens and owned data.
+A callback panic is caught at the worker boundary and becomes
+`ContentErrorKind::Panicked` with a fixed inline diagnostic or
+`PersistenceError::Panicked`; the worker slot is replaced.
+
+Progress requires:
+
+- the Bevy app schedules to keep updating;
+- the render app to submit and poll the renderer device;
+- consumer executors to poll receipt futures only for wakeup delivery, not to
+  drive GPU work.
+
+`Receipt::try_status` is available for consumers that do not use async.
+Blocking waits are deliberately absent from the public API.
+
+## Dependency policy
+
+The domain dependency direction is acyclic:
+
+```text
+identity/material/config
+        -> content/volume
+        -> storage
+             |-> collision -> query
+             |-> command
+             `-> interest
+        storage/collision/command -> behavior
+        query/command/interest/behavior
+             -> presentation/persistence/observation/telemetry
+        -> bevy
+```
+
+`query` is the only public collision-query orchestrator. It converts public
+shapes and result budgets to collision plans; collision returns private facts
+that query turns into `ContactFact` values. `command` and `interest` do not
+depend on query, and collision does not consume query descriptors. `behavior`
+uses the private collision kernel against its pinned exported view and uses
+`command` transaction builders, but neither lower layer imports adapter
+traits. The `gpu` module is a device implementation leaf used behind
+storage/collision/behavior/presentation dispatch traits; it may import their
+POD plans but none of those domain modules imports Bevy render types.
+
+The package pins Bevy `=0.19.0`. It uses Bevy renderer wrappers and the
+renderer-compatible wgpu version. Adding an independent wgpu version or
+requesting an adapter/device in the Bevy path is forbidden.
+
+Expected narrow dependencies are:
+
+- `bevy` with explicitly selected application/render features;
+- `bytemuck` for checked host/WGSL layouts;
+- `uuid` for durable keys;
+- `thiserror` for machine/actionable error types;
+- `futures-channel`/`futures-core` for runtime-neutral receipts;
+- `crossbeam-channel` for bounded ingress and worker queues;
+- `blake3` for checkpoint integrity and reconstruction fingerprints;
+- `crc32fast` for quick per-record corruption detection;
+- `bitflags` for closed capability/flag sets;
+- `serde` only for telemetry/evidence JSON, never as the persistence layout;
+- `tracing` for diagnostics.
+
+No dependency may introduce gameplay, a physics or damage model, generation,
+or an async runtime into the facade. Independently implemented behavior
+adapters depend on Moria; Moria never depends on their engine crates.
+
+## Startup ownership and validation
+
+World construction has two phases.
+
+`MoriaBuilder::validate` is host-only and checks:
+
+- all limits are nonzero and internally consistent;
+- required world/material/volume/style debug names are 1..=96 UTF-8 bytes;
+  retained volume names and content-lineage bytes canonicalize to exact boxes;
+- the required consumer-supplied `WorldDefinition` has a nonnil stable key,
+  and world/material/volume stable keys are unique in their scopes;
+- material zero is not consumer-registerable;
+- volume domains and coordinate conversions cannot overflow;
+- placements are finite and rigid;
+- every externally registered volume has a content source and exact
+  reconstruction fingerprint; restored derived-extraction children instead have
+  validated persisted derived bases and minimal provenance;
+- static/dynamic mode matches allowed placement command policy;
+- persistence is configured if dirty-state retirement is enabled;
+- observation fact/payload and staging limits can hold one maximum legal
+  record/readback;
+- aggregate material metadata bytes cover the per-registration maximum;
+- content batching and response bytes can hold one maximum detailed source
+  batch;
+- live-volume and lifetime volume-record limits cover every initial
+  registration plus declared component-extraction child reservations, with
+  lifetime records no smaller than live records;
+- extraction can freeze one maximum enabled operation;
+- presentation artifact/dirty/mesh/instance pools can represent their stated
+  fixed maximum artifact, and dirty records reserve one marker for every live
+  volume in addition to the job/exact-key partition;
+- behavior registration/order/per-participant-view/collision/handoff/proposal/
+  double-feedback/component-extraction/placement/egress limits can hold every
+  builder adapter and one declared maximum active tick;
+- behavior consumer-input record/host byte limits cover every input-capable
+  participant maximum, and GPU ingress bytes cover every GPU input header,
+  aligned payload, and staging/device transport;
+- component-extraction child reservations fit live/lifetime volume records,
+  page/brick/scar pools, and binding-6 bytes; placement maxima fit proposal and
+  per-volume publication capacity; enabled egress fits handoff maps/bytes plus
+  egress receipt/record limits;
+- asynchronous extension registration count/bytes can hold every
+  startup/runtime descriptor within its per-descriptor WGSL and entry-point
+  caps.
+
+`ValidatedMoria::into_bevy` returns the plugin, configured facade handles, and
+typed startup receipt. Installing that plugin waits for GPU capability
+negotiation, shader/pipeline creation, and initial volume-directory publication
+or the selected restore. The world becomes `Ready` only after those stages
+complete. The startup output contains the stable world identity, adapter
+report, and every requested/effective config value. A failure tears down every
+partially allocated resource and returns the complete scoped
+`StartupFailure`. Renderer lookup, adapter qualification, device resources,
+persistence open, restore read, and directory publication are distinct stages.
+Adapter qualification aggregates every missing feature and unmet numeric
+minimum in deterministic public records rather than returning the first error.
+
+Required GPU capabilities are compute shaders, storage buffers, buffer-to-
+buffer copies, at least four writable storage bindings for mutation, and the
+configured binding/allocation limits. Enabling a GPU behavior participant also
+requires at least seven storage-buffer bindings in one shader stage for the
+fixed Scheduled ABI v2 group-0 contract. Optional timestamps and indirect
+dispatch are enabled only when reported and have semantic fallbacks.
+Adapter-negotiated capacities use `effective = min(desired, adapter_legal)`;
+startup fails instead of clamping below the consumer's declared minimum or one
+maximum legal enabled operation.
+
+## Portability strategy
+
+Capabilities and limits are queried and recorded; backend labels never stand
+in for them. All buffers obey:
+
+- allocation size `<= max_buffer_size`;
+- each binding range `<= max_storage_buffer_binding_size`;
+- dynamic offsets aligned to `min_storage_buffer_offset_alignment`;
+- WGSL member alignment independently checked by Rust layout tests.
+
+Pools larger than one storage binding are segmented. A page entry stores a
+segment plus local slot; no shader binds an out-of-range slice. Readback always
+copies from `STORAGE | COPY_SRC` working buffers to an unmapped
+`MAP_READ | COPY_DST` staging buffer. Mapped views are dropped before unmap,
+and a mapped buffer is never submitted for GPU use.
+
+The first-class matrix is:
+
+| OS | Backend family | Correctness claim |
+| --- | --- | --- |
+| Linux x86_64 | Vulkan | Required physical-adapter qualification |
+| macOS arm64 | Metal | Required physical-adapter qualification |
+| Windows x86_64 | DX12 | Required physical-adapter qualification |
+
+Software adapters may run correctness smoke tests only and are labeled
+fallback. They cannot qualify performance. An adapter below the minimum
+configuration returns a deterministic `UnsupportedCapabilities` report listing
+every unmet limit/feature and the maximum usable configuration where known.
+
+## Failure containment
+
+- A content failure affects the requested region and dependent operations; it
+  does not fabricate empty matter.
+- A command preparation or validation failure releases unreferenced slots and
+  leaves the revision gate unchanged.
+- A presentation failure affects only its artifact/status.
+- A readback decode failure fails that query/checkpoint and quarantines the
+  staging buffer.
+- Queue validation errors are captured into the owning operation. Uncaptured
+  device errors transition the world to `DeviceFailed`.
+- Out-of-memory rejects or fails the operation that requested the allocation.
+  Existing committed truth remains valid unless Bevy reports device loss.
+- Device loss makes the entire old GPU truth generation unavailable. Recovery
+  rejects new admissions, fails submitted operations with `DeviceLost`,
+  requeues only work that had not reached submission, and rebuilds from
+  registered base plus retained/durable scars. It emits readiness facts for the
+  new generation only if every committed revision is reconstructable;
+  otherwise the world terminates with `UnrecoverableDirtyState`.
+
+## Security and trust boundary
+
+Moria is an in-process library, not a hostile-code sandbox. It still validates
+all public sizes, coordinates, material IDs, byte counts, shader packet
+descriptors, checkpoint offsets, checksums, and decoded enum tags before
+allocation or dispatch.
+
+Consumer asynchronous GPU extension WGSL is treated as untrusted input to the renderer:
+Moria validates it with Naga, accepts only the fixed bind schema and one compute
+entry point, prohibits internal buffer bindings, caps workgroups and output
+records, and captures pipeline/dispatch errors. This limits accidental
+corruption; it does not claim process isolation from malicious native code.
+
+Scheduled GPU adapters are ordinary trusted in-process Rust integrations, not
+shader sandboxes. Their authority is still structurally limited: Moria owns
+submission and the resource registry and exposes only a participant-filtered
+read-only export, write-only proposal/outgoing-handoff targets, read-only
+incoming handoff/prior feedback/current consumer ingress, a restricted opaque
+resource factory, and a counted encoder wrapper. This supports a purpose-built
+or substantially adapted Moria-conforming integration; it does not import an
+arbitrary pre-existing engine's raw resources or command/submission model.
+A malicious native application can misuse its shared
+process/device through unrelated Bevy access, so this is not a security
+boundary; qualification must still prove that the scheduled public surface
+cannot yield raw resources, another participant's export, authoritative
+storage, or a publication path around Moria's validation gate.
