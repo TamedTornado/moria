@@ -469,6 +469,93 @@ authority and design pressure, not prose volume by itself. A legitimately
 complex public contract may be long; an agent-selected global mechanism must
 still prove that its complexity is necessary.
 
+### Simplicity-intervention eval
+
+On 2026-07-28, the proposed simplicity control was evaluated as a behavioral
+experiment rather than accepted from a single plausible-looking response. The
+positive case was the complete overengineered amendment from baseline
+`2ab6796` to candidate `dab1a1a`: 1,923 insertions and 166 deletions across
+eleven TDD files. Its authority was limited to three capabilities:
+
+- atomic GPU-resident fracture into independently moving child volumes;
+- CPU-authored multi-fidelity activity regions without Moria-owned physics or
+  damage policy; and
+- bounded opaque asynchronous GPU-to-CPU egress.
+
+The negative control was the full TDD at baseline `f7e5917` and candidate
+`2792aee`. Its delta contained only two necessary review corrections: exact
+P10 oracle material IDs and shutdown-cancellation wording aligned with the
+existing `Preparing` boundary. It was deliberately already sufficient and
+minimal. A valid simplicity intervention therefore had to leave it
+substantively unchanged.
+
+Three interventions were compared:
+
+1. a fixed mechanical question to the drafter: “Are you sure this is the
+   simplest design that satisfies the requirements?”;
+2. an independent PM verdict followed by a separate drafting revision; and
+3. an independent PM challenge naming specific suspect mechanisms and asking
+   whether each was the simplest sufficient design, followed by a separate
+   drafting revision.
+
+Every lane ended with the same independent blind evaluation. A positive-case
+run passed only when the result was materially simpler, retained all three
+authorized capabilities, and remained internally coherent and implementable.
+A control run passed only when the two necessary corrections survived without
+material rewriting. A completed DAG was not itself counted as a successful
+behavioral result.
+
+The measured batch contained five positive repetitions per intervention and
+two control repetitions per intervention, for 21 runs total. The drafting
+role used Grok 4.5 at high reasoning; independent review and blind evaluation
+used Codex at high reasoning.
+
+| Intervention | Positive result | Control result | Interpretation |
+| --- | ---: | ---: | --- |
+| Mechanical question | 5/5 passed | 2/2 preserved | Consistently removed excess architecture without damaging the minimal control. |
+| Independent PM verdict | 1/5 passed | 2/2 preserved | PM advice usually identified real excess, but four drafting handoffs produced incomplete or incoherent architectural rewrites. |
+| Targeted PM challenge | 1/5 passed | 2/2 preserved | Specific challenges improved diagnosis but did not make the separate revision handoff reliable. |
+
+All 21 measured DAGs completed without an infrastructure or scheduler failure.
+The two reviewer-based interventions did not fail because the PM preferred the
+large design. Their reviews consistently challenged the global world-directory
+epoch, cross-volume placement atomicity, normative proof-adapter algorithms,
+parallel egress transport, and derived-key namespace. The dominant failure was
+the next turn: the drafter removed those concepts only partially, leaving
+normative references that contradicted the replacement design or weakening
+atomic publication, boundedness, lifecycle, or pre-dispatch identity
+contracts.
+
+The mechanical intervention independently converged on the same smaller
+boundary in all five positive runs: retain extraction, opaque activity-region
+input plus placement output, and bounded egress; reuse existing
+directory-generation, per-volume authority, persistence, staging, and receipt
+primitives; and remove Moria-owned behavior algorithms and parallel global
+infrastructure. This is evidence that the short question is a useful
+complexity-ratchet interrupt for this case. It is not a claim that mathematical
+minimality can be proven. The operative engineering rule is that requirements
+and correctness are fixed, and among designs that satisfy them, less machinery
+and a smaller ownership surface are preferred.
+
+Measured run IDs:
+
+| Intervention | Positive runs | Control runs |
+| --- | --- | --- |
+| Mechanical question | `dfdbaf2a-7000-40bb-b13a-10e66697419f`, `8743fd3d-2a8c-469d-a6ca-97037d4d5b3f`, `8a9124d3-b731-43a8-b4e3-1fd1dee0782a`, `7b0a1a88-4916-4de1-a9cf-94a0c04fc9de`, `a8cd1953-9e8b-451c-bb07-6a388986614a` | `6f906cfc-16d9-4979-8dcf-81296b8710de`, `48a79a5f-354f-4a68-886c-caecb90fe3f9` |
+| Independent PM verdict | `98c01d8c-6294-458a-b3af-b5d2ee5e30b4`, `afcf42a4-9b8e-4bf7-80ea-b12b0fd86fa2`, `bfbcba8e-6bb0-43df-9091-e12b18cda9be`, `9f22258c-a0d0-4dba-b14b-beca6e2b2204`, `71c480cc-63bc-45c7-89b0-d20dcb9a26cb` | `f4f47699-4852-43fd-a573-9bbdf51b281e`, `f78a9ba1-2a55-444f-9e50-0f6e7875c394` |
+| Targeted PM challenge | `aeff2e0d-ed66-44a1-91a8-c2d17176d52d`, `d9445243-47b9-4556-8e2e-d0adc9907f54`, `31a6c53c-0c68-4f09-a51d-c7434f54b1f5`, `0cd44b23-7446-4b1e-94a1-13e2334a777c`, `949b27f0-f948-4640-b7b9-2f89a556a8c7` | `df9b5222-c3d2-429b-b13d-0fc79f8244e8`, `f1bbdedd-7978-4913-b28d-756e3c051396` |
+
+The experiment also exposed two Bro operational findings. First, the initial
+reviewer lanes treated a valid `changes_requested` outcome as attempt
+exhaustion because their reviewer node had `max_attempts: 1`; those runs were
+parked, the node contract was corrected to give review outcomes an unbounded
+outcome budget, and all reviewer measurements above were started fresh.
+Second, the Linux host reported 20 CPU cores and 128 GB RAM, but Bro's global
+agent limit remained hard-coded at ten. The measured batch saturated that
+limit while healthy work remained queued. Capacity must become an explicit
+host/operator setting rather than an embedded constant; that repair was not
+mixed into the behavioral experiment.
+
 ## Acceptance still open
 
 The following claims remain open and must not be inferred from the evidence
