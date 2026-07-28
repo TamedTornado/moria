@@ -1082,23 +1082,30 @@ admitted ordinary root operation fails
 `OperationErrorKind::DirectoryEpochExhausted` with
 `Retryability::Never` and `revision_changed = false`. Queries,
 observations, current-root checkpoints, non-root matter/single-volume
-placement operations, interest withdrawal, and shutdown remain callable.
+placement operations, interest declaration/update/withdrawal, and shutdown
+remain callable.
 Scheduled ticks remain callable for non-root effects; selecting a root effect
 produces the typed tick-wide exhaustion outcome defined below.
+
+Directory closure does not freeze residency. A cold dependency reached through
+an interest lease, a `ReadinessPolicy::Materialize` query, a matter command, a
+non-root behavior tick, or an Extension ABI v1 job follows the ordinary bounded
+region lifecycle and ordinary content/resource failures. None of those
+materialization paths allocates a `WorldDirectoryEpoch`.
 
 The admission matrix for this substate is normative:
 
 | Facade family | `DirectoryEpochExhausted` behavior |
 | --- | --- |
 | `try_reserve_*` / `reserve_*` for commands, queries, checkpoints, behavior ticks, extensions, and effect batches | Accepted subject to the ordinary queue/byte/capability limits. Permits are request-agnostic; structural root-effect rejection occurs at submission or candidate admission. |
-| material registry reads, `material`, `submit_query`, `request_checkpoint`, `telemetry` | Accepted against the current immutable root. |
-| `submit_matter` | Accepted; it publishes one existing volume authority version and consumes no directory epoch. |
+| material registry reads, `material`, `submit_query`, `request_checkpoint`, `telemetry` | Accepted against the current immutable root. Query `Pending`/`Materialize` readiness policies retain their ordinary meaning; `Materialize` may create bounded internal interest for cold bricks. |
+| `submit_matter` | Accepted; it may materialize cold target bricks under the ordinary command lifecycle, publishes one existing volume authority version, and consumes no directory epoch. |
 | `submit_volume(Move)` | Accepted for an existing dynamic volume; it is the ordinary single-volume authority-version path and consumes no directory epoch. |
 | `submit_volume(Create | Retire)` | Rejected synchronously as `SubmitError::WorldNotAccepting { state: DirectoryEpochExhausted, .. }`; the command and permit are returned/released normally. |
-| `request_behavior_tick` | Accepted. A tick containing no selected root proposal proceeds; any selected placement stream or component extraction completes with the closed tick-wide `DirectoryEpochExhausted` no-publication outcome. |
-| `submit_gpu_extension` / effect-batch child admission | Accepted. Extension ABI v1 exposes only fill, patch-runs, and ordinary single-volume move candidates, so every legal child is non-root-changing and follows the ordinary all-or-none child-admission contract. |
+| `request_behavior_tick` | Accepted. Cold view dependencies follow ordinary bounded interest/materialization. A tick containing no selected root proposal proceeds; any selected placement stream or component extraction completes with the closed tick-wide `DirectoryEpochExhausted` no-publication outcome. |
+| `submit_gpu_extension` / effect-batch child admission | Accepted. Cold inspection/effect dependencies follow ordinary bounded materialization. Extension ABI v1 exposes only fill, patch-runs, and ordinary single-volume move candidates, so every legal child is non-root-changing and follows the ordinary all-or-none child-admission contract. |
 | `subscribe`, subscriber polling/snapshot/resume, existing interest state/withdrawal | Accepted. |
-| `declare_interest`, `InterestLease::update` | Rejected with `InterestError::WorldNotAccepting(DirectoryEpochExhausted)`; dropping a lease still withdraws it. This preserves the already admitted residency set without opening new lifecycle work after allocator closure. |
+| `declare_interest`, `InterestLease::update` | Accepted under the ordinary validation, interest-record/brick bounds, pressure, and atomic replacement rules. Either operation may request cold regions; dropping the last lease still withdraws it. |
 | `register_gpu_extension` | Accepted subject to the ordinary capability and registry limits; registration itself does not publish a directory root. |
 | `shutdown` / `shutdown_receipt` | Accepted under the ordinary once-only shutdown contract. |
 

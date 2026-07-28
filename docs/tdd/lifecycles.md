@@ -33,10 +33,12 @@ enter `Ready`, while a restore whose manifest has
 `Ready` accepts every enabled facade family. `DirectoryEpochExhausted` is an
 operational capability substate: generic permits remain reservable; queries,
 matter commands, ordinary single-volume `Move`, checkpoints, subscriptions,
-telemetry, non-root behavior/extension effects, existing-interest
-inspection/withdrawal, and shutdown remain accepted. `Create`, `Retire`,
-directory rebuild, placement stream, component extraction, new interest, and
-interest update remain closed. The exhaustive per-method result matrix is in
+telemetry, non-root behavior/extension effects, interest declaration, update,
+inspection and withdrawal, and shutdown remain accepted. Cold dependencies
+reached through any of those accepted families use the ordinary bounded region
+lifecycle; allocator closure does not create a residency freeze. `Create`,
+`Retire`, directory rebuild, placement stream, and component extraction remain
+closed. The exhaustive per-method result matrix is in
 [public-api.md](public-api.md#facade-operations); no implementation may infer a
 different rule merely from the generic permit type.
 

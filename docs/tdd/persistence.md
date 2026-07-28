@@ -125,7 +125,12 @@ permanently closed and startup succeeds directly into
 `WorldState::DirectoryEpochExhausted`, even when the saved epoch is below
 `u64::MAX`. Restore never resets, infers open from a lower numeric epoch, or
 reuses an epoch. `RestoreApplied::directory` and `StartupApplied::state` report
-the installed values.
+the installed values. The closed bit constrains directory-root publication
+only: it does not restore or synthesize runtime interest leases and does not
+freeze residency. The consumer may declare/update interest immediately after
+startup, and accepted queries, mutations, scheduled views, and extension work
+may materialize reconstructed cold bricks through the ordinary bounded region
+lifecycle.
 
 Material records sort by stable UUID and contain UUID, checkpoint runtime
 material number, debug-name bytes, and a digest of the occupancy-relevant
@@ -246,6 +251,13 @@ Restore is fail-closed and ordered:
 7. Publish restored volume directories at saved revisions/placements and
    expose regions as cold with known scars.
 8. Resolve the restore receipt with the complete revision context.
+
+Step 7 is identical for open and closed directory allocators. A closed restore
+with zero runtime leases is useful through new bounded interest,
+`ReadinessPolicy::Materialize` queries, and cold-target mutation; those paths
+consume region/content resources but no directory epoch. Only an operation
+that would publish a different directory root receives the exhausted-state
+outcome.
 
 Import mode assigns exactly the `WorldKey` in `RestoreWorldMode::ImportAs` but
 does not relax material, exact volume membership, tombstone, lineage, or

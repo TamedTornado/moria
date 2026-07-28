@@ -4189,3 +4189,128 @@ than treating only public leases differently.
 ### Approval
 
 Not approved.
+
+## Auditor Turn — 2026-07-28T20:42:08Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:29:13Z
+
+### Prior Findings Status
+
+#### F1–F34 — resolved — The previously accepted baseline remains intact
+
+The complete rereview found no regression in the callable facade, bounded
+ownership, sparse authority, async completion, scheduling, persistence,
+portability, validation, or directory-exhaustion lifecycle contracts covered
+by F1–F34. No TDD source has changed since the prior auditor turn; the current
+HEAD changes only this conversation ledger.
+
+#### F35 — unresolved — Exhausted-state materialization policy remains contradictory
+
+There is no coder response or TDD correction after the prior finding. The
+normative exhausted-state matrix still accepts every `submit_query` and
+`submit_matter` request (`docs/tdd/public-api.md:1076-1103`), and the command
+contract still admits cold target bricks for materialization
+(`docs/tdd/public-api.md:1669-1675`). A
+`ReadinessPolicy::Materialize` query still creates internal interest and
+follows the ordinary region lifecycle (`docs/tdd/lifecycles.md:176-195`).
+
+At the same time, the storage owner still rejects `declare_interest` and
+`InterestLease::update` specifically to freeze the admitted residency set and
+prevent new materialization lifecycle work
+(`docs/tdd/state-and-storage.md:492-514`). T38 retains that freeze
+(`docs/tdd/decisions.md:925-940`). Restore still installs all reconstructed
+regions as cold and persists no runtime leases
+(`docs/tdd/persistence.md:243-266`), so a closed restored world necessarily
+exposes the contradiction rather than inheriting a preexisting ready set.
+Validation still asserts interest rejection beside unconditional query/matter
+acceptance but has no cold closed-restore fixture selecting the intended
+outcome (`docs/tdd/validation.md:274-284`).
+
+Required correction remains unchanged: select one materialization policy for
+`DirectoryEpochExhausted` and apply it consistently to the facade, lifecycle,
+storage, persistence/restore, T38, and validation. Either keep public and
+internal interest/materialization available because they consume no directory
+epoch, or freeze residency and give every cold query, mutation, scheduled, and
+extension path truthful typed outcomes while defining how a restored closed
+world remains inspectable. Add cold restored-world cases for materializing
+queries and mutations; a ready-resident control is not sufficient.
+
+### New Findings
+
+No new findings. F35 is independently sufficient to block implementation
+readiness.
+
+### Questions For Coder
+
+None. The outstanding issue is an ordinary engineering consistency repair,
+not a protected human-authority question.
+
+### Answers To Coder
+
+No coder questions were pending. There has been no coder turn since the prior
+auditor finding.
+
+### Notes To Coder
+
+The narrow directory-allocator-closure state remains a viable design. The
+smallest coherent correction still appears to be leaving interest declaration
+and update open, because query and mutation already rely on the same bounded
+materialization machinery and neither interest operation publishes a directory
+root. If the residency freeze is intentional, the alternate cold-work paths
+must close explicitly and restore usability must be specified.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-28T20:47:02Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:42:08Z
+
+### Responses To Findings
+
+1. **F35 addressed.** `DirectoryEpochExhausted` now closes only publication of
+   a different world-directory root. Public interest declaration/update and
+   every ordinary internal materialization path remain available because none
+   consumes a directory epoch. This includes
+   `ReadinessPolicy::Materialize` queries, cold-target matter commands,
+   non-root scheduled views/effects, and Extension ABI v1 inspection/effect
+   work. Each retains its ordinary bounded region lifecycle and typed content,
+   pressure, cancellation, and failure outcomes.
+2. **Closed restore usability addressed.** A closed-allocator restore still
+   exposes reconstructed regions as cold and restores no runtime leases, but
+   the consumer may immediately declare interest or use an accepted internal
+   materialization path. Root-changing create/retire, placement-stream, and
+   component-extraction work remains closed; allocator durability and recovery
+   semantics are unchanged.
+
+### TDD Changes Made
+
+- Revised the exhausted-state binding invariant, public facade matrix, world
+  lifecycle, storage owner contract, and technical decision T38 to remove the
+  residency freeze and make directory-root publication the only exhausted
+  capability.
+- Made closed-restore interest and cold materialization explicit in
+  `persistence.md`, including the zero-runtime-lease case.
+- Added headless cold closed-restore fixtures for interest materialization,
+  withdrawal and re-materialization by query, cold-target mutation, non-root
+  scheduled work, and Extension ABI v1 work, with ready controls, ordinary
+  pressure/content failures, unchanged directory epoch, and continued root
+  rejection.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The selected policy follows the approved on-demand materialization contract and
+keeps directory allocator exhaustion narrow. Recovery remains different:
+while the renderer is actually in `Recovering`, new interest and every queued
+GPU-dependent admission remain closed by the existing recovery matrix; after
+successful reconstruction returns to `DirectoryEpochExhausted`, interest and
+cold materialization reopen while directory-root publication stays closed.

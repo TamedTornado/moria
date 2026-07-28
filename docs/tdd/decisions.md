@@ -929,10 +929,11 @@ and closes permanently after consuming `u64::MAX` or failing a checked
 multi-root range reservation. Closure is a sticky bit independent of the
 current root epoch. The current root, queries, matter mutation, ordinary
 single-volume movement, observations, checkpoints, non-root scheduled work,
-and shutdown remain usable; root publication and both new interest declaration
-and existing-interest update are closed by the exact public admission matrix.
-Existing interest inspection and withdrawal remain usable, so closure freezes
-rather than leaks the already admitted residency set.
+interest declaration/update/inspection/withdrawal, and shutdown remain usable;
+only directory-root publication is closed by the exact public admission
+matrix. Public interest and internal interest created for queries, commands,
+scheduled views, or extension work retain ordinary bounded materialization
+semantics because they consume no directory epoch.
 
 Checkpoint format v2 stores closure as
 `DIRECTORY_ALLOCATOR_CLOSED` independently of `directory_epoch`. Restore with
@@ -943,8 +944,12 @@ bit and returns to the exhausted state rather than `Ready`.
 **Reason.** Numeric epoch alone cannot reconstruct a failed range reservation
 that closes below `u64::MAX`. Treating exhaustion as `Failed` would discard
 truthful current-root read/checkpoint capability, while treating it as `Ready`
-would reopen an allocator whose ordering domain is exhausted.
+would reopen an allocator whose ordering domain is exhausted. Residency cannot
+be frozen as a side effect: a closed restore intentionally starts with cold
+regions and no persisted runtime leases, and the product contract requires
+bounded on-demand materialization.
 
 **Rejected.** Epoch wrap/reuse; inferring closure only from
 `epoch == u64::MAX`; reopening after restore or recovery; failing the entire
-world; and leaving permit/admission behavior implementation-defined.
+world; freezing interest/residency despite accepting other cold-materializing
+operations; and leaving permit/admission behavior implementation-defined.

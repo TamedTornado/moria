@@ -277,11 +277,23 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   `Recovering(closed)` and returns to `DirectoryEpochExhausted`, not `Ready`;
   root rejection and the complete exhausted-state matrix remain identical
   afterward. Also test fresh exhaustion, maximum-epoch restore, lower-epoch
-  closed restore, interest declare/update rejection, existing-interest
-  withdrawal, every generic reserve family, matter/ordinary move/query/
-  checkpoint/subscription/extension/non-root tick acceptance, extension
-  all-or-none admission for its non-root fill/patch/move candidates, shutdown,
-  and terminal recovery failure.
+  closed restore, interest declare/update/withdrawal acceptance, every generic
+  reserve family, matter/ordinary move/query/checkpoint/subscription/extension/
+  non-root tick acceptance, extension all-or-none admission for its non-root
+  fill/patch/move candidates, shutdown, and terminal recovery failure. For the
+  lower-epoch closed restore, begin with zero runtime interest leases and every
+  reconstructed region cold. Declare interest over one cold brick and require
+  `Cold -> Requested -> Materializing -> Ready`; withdraw it, retire the brick
+  lease and advance the region lifecycle back to `Cold`, then submit a
+  `ReadinessPolicy::Materialize` query and require the exact restored
+  sample/revision. Keep a second restored brick cold, submit a matter mutation
+  targeting it, and require ordinary base-plus-scar materialization followed by
+  one atomic committed revision. Repeat a cold dependency through a non-root
+  scheduled view and an Extension ABI v1 inspection/effect batch. Every path
+  must stay within ordinary interest, content, residency, and queue bounds,
+  consume no directory epoch, and return its ordinary typed content/pressure
+  failure when forced; the ready-resident controls must produce the same public
+  truth. Root-changing work remains rejected throughout.
 
 ### CPU oracle and generated sequences
 

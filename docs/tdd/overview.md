@@ -358,12 +358,13 @@ contract tests remain in the ordinary suite.
   silently own another.
 - Treat `DirectoryEpochExhausted` as an operational capability substate, not
   `Failed` and not `Ready`. Implement the exact reserve/submit matrix from
-  `public-api.md`: root publication plus `declare_interest` and
-  `InterestLease::update` close, while existing interest inspection and
-  withdrawal remain legal. Persist `DIRECTORY_ALLOCATOR_CLOSED` independently
-  of the current epoch; restore and renderer recovery must return to the
-  exhausted state when that bit is set. Golden format-v2 fixtures must include
-  the lower-epoch closed case.
+  `public-api.md`: only directory-root publication closes. Interest
+  declaration/update and every ordinary bounded materialization path remain
+  legal because they consume no directory epoch, including after a closed
+  restore whose regions start cold. Persist `DIRECTORY_ALLOCATOR_CLOSED`
+  independently of the current epoch; restore and renderer recovery must
+  return to the exhausted state when that bit is set. Golden format-v2
+  fixtures must include the lower-epoch closed case.
 - A command/query type owns its payload until admission succeeds. Queue-full or
   closed errors return the payload unchanged.
 - Public query/interest/result/dressing records, scheduled Behavior ABI v2,

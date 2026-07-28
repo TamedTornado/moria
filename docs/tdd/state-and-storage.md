@@ -491,12 +491,11 @@ closes the narrowest affected scope:
 - volume revision exhaustion fails that volume;
 - world-directory epoch exhaustion moves the world permanently to
   `WorldState::DirectoryEpochExhausted`: the current immutable root remains
-  readable and checkpointable; non-root-changing operations may continue
-  except that `declare_interest` and `InterestLease::update` close to freeze
-  the already admitted residency set; existing interest remains inspectable
-  and withdrawable; and no create, retirement, directory rebuild, placement
-  stream, component extraction, or other root publication can be admitted or
-  prepared;
+  readable and checkpointable; every non-root-changing operation may continue,
+  including interest declaration/update/withdrawal and bounded
+  materialization of cold bricks; and no create, retirement, directory
+  rebuild, placement stream, component extraction, or other root publication
+  can be admitted or prepared;
 - device generation exhaustion requires process restart.
 
 The directory epoch starts at one. Every root publication obtains its exact
@@ -507,11 +506,13 @@ root-changing operation that cannot obtain its epoch fails with
 root-changing submission returns
 `SubmitError::WorldNotAccepting { state:
 WorldState::DirectoryEpochExhausted, .. }`. Read-only queries, observation,
-checkpointing of the current root, existing-interest inspection/withdrawal,
-and shutdown remain legal. New interest and interest update return
-`InterestError::WorldNotAccepting(DirectoryEpochExhausted)` even though they do
-not publish a root: this is the one declared non-root exception and prevents
-new materialization lifecycle work after allocator closure.
+checkpointing of the current root, interest declaration/update/inspection/
+withdrawal, and shutdown remain legal. Directory-epoch capacity is never
+charged for residency: public interest and internal interest created by
+queries, commands, scheduled views, or extensions use the ordinary bounded
+region lifecycle and may materialize cold bricks after allocator closure.
+Their ordinary content, pressure, cancellation, and failure outcomes remain
+unchanged.
 
 After behavior composition selects `N` root proposals, the coordinator
 checked-adds `N` to the current epoch before preparing any candidate root. If
