@@ -382,6 +382,70 @@ successfully controlled scope; automated adversarial review found real
 lifecycle defects; and human conversational review still uncovered product
 architecture gaps after automated approval.
 
+### The architecture amendment expanded into a rewrite
+
+The first drafting response to the three human requirements was not a small
+amendment. Commit `dab1a1a` changed 2,089 lines across eleven TDD files:
+1,923 additions and 166 deletions. It introduced an 858-line
+`adapter-substrate-contracts.md` plus a Scheduled ABI v2, component-extraction
+transaction records, placement streams, opaque egress records, and a
+world-directory epoch.
+
+This is useful negative dogfood evidence. A prompt asking for three generic
+integration capabilities was interpreted as authority to fully design a new
+wire protocol, durable data model, transaction model, and validation system.
+The mechanisms were plausible and internally motivated, but their size and
+specificity were not evidence that they were the smallest design that met the
+human requirement.
+
+The independent auditor rejected the revision. It found one regression in the
+previously approved feedback ABI and seven new defects:
+
+- the component-piece handle space could not be preallocated as specified;
+- extraction conserved collision occupancy rather than the complete
+  authoritative material/scalar field;
+- atomic multi-volume publication had no atomic observation representation;
+- derived children lacked complete durable naming and provenance;
+- the retained derived-base lookup had no bounded owner or pressure policy;
+- counter overflow had no distinct Scheduled ABI v2 wire value; and
+- the two new proposal kinds left common record fields undefined.
+
+The auditor also recorded useful positive discrimination: CPU-authored
+multi-fidelity placement and the bounded opaque egress lifecycle were
+architecturally sound in direction. The rejection was therefore not a generic
+preference for less detail; it identified concrete places where added
+machinery was not implementable or did not close its own contracts.
+
+The automatic correction turn then spread through the focused contract,
+public API, scheduled behavior, lifecycle, overview, architecture,
+persistence, state/storage, and validation documents. This exposed a failure
+mode in a correctness-only revision loop: once a large mechanism exists,
+review findings naturally demand that it be propagated and completed
+everywhere. The loop can converge on a coherent but unnecessarily large design
+without ever asking whether the mechanism should exist.
+
+The agreed operator cutoff is the next independent auditor pass. If the
+correction produces another layer of new cross-contract defects or another
+large expansion, the remedy is not another completion pass:
+
+1. park the run and retain this sequence as dogfood evidence;
+2. return to the last approved pre-amendment TDD at `2ab6796`;
+3. request the smallest sufficient amendment, reusing existing contracts
+   before introducing a new global mechanism;
+4. require every new concept to trace to one of the three approved human
+   requirements or to an unavoidable correctness consequence;
+5. keep externally observable ownership, failure, persistence, and boundedness
+   contracts in the TDD while leaving private encodings and implementation
+   algorithms for decomposition unless interoperability requires them; and
+6. run an independent simplification review that can require deletion and
+   asks which mechanisms are necessary, rather than only whether every
+   mechanism is internally complete.
+
+This is deliberately not a word-count or line-count gate. The failure was
+authority and design pressure, not prose volume by itself. A legitimately
+complex public contract may be long; an agent-selected global mechanism must
+still prove that its complexity is necessary.
+
 ## Acceptance still open
 
 The following claims remain open and must not be inferred from the evidence
