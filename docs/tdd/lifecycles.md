@@ -409,15 +409,19 @@ the asynchronous extension job against newer matter.
 `shutdown(policy)` is itself accepted once. It:
 
 1. closes all permit waiters, rejects new submissions and behavior ticks, and
-   cancels a queued behavior tick that has not entered `Planning`;
+   with `CancelNotPrepared`, atomically cancels a behavior tick only while it
+   is queued or waiting at its captured command frontier, before its transition
+   to `Preparing/UploadingGpuInputs`; `Drain` leaves that tick queued to drain;
 2. with `CancelNotPrepared`, atomically cancels work still
    `Queued | WaitingForMatter`; otherwise drains it; `Preparing` and later
-   always drain;
+   always drain, including the behavior tick's input-preflight stage;
 3. stops accepting interest updates and withdraws ordinary interest after
    dependent work;
-4. drains a behavior tick that already entered planning, reports its
-   outcome, then waits for other submitted GPU work through renderer completion
-   or terminal loss;
+4. drains a behavior tick that entered `Preparing/UploadingGpuInputs` or any
+   later stage to its complete preflight-or-later report; submitted input ranges
+   remain owned until completion or device-generation quarantine, then shutdown
+   waits for other submitted GPU work through renderer completion or terminal
+   loss;
 5. runs the required checkpoint against final committed revisions if requested;
 6. appends final observations and freezes telemetry;
 7. resolves outstanding receipts and the shutdown receipt;

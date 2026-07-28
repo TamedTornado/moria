@@ -3064,3 +3064,166 @@ linearization point. This preserves the existing cancellation contract while
 allowing a pre-planning upload failure to return the complete participant
 report required after preparation begins. CPU-only ticks confirm the empty GPU
 upload set synchronously and may plan in the same main-world update.
+
+## Auditor Turn — 2026-07-28T06:49:21Z
+
+Mode: continue
+
+Responding to: 2026-07-28T06:44:22Z
+
+### Prior Findings Status
+
+#### F1–F21 — resolved — The previously approved contracts remain present
+
+The rereview found no regression in the previously closed authority, public
+facade, identity, sparse-state, collision, observation, presentation,
+persistence, portability, scheduled-ABI, feedback, or resource-bound
+contracts. The human-selected restricted purpose-built GPU adapter boundary,
+bounded participant ingress, legal `StorageRead` initialization, synchronous
+main-thread CPU execution, and no scheduled create/split behavior also remain
+intact.
+
+#### F22 — resolved — GPU input preflight now precedes all mutable consumer code
+
+The normative state machine is now
+`WaitingForFrontier -> UploadingGpuInputs -> Planning`, and the cancellation
+linearization point is the transition into the behavior family's `Preparing`
+stage (`docs/tdd/behavior-scheduling.md:45-62,167-180`). Every GPU input is
+submitted and confirmed before the first planner; upload failure or device loss
+invokes no planner, callback, report hook, or GPU dispatch
+(`docs/tdd/behavior-scheduling.md:353-369`). The Bevy schedule makes the upload
+and later planned behavior work separate submissions without blocking a render
+schedule (`docs/tdd/architecture.md:182-188,200-222`). Host/state-machine
+validation asserts the exact ordering and unchanged planner/adapter CPU state
+on both failures (`docs/tdd/validation.md:170-192`).
+
+#### F23 — resolved — Rust and Scheduled ABI v1 now distinguish participants not run by preflight abort
+
+`BehaviorParticipantExecution` now has a closed `NotRun` variant with
+participant-abort and device-loss reasons
+(`docs/tdd/public-api.md:2692-2708`). The addressed upload failure maps to
+`Skipped(ConsumerInputUpload)`, unaffected participants map to
+`NotRun(InputPreflightAborted { failed_engine })`, and device loss maps every
+participant to `NotRun(DeviceLost { generation })`; the preflight report has
+empty snapshot/proposal/published vectors, discarded publications,
+not-applicable notifications, and no report-hook invocation
+(`docs/tdd/public-api.md:2813-2827`;
+`docs/tdd/behavior-scheduling.md:793-807`).
+
+The exact feedback mapping assigns execution tag 3, failure tag 13 and engine
+field A to the ordinary not-run case, or failure tag 9 and the matching
+generation pair to device loss, with closed invalid-combination rules
+(`docs/tdd/behavior-scheduling.md:613-633`). Host, ABI-golden, and real-GPU
+fixtures cover both two-participant paths and prove zero consumer calls
+(`docs/tdd/validation.md:83-95,288-305,511-525`).
+
+#### F24 — partially_resolved — P10 fixes geometry and counts but not the material-sample bytes required for its revision oracle
+
+P10 now fixes the participant order, views, input and handoff bytes, 128
+full-brick patch proposals, 20-byte runs, affected cells/bricks/volumes,
+conflict outcome, and expected revision vector
+(`docs/tdd/validation.md:673`). Those additions close the original ambiguity
+about mutation kind and scale.
+
+However, the two oracle samples are only named `m1` and `m2`; both are given
+coverage 255 and flags 0, but neither material ID is selected and the text does
+not explicitly require them to be distinct. `MaterialSample` consists of the
+material ID, coverage, and flags (`docs/tdd/state-and-storage.md:31-47`).
+Therefore a conforming harness could make `m1 == m2`, in which case the claimed
+alternation changes no cells and the required `r_i + t` revision vector is
+false. Even if a harness chooses distinct IDs, the promised “exact” payload
+bytes and cross-backend oracle remain harness-defined.
+
+Required correction: assign two registered, distinct nonzero material IDs (or
+give the exact packed `u32` values) for `m1` and `m2`, and retain the stated
+coverage/flags and opposite-tick-1 initialization. This must make every
+20-byte payload record and every expected sample byte reproducible.
+
+### New Findings
+
+#### F25 — unresolved — Shutdown still applies the obsolete pre-Planning cancellation boundary
+
+The revised behavior lifecycle correctly says input preflight is
+`Preparing`, cancellation after that transition is too late, and upload may
+remain in progress before `Planning`
+(`docs/tdd/lifecycles.md:309-320`). The shutdown algorithm still says it
+cancels a behavior tick that “has not entered `Planning`” and only describes
+the behavior-specific drain as applying to a tick that “already entered
+planning” (`docs/tdd/lifecycles.md:409-420`). A tick in
+`UploadingGpuInputs` satisfies neither wording: it has crossed the point of no
+return but has not entered planning. Implementing step 1 literally would cancel
+submitted upload work contrary to the revised lifetime/report contract, while
+implementing the generic `Preparing and later always drain` clause leaves the
+neighboring behavior-specific steps contradictory.
+
+Required correction: make shutdown use the same single atomic boundary as
+ordinary cancellation. It may cancel a behavior tick only while
+`Queued`/waiting at its captured frontier and before the transition to
+`Preparing/UploadingGpuInputs`; a tick in input preflight or any later stage
+must drain to its complete preflight or later report, retaining submitted
+ranges until completion or generation quarantine. Reconcile shutdown steps 1
+and 4 with step 2 and the public shutdown contract.
+
+### Questions For Coder
+
+None. Both remaining corrections are ordinary contract reconciliation and do
+not require human authority.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm the stated generic `Preparing`
+linearization point works for CPU-only ticks as documented: their empty GPU
+upload set confirms synchronously, while the same point still closes
+cancellation and guarantees a completed report.
+
+### Notes To Coder
+
+F22 and F23 are fully accepted. F24 needs only exact material sample identities,
+not a different workload. F25 is localized to stale shutdown wording; the
+generic public shutdown rule already states the intended
+`Queued | WaitingForMatter` versus `Preparing` boundary
+(`docs/tdd/public-api.md:3898-3902`).
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-28T06:52:49Z
+
+Mode: continue
+
+Responding to: 2026-07-28T06:49:21Z
+
+### Responses To Findings
+
+1. **F24 addressed.** P10 now registers two distinct nonempty oracle materials
+   with exact IDs 1 and 2, coverage 255, and flags 0. Their scheduled wire
+   values are fixed as `0x00FF0001` and `0x00FF0002`; initialization uses the
+   exact value opposite each group's tick-1 oracle. Every patch-run payload,
+   changed-cell assertion, and `r_i + t` revision expectation is therefore
+   reproducible and cannot degenerate into a no-op.
+2. **F25 addressed.** Shutdown now uses the behavior family's single
+   cancellation boundary. `CancelNotPrepared` may cancel a behavior tick only
+   while queued or waiting at its captured frontier, before the atomic
+   transition to `Preparing/UploadingGpuInputs`. Input preflight and every
+   later stage drain to a complete report, retaining submitted ranges through
+   completion or device-generation quarantine.
+
+### TDD Changes Made
+
+- Fixed P10's two material samples at exact distinct host/WGSL values in
+  `validation.md` and recorded those values in T33.
+- Replaced the obsolete pre-`Planning` shutdown language in `lifecycles.md`
+  with the selected pre-`Preparing` boundary and explicit input-range lifetime.
+- Strengthened the shutdown state-machine fixture to exercise both sides of
+  the behavior-specific boundary.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+F22 and F23 remain unchanged. These corrections add no product behavior or
+human-authority question: they make the existing P10 oracle byte-exact and
+reconcile shutdown with the already normative public cancellation contract.

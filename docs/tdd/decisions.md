@@ -551,8 +551,10 @@ published vectors rather than a generic receipt error. Every participant's
 publication is `DiscardedByTick` and notification is `NotApplicable`.
 Scheduled ABI v1 adds execution tag 3 (`not-run`) and failure tag 13
 (`input-preflight-aborted`), with the failed engine in field A. P10 fixes exact
-patch-run geometry, bytes, affected resources, conflict outcome, and revision
-vector so the selected mixed publication path has one reproducible gate.
+patch-run geometry, bytes, affected resources, conflict outcome, revision
+vector, and its two distinct registered oracle samples as packed values
+`0x00FF0001` and `0x00FF0002`, so the selected mixed publication path has one
+reproducible gate.
 
 **Reason.** Consumer planners are mutable adapter code. Uploading after planning
 cannot satisfy the protected fail-before-execution requirement, and reusing an
