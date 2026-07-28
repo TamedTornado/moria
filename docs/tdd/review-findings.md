@@ -4314,3 +4314,111 @@ while the renderer is actually in `Recovering`, new interest and every queued
 GPU-dependent admission remain closed by the existing recovery matrix; after
 successful reconstruction returns to `DirectoryEpochExhausted`, interest and
 cold materialization reopen while directory-root publication stays closed.
+
+## Auditor Turn — 2026-07-28T21:23:23Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:47:02Z
+
+### Prior Findings Status
+
+#### F1–F34 — resolved — The previously accepted baseline remains intact
+
+The complete rereview found no regression in the callable facade, bounded
+ownership, sparse authority, revision/publication protocols, asynchronous
+completion, scheduling, persistence, portability, or validation contracts
+covered by F1–F34.
+
+#### F35 — partially_resolved — The selected materialization policy is implemented everywhere except one binding invariant
+
+The coder's substantive correction is present. The normative facade accepts
+interest declaration/update and explicitly permits cold dependencies through
+interest, materializing queries, matter commands, non-root scheduled work, and
+Extension ABI v1 without consuming a directory epoch
+(`docs/tdd/public-api.md:1078-1109`). The lifecycle and storage owners now agree
+that allocator closure does not freeze residency
+(`docs/tdd/lifecycles.md:33-43`;
+`docs/tdd/state-and-storage.md:492-515`). Closed restore starts cold with no
+runtime leases yet remains usable through those paths
+(`docs/tdd/persistence.md:120-133,255-260`), T38 records the same rationale
+(`docs/tdd/decisions.md:925-955`), and the validation plan exercises cold
+interest, rematerializing query, mutation, scheduled, and extension paths with
+ordinary failure controls (`docs/tdd/validation.md:279-295`).
+
+However, binding invariant 18 still says directory allocator closure makes
+"root publication and new or updated interest lifecycle work close while the
+already admitted residency set remains inspectable and withdrawable"
+(`docs/tdd/overview.md:132-137`). That is the exact policy the revision rejects
+and directly contradicts the overview's later implementation rule, which says
+only root publication closes and interest/materialization remain legal
+(`docs/tdd/overview.md:359-367`). An implementation agent cannot satisfy both
+binding statements.
+
+Required correction: update binding invariant 18 in
+`docs/tdd/overview.md:132-137` to state the selected narrow policy: allocator
+closure stops directory-root publication only; interest declaration/update and
+ordinary bounded materialization remain available; durability, restore, and
+recovery still preserve the closed publication capability. Retain the
+distinction that `Recovering` temporarily closes new GPU-dependent admission
+under its separate exhaustive matrix.
+
+### New Findings
+
+No new findings. F35 remains the sole implementation-readiness blocker.
+
+### Questions For Coder
+
+None. This is a stale normative sentence, not a protected human-authority
+question.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm the claimed facade, lifecycle,
+storage, persistence, T38, and cold-restore validation changes are present and
+coherent. I also confirm that recovery remains correctly distinct:
+`Recovering` closes new GPU-dependent admissions, while successful recovery
+with the sticky closed bit returns to `DirectoryEpochExhausted` and reopens
+ordinary non-root materialization.
+
+### Notes To Coder
+
+The selected policy itself is now implementable and faithful to on-demand
+materialization. Only the stale overview invariant prevents approval; the
+correction should not require another policy change or API expansion.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-28T21:25:41Z
+
+Mode: continue
+
+Responding to: 2026-07-28T21:23:23Z
+
+### Responses To Findings
+
+1. **F35 addressed.** Binding invariant 18 now states the selected narrow
+   exhaustion policy: allocator closure stops directory-root publication only,
+   while interest declaration/update and every ordinary bounded
+   materialization path remain available because they consume no directory
+   epoch. The invariant retains durable closure across checkpoint, restore,
+   and device recovery.
+
+### TDD Changes Made
+
+- Corrected the stale residency-freeze sentence in `overview.md`.
+- Kept `Recovering` distinct by explicitly referring to its separate
+  exhaustive matrix, which temporarily closes new GPU-dependent admission.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The overview invariant now agrees with its implementation rule and with the
+normative facade, lifecycle, storage, persistence, T38, and cold-restore
+validation contracts. No policy, API, scope, or human-authority decision
+changed in this turn.

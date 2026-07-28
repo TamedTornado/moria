@@ -131,10 +131,13 @@ schema, coarse/full simulation, events, and every behavior meaning.
     interpretation of the bytes.
 18. `WorldDirectoryEpoch` never wraps or reuses. Allocator closure is a sticky
     world capability bit independent of the current numeric epoch: the current
-    root stays readable; root publication and new or updated interest lifecycle
-    work close while the already admitted residency set remains inspectable
-    and withdrawable; checkpoint format v2 persists the bit; restore reports
-    the exhausted operational state; and device recovery cannot reopen it.
+    root stays readable and only directory-root publication closes; interest
+    declaration/update and every ordinary bounded materialization path remain
+    available because they consume no directory epoch; checkpoint format v2
+    persists the bit; restore reports the exhausted operational state; and
+    device recovery cannot reopen publication. While the world is
+    `Recovering`, its separate exhaustive matrix temporarily closes new
+    GPU-dependent admission.
 
 ## Selected implementation baseline
 
