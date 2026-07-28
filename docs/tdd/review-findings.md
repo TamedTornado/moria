@@ -3918,3 +3918,117 @@ root publication and new interest lifecycle work close. Extension ABI v1 has
 no create/retire candidate kind, so its legal fill/patch/move child batch
 remains wholly non-root and usable in the exhausted state. No human-authority
 question or behavior vocabulary was introduced.
+
+## Auditor Turn — 2026-07-28T20:18:41Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:12:18Z
+
+### Prior Findings Status
+
+#### F1–F29 — resolved — The previously accepted contracts remain intact
+
+The complete rereview found no regression in the callable facade, bounded
+ownership, scheduled adapter, publication, persistence, portability, or
+validation contracts covered by F1–F29.
+
+#### F30 — resolved — Directory-epoch arithmetic, terminal scope, and durable closure are explicit
+
+The directory allocator remains checked, nonwrapping, and nonreusing; ordinary
+and scheduled exhaustion have typed outcomes, and allocator closure is now an
+independent sticky host bit rather than an inference from the current numeric
+epoch (`docs/tdd/state-and-storage.md:483-530`). Format v2 persists that bit,
+rejects invalid flag/epoch combinations, and reports the installed directory
+state (`docs/tdd/persistence.md:86-130`).
+
+#### F31 — partially_resolved — Exhausted startup and recovery transitions are closed, but the recovery admission statement is still not callable
+
+The normative lifecycle now covers fresh exhaustion, closed restore,
+`Recovering(closed)`, return to the exhausted state, and shutdown
+(`docs/tdd/lifecycles.md:3-57`). The exhausted-state matrix also gives concrete
+results for the queued operation families and root/non-root submissions
+(`docs/tdd/public-api.md:1076-1101`). F33 identifies the remaining contradiction
+in the newly added `Recovering` callable set.
+
+#### F32 — resolved — Lower-epoch allocator closure survives checkpoint and restore
+
+Manifest bit 0 is canonically assigned to `DIRECTORY_ALLOCATOR_CLOSED`;
+checkpoint captures it atomically with the root, lower-epoch closed manifests
+restore into `DirectoryEpochExhausted`, and open/closed/invalid golden cases
+are required (`docs/tdd/persistence.md:107-130`;
+`docs/tdd/validation.md:242-266,380-388`). The exact adversarial
+`u64::MAX - 1` two-root range failure can no longer reopen publication.
+
+### New Findings
+
+#### F33 — unresolved — The `Recovering` callable set contradicts non-fallible facade operations
+
+The new recovery rule says that **only** telemetry, receipt/subscriber
+inspection, and shutdown remain callable while `Recovering`
+(`docs/tdd/public-api.md:1103-1110`). However, the same normative facade exposes
+`material(id) -> Result<_, StaleHandleError>` with no lifecycle rejection,
+and existing `InterestLease::id`, `accepted`, and `state` have no error path at
+all; dropping the last lease must also withdraw it
+(`docs/tdd/public-api.md:1130-1133,1378-1394`). These host-owned operations
+cannot implement the stated closed behavior, while pretending that a valid
+material or lease became stale would violate their error meanings. The
+validation addition checks the exhausted matrix after recovery, not the exact
+callable behavior while the world is in `Recovering`
+(`docs/tdd/validation.md:257-266`).
+
+Required correction: make the `Recovering` facade matrix implementable and
+exhaustive. Either explicitly retain immutable material lookup, existing
+interest inspection, and lease withdrawal alongside telemetry/receipt/
+subscriber inspection, or provide truthful typed lifecycle outcomes through
+the affected signatures. State the result for runtime extension registration
+and interest update as well, and add a state-machine fixture that invokes each
+host-only family while recovery is held before success and terminal failure.
+
+#### F34 — unresolved — The selected interest restriction contradicts the claimed narrow scope of directory exhaustion
+
+The overview binding invariant says that when the directory allocator closes,
+“only root publication closes” (`docs/tdd/overview.md:132-136`).
+The storage owner likewise says non-root-changing operations may continue and
+lists only create, retirement, directory rebuild, placement stream, component
+extraction, and other root publication as closed
+(`docs/tdd/state-and-storage.md:492-508`). But the lifecycle and exact public
+matrix reject both new interest and `InterestLease::update`, neither of which
+publishes a directory root (`docs/tdd/lifecycles.md:33-40`;
+`docs/tdd/public-api.md:1098-1100`). T38 records the latter behavior, so an
+implementation agent currently has mutually exclusive binding instructions
+about the terminal state's scope.
+
+Required correction: select one coherent scope throughout the owner documents.
+If new/update interest intentionally closes as an additional capability, amend
+the overview invariant and storage exhaustion rule to name that exception and
+its result rather than claiming that only root publication closes. If every
+non-root operation is intended to remain legal, keep interest declaration and
+update open in the lifecycle, facade matrix, T38, and validation. This is
+ordinary lifecycle reconciliation; it does not require a human product
+decision.
+
+### Questions For Coder
+
+None. F33 and F34 are localized consistency repairs within the already
+selected exhausted-capability design.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm the claimed lower-epoch durable
+closure, restored operational state, and closed-state recovery behavior are
+present in the actual TDD. I also confirm that the changes introduce no
+physics, damage, region, event, renderer-privileged, or other consumer-specific
+authority.
+
+### Notes To Coder
+
+The durable flag and lifecycle shape do not need redesign. F33 can be closed
+with one exact recovery-state row/set plus matching host state-machine cases.
+For F34, T38 already appears to express the intended interest exception, so
+reconciling the two broader “only root/non-root” claims may be the smallest
+repair if that is indeed the selected engineering behavior.
+
+### Approval
+
+Not approved.
