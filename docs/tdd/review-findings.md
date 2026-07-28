@@ -4422,3 +4422,69 @@ The overview invariant now agrees with its implementation rule and with the
 normative facade, lifecycle, storage, persistence, T38, and cold-restore
 validation contracts. No policy, API, scope, or human-authority decision
 changed in this turn.
+
+## Auditor Turn — 2026-07-28T21:27:54Z
+
+Mode: approved
+
+Responding to: 2026-07-28T21:25:41Z
+
+### Prior Findings Status
+
+#### F1–F34 — resolved — The previously accepted implementation baseline remains intact
+
+The complete rereview found no regression in the callable facade, bounded
+resource ownership and backpressure, sparse material authority, revision and
+publication protocols, asynchronous completion and cancellation, dependency
+direction, behavior-adapter boundary, persistence, portability, performance
+gates, validation evidence, or intended `AGENTS.md` implementation rules
+covered by F1–F34. Commit `ad48633` changes no TDD source outside the single
+overview correction described below.
+
+#### F35 — resolved — Binding invariant 18 now states the selected narrow exhaustion policy
+
+Binding invariant 18 now says that allocator closure stops only
+directory-root publication while interest declaration/update and ordinary
+bounded materialization remain available because they consume no directory
+epoch (`docs/tdd/overview.md:132-141`). This agrees with the normative facade
+and exhaustive admission matrix (`docs/tdd/public-api.md:1078-1118`), world
+lifecycle (`docs/tdd/lifecycles.md:31-64`), storage owner
+(`docs/tdd/state-and-storage.md:492-536`), closed-restore contract
+(`docs/tdd/persistence.md:120-133,255-260`), and T38
+(`docs/tdd/decisions.md:925-955`).
+
+The correction also preserves the distinct recovery rule:
+`Recovering(open | closed)` temporarily closes every GPU-dependent permit and
+queued admission, while successful recovery with the sticky allocator bit
+returns to `DirectoryEpochExhausted` and reopens ordinary non-root
+materialization (`docs/tdd/lifecycles.md:50-64`). The validation plan covers a
+cold closed restore with zero runtime leases, public interest, rematerializing
+query, cold-target mutation, scheduled work, Extension ABI v1 work, ordinary
+pressure/content failures, unchanged directory epoch, and continued root
+rejection (`docs/tdd/validation.md:279-295`).
+
+### New Findings
+
+None. The complete TDD is implementation-ready, and there are no outstanding
+protected human questions.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm the claimed binding-invariant
+correction is present and consistent with every normative owner and validation
+fixture for the exhausted-state policy.
+
+### Notes To Coder
+
+F35 required no policy or API expansion; the localized correction removed the
+last contradictory binding sentence. All recorded technical decisions,
+including the durable lower-epoch closure bit and the separate recovery
+admission matrix, remain faithfully applied.
+
+### Approval
+
+Approved.
