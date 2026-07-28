@@ -1073,6 +1073,8 @@ and one `LimitRequirement` for every unmet minimum, so startup never collapses
 renderer absence, adapter insufficiency, and restore failure into
 `Unavailable`.
 
+### Facade operations
+
 `WorldState::DirectoryEpochExhausted` is a terminal capability substate, not
 loss of the current world. Root-changing create/retire/directory-rebuild
 submissions return `SubmitError::WorldNotAccepting` in that state; a previously
@@ -1104,14 +1106,32 @@ The admission matrix for this substate is normative:
 `DirectoryEpochExhausted`, resolves `try_reserve_*` as
 `TryReserveError::Closed`, resolves waiting `reserve_*` as
 `ReserveError::Closed`, and rejects submission with a previously held permit
-as `SubmitError::WorldNotAccepting { state: Recovering, .. }`. Only telemetry,
-receipt/subscriber inspection, and shutdown remain callable. Recovery retains an internal
-`directory_allocator_closed` bit and returns to
+as `SubmitError::WorldNotAccepting { state: Recovering, .. }`. Recovery retains
+an internal `directory_allocator_closed` bit and returns to
 `DirectoryEpochExhausted`, never `Ready`, after successful reconstruction.
 
-A failed matter mutation always reports `revision_changed = false`.
+The recovery callable set is also normative and exhaustive:
 
-### Facade operations
+| Facade family | `Recovering` behavior |
+| --- | --- |
+| `MoriaHandle::{effective_config, world}`, `WorldHandle::material` | Accepted as immutable host configuration/registry lookups. `world` and `material` return only their ordinary `StaleHandleError`; recovery does not make a valid host registration stale. `submit_material_registry` is a queued query and is closed by the submission row below. |
+| `Receipt::{id, try_status, request_cancel}` | Accepted. Inspection returns the shared operation state. Cancellation follows the ordinary preparation race and does not imply physical cancellation of submitted GPU work. |
+| `InterestLease::{id, accepted, state}` | Accepted from retained host control state. `state` is the last host-published readiness snapshot and does not claim that new queries are admitted while the world state is `Recovering`. |
+| Drop the last `InterestLease` clone | Accepted and atomically withdraws its host reference counts. GPU retirement work is deferred until reconstruction; terminal recovery failure releases host ownership during teardown. Withdrawal is never converted into an update or rejected admission. |
+| `ObservationSubscriber::{id, accepted, try_next, resume_after}` | Accepted. Poll/resume use only the retained host ring, immutable accepted filter, cursor, and supplied snapshot and return their ordinary `ObservationError`/`ResumeError`; no renderer access or new subscription is implied. Dropping the subscriber releases its host cursor slot. |
+| `telemetry`, `shutdown`, `shutdown_receipt` | Accepted. Telemetry reports `Recovering`; shutdown uses the ordinary once-only result and may begin from recovery. |
+| every `try_reserve_*` / `reserve_*` | Closed as specified above, including effect-batch reservation. |
+| every queued submission or request with a previously held permit, including material-registry page, matter, volume, query, checkpoint, behavior tick, and GPU extension/effect child | Rejected synchronously as `SubmitError::WorldNotAccepting { state: Recovering, .. }`; owned input and nested permits are returned/released by the ordinary rejection contract. |
+| `declare_interest`, `InterestLease::update` | Rejected with `InterestError::WorldNotAccepting(Recovering)`. |
+| `subscribe` | Rejected with `SubscriptionError::WorldNotAccepting(Recovering)`. Existing subscribers remain inspectable as above. |
+| `register_gpu_extension` | Rejected with `ExtensionRegistrationError::WorldNotAccepting(Recovering)` before registry capacity is consumed or shader compilation starts. |
+
+Handle/receipt/lease/subscriber cloning and dropping remain ordinary host
+ownership operations in every world state. Every omitted facade admission
+method is rejected through its declared error type while recovery is held; it
+does not gain an implementation-defined success path.
+
+A failed matter mutation always reports `revision_changed = false`.
 
 The following methods are the only admission and inspection facade. `submit_*`
 does no hidden waiting; callers acquire the matching permit first.

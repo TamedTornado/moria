@@ -48,13 +48,20 @@ root is unchanged in the latter case. The in-memory
 cleared by resource retirement, pressure relief, or renderer recovery.
 
 Device loss from either operational state enters `Recovering` while retaining
-that bit in host control state. `Recovering` rejects new admissions with
-retryable state, keeps unsubmitted owned payloads, and does not answer material
-queries. Successful reconstruction returns to `Ready` only when the bit is
-open; a closed allocator returns to `DirectoryEpochExhausted`. A device loss
-with unrecoverable dirty truth or failed reconstruction enters `Failed`.
-Shutdown may start from either operational state or from `Recovering`;
-`Failed` and `Stopped` are terminal for that world handle.
+that bit in host control state. `Recovering` closes every permit family and
+rejects every queued submission, new interest/subscription, interest update,
+and runtime extension registration with that exact world state. It does not
+answer queued material-registry or world-matter queries. Immutable host
+material lookup, receipt inspection/cancellation, existing interest and
+subscriber inspection, subscriber cursor resume, last-lease withdrawal,
+telemetry, shutdown, and ordinary handle cloning/drop remain callable; these
+operations need no renderer and have the exact results in
+[public-api.md](public-api.md#facade-operations). Successful reconstruction
+returns to `Ready` only when the allocator bit is open; a closed allocator
+returns to `DirectoryEpochExhausted`. A device loss with unrecoverable dirty
+truth or failed reconstruction enters `Failed`. Shutdown may start from either
+operational state or from `Recovering`; `Failed` and `Stopped` are terminal for
+that world handle.
 
 Startup failure includes a stage and all actionable causes. There is no
 partially usable hidden world.

@@ -255,10 +255,28 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   `Ready` and may publish `u64::MAX` once. Maximum epoch with the flag clear,
   zero epoch, and every unknown flag bit fail decode as corrupt before root
   installation. Separately force device loss from the lower-epoch exhausted
-  world with fully durable scars: recovery passes through
+  world with fully durable scars and hold recovery before reconstruction
+  completes. In that held state assert every `try_reserve_*`/`reserve_*` is
+  closed; every queued submission with a previously acquired permit returns
+  `SubmitError::WorldNotAccepting(Recovering)` with owned inputs and capacity
+  reclaimed; `declare_interest`/lease update, new subscription, and runtime
+  extension registration return their family-specific
+  `WorldNotAccepting(Recovering)` before allocating. In the same held state,
+  invoke immutable material lookup; receipt ID/status/cancellation; existing
+  interest ID/accepted/last-published state; existing subscriber
+  ID/accepted/poll/resume; telemetry; shutdown-receipt inspection; handle
+  clone/drop; and last-lease withdrawal. Assert their ordinary host results,
+  that withdrawal decrements host references without renderer work, and that
+  interest `Ready` is only a retained readiness snapshot rather than query
+  admission. In a separate otherwise identical held-recovery world, call
+  `shutdown` and assert it enters `ShuttingDown` under the once-only contract
+  rather than returning a lifecycle rejection; that world is not reused for a
+  recovery-completion branch. Run the non-shutdown matrix once before
+  successful recovery and once before forced terminal recovery failure.
+  Successful recovery passes through
   `Recovering(closed)` and returns to `DirectoryEpochExhausted`, not `Ready`;
-  root rejection and the complete public admission matrix remain identical
-  after recovery. Test fresh exhaustion, maximum-epoch restore, lower-epoch
+  root rejection and the complete exhausted-state matrix remain identical
+  afterward. Also test fresh exhaustion, maximum-epoch restore, lower-epoch
   closed restore, interest declare/update rejection, existing-interest
   withdrawal, every generic reserve family, matter/ordinary move/query/
   checkpoint/subscription/extension/non-root tick acceptance, extension

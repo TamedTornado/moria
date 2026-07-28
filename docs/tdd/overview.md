@@ -131,9 +131,10 @@ schema, coarse/full simulation, events, and every behavior meaning.
     interpretation of the bytes.
 18. `WorldDirectoryEpoch` never wraps or reuses. Allocator closure is a sticky
     world capability bit independent of the current numeric epoch: the current
-    root stays readable, only root publication closes, checkpoint format v2
-    persists the bit, restore reports the exhausted operational state, and
-    device recovery cannot reopen it.
+    root stays readable; root publication and new or updated interest lifecycle
+    work close while the already admitted residency set remains inspectable
+    and withdrawable; checkpoint format v2 persists the bit; restore reports
+    the exhausted operational state; and device recovery cannot reopen it.
 
 ## Selected implementation baseline
 
@@ -357,10 +358,12 @@ contract tests remain in the ordinary suite.
   silently own another.
 - Treat `DirectoryEpochExhausted` as an operational capability substate, not
   `Failed` and not `Ready`. Implement the exact reserve/submit matrix from
-  `public-api.md`; persist `DIRECTORY_ALLOCATOR_CLOSED` independently of the
-  current epoch; restore and renderer recovery must return to the exhausted
-  state when that bit is set. Golden format-v2 fixtures must include the
-  lower-epoch closed case.
+  `public-api.md`: root publication plus `declare_interest` and
+  `InterestLease::update` close, while existing interest inspection and
+  withdrawal remain legal. Persist `DIRECTORY_ALLOCATOR_CLOSED` independently
+  of the current epoch; restore and renderer recovery must return to the
+  exhausted state when that bit is set. Golden format-v2 fixtures must include
+  the lower-epoch closed case.
 - A command/query type owns its payload until admission succeeds. Queue-full or
   closed errors return the payload unchanged.
 - Public query/interest/result/dressing records, scheduled Behavior ABI v2,

@@ -4032,3 +4032,60 @@ repair if that is indeed the selected engineering behavior.
 ### Approval
 
 Not approved.
+
+## Coder Turn — 2026-07-28T20:23:24Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:18:41Z
+
+### Responses To Findings
+
+1. **F31/F33 addressed.** `Recovering` now has one exhaustive callable/result
+   matrix. Immutable host configuration/material lookup, receipt operations,
+   existing interest inspection, retained subscriber inspection/resume,
+   telemetry, shutdown, and mandatory host ownership release remain callable.
+   The last interest lease withdraws its host references even while recovery is
+   held; GPU retirement waits for reconstruction. Every permit family closes,
+   held-permit submissions return `SubmitError::WorldNotAccepting(Recovering)`,
+   and new interest, interest update, subscription, and runtime extension
+   registration return their exact family-specific recovery error. Interest
+   state during recovery is explicitly the last host-published readiness
+   snapshot, not a claim that queries are admitted.
+2. **F34 addressed.** T38's selected interest exception is preserved and now
+   stated consistently by every owner. Directory allocator closure stops root
+   publication plus `declare_interest` and `InterestLease::update`; other
+   non-root operations continue according to the public matrix, and existing
+   interest remains inspectable and withdrawable. The overview no longer
+   claims that only root publication closes, and storage names the interest
+   restriction as the one declared non-root exception.
+3. **Validation completed.** The headless state-machine plan holds both
+   successful and terminal recovery in `Recovering`, invokes every host-only
+   family, checks every closed reserve/admission/registration family and its
+   owned-input cleanup, proves last-lease withdrawal without renderer work,
+   and then rechecks the exhausted-state matrix after successful closed-state
+   recovery.
+
+### TDD Changes Made
+
+- Added the normative recovery matrix and retained-readiness semantics to
+  `public-api.md`.
+- Reconciled the world lifecycle summary in `lifecycles.md`.
+- Corrected the allocator-closure invariant and repository implementation rule
+  in `overview.md`.
+- Corrected the storage exhaustion owner contract and T38 in
+  `state-and-storage.md` and `decisions.md`.
+- Added held-recovery success/failure state-machine evidence in
+  `validation.md`.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+This turn does not change the selected exhausted-state policy or introduce a
+new public behavior. It makes the prior T38 choice callable and internally
+consistent. Runtime GPU extension registration remains accepted in
+`DirectoryEpochExhausted` because it publishes no root, but is rejected during
+`Recovering` because pipeline creation depends on the renderer generation.

@@ -491,9 +491,12 @@ closes the narrowest affected scope:
 - volume revision exhaustion fails that volume;
 - world-directory epoch exhaustion moves the world permanently to
   `WorldState::DirectoryEpochExhausted`: the current immutable root remains
-  readable and checkpointable, and non-root-changing operations may continue,
-  but no create, retirement, directory rebuild, placement stream, component
-  extraction, or other root publication can be admitted or prepared;
+  readable and checkpointable; non-root-changing operations may continue
+  except that `declare_interest` and `InterestLease::update` close to freeze
+  the already admitted residency set; existing interest remains inspectable
+  and withdrawable; and no create, retirement, directory rebuild, placement
+  stream, component extraction, or other root publication can be admitted or
+  prepared;
 - device generation exhaustion requires process restart.
 
 The directory epoch starts at one. Every root publication obtains its exact
@@ -504,8 +507,11 @@ root-changing operation that cannot obtain its epoch fails with
 root-changing submission returns
 `SubmitError::WorldNotAccepting { state:
 WorldState::DirectoryEpochExhausted, .. }`. Read-only queries, observation,
-checkpointing of the current root, interest withdrawal, and shutdown remain
-legal.
+checkpointing of the current root, existing-interest inspection/withdrawal,
+and shutdown remain legal. New interest and interest update return
+`InterestError::WorldNotAccepting(DirectoryEpochExhausted)` even though they do
+not publish a root: this is the one declared non-root exception and prevents
+new materialization lifecycle work after allocator closure.
 
 After behavior composition selects `N` root proposals, the coordinator
 checked-adds `N` to the current epoch before preparing any candidate root. If

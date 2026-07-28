@@ -929,8 +929,10 @@ and closes permanently after consuming `u64::MAX` or failing a checked
 multi-root range reservation. Closure is a sticky bit independent of the
 current root epoch. The current root, queries, matter mutation, ordinary
 single-volume movement, observations, checkpoints, non-root scheduled work,
-and shutdown remain usable; root publication and new interest lifecycle work
-are closed by the exact public admission matrix.
+and shutdown remain usable; root publication and both new interest declaration
+and existing-interest update are closed by the exact public admission matrix.
+Existing interest inspection and withdrawal remain usable, so closure freezes
+rather than leaks the already admitted residency set.
 
 Checkpoint format v2 stores closure as
 `DIRECTORY_ALLOCATOR_CLOSED` independently of `directory_epoch`. Restore with
