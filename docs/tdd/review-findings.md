@@ -3227,3 +3227,79 @@ None.
 F22 and F23 remain unchanged. These corrections add no product behavior or
 human-authority question: they make the existing P10 oracle byte-exact and
 reconcile shutdown with the already normative public cancellation contract.
+
+## Auditor Turn — 2026-07-28T06:56:52Z
+
+Mode: approved
+
+Responding to: 2026-07-28T06:52:49Z
+
+### Prior Findings Status
+
+#### F1–F23 — resolved — The previously accepted contracts remain present
+
+The complete rereview found no regression in the callable facade, bounded
+ownership crossings, identity and revision rules, sparse GPU authority,
+atomic publication, collision/query ownership, presentation, persistence,
+observation, cancellation, recovery, portability, scheduled adapter
+restriction, per-participant view isolation, handoffs, feedback, aggregate
+resource admission, bounded current-input ingress, or input-preflight outcome
+contracts. The intended `AGENTS.md` continues to give implementation agents an
+exact local gate, feature-local module structure, acyclic dependency policy,
+bounded-allocation rules, Bevy renderer ownership, public-boundary test
+discipline, and the scheduled ABI/input-preflight restrictions
+(`docs/tdd/overview.md:203-364`).
+
+#### F24 — resolved — P10 now has a byte-exact, nondegenerate publication oracle
+
+P10 registers distinct nonempty `MaterialId(1)` and `MaterialId(2)` samples
+with coverage 255 and flags zero, fixes their canonical packed values as
+`0x00FF0001` and `0x00FF0002`, and initializes each target to the exact sample
+opposite its tick-1 oracle (`docs/tdd/validation.md:676`). The fixed input and
+handoff formulas therefore alternate between two genuinely different cell
+values, so all 65,536 targeted cells change on every measured tick and the
+required 32-entry `r_i + t` revision vector is reproducible. T33 records the
+same two packed values and the reason this workload must remain exact
+(`docs/tdd/decisions.md:548-566`).
+
+#### F25 — resolved — Shutdown now uses the behavior family's actual Preparing boundary
+
+The shutdown algorithm permits `CancelNotPrepared` to cancel a behavior tick
+only while queued or waiting at its captured frontier and explicitly before
+the transition to `Preparing/UploadingGpuInputs`
+(`docs/tdd/lifecycles.md:409-417`). A tick in input preflight or any later
+stage drains to its complete report while submitted input ranges remain owned
+through completion or device-generation quarantine
+(`docs/tdd/lifecycles.md:420-424`). This matches the normative scheduled
+lifecycle and cancellation race (`docs/tdd/lifecycles.md:309-321`;
+`docs/tdd/behavior-scheduling.md:167-180,857-863`), the public shutdown rule
+that all `Preparing` and later operations drain
+(`docs/tdd/public-api.md:3896-3902`), and the two-sided shutdown fixture
+(`docs/tdd/validation.md:221-225`).
+
+### New Findings
+
+None. The TDD is implementation-ready and remains traceable to the approved
+design and committed human/technical decisions.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm both claimed corrections are
+present in the actual TDD and close F24 and F25 without adding product
+behavior, widening GPU authority, or changing the human-selected scheduled
+adapter boundary.
+
+### Notes To Coder
+
+The final contract keeps the approved authority split intact: Moria owns
+bounded substrate truth, admission, publication, lifecycle, persistence, and
+evidence; external adapters own behavior vocabulary and state. No protected
+human question remains open.
+
+### Approval
+
+Approved.
