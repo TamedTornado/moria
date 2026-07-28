@@ -4089,3 +4089,103 @@ new public behavior. It makes the prior T38 choice callable and internally
 consistent. Runtime GPU extension registration remains accepted in
 `DirectoryEpochExhausted` because it publishes no root, but is rejected during
 `Recovering` because pipeline creation depends on the renderer generation.
+
+## Auditor Turn — 2026-07-28T20:29:13Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:23:24Z
+
+### Prior Findings Status
+
+#### F1–F32 — resolved — The previously accepted contracts remain intact
+
+The complete rereview found no regression in the callable facade, bounded
+ownership, sparse authority, scheduling, persistence, portability, or
+validation contracts covered by F1–F32.
+
+#### F33 — resolved — `Recovering` now has a callable exhaustive facade matrix
+
+The public contract explicitly retains immutable host lookup, receipts,
+existing lease/subscriber inspection and release, telemetry, and shutdown,
+while every permit, queued submission, new interest/subscription, interest
+update, and runtime extension registration has its exact recovery result
+(`docs/tdd/public-api.md:1105-1132`). The lifecycle owner agrees
+(`docs/tdd/lifecycles.md:50-64`), and the held-recovery fixtures exercise both
+successful and terminal reconstruction branches plus ownership cleanup
+(`docs/tdd/validation.md:257-278`).
+
+#### F34 — resolved — Every owner now states the selected interest exception
+
+The overview, lifecycle, storage owner, T38, and facade matrix consistently say
+that directory closure stops root publication plus new interest declaration
+and existing-interest update, while existing leases remain inspectable and
+withdrawable (`docs/tdd/overview.md:131-137`;
+`docs/tdd/lifecycles.md:33-41`;
+`docs/tdd/state-and-storage.md:492-514`;
+`docs/tdd/public-api.md:1091-1103`;
+`docs/tdd/decisions.md:925-940`). F35 identifies a distinct contradiction in
+the stated reason and behavior of that now-consistent exception.
+
+### New Findings
+
+#### F35 — unresolved — The exhausted-state interest freeze is bypassed by accepted internal materialization paths
+
+The storage owner says rejecting `declare_interest` and
+`InterestLease::update` freezes the already admitted residency set and
+“prevents new materialization lifecycle work” after allocator closure
+(`docs/tdd/state-and-storage.md:492-514`). The normative facade nevertheless
+accepts all `submit_query` and `submit_matter` requests in
+`DirectoryEpochExhausted` (`docs/tdd/public-api.md:1091-1096`). A
+`ReadinessPolicy::Materialize` query creates internal interest and follows the
+region lifecycle (`docs/tdd/lifecycles.md:176-200`), while an admitted matter
+command may materialize cold target bricks (`docs/tdd/public-api.md:1674-1684`).
+Those are new materialization demands outside the supposedly frozen public
+interest set.
+
+This conflict is unavoidable on restore: a closed manifest starts directly in
+`DirectoryEpochExhausted` (`docs/tdd/persistence.md:120-128`), but restore
+exposes every reconstructed region as cold and expects later base-plus-scar
+materialization (`docs/tdd/persistence.md:243-266`). No runtime interest lease
+is checkpointed. The current validation matrix asserts interest rejection and
+query/matter acceptance, but does not exercise a cold
+`DirectoryEpochExhausted` restore with `Materialize` query or cold mutation
+(`docs/tdd/validation.md:279-284`), so it cannot select which contract wins.
+
+Required correction: choose one implementable exhausted-state materialization
+policy and apply it to the facade, lifecycle, storage, persistence/restore,
+T38, and validation. If only root publication is actually exhausted, keep
+ordinary interest declaration/update and internal query/command materialization
+available. If residency really freezes, define truthful typed outcomes for
+every query, matter, scheduled, or extension path that would require a cold
+brick, distinguish already-ready work from new materialization, and explain
+how a closed restored world with no persisted leases remains usefully
+inspectable. Add cold restored-world fixtures that cover the selected paths;
+testing only ready resident matter is insufficient.
+
+### Questions For Coder
+
+None. F35 is an ordinary lifecycle/admission reconciliation within the
+selected engineering exhaustion mechanism, not a protected human authority
+question.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm that F33's recovery matrix and
+F34's cross-document wording are present as claimed, including the exact
+runtime extension-registration distinction. I also confirm that the patch
+introduces no physics, damage, region-policy, renderer-privileged, or other
+consumer-specific authority.
+
+### Notes To Coder
+
+The smallest coherent repair appears to be keeping interest declaration/update
+available in `DirectoryEpochExhausted`, because neither operation publishes a
+directory root and the already accepted query/mutation contracts deliberately
+materialize cold truth. If the freeze has an unstated resource-safety reason,
+document that mechanism and close every alternate materialization route rather
+than treating only public leases differently.
+
+### Approval
+
+Not approved.
