@@ -650,3 +650,202 @@ truncated decision sentence is complete.
 
 None. The human feedback resolves the consequential GPU integration boundary,
 and the remaining choices are fully specified engineering contracts.
+
+---
+
+## Human review entry — fracture, multi-fidelity simulation, and adapter egress
+
+### Verbatim feedback
+
+```text
+TamedTornado (COMMENTED):
+The TDD is much stronger, but our follow-up architecture review exposed three required capabilities that need to be designed before approval. These are substrate/adapter contracts, not permission to add physics, damage, weapon, or gameplay semantics to Moria.
+
+## 1. Required: atomic GPU-resident fracture into child volumes
+
+Scheduled behavior must be able to split existing authoritative matter into new independently placed Moria volumes without a CPU readback or later host-authored `VolumeCommand::Create`.
+
+This is **not** arbitrary scheduled creation and must not transport a Rust `BaseContentSource` through the GPU ABI. The source matter already exists inside Moria. Define a bounded, data-only operation that extracts GPU-discovered components from one pinned source volume into child volumes.
+
+The contract must cover:
+
+- pre-reservation of every possible child volume, directory entry, page/cell transfer, identifier, proposal record, and byte before execution;
+- an all-or-none publication in which source removal and child creation become visible atomically, with no duplicated, lost, or temporarily ownerless matter;
+- child local frames, initial placements, inherited cell size/material facts, persistence/provenance, and later rematerialization;
+- proposal-local temporary piece handles and a GPU-visible mapping to final `VolumeId`s so the physics adapter can associate its new bodies without authority-path CPU readback;
+- cancellation, validation failure, allocation failure, device loss, and complete resource reclamation;
+- adapter-owned policy for which connected components become persistent Moria volumes versus transient debris or visual effects. Moria bounds and executes the choice but does not define “significant debris.”
+
+Validation must demonstrate a GPU-discovered fracture that atomically converts one existing volume into multiple independently moving child volumes, preserves exact matter ownership, and returns usable child identities to GPU-owned adapter state.
+
+## 2. Required: CPU-defined activity regions with multi-fidelity world simulation
+
+The CPU/game layer defines one or more physics activity regions; the GPU does **not** choose where important gameplay regions are. Region definitions arrive through current-tick consumer input.
+
+However, leaving every activity region must not mean that an object freezes or disappears. The intended model is one persistent world simulation with:
+
+- coarse motion/world simulation outside activity regions;
+- full collision, constraints, damage, and rigid-body physics inside them;
+- a transition halo that permits continuous promotion into and demotion out of full physics;
+- GPU-side classification of persistent bodies against the CPU-supplied regions, without reading the body list back to the CPU;
+- continued coarse movement of ships and other significant objects outside the bubble, plus coarse remote destruction/debris outcomes where applicable.
+
+Multiple disconnected regions must be supported. Overlapping regions must form a deterministic union: no voxel record or body may be processed twice because two player bubbles overlap. A projectile or other body crossing between regions must remain one continuously owned body; geographic regions are not separate behavior adapters or separate physics worlds requiring an accidental cross-adapter migration protocol.
+
+Select and document a bounded placement-authority/update mechanism for coarse objects. Do not assume that publishing one ordinary scheduled move proposal for every coarse object on every full-physics tick will scale without proving it, and do not silently make Moria placements stale. Likewise, assess whether the fixed maximum-dispatch model is sufficient after GPU active-list compaction; if it is, prove the resource/performance bound, and if it is not, define the smallest controlled dispatch mechanism required.
+
+Validation must include disconnected and overlapping CPU-defined regions, one-time processing in their overlap, continuous boundary crossing, promotion/demotion without transform or velocity discontinuity, and continued coarse motion outside every full-physics region.
+
+## 3. Required: bounded opaque GPU-to-CPU adapter egress
+
+GPU behavior adapters need an optional, bounded GPU-to-CPU egress channel for adapter-owned events and query outcomes. This is generic transport, not a Moria gameplay-event model.
+
+The adapter owns the byte/record schema and may use it for facts such as significant collisions, projectile or beam impacts, destruction, scoring inputs, audio cues, or other consumer-defined results. Moria must not define or interpret those concepts.
+
+The transport contract must provide:
+
+- an optional per-adapter declared maximum record/byte capacity, with zero meaning no CPU egress;
+- reservation and accounting before execution;
+- an adapter-written initialized prefix and asynchronous ordered staging readback;
+- tick and correlation identity sufficient for the owning consumer to decode the result;
+- exact delivery or an explicit overflow/failure outcome—never silent truncation;
+- defined cancellation, shutdown, device-loss, mapping/readback-failure, and resource-reuse behavior;
+- no raw device, queue, mapped authority resource, or full solver-state readback;
+- no requirement to route GPU-to-GPU data through the CPU; existing handoffs remain the appropriate path for GPU consumers.
+
+Publication authority must not depend on CPU interpretation of these bytes. Specify the ordering between publication, egress availability, receipts, and buffer reuse so consumers can distinguish “no events” from “events unavailable or lost.”
+
+Validation must round-trip an adapter-defined record layout that Moria does not understand, prove zero-event behavior, exercise exact capacity and overflow, and cover cancellation/readback failure/device loss without leaking or silently dropping required evidence.
+
+## Cross-cutting revision
+
+Update the public API, behavior scheduling, GPU ABI, lifecycle, resource limits, persistence/identity rules, receipts, decisions, and validation consistently. The adversarial reviewer should specifically try to disprove:
+
+- atomic matter ownership during fracture;
+- child-ID feedback without CPU authority-path readback;
+- continued coarse simulation outside CPU-defined regions;
+- overlap deduplication and boundary continuity;
+- honest opaque-event delivery and overflow behavior; and
+- the absence of new physics, damage, weapon, or gameplay semantics in Moria itself.
+```
+
+### Technical decision and clarification
+
+T34 supersedes T32's no-create/no-split limitation only for one closed
+source-bound operation. `ExtractComponents` redistributes occupied samples
+from one pinned source into pre-reserved dynamic child identities under a
+single `WorldDirectoryEpoch` root gate. It cannot invent samples, attach a
+consumer content source, or perform arbitrary scheduled creation. Proposal-
+local piece handles map to final `VolumeId`s in read-only Scheduled ABI v2
+binding 6 before the adapter dispatch. The adapter selects which labeled
+pieces become persistent children or explicit removal; Moria does not define
+connectivity significance or transient-debris policy.
+
+T35 selects one persistent adapter/body table for all CPU-authored activity
+regions. Region bytes remain opaque current input. The adapter classifies each
+body once against the deterministic region union, compacts mutually exclusive
+full/halo/coarse lists, keeps coarse simulation running outside every region,
+and publishes changed poses through one GPU placement stream and directory
+epoch rather than per-object host move commands. The fixed-dispatch baseline
+is retained with a declared 65,536-body, 16-dispatch/8,192-workgroup bound
+and blocking P11 evidence.
+
+T36 adds optional fixed-stride opaque CPU egress in binding 7. Every enabled
+adapter declares exact record/byte maxima; tick admission reserves device,
+staging, host, map, and receipt capacity before execution. Publication may
+complete before asynchronous egress mapping. Zero records is a successful
+empty result, while overflow, mapping, decode, shutdown, cancellation, and
+device loss are explicit terminal results with no truncated prefix.
+GPU-to-GPU handoffs remain on the existing GPU path.
+
+Scheduled ABI v2 therefore has exactly eight group-0 bindings and is the only
+scheduled ABI accepted by the initial implementation. The new types remain
+generic substrate records. Moria does not acquire a timestep, region,
+velocity, physics, collision-response, damage, weapon, debris, scoring, audio,
+or gameplay-event model.
+
+### Unresolved question
+
+None. The human feedback explicitly authorizes these substrate/adapter
+contracts while retaining the approved behavior-policy boundary. All remaining
+choices are specified engineering mechanisms and validation obligations.
+
+---
+
+## T34. Source-bound component extraction uses one directory-epoch gate
+
+**Decision.** Scheduled ABI v2 pre-reserves every possible child identity,
+directory/lifetime entry, transfer/page/brick/scar/provenance record, proposal,
+receipt, and byte before GPU execution. An extract-components proposal labels
+samples from exactly one pinned source. The adapter sees a dense
+piece-handle-to-final-identity map before dispatch. Moria builds a new source
+and children in unreferenced storage and installs the complete directory root
+with one checked epoch gate.
+
+**Frame and persistence.** A child's origin is the lexicographically smallest
+assigned source cell; axes/cell size/material samples are inherited and its
+initial placement preserves every transferred world-space cell box.
+Persisted derived provenance and a complete sparse derived base replace a
+consumer content source. Uncheckpointed derived content remains dirty and
+subject to the existing unrecoverable-device-loss rule.
+
+**Reason.** A later ordinary create cannot provide atomic ownership or a GPU
+child identity. Arbitrary scheduled create would require behavior-authored
+content and a source object. Source-bound transfer plus a directory root gives
+the required capability without widening that authority.
+
+**Rejected.** CPU component readback, host-authored follow-up create, copying
+source cells into both parent and child, publishing directory entries
+individually, implicit deletion of unassigned cells, and GPU transport of
+`BaseContentSource`.
+
+## T35. Persistent multi-fidelity adapters use opaque CPU regions and a placement stream
+
+**Decision.** The CPU supplies region definitions through ordinary opaque
+participant input. One GPU adapter owns one persistent body table across all
+regions, classifies every body once into mutually exclusive adapter-owned
+full/halo/coarse lists, continues coarse work outside all regions, and compacts
+changed Moria placements into one bounded placement stream. The stream
+validates on GPU and publishes one alternate directory root while each updated
+volume advances its revision.
+
+**Dispatch.** The portable baseline keeps fixed maximum dispatch:
+65,536 bodies at width 128. The proof adapter executes exactly 11 dispatches
+and at most 3,604 workgroups against declared maxima 16/8,192. P11 at empty,
+1%, 50%, and 100% active lists is blocking.
+
+**Reason.** Geographic adapters/worlds would require accidental state
+migration and duplicate overlapping-region processing. Ordinary move
+admission per coarse object would force host enumeration and queue overhead.
+One table, deterministic union, halo, and compact directory update preserve
+continuous ownership and fresh Moria placements.
+
+**Rejected.** GPU-selected activity regions, freezing objects outside all
+regions, one adapter per bubble, duplicate body records in overlaps, silent
+stale placement, an unproven per-object host command loop, and raw indirect
+dispatch buffers.
+
+## T36. Adapter egress is bounded opaque transport independent of publication
+
+**Decision.** A GPU adapter may declare zero egress or one fixed-stride schema
+and exact record/byte maximum. Scheduled ABI v2 binding 7 is initialized by
+Moria. The adapter reserves records with the supplied atomic helper; Moria
+validates the complete required count, copies only a valid initialized prefix,
+maps asynchronously, and returns a tick/participant/correlation/schema-bearing
+receipt in adapter tick order.
+
+**Outcome and lifetime.** Zero records is ready-empty. Exact capacity succeeds.
+One-over or an overflow flag fails with no delivered prefix. Publication does
+not depend on CPU decoding and may be reported while egress is pending.
+Working, staging, and host bytes release only after their respective GPU-use,
+map/view-drop/unmap, and result-drop milestones. Cancellation, shutdown,
+mapping, decoding, and device loss are distinct terminal outcomes.
+
+**Reason.** Adapters need generic CPU-visible facts without teaching Moria an
+event vocabulary or reading back full solver state. A separately bounded
+receipt makes no-events distinguishable from unavailable/lost events and keeps
+GPU handoffs on the GPU path.
+
+**Rejected.** Unbounded append, silent truncation, interpreting adapter
+records, tying publication authority to CPU event decoding, returning mapped
+authority resources, and routing GPU-to-GPU consumers through CPU egress.

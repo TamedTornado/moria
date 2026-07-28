@@ -3303,3 +3303,108 @@ human question remains open.
 ### Approval
 
 Approved.
+
+## Coder Turn — human-review revision
+
+Mode: continue
+
+Responding to: TamedTornado (COMMENTED)
+
+### Responses To Human Review
+
+1. **Atomic GPU component extraction added.** Scheduled ABI v2 now has one
+   bounded `ExtractComponents` operation. Before execution, Moria reserves all
+   candidate child IDs/keys, live and lifetime directory records, alternate
+   directory root, assignment/transfer/page/brick/scar/provenance records,
+   proposal/outcome/receipt records, and bytes. Read-only binding 6 maps every
+   proposal-local piece handle to its final `VolumeId` before the adapter
+   dispatch. The adapter can update factory-owned body state without CPU
+   authority-path readback.
+2. **Fracture publication and ownership closed.** Moria transfers samples only
+   from one pinned source, computes canonical child frames and continuous
+   initial placements, inherits cell size/sample facts, builds source and
+   child state in unreferenced storage, and installs one complete
+   `WorldDirectoryEpoch` root. Every source sample remains, transfers once, or
+   is explicitly reported as removed. Validation/failure cannot expose a
+   duplicated, ownerless, lost, or half-published sample.
+3. **Derived child persistence selected.** Children carry substrate provenance
+   and a complete sparse derived base rather than a Rust
+   `BaseContentSource`. Checkpoint format v2 restores identity, placement,
+   provenance, samples, later scars, and cold rematerialization. Before the
+   first durable checkpoint, derived child bytes remain dirty/pinned and use
+   the existing `UnrecoverableDirtyState` device-loss rule.
+4. **CPU-authored multi-region integration designed.** Region definitions
+   remain opaque current-tick input selected by the CPU/game layer. One
+   persistent GPU adapter/body table classifies each body once against the
+   deterministic union, compacts mutually exclusive full/halo/coarse lists,
+   preserves body/volume identity and adapter-owned transform/velocity through
+   transitions, and continues coarse work outside every region. Moria acquires
+   no region or simulation vocabulary.
+5. **Bounded placement authority selected.** Changed full/coarse poses are
+   stable-compacted into one GPU `PlacementStream`. Moria validates unique
+   dynamic-volume entries and publishes one alternate directory root while
+   advancing every addressed volume revision. This removes per-object host
+   command/receipt overhead and forbids silently stale placements.
+6. **Fixed-dispatch sufficiency made falsifiable.** At the default 65,536-body
+   proof capacity and width 128, each maximum-list pass uses 512 workgroups.
+   Portable hierarchical compaction plus three fidelity kernels uses exactly
+   11 dispatches/at most 3,604 workgroups against declared maxima 16/8,192.
+   P11 measures empty, 1%, 50%, and 100% active lists on every backend family.
+   Failure blocks this selection rather than silently exposing indirect
+   buffers.
+7. **Opaque GPU-to-CPU egress added.** An adapter may declare zero egress or
+   one fixed-stride schema with exact record/byte maxima. Binding 7 is a
+   zero-initialized bounded append target. Moria pre-reserves record/device/
+   staging/host/map/receipt capacity, validates required count, maps the exact
+   initialized prefix asynchronously in tick order, and reports tick,
+   participant, correlation, and schema without decoding the records.
+8. **Egress truth and lifetime closed.** Zero events is ready-empty, exact
+   capacity succeeds, and one-over/overflow returns no prefix. Cancellation,
+   participant-not-run, shutdown, map/decode failure, and device loss have
+   distinct terminal outcomes. Publication may complete while egress is
+   pending and never depends on CPU interpretation. GPU handoffs remain on the
+   existing GPU path; no raw/mapped authority resource or full solver-state
+   readback is exposed.
+
+### Concrete TDD Evidence
+
+- `adapter-substrate-contracts.md` is the focused normative contract for
+  component extraction, candidate identity mapping, matter conservation,
+  directory epochs, child frames/placement/provenance/rematerialization,
+  placement streams, multi-fidelity region integration, fixed dispatch,
+  opaque egress, Scheduled ABI v2 layouts, resource limits, and failures.
+- `public-api.md` adds descriptor maxima, independent resource kinds,
+  component-extraction/placement results, egress receipts/failures, proposal
+  outcomes, GPU context capability summaries, derived-child restore
+  membership, and telemetry.
+- `behavior-scheduling.md` updates the effect set, eight-binding ABI,
+  reservation, conflict, GPU path, adversarial physics/damage-shaped cases,
+  region continuity, child-ID use, and opaque egress.
+- `architecture.md`, `lifecycles.md`, and `state-and-storage.md` add alternate
+  directory-root preparation/publication, egress copy/map ordering, named
+  pools, startup capability checks, cancellation/device-loss boundaries, and
+  old-reader reclamation.
+- `persistence.md` selects format v2 with external versus derived source tags,
+  derived-base chunks, restore membership rules, and cold rematerialization
+  without a consumer source.
+- `validation.md` updates Scheduled ABI reflection to exactly bindings 0..=7,
+  adds C11–C13, and adds blocking P11–P13 for multi-fidelity placement,
+  fracture publication, and opaque egress.
+- `decisions.md` preserves the complete human feedback verbatim, records its
+  interpretation separately, and adds T34–T36. T34 explicitly supersedes only
+  T32's no-create/no-split limitation while retaining the ban on arbitrary
+  create and `BaseContentSource` transport.
+- `overview.md` updates binding invariants, implementation baseline,
+  traceability, intended `AGENTS.md`, and completion gates.
+
+### Questions For Reviewer
+
+None.
+
+### Notes To Reviewer
+
+The new public vocabulary is limited to generic source samples, piece handles,
+child identities, placements, directory epochs, opaque bytes, capacities, and
+transport outcomes. Physics, damage, weapons, activity-region meaning,
+velocity, constraints, significance, debris, scoring, audio, and gameplay
+events remain entirely adapter/consumer-owned.

@@ -48,6 +48,11 @@ bytes to CPU planning/execution, and uploads them into the fixed read-only GPU
 group-0 binding. This supports independently implemented, purpose-built or
 substantially adapted Moria-conforming GPU adapters; it is not drop-in support
 for an arbitrary engine's raw device/resources or command/submission model.
+Scheduled ABI v2 also supplies pre-reserved child identities for atomic
+component extraction, one compact placement stream for GPU-resident persistent
+objects, and optional bounded opaque GPU-to-CPU egress. These are substrate
+transports only; adapters own component significance, activity-region schema,
+coarse/full simulation, events, and every behavior meaning.
 
 ## Document map
 
@@ -58,6 +63,7 @@ for an arbitrary engine's raw device/resources or command/submission model.
 | [state-and-storage.md](state-and-storage.md) | Coordinates, material encoding, sparse GPU layout, atomic publication, revisions, and resource bounds |
 | [lifecycles.md](lifecycles.md) | Startup, interest, commands, queries, observations, shutdown, and device loss |
 | [behavior-scheduling.md](behavior-scheduling.md) | Scheduled CPU/GPU behavior hooks, ordering, synchronization, composition, state ownership, and tick publication |
+| [adapter-substrate-contracts.md](adapter-substrate-contracts.md) | Atomic component extraction, directory epochs, placement streams, multi-fidelity adapter integration, opaque CPU egress, and Scheduled ABI v2 |
 | [collision-and-presentation.md](collision-and-presentation.md) | Matter-derived collision, surface generation, dressing, and stale-view rules |
 | [persistence.md](persistence.md) | Scar model, checkpoint format, restore, durability, and base reconstruction |
 | [validation.md](validation.md) | Automated, real-GPU, portability, performance, and human evidence obligations |
@@ -74,7 +80,9 @@ for an arbitrary engine's raw device/resources or command/submission model.
 4. One matter command targets one volume and commits every targeted sample at
    one new volume revision, or changes no committed sample.
 5. A placement change advances the same per-volume revision sequence as a
-   matter edit. No operation combines independent volumes atomically.
+   matter edit. Ordinary operations do not combine independent volumes.
+   The closed exceptions are a pre-reserved placement stream and atomic
+   component extraction, both published by one world-directory epoch gate.
 6. Unknown, cold, failed, stale, or device-lost matter is never reported as
    empty.
 7. Collision is computed from material samples and the committed placement,
@@ -107,6 +115,18 @@ for an arbitrary engine's raw device/resources or command/submission model.
     ingress never executes consumer code or becomes an implicit empty success;
     an admitted preflight abort truthfully distinguishes its failed participant
     from every participant that was not run.
+15. Atomic component extraction can publish only samples already owned by one
+    pinned source. Each source sample remains in the source, transfers to one
+    child, or is explicitly reported as removed; readers see the old directory
+    or the complete new directory.
+16. Activity regions and fidelity classes are consumer/adapter data.
+    Moria transports their opaque current-tick bytes and bulk-publishes
+    placements but never chooses regions, classifies bodies, or owns coarse or
+    full simulation.
+17. Optional GPU-to-CPU egress is bounded opaque transport.
+    Zero records, pending delivery, overflow, mapping failure, decode failure,
+    and device loss are distinct, and publication never depends on CPU
+    interpretation of the bytes.
 
 ## Selected implementation baseline
 
@@ -139,15 +159,25 @@ for an arbitrary engine's raw device/resources or command/submission model.
   pinned commit frontier, a restricted opaque GPU resource/encoder surface,
   bounded opaque consumer ingress, processor handoffs, and prior feedback,
   whole-proposal conflict policies, and at most one behavior publication
-  revision per affected volume. Scheduled v1 does not create volumes, so
-  splitting an existing volume into newly created independent volumes is a
-  later ordinary control-plane sequence rather than an atomic tick effect.
+  revision per affected volume. Scheduled ABI v2 adds only two multi-volume
+  substrate effects: a compact placement stream and bounded extraction of
+  source-owned samples into pre-identified child volumes. Arbitrary scheduled
+  create and `BaseContentSource` transport remain forbidden.
+- One checked `WorldDirectoryEpoch` root gate atomically publishes each
+  component-extraction or placement-stream proposal. Per-volume revisions
+  remain consumer freshness identities; unrelated root proposals keep
+  independent ordered gates and receipts.
+- GPU adapters may declare an optional fixed-stride opaque CPU-egress lane.
+  Moria stages and delivers initialized prefixes asynchronously without
+  interpreting records or routing GPU-to-GPU handoffs through the CPU.
 - Organic and constructed surfaces use GPU dual contouring with
   material-selected feature treatment. Collision continues to use occupied
   material cells, not that contour.
-- Checkpoints store stable identities, source lineage plus an exact
-  reconstruction fingerprint, placements, and sparse full-brick scars. They
-  never store meshes or untouched base bricks.
+- Checkpoints store stable identities, placements, and sparse full-brick
+  scars. External volumes store source lineage plus an exact reconstruction
+  fingerprint; derived-extraction children instead store provenance and their
+  complete sparse derived base. Checkpoints never store meshes or untouched
+  external base bricks.
 
 ## Intended repository shape
 
@@ -302,23 +332,28 @@ contract tests remain in the ordinary suite.
   mutate the ordinary subscriber cursor or skip a gap/unsupported fact. Polling
   must not reconstruct historical world bounds from the current volume
   directory, and gap snapshots must preserve typed retired pinned members.
-- Extraction records/bytes, live and lifetime volume records, presentation
+- Extraction records/bytes, live and lifetime volume records, versioned
+  directory roots/nodes/entries/authorities, presentation
   artifact/dirty/job/mesh/instance pools, dressing registrations, scheduled
   behavior registrations/order edges/per-participant input records and host/
   GPU bytes/views/collision scratch/handoff maps and bytes/proposals/
-  double-buffered feedback/factory buffer
-  counts and live bytes, and
+  double-buffered feedback/factory buffer counts and live bytes,
+  component-extraction proposals/children/assignments/child bricks/bytes, placement
+  updates/bytes, opaque-egress records/device/staging/host bytes/maps/receipts,
+  and
   asynchronous GPU extension registrations/WGSL bytes are separate named
   bounds. Do not make one pool silently own another.
 - A command/query type owns its payload until admission succeeds. Queue-full or
   closed errors return the payload unchanged.
-- Public query/interest/result/dressing records, scheduled Behavior ABI v1,
+- Public query/interest/result/dressing records, scheduled Behavior ABI v2,
   and asynchronous Extension ABI v1 layouts in `public-api.md` and
   `behavior-scheduling.md` are normative. Do not replace closed variants,
   mandatory revision binding, or fixed offsets with implementation-defined
-  blobs. Scheduled group 0 has exactly six bindings; binding 5 is the
-  participant's current read-only opaque input and cannot be replaced by a
-  shared-state side channel. Scheduled ABI logical 64-bit fields are always explicit low/high
+  blobs. Scheduled ABI v2 group 0 has exactly eight bindings: binding 5 is the
+  participant's current read-only opaque input, binding 6 is the read-only
+  pre-reserved component-extraction identity map, and binding 7 is the optional bounded
+  opaque CPU-egress target. None may be replaced by a shared-state side
+  channel. Scheduled ABI logical 64-bit fields are always explicit low/high
   `u32` pairs, and next-tick feedback must preserve the complete documented
   terminal disposition/cause rather than a reduced category.
 - No consumer, example, test harness, or feature may inspect storage internals.
@@ -327,9 +362,11 @@ contract tests remain in the ordinary suite.
   generation recipe, player, camera policy, gameplay content, or
   world-specific axis assumption belongs in `src/`. Behavior modules may name
   only generic access, schedule, proposal, outcome, and lifecycle concepts.
-- Scheduled effects in v1 are fill, patch, move, and retire only. Do not add
-  scheduled create, split, debris creation, or a `BaseContentSource` wire
-  record; consumers use the later ordinary create control plane.
+- Scheduled effects are fill, patch, move, retire, placement stream, and
+  extract components. The last operation may create only pre-reserved dynamic
+  children whose cells come from one pinned source. Do not add arbitrary
+  scheduled create, behavior-defined child content, debris/physics policy, or
+  a `BaseContentSource` wire record.
 - CPU behavior planners/adapters execute synchronously on the Bevy main thread
   while the tick frontier is held. Do not imply worker execution, preemption,
   or an adapter latency guarantee; P10 is only the fixed CPU/mixed feasibility
@@ -352,10 +389,12 @@ contract tests remain in the ordinary suite.
   and components use noun phrases. Do not encode schedule order in function
   names.
 - Every state transition and error variant needs a unit or headless-app test.
-  Atomic publication, stale preconditions, observation gaps, restore mismatch,
-  output overflow, queue pressure, behavior first-participant input and upload
-  failures, tick ordering/composition, adapter-state nonownership, and device
-  loss require adversarial tests.
+  Atomic publication, component-extraction matter conservation, child-ID GPU feedback,
+  stale preconditions, observation gaps, restore mismatch, egress overflow,
+  queue pressure, behavior first-participant input and upload failures,
+  activity-region overlap/boundary continuity, continued coarse placement,
+  tick ordering/composition, adapter-state nonownership, and device loss
+  require adversarial tests.
 - Test-only fault injection is feature-gated under `test-support` and can fail
   only public production stages. It may not expose a bypass or alternate truth
   path.
@@ -373,10 +412,13 @@ contract tests remain in the ordinary suite.
 | Inspection and collision truth | `query`, `collision` | Exact query oracle; truth-versus-view scenario |
 | Atomic mutation | `command`, `storage` | Forced post-admission failure and concurrent snapshot tests |
 | Dynamic volumes | `volume`, `query` | Move/edit/query/checkpoint/restore scenario |
+| Atomic GPU component extraction | `behavior`, `storage`, `volume`, `persistence`, `gpu` | Source-to-children conservation, GPU child-ID mapping, one directory epoch, failure reclamation, and restore/rematerialization |
+| Persistent multi-fidelity adapter integration | `behavior`, `gpu`, `volume` | CPU-authored disconnected/overlapping regions, one-time classification, halo continuity, fixed-dispatch bound, and coarse placement stream |
+| Opaque GPU-to-CPU adapter egress | `behavior`, `gpu`, `bevy` | Unknown-schema round trip, zero/exact/overflow outcomes, ordered async readback, and failure reclamation |
 | Bounded observation | `observation` | Overflow-to-gap and resnapshot tests |
 | Derived presentation/dressing | `presentation` | Revision install checks and diagnostic visual capture |
 | Persistence scars | `persistence` | Semantic round trip and incompatible-base failures |
-| Scheduled external behavior seam | `behavior`, `bevy`, `gpu`, `command` | Purpose-built Moria-conforming CPU/GPU physics- and damage-shaped adapters proving first-participant ingress, isolated views, restricted GPU handles, both mixed-processor handoffs, prior feedback, typed abort outcomes, and no atomic scheduled create/split |
+| Scheduled external behavior seam | `behavior`, `bevy`, `gpu`, `command` | Purpose-built Moria-conforming CPU/GPU physics- and damage-shaped adapters proving first-participant ingress, isolated views, restricted GPU handles, both mixed-processor handoffs, prior feedback, typed abort outcomes, atomic extraction without arbitrary creation, persistent coarse/full integration, and opaque egress |
 | Asynchronous inspection/effect jobs | `gpu`, `query`, `command` | Bounded WGSL packet/effect tool scenario |
 | Telemetry and failure honesty | `telemetry`, all owners | Schema invariants and deliberate failure suite |
 
@@ -392,7 +434,7 @@ in [validation.md](validation.md) passes, the public contract harness produces
 a fail-closed evidence report, at least one physical adapter in each claimed
 native backend family passes real-GPU parity and device-loss qualification, and
 the presentation fixture has a recorded human visual decision. Architecture
-feasibility gates P1–P10 are blocking physical-adapter receipts for each claimed
+feasibility gates P1–P13 are blocking physical-adapter receipts for each claimed
 backend family; failure blocks the affected storage, mutation/query, collision,
 materialization, presentation, scheduled behavior, asynchronous extension, or
 checkpoint selection until the design is revised or passes. Correctness and
@@ -402,3 +444,7 @@ both its 27-artifact local latency fixture and its 13,824-artifact
 maximum-command fair-drain fixture; the local receipt alone is incomplete.
 The local fixture is the eight-corner-cell patch whose halo union is exactly
 27 artifacts, not an impossible single-cell fan-out.
+P11 qualifies fixed maximum dispatch and compact placement publication for the
+multi-fidelity proof adapter. P12 qualifies atomic component extraction and
+directory-root publication. P13 qualifies bounded opaque egress including
+readback latency and zero/exact/overflow honesty.
