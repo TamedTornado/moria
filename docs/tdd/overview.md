@@ -129,6 +129,11 @@ schema, coarse/full simulation, events, and every behavior meaning.
     Zero records, pending delivery, overflow, mapping failure, decode failure,
     and device loss are distinct, and publication never depends on CPU
     interpretation of the bytes.
+18. `WorldDirectoryEpoch` never wraps or reuses. Allocator closure is a sticky
+    world capability bit independent of the current numeric epoch: the current
+    root stays readable, only root publication closes, checkpoint format v2
+    persists the bit, restore reports the exhausted operational state, and
+    device recovery cannot reopen it.
 
 ## Selected implementation baseline
 
@@ -350,6 +355,12 @@ contract tests remain in the ordinary suite.
   bounds. One enabled placement maximum covers one stream and one root
   transaction; do not multiply it by general proposal slots or make one pool
   silently own another.
+- Treat `DirectoryEpochExhausted` as an operational capability substate, not
+  `Failed` and not `Ready`. Implement the exact reserve/submit matrix from
+  `public-api.md`; persist `DIRECTORY_ALLOCATOR_CLOSED` independently of the
+  current epoch; restore and renderer recovery must return to the exhausted
+  state when that bit is set. Golden format-v2 fixtures must include the
+  lower-epoch closed case.
 - A command/query type owns its payload until admission succeeds. Queue-full or
   closed errors return the payload unchanged.
 - Public query/interest/result/dressing records, scheduled Behavior ABI v2,

@@ -136,6 +136,7 @@ impl ValidatedMoria {
 pub struct StartupApplied {
     pub world: WorldId,
     pub key: WorldKey,
+    pub state: WorldState,               // Ready | DirectoryEpochExhausted
     pub effective_config: EffectiveConfig,
     pub adapter: AdapterCapabilityReport,
     pub mode: StartupModeApplied,
@@ -150,7 +151,10 @@ pub enum StartupModeApplied {
 The installation handles exist in `Configured` state so they can be inserted
 into consumer resources before `App::add_plugins(installation.plugin)`.
 `startup` becomes ready only after the plugin is installed and startup or
-restore reaches `Ready`; submitting through the world earlier returns
+restore reaches an operational state: `Ready` for a fresh world or ordinary
+restore, and `DirectoryEpochExhausted` for a checkpoint whose durable
+directory allocator is closed. `StartupApplied::state` reports which state was
+entered. Submitting through the world before either state is installed returns
 `WorldNotAccepting`. `ValidatedMoria` is consumed exactly once. The
 `test-support` driver consumes it through the same internal installation
 routine and exposes no additional consumer operation.
@@ -1079,6 +1083,31 @@ observations, current-root checkpoints, non-root matter/single-volume
 placement operations, interest withdrawal, and shutdown remain callable.
 Scheduled ticks remain callable for non-root effects; selecting a root effect
 produces the typed tick-wide exhaustion outcome defined below.
+
+The admission matrix for this substate is normative:
+
+| Facade family | `DirectoryEpochExhausted` behavior |
+| --- | --- |
+| `try_reserve_*` / `reserve_*` for commands, queries, checkpoints, behavior ticks, extensions, and effect batches | Accepted subject to the ordinary queue/byte/capability limits. Permits are request-agnostic; structural root-effect rejection occurs at submission or candidate admission. |
+| material registry reads, `material`, `submit_query`, `request_checkpoint`, `telemetry` | Accepted against the current immutable root. |
+| `submit_matter` | Accepted; it publishes one existing volume authority version and consumes no directory epoch. |
+| `submit_volume(Move)` | Accepted for an existing dynamic volume; it is the ordinary single-volume authority-version path and consumes no directory epoch. |
+| `submit_volume(Create | Retire)` | Rejected synchronously as `SubmitError::WorldNotAccepting { state: DirectoryEpochExhausted, .. }`; the command and permit are returned/released normally. |
+| `request_behavior_tick` | Accepted. A tick containing no selected root proposal proceeds; any selected placement stream or component extraction completes with the closed tick-wide `DirectoryEpochExhausted` no-publication outcome. |
+| `submit_gpu_extension` / effect-batch child admission | Accepted. Extension ABI v1 exposes only fill, patch-runs, and ordinary single-volume move candidates, so every legal child is non-root-changing and follows the ordinary all-or-none child-admission contract. |
+| `subscribe`, subscriber polling/snapshot/resume, existing interest state/withdrawal | Accepted. |
+| `declare_interest`, `InterestLease::update` | Rejected with `InterestError::WorldNotAccepting(DirectoryEpochExhausted)`; dropping a lease still withdraws it. This preserves the already admitted residency set without opening new lifecycle work after allocator closure. |
+| `register_gpu_extension` | Accepted subject to the ordinary capability and registry limits; registration itself does not publish a directory root. |
+| `shutdown` / `shutdown_receipt` | Accepted under the ordinary once-only shutdown contract. |
+
+`Recovering`, including recovery entered from
+`DirectoryEpochExhausted`, resolves `try_reserve_*` as
+`TryReserveError::Closed`, resolves waiting `reserve_*` as
+`ReserveError::Closed`, and rejects submission with a previously held permit
+as `SubmitError::WorldNotAccepting { state: Recovering, .. }`. Only telemetry,
+receipt/subscriber inspection, and shutdown remain callable. Recovery retains an internal
+`directory_allocator_closed` bit and returns to
+`DirectoryEpochExhausted`, never `Ready`, after successful reconstruction.
 
 A failed matter mutation always reports `revision_changed = false`.
 
@@ -2614,9 +2643,15 @@ pub struct CheckpointRequest {
     pub scope: CheckpointScope,
 }
 
+pub struct DirectoryCheckpointState {
+    pub epoch: WorldDirectoryEpoch,
+    pub allocator_closed: bool,
+}
+
 pub struct CheckpointApplied {
     pub key: CheckpointKey,
     pub durable: Vec<(VolumeKey, VolumeRevision)>,
+    pub directory: DirectoryCheckpointState,
     pub manifest: ChunkDigest,
 }
 
@@ -2636,6 +2671,7 @@ pub struct RestoreApplied {
     pub active_world: WorldKey,
     pub imported: bool,
     pub revisions: Vec<(VolumeKey, VolumeRevision, RigidPlacement)>,
+    pub directory: DirectoryCheckpointState,
     pub manifest: ChunkDigest,
 }
 ```
@@ -2645,6 +2681,10 @@ commits remain dirty and are excluded. V2 checkpoints are whole-world only:
 the manifest contains every live volume at the captured frontier plus every
 known retirement tombstone. It cannot omit a live volume, and no partial-scope
 variant is reserved.
+`DirectoryCheckpointState` is captured atomically with that root and is
+reported by both checkpoint and restore completion. `allocator_closed` is
+independent of the numeric epoch: a failed multi-root range reservation may
+close it while `epoch < u64::MAX`.
 
 `restore_from` selects the builder's startup mode and may be called once.
 `RequireSameKey` requires manifest and `WorldDefinition` keys to match.

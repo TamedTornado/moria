@@ -520,4 +520,14 @@ state before another root-changing operation can prepare. Already reserved
 older operations may finish in allocator order; no later reservation is
 created after the allocator closes.
 
+Allocator closure is a separate sticky host-control bit, not the predicate
+`current_epoch == u64::MAX`. The failed-range case may close at any lower
+current epoch. Checkpoint capture stores the bit as manifest flag
+`DIRECTORY_ALLOCATOR_CLOSED` beside the current root epoch; restore installs
+both atomically. Renderer loss/recovery never reconstructs allocator state from
+the numeric epoch: the host bit survives `Recovering`, and successful rebuild
+returns to `DirectoryEpochExhausted` when it is set. The public startup,
+admission, and recovery matrix is normative in
+[lifecycles.md](lifecycles.md#world-lifecycle).
+
 No counter wraps, and no physical identity becomes a public stable key.

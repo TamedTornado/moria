@@ -5,10 +5,17 @@
 ```text
 Configured
    -> Starting
-      -> Ready
+      -> Ready                         (fresh or open-allocator restore)
+      -> DirectoryEpochExhausted       (closed-allocator restore)
       -> Failed
 Ready
-   -> Recovering -> Ready | Failed
+   -> DirectoryEpochExhausted          (allocator closes)
+   -> Recovering(open) -> Ready | Failed
+   -> ShuttingDown -> Stopped | Failed
+DirectoryEpochExhausted
+   -> Recovering(closed) -> DirectoryEpochExhausted | Failed
+   -> ShuttingDown -> Stopped | Failed
+Recovering(open | closed)
    -> ShuttingDown -> Stopped | Failed
 ```
 
@@ -18,10 +25,36 @@ Installing the returned plugin enters `Starting`, negotiates the device,
 records effective adapter-clamped limits, and installs pipelines/directory
 state. Fresh startup resolves `StartupApplied::Fresh`; restore resolves
 `StartupApplied::Restored(RestoreApplied)` with the complete restored revision
-context. Only `Ready` accepts ordinary permits. `Recovering` rejects new
-admissions with retryable state, keeps unsubmitted owned payloads, and does not
-answer material queries. `Failed` and `Stopped` are terminal for that world
-handle.
+context. The startup receipt succeeds after either operational state is
+installed and reports `StartupApplied::state`: fresh and open-allocator restore
+enter `Ready`, while a restore whose manifest has
+`DIRECTORY_ALLOCATOR_CLOSED` enters `DirectoryEpochExhausted`.
+
+`Ready` accepts every enabled facade family. `DirectoryEpochExhausted` is an
+operational capability substate: generic permits remain reservable; queries,
+matter commands, ordinary single-volume `Move`, checkpoints, subscriptions,
+telemetry, non-root behavior/extension effects, existing-interest
+inspection/withdrawal, and shutdown remain accepted. `Create`, `Retire`,
+directory rebuild, placement stream, component extraction, new interest, and
+interest update remain closed. The exhaustive per-method result matrix is in
+[public-api.md](public-api.md#facade-operations); no implementation may infer a
+different rule merely from the generic permit type.
+
+Fresh exhaustion transitions atomically from `Ready` to
+`DirectoryEpochExhausted` after either a successful root publication consumes
+`u64::MAX` or a checked multi-root range reservation cannot fit. The current
+root is unchanged in the latter case. The in-memory
+`directory_allocator_closed` bit is sticky for the world lifetime and is not
+cleared by resource retirement, pressure relief, or renderer recovery.
+
+Device loss from either operational state enters `Recovering` while retaining
+that bit in host control state. `Recovering` rejects new admissions with
+retryable state, keeps unsubmitted owned payloads, and does not answer material
+queries. Successful reconstruction returns to `Ready` only when the bit is
+open; a closed allocator returns to `DirectoryEpochExhausted`. A device loss
+with unrecoverable dirty truth or failed reconstruction enters `Failed`.
+Shutdown may start from either operational state or from `Recovering`;
+`Failed` and `Stopped` are terminal for that world handle.
 
 Startup failure includes a stage and all actionable causes. There is no
 partially usable hidden world.
@@ -488,7 +521,7 @@ count (default 1).
 | Scheduled component-extraction validation/conservation/capacity failure | Component-extraction proposal | Typed proposal rejection or tick failure under participant policy | Old directory epoch remains current; no child identity or sample becomes visible |
 | Component candidate-key salt exhaustion | Behavior request | Synchronous `SubmitError::Invalid` with `ComponentIdentityExhausted` and unchanged request | No public tick ID, partial candidate table, planner/adapter execution, lifetime record, or leaked permit |
 | Scheduled component-extraction device loss before/after gate | Behavior tick/world | Typed no-publication loss before the gate; applied result plus normal dirty-state recovery after it | Never parent/child partial visibility or rollback |
-| World-directory epoch exhaustion | World/root-changing operation | Ordinary operation fails `DirectoryEpochExhausted`; a scheduled range failure is typed no-publication; later root-changing submissions reject in `WorldState::DirectoryEpochExhausted` | Current root remains readable/checkpointable; no epoch wraps/reuses and no partial root chain publishes |
+| World-directory epoch exhaustion | World/root-changing operation | Ordinary operation fails `DirectoryEpochExhausted`; a scheduled range failure is typed no-publication; later root-changing submissions reject in `WorldState::DirectoryEpochExhausted` | Current root remains readable/checkpointable; allocator-closed state is checkpointed independently of the epoch, maximum-epoch restore starts exhausted, recovery returns exhausted, and no epoch wraps/reuses or partial root chain publishes |
 | Placement-stream invalid/stale/duplicate entry | Placement proposal | Whole stream rejected | No placement/revision in the stream changes |
 | Second placement stream from one participant | Behavior participant | Complete participant batch invalid; pre-reserved egress becomes participant-unavailable | No proposal admitted and the one-stream root/update reservation is not multiplied |
 | Opaque egress zero/exact output | Egress receipt | Ready with exact prefix, including explicit zero | Publication outcome unchanged |

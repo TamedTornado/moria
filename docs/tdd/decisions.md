@@ -921,3 +921,28 @@ architecture or standardize the proof adapter's internal algorithm.
 pre-reservation, atomic publication, coarse-outside-region proof, or egress
 failure honesty; retaining duplicate normative descriptions; and promoting
 proof-only region or simulation concepts into Moria.
+
+## T38. Directory allocator closure is an operational and durable capability state
+
+**Decision.** Directory-epoch allocation starts at one, never wraps or reuses,
+and closes permanently after consuming `u64::MAX` or failing a checked
+multi-root range reservation. Closure is a sticky bit independent of the
+current root epoch. The current root, queries, matter mutation, ordinary
+single-volume movement, observations, checkpoints, non-root scheduled work,
+and shutdown remain usable; root publication and new interest lifecycle work
+are closed by the exact public admission matrix.
+
+Checkpoint format v2 stores closure as
+`DIRECTORY_ALLOCATOR_CLOSED` independently of `directory_epoch`. Restore with
+that flag succeeds into `WorldState::DirectoryEpochExhausted`, even for a
+lower epoch left by failed range reservation. Device recovery retains the same
+bit and returns to the exhausted state rather than `Ready`.
+
+**Reason.** Numeric epoch alone cannot reconstruct a failed range reservation
+that closes below `u64::MAX`. Treating exhaustion as `Failed` would discard
+truthful current-root read/checkpoint capability, while treating it as `Ready`
+would reopen an allocator whose ordering domain is exhausted.
+
+**Rejected.** Epoch wrap/reuse; inferring closure only from
+`epoch == u64::MAX`; reopening after restore or recovery; failing the entire
+world; and leaving permit/admission behavior implementation-defined.

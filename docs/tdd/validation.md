@@ -243,12 +243,27 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   an ordinary root-changing operation can publish `u64::MAX` exactly once and
   then leaves the current root readable/checkpointable while later
   root-changing submissions reject in `DirectoryEpochExhausted`; in a separate
-  world, a scheduled tick whose selected root count would overflow returns
+  world at `u64::MAX - 1`, a scheduled tick with two selected root proposals
+  whose range would overflow returns
   `NoPublication(DirectoryEpochExhausted)`, marks every otherwise selected
   proposal `TickAborted`, changes no revision/root, and never wraps or reuses
-  an epoch. Checkpoint/restore preserves the exact maximum epoch and terminal
-  substate rather than resetting it. Non-root operations and shutdown retain
-  their documented behavior.
+  an epoch. A checkpoint captured afterward has epoch `u64::MAX - 1` and
+  `DIRECTORY_ALLOCATOR_CLOSED` set; same-key and import restore both succeed
+  with `StartupApplied::state == DirectoryEpochExhausted`, report the closed
+  `DirectoryCheckpointState`, reject root work, and never reopen publication.
+  A control checkpoint at the same lower epoch with the flag clear restores
+  `Ready` and may publish `u64::MAX` once. Maximum epoch with the flag clear,
+  zero epoch, and every unknown flag bit fail decode as corrupt before root
+  installation. Separately force device loss from the lower-epoch exhausted
+  world with fully durable scars: recovery passes through
+  `Recovering(closed)` and returns to `DirectoryEpochExhausted`, not `Ready`;
+  root rejection and the complete public admission matrix remain identical
+  after recovery. Test fresh exhaustion, maximum-epoch restore, lower-epoch
+  closed restore, interest declare/update rejection, existing-interest
+  withdrawal, every generic reserve family, matter/ordinary move/query/
+  checkpoint/subscription/extension/non-root tick acceptance, extension
+  all-or-none admission for its non-root fill/patch/move candidates, shutdown,
+  and terminal recovery failure.
 
 ### CPU oracle and generated sequences
 
@@ -365,7 +380,12 @@ Passing compilation is only validation evidence, not execution correctness.
 ### Persistence codec tests
 
 Run every requirement in [persistence.md](persistence.md), fuzz decoder inputs
-under bounded allocation, and keep checked-in v2 golden fixtures.
+under bounded allocation, and keep checked-in v2 golden fixtures. Golden
+manifests include open epoch `u64::MAX - 1` with flags zero, closed epoch
+`u64::MAX - 1` with exactly `DIRECTORY_ALLOCATOR_CLOSED`, and closed epoch
+`u64::MAX`. Decode rejects maximum epoch with a clear flag and every reserved
+flag bit. Re-encoding each accepted fixture is byte-identical, and restore
+asserts the matching `DirectoryCheckpointState` and operational `WorldState`.
 
 ## Real-GPU correctness suite
 

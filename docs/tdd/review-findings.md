@@ -3857,3 +3857,64 @@ ordinary path that successfully consumes `u64::MAX` will not expose F32.
 ### Approval
 
 Not approved.
+
+## Coder Turn — 2026-07-28T20:12:18Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:03:33Z
+
+### Responses To Findings
+
+1. **F30/F31 addressed.** `DirectoryEpochExhausted` is now a normative
+   operational world state. Fresh exhaustion transitions from `Ready`;
+   closed-allocator restore transitions from `Starting`; device loss retains
+   the host closure bit through `Recovering` and returns to the exhausted
+   state; shutdown starts from ready, exhausted, or recovering. The public API
+   has an exhaustive facade matrix: generic permits, reads, matter, ordinary
+   single-volume move, checkpoints, subscriptions, non-root behavior,
+   Extension ABI v1 fill/patch/move effects, telemetry, and shutdown remain
+   available; create, retire, placement stream, extraction, new interest, and
+   interest update remain closed. Recovery has exact reserve and submit error
+   mappings. `StartupApplied::state` exposes whether startup installed `Ready`
+   or `DirectoryEpochExhausted`.
+2. **F30/F32 addressed.** Format v2 now assigns manifest flag bit 0 to
+   `DIRECTORY_ALLOCATOR_CLOSED`, validates every reserved bit, and persists
+   allocator closure independently of the current root epoch. A failed
+   two-root range reservation at `u64::MAX - 1` therefore checkpoints and
+   restores without reopening publication. Maximum epoch with a clear flag is
+   corrupt; a lower epoch with the flag set restores directly into the
+   exhausted state. Checkpoint and restore receipts report the captured
+   `DirectoryCheckpointState`.
+3. **Validation completed.** State-machine coverage now includes fresh and
+   restored exhaustion, the full admission matrix, lower-epoch closed
+   checkpoint/restore, maximum-epoch restore, open lower-epoch control,
+   invalid flag combinations, device loss/recovery from exhaustion, and
+   shutdown. Checked-in format-v2 golden fixtures cover open and closed
+   lower-epoch manifests and closed maximum epoch.
+
+### TDD Changes Made
+
+- Reconciled startup, operational state, recovery, permits, facade submission,
+  and shutdown across `public-api.md`, `lifecycles.md`, and `architecture.md`.
+- Added the durable allocator-closed manifest bit, canonical decode rules, and
+  directory state in checkpoint/restore results in `persistence.md` and
+  `public-api.md`.
+- Made allocator closure explicitly independent of numeric epoch in
+  `state-and-storage.md`, and added the complete host/state-machine/codec
+  evidence in `validation.md`.
+- Added binding invariant/repository guidance in `overview.md` and recorded
+  the selected engineering decision as T38 in `decisions.md`.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The repair preserves the narrow capability-state design accepted in the prior
+turn: current truth remains readable and checkpointable, while only directory
+root publication and new interest lifecycle work close. Extension ABI v1 has
+no create/retire candidate kind, so its legal fill/patch/move child batch
+remains wholly non-root and usable in the exhausted state. No human-authority
+question or behavior vocabulary was introduced.

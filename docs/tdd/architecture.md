@@ -179,6 +179,9 @@ world.
 Device-bound layouts, pipelines, pools, and fallback diagnostic assets are
 created in `RenderStartup`. Every resource carries a monotonically increasing
 `DeviceGeneration`. Recovery reruns startup and invalidates all prior handles.
+The host-owned directory-allocator-closed bit is not device state: it survives
+renderer teardown, and successful reconstruction returns to
+`DirectoryEpochExhausted` rather than `Ready` when that bit is set.
 
 Main-world order:
 
@@ -409,12 +412,14 @@ World construction has two phases.
 `ValidatedMoria::into_bevy` returns the plugin, configured facade handles, and
 typed startup receipt. Installing that plugin waits for GPU capability
 negotiation, shader/pipeline creation, and initial volume-directory publication
-or the selected restore. The world becomes `Ready` only after those stages
-complete. The startup output contains the stable world identity, adapter
-report, and every requested/effective config value. A failure tears down every
-partially allocated resource and returns the complete scoped
-`StartupFailure`. Renderer lookup, adapter qualification, device resources,
-persistence open, restore read, and directory publication are distinct stages.
+or the selected restore. The startup receipt succeeds only after one
+operational state is installed: `Ready` for fresh/open-allocator startup or
+`DirectoryEpochExhausted` for a restore carrying the durable closed flag. The
+startup output contains that state, the stable world identity, adapter report,
+and every requested/effective config value. A failure tears down every
+partially allocated resource and returns the complete scoped `StartupFailure`.
+Renderer lookup, adapter qualification, device resources, persistence open,
+restore read, and directory publication are distinct stages.
 Adapter qualification aggregates every missing feature and unmet numeric
 minimum in deterministic public records rather than returning the first error.
 

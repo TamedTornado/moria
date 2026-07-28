@@ -89,7 +89,7 @@ formats are not persistence formats.
 magic                  8 bytes = "MORIA\0\2\0"
 format_version         u16 = 2
 minimum_reader_version u16 = 2
-flags                  u32 = 0
+flags                  u32; bit 0 = DIRECTORY_ALLOCATOR_CLOSED
 world_uuid             16 bytes
 checkpoint_uuid        16 bytes
 directory_epoch        u64, nonzero
@@ -107,11 +107,25 @@ not exceed the effective `volume_records`; `volume_count` must not exceed
 reading record sections. The 64 MiB manifest cap is an additional byte bound,
 not a substitute for these record-count bounds.
 
-Restore installs the saved `directory_epoch` with the reconstructed root before
-the world becomes visible. Zero is corrupt. A saved `u64::MAX` epoch restores
-directly into `WorldState::DirectoryEpochExhausted`; it is never reset to one
-or reused. Any lower value resumes checked root publication from exactly its
-successor.
+`DIRECTORY_ALLOCATOR_CLOSED = 0x0000_0001`; bits 1 through 31 are reserved and
+must be zero. Checkpoint capture reads the current root epoch and the sticky
+allocator-closed bit atomically. It sets bit 0 whenever the world is in
+`WorldState::DirectoryEpochExhausted`, including when a failed multi-root range
+reservation closed the allocator without advancing the current root. A
+canonical manifest with `directory_epoch == u64::MAX` must set bit 0. A clear
+bit is valid only for an epoch below `u64::MAX`; a set bit is valid with any
+nonzero epoch. Unknown flags, zero epoch, or maximum epoch with bit 0 clear are
+`PersistenceError::CorruptManifest`, never inferred or repaired.
+
+Restore installs the saved `directory_epoch`, reconstructed root, and allocator
+bit before the world becomes visible. A clear bit resumes checked root
+publication from exactly the saved epoch's successor and startup enters
+`WorldState::Ready`. A set bit installs the same root with publication
+permanently closed and startup succeeds directly into
+`WorldState::DirectoryEpochExhausted`, even when the saved epoch is below
+`u64::MAX`. Restore never resets, infers open from a lower numeric epoch, or
+reuses an epoch. `RestoreApplied::directory` and `StartupApplied::state` report
+the installed values.
 
 Material records sort by stable UUID and contain UUID, checkpoint runtime
 material number, debug-name bytes, and a digest of the occupancy-relevant
