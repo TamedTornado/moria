@@ -441,9 +441,15 @@ completion. It must compare the proposed delta directly to the human decision,
 challenge the necessity of every new concept, and be empowered to request
 deletion or human arbitration rather than only internal completion.
 
-The agreed operator cutoff is the next independent auditor pass. If the
-correction produces another layer of new cross-contract defects or another
-large expansion, the remedy is not another completion pass:
+The first proposed operator cutoff was the next independent auditor pass. Once
+the missing PM role and complexity ratchet were made explicit, the operator
+chose not to spend another pass completing the suspect premise. Run
+`03738f1e-b4e3-473f-bbae-9805ecf9b059` was parked and its active correction
+session was cancelled before delivery. Bro therefore records the interrupted
+node as operator-cancelled/failed; the incomplete correction was not published
+to PR #395.
+
+The agreed remedy, to be designed before any pipeline change, is:
 
 1. park the run and retain this sequence as dogfood evidence;
 2. return to the last approved pre-amendment TDD at `2ab6796`;
