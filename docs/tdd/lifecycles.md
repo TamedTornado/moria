@@ -302,15 +302,20 @@ owned request
   -> transferring declared bounded opaque handoffs
   -> validating participant batches
   -> resolving whole-proposal conflicts
-  -> publishing at most one transaction/revision per affected volume
-  -> reporting participant/proposal outcomes
+  -> validating/copying optional opaque egress prefixes
+  -> preparing component-extraction/placement directory root when selected
+  -> publishing per-volume gates or one directory epoch per root proposal
+  -> reporting participant/proposal outcomes and egress receipts
 ```
 
-Only one tick is active per world in v1. The tick permit pre-reserves every
+Only one tick is active per world in v2. The tick permit pre-reserves every
 registered participant's maximum input record/host bytes/GPU upload transport,
 view, proposal, collision scratch/calls, handoff host/device/staging/maps,
 transaction, completion, and double-buffered feedback capacity before the
-first planner runs. Unknown, duplicate, unexpected, missing required, or
+first planner runs. It also reserves every declared placement entry, component-extraction
+child identity/transfer/directory/provenance resource, and opaque-egress
+record/device/staging/host/map/receipt resource. Unknown, duplicate,
+unexpected, missing required, or
 over-capacity input rejects synchronously and invokes no planner/adapter.
 The atomic transition from waiting at the frontier to GPU input preflight is
 this family's `Preparing` point of no return. Cancellation that wins before it
@@ -329,7 +334,7 @@ GPU binding 5 receives those exact bytes through the ordered upload; Moria
 never interprets their vocabulary.
 
 CPU planners and adapters run synchronously on the Bevy main thread while the
-frontier is pinned. V1 has no worker handoff, preemption, or deadline for that
+frontier is pinned. V2 has no worker handoff, preemption, or deadline for that
 callback, so consumer latency can stall the main-world update and hold
 post-frontier commands. This is explicit selected behavior, measured by P10
 for a fixed proof adapter rather than hidden behind a worker claim.
@@ -343,12 +348,13 @@ handoff.
 Conflicts resolve in stable adapter/proposal order by the later adapter's
 declared `RejectLater | ReplaceEarlier | FailTick` policy, always for a whole
 proposal. Selected effects for one volume publish together at one revision or
-all fail for that volume; independent volumes remain independently published.
-The closed scheduled effect set is fill, patch, move, and retire. It cannot
-create a volume or atomically split one existing volume into newly created
-independent volumes. A consumer may submit later ordinary create commands
-after the tick; each follows the separate command lifecycle and cannot be
-reported as part of the scheduled publication.
+all fail for that volume. Ordinary independent volumes remain independently
+published. The closed scheduled effect set is fill, patch, move, retire,
+placement stream, and extract components. Placement stream and extract
+components are the only multi-volume exceptions and use one
+`WorldDirectoryEpoch` gate per proposal. Extract components can publish only pre-reserved
+dynamic children made from samples already owned by one pinned source;
+arbitrary create and `BaseContentSource` transport remain unavailable.
 
 `AbortTick` discards every proposal when that participant fails.
 `SkipParticipant` discards only that participant and lets remaining adapters
@@ -368,6 +374,10 @@ until dependencies/last use are terminally released; recovery recreates
 adapter state only after that generation's aggregate charge reaches zero. The
 complete contract is
 [behavior-scheduling.md](behavior-scheduling.md).
+Component-extraction identity/resource reservation, exact matter conservation, placement
+stream lifetime, multi-fidelity integration, and opaque egress states are
+normative in
+[adapter-substrate-contracts.md](adapter-substrate-contracts.md).
 
 ## Asynchronous GPU extension lifecycle
 
@@ -473,6 +483,11 @@ count (default 1).
 | Scheduled consumer-input upload failure/device loss | Behavior participant/tick | Tick-global `NoPublication(PreparationFailure)` with the addressed participant `Skipped(ConsumerInputUpload)` and all others `NotRun(InputPreflightAborted)`, or typed device-loss no-publication with all `NotRun(DeviceLost)` | Empty snapshot/proposal/publication vectors; no planner, adapter, or report hook executes and no behavior effect publishes |
 | Scheduled proposal conflict | Proposal/tick | Whole proposal rejected/replaced or tick failed | Never partial proposal application |
 | Scheduled report-hook failure after publication | Behavior notification | `PublishedWithNotificationFailure` | Already published effects and receipts remain valid |
+| Scheduled component-extraction validation/conservation/capacity failure | Component-extraction proposal | Typed proposal rejection or tick failure under participant policy | Old directory epoch remains current; no child identity or sample becomes visible |
+| Scheduled component-extraction device loss before/after gate | Behavior tick/world | Typed no-publication loss before the gate; applied result plus normal dirty-state recovery after it | Never parent/child partial visibility or rollback |
+| Placement-stream invalid/stale/duplicate entry | Placement proposal | Whole stream rejected | No placement/revision in the stream changes |
+| Opaque egress zero/exact output | Egress receipt | Ready with exact prefix, including explicit zero | Publication outcome unchanged |
+| Opaque egress overflow/map/decode/device loss | Egress receipt | Closed failure with no truncated bytes | Publication outcome remains independently reported |
 | External shader failure | Asynchronous extension request | Extension error | Only earlier ordinary commits remain |
 
 ## Time and determinism

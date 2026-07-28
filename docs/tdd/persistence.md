@@ -18,9 +18,10 @@ behavior state, generation code, or other consumer state.
 
 CPU behavior objects, factory-created GPU solver resources, and the semantic
 contents of stimuli remain consumer-owned. Moria-owned handoff staging and
-prior-feedback transport slots, accepted per-tick input records, and GPU input
-upload allocations are ephemeral coordination records and are never
-checkpointed. A consumer that needs a coherent combined save
+prior-feedback transport slots, accepted per-tick input records, GPU input
+upload allocations, activity-region bytes, and opaque egress records are
+ephemeral coordination records and are never checkpointed. A consumer that
+needs a coherent combined save
 waits for a `BehaviorTickReceipt`, checkpoints the returned substrate
 revisions through Moria, and checkpoints each adapter's own state through its
 own store/protocol. Moria does not claim atomic durability across those stores.
@@ -30,12 +31,13 @@ device-generation GPU state recreated. Failure to restore adapter state is an
 adapter readiness failure; Moria never synthesizes, rolls back, or imports it
 into the scar manifest.
 
-Scheduled v1 cannot create a volume. If a consumer reacts to one tick by later
-creating debris or split volumes through ordinary commands, only successfully
-committed ordinary creations appear in a later whole-world checkpoint; they
-are not retroactively part of the behavior tick's atomic publication.
+Scheduled ABI v2 component extraction may create only children whose matter
+comes from one pinned source. A committed child appears in the same
+whole-world checkpoint as any other live volume, with substrate-owned derived
+provenance and a complete sparse derived base. It never acquires a consumer
+`BaseContentSource`.
 
-V1 exposes only `CheckpointScope::WholeWorld`. A successful manifest contains
+V2 exposes only `CheckpointScope::WholeWorld`. A successful manifest contains
 every live volume at the captured frontier and every known retirement
 tombstone. There is no partial-volume checkpoint and therefore no ambiguity
 about omitted live volumes during restore. `volume_records` bounds their
@@ -74,7 +76,7 @@ It can batch and stream chunks, but in-flight bytes/maps remain bounded.
 Mutation completion does not imply checkpoint durability; only atomic manifest
 publication advances the durable frontier.
 
-## Binary format v1
+## Binary format v2
 
 All integers are little-endian. Decoding uses checked offsets and declared
 lengths before allocation. Rust struct memory layout and general-purpose serde
@@ -83,9 +85,9 @@ formats are not persistence formats.
 ### Manifest
 
 ```text
-magic                  8 bytes = "MORIA\0\1\0"
-format_version         u16 = 1
-minimum_reader_version u16 = 1
+magic                  8 bytes = "MORIA\0\2\0"
+format_version         u16 = 2
+minimum_reader_version u16 = 2
 flags                  u32 = 0
 world_uuid             16 bytes
 checkpoint_uuid        16 bytes
@@ -119,6 +121,19 @@ Volume records sort by stable UUID and contain:
 - placement translation/quaternion IEEE-754 bits;
 - sorted `(BrickCoord, ChunkDigest, record_index)` scar references.
 
+The source tag is either:
+
+- `ExternalBase`, followed by lineage and reconstruction fingerprint; or
+- `DerivedExtraction`, followed by parent key/revision, extraction command ID,
+  extraction nonce, reservation slot, piece handle, sample count, and sorted complete
+  sparse-derived-base brick references.
+
+Derived children have no external lineage or source descriptor.
+Restore rejects duplicate keys, duplicate nonce/slot pairs within one parent
+extraction, or malformed provenance before directory publication. `ImportAs`
+preserves each already-persisted child key and provenance verbatim; it does not
+rederive keys under the imported world identity.
+
 Volume debug names are canonical 1..=96-byte UTF-8 strings from the directory's
 exact `Box<str>`; the encoder never serializes discarded `String` capacity.
 Checked manifest sizing covers every fixed field, name byte, scar reference,
@@ -134,7 +149,7 @@ magic/version/count/length/CRC. Records sort by `(VolumeKey, brick z, y, x)` and
 contain volume UUID, brick coordinate, source revision, encoding tag, and
 payload.
 
-V1 encoding tags are:
+V2 encoding tags are:
 
 - `Homogeneous`: one four-byte sample;
 - `Raw`: exactly 2,048 sample bytes;
@@ -191,12 +206,16 @@ Restore is fail-closed and ordered:
    registration. Missing persisted materials fail. Extra current materials
    are ordinary valid materials and are allowed only because no saved sample
    refers to them; there is no presentation-only material class.
-4. Require the current live volume registration key set to equal the
-   manifest's live volume key set exactly and reject registration of a
-   tombstoned key. For each matched live volume, require equal finite
-   domain/cell size/mode, lineage, and exact reconstruction fingerprint. A
-   missing/extra volume, missing source, or matching lineage with a different
-   fingerprint fails.
+4. Partition saved live volumes by source tag. Require the current live
+   consumer registration key set to equal the saved `ExternalBase` key set
+   exactly and reject registration of a tombstoned or `DerivedExtraction` key.
+   For each external match, require equal finite domain/cell size/mode,
+   lineage, and exact reconstruction fingerprint. Moria reconstructs every
+   saved derived child directly from its manifest/base chunks and validates
+   its provenance, domain, dynamic mode, sample count, and referenced chunk
+   digests. A
+   missing/extra external volume, missing source, attached source for a derived
+   child, or changed fingerprint fails.
 5. Verify every referenced chunk exists and its size/digest/CRC before any
    world directory is published.
 6. Decode all scar records into bounded host batches, validate coordinates
@@ -209,7 +228,7 @@ Restore is fail-closed and ordered:
 Import mode assigns exactly the `WorldKey` in `RestoreWorldMode::ImportAs` but
 does not relax material, exact volume membership, tombstone, lineage, or
 fingerprint validation. Rebase/migration is a separate consumer tool outside
-Moria v1; the library returns structured mismatch data to support one.
+Moria v2; the library returns structured mismatch data to support one.
 
 ## Base plus scar materialization
 
@@ -217,7 +236,9 @@ For a cold restored brick:
 
 1. if a scar reference exists, decode and upload the scar as authoritative
    content at the restored revision;
-2. otherwise request the exact registered base source;
+2. otherwise, for `DerivedExtraction`, load the persisted derived-base brick or
+   resolve implicit empty; for `ExternalBase`, request the exact registered
+   base source;
 3. finalize the permit-backed output sink and upload its
    homogeneous/detailed form;
 4. publish region readiness only after GPU installation.
@@ -264,10 +285,17 @@ Required fixtures and generated tests cover:
 - builder/runtime volume-name acceptance at 96 UTF-8 bytes and rejection at
   97, exact retained name ownership, and a maximum-`volume_records` directory
   of 96-byte names whose checked no-scar manifest size remains below the 64 MiB
-  v1 cap (additional scar references still obey the independent cap);
+  v2 cap (additional scar references still obey the independent cap);
 - reader oversize/changing length, short/range read, and caller-buffer bounds;
 - chunk write failure, manifest failure, and incomplete transaction cleanup;
 - device-derived state discarded and rebuilt after restore;
 - semantic sample/query/collision equality before save and after restore;
-- v1 golden fixture readability and explicit rejection of an unsupported v2
+- atomic fracture save/restore with source remainder, multiple child
+  identities, provenance, placements, complete derived bases, later child
+  edits, and cold rematerialization without a consumer source;
+- same-key and `ImportAs` restore preserve every derived child key/nonce/slot,
+  and a later extraction preflights a fresh noncolliding candidate set;
+- missing/corrupt derived-base chunk, wrong provenance/sample count, and an
+  attempted source registration for a derived key fail before publication;
+- v2 golden fixture readability and explicit rejection of an unsupported v3
   fixture.

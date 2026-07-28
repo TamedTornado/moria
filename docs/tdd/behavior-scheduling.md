@@ -31,6 +31,9 @@ They receive only the authorized exported view and proposal targets described
 below.
 They never receive Moria page tables, brick slots, scar buffers, revision
 gates, render meshes, or a queue on which they can publish Moria work.
+Atomic component extraction, bulk placement, multi-fidelity adapter
+integration, opaque CPU egress, and Scheduled ABI v2 are specified in
+[adapter-substrate-contracts.md](adapter-substrate-contracts.md).
 
 ## Substrate tick and publication point
 
@@ -56,7 +59,7 @@ OwnedRequest
   -> RunningAdapters(S)
   -> ValidatingProposals(S)
   -> ResolvingComposition(S)
-  -> PublishingEffects
+  -> PublishingEffectsOrDirectoryEpoch
   -> Reporting
   -> Complete
 ```
@@ -92,6 +95,11 @@ All selected matter and placement effects for one volume are one prepared
 transaction: they become visible together at that revision or none of them
 do.
 Different volumes retain the product's independent-publication rule.
+The closed exceptions are a placement stream and component extraction, each of
+which publishes its own prepared directory-entry set under one
+`WorldDirectoryEpoch` root gate. Multiple such proposals form a stable
+participant/proposal-order root chain and keep independent per-proposal
+receipts; they do not turn unrelated volumes into one tick-wide transaction.
 Observations are appended before the tick and proposal receipts are awakened.
 Only after publication or terminal failure does Moria release `S` and allow
 post-`F` authoritative commands to prepare.
@@ -147,6 +155,15 @@ read back its body list to plan a narrower scope.
 Moria resolves each participant's world scopes to a sorted
 volume-and-local-brick set at the
 frontier placements.
+`VolumeRecords { maximum_volumes }` resolves the current volumes allowed by
+the descriptor's `allowed_volumes` filter, exports only those volume records,
+and exports no cell records. It is the allocation-free planner path for
+placement-only persistent objects; it does not transfer a nested list from the
+callback.
+Behavior planning uses `BehaviorVolumeFilter`, whose `u32` maximum can cover
+the configured behavior-view volume limit. It does not reuse the ordinary
+query/subscription `BoundedVolumeFilter`, whose 256-volume ceiling is
+deliberately smaller.
 Unlike a long-lived interest/subscription, this resolution is new for every
 tick: `allowed_volumes = All` may include volumes live at this tick even if
 they were created after adapter registration, but the descriptor and planned
@@ -224,6 +241,10 @@ Moria-owned exact-capacity `BehaviorEffectSink`.
 The tick context contains that participant's immutable current consumer input.
 The view offers iteration, exact sample lookup, occupied-cell iteration, and
 the same bounded shape/trace/sweep helpers used by public collision queries.
+Volume records admitted by a `VolumeRecords` scope are visible to iteration
+and placement effects but have no implied cell visibility; sample or collision
+access for them returns `OutsideAuthorizedView` unless a cell scope also
+authorized the addressed cells.
 Those helpers run over this immutable exported view and debit the adapter's
 declared traversal authorization and per-tick call budget.
 They do not consult presentation and do not create an ordinary query receipt.
@@ -253,19 +274,15 @@ algorithms. Moving CPU adapter execution to workers would require a later
 threading/state-ownership contract and is not implied by this TDD.
 
 The effect sink is preallocated from the tick's aggregate proposal reservation.
-It accepts fixed fill, patch, move, and retire values and borrows dense samples
+The CPU sink accepts fixed fill, patch, move, and retire values and borrows dense samples
 or run records long enough to copy them into already reserved storage.
 It assigns `Exact` for the addressed member of `S`.
-Scheduled v1 excludes create because its consumer-owned Rust content source is
-a control-plane registration, not a stable-view-derived CPU/GPU value;
-consumers retain the ordinary create command.
-Therefore a scheduled fracture/debris-shaped adapter can remove, patch, move,
-or retire existing volumes but cannot atomically split one volume into newly
-created independently moving volumes. Creation is a later ordinary
-control-plane operation behind the tick frontier, with its own admission,
-receipt, source registration, and revision ordering. No Rust
-`BaseContentSource` or source descriptor is transported through the scheduled
-effect sink or GPU ABI.
+Scheduled v2 continues to exclude arbitrary create because a consumer-owned
+Rust content source is not a stable-view-derived CPU/GPU value.
+GPU adapters additionally receive placement-stream and extract-components
+records. Extract-components can create only pre-reserved dynamic children from
+samples already owned by one pinned source; no Rust `BaseContentSource` or
+source descriptor crosses the effect sink or GPU ABI.
 The sink rejects over-capacity records or bytes immediately and poisons only
 that participant batch.
 The callback cannot return a capacity-bearing effect collection or source
@@ -382,7 +399,7 @@ adapter's effects.
 Small outcome metadata may be read back later to complete CPU-visible receipts
 and telemetry, but that readback is not on the tick's authority path.
 
-### Scheduled GPU ABI v1
+### Scheduled GPU ABI v2
 
 The scheduled GPU ABI is deliberately smaller than exposing Moria storage.
 Moria supplies bind group 0 with exactly six storage bindings:
@@ -390,7 +407,7 @@ Moria supplies bind group 0 with exactly six storage bindings:
 | Binding | Access | Contents |
 | ---: | --- | --- |
 | 0 | read-only | this participant's packed stable-view header, volume records, then cell records |
-| 1 | read-write | one effect header, fixed proposal records, then payload bytes |
+| 1 | read-write | one effect header; proposal/payload, immutable-by-contract child-reservation, and optional opaque-egress subranges |
 | 2 | read-only | packed incoming opaque-handoff table and payloads, or a valid empty header |
 | 3 | read-write | packed outgoing opaque-handoff table and zero-initialized payload capacities |
 | 4 | read-only | the participant's prior-feedback header and records, or a typed no-prior-feedback header |
@@ -402,6 +419,10 @@ underlying authoritative buffers.
 The view, effect, handoff, and consumer-input allocations are tick-local and charged to
 `behavior_gpu_view_bytes`, `behavior_proposal_bytes`,
 `behavior_handoff_bytes`, and `behavior_gpu_input_bytes`, respectively.
+The reservation section is charged to
+`behavior_component_extraction_bytes`. The egress section is charged
+independently to the behavior-egress device, staging, host, map, and record
+pools even though both occupy distinct validated ranges in binding 1.
 Accepted host input ownership is charged separately to
 `behavior_input_records` and `behavior_input_bytes`. Prior/current feedback uses a Moria-owned
 double-buffered per-participant allocation charged to
@@ -424,7 +445,7 @@ separate `u32` members. Headers use these exact byte offsets:
 | Record | Exact fields |
 | --- | --- |
 | `BehaviorViewHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 tick_low:u32`, `12 tick_high:u32`, `16 generation_low:u32`, `20 generation_high:u32`, `24 engine:u32`, `28 volume_count:u32`, `32 cell_count:u32`, `36 volume_offset:u32`, `40 cell_offset:u32`, `44 total_bytes:u32`, `48 reserved:[u32;4]` |
-| `BehaviorEffectHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 engine:u32`, `12 proposal_capacity:u32`, `16 payload_capacity:u32`, `20 output_proposal_count:u32`, `24 output_payload_bytes:u32`, `28 reserved0:u32`, `32 tick_low:u32`, `36 tick_high:u32`, `40 generation_low:u32`, `44 generation_high:u32`, `48 reserved:[u32;4]` |
+| `BehaviorEffectHeaderV2` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 engine:u32`, `12 proposal_capacity:u32`, `16 payload_capacity:u32`, `20 output_proposal_count:u32`, `24 output_payload_bytes:u32`, `28 reserved0:u32`, `32 tick_low:u32`, `36 tick_high:u32`, `40 generation_low:u32`, `44 generation_high:u32`, `48 reservation_offset:u32`, `52 reservation_bytes:u32`, `56 egress_offset:u32`, `60 egress_bytes:u32` |
 | `BehaviorHandoffHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 direction:u32`, `12 engine:u32`, `16 edge_count:u32`, `20 descriptor_offset:u32`, `24 payload_offset:u32`, `28 total_bytes:u32`, `32 tick_low:u32`, `36 tick_high:u32`, `40 generation_low:u32`, `44 generation_high:u32`, `48 reserved:[u32;4]` |
 | `BehaviorFeedbackHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 availability:u32`, `12 engine:u32`, `16 source_tick_low:u32`, `20 source_tick_high:u32`, `24 generation_low:u32`, `28 generation_high:u32`, `32 participant_count:u32`, `36 proposal_count:u32`, `40 total_bytes:u32`, `44 reserved:[u32;5]` |
 | `BehaviorInputHeaderV1` (64 bytes) | `0 magic:u32`, `4 version:u32`, `8 engine:u32`, `12 presence:u32`, `16 payload_bytes:u32`, `20 total_bytes:u32`, `24 tick_low:u32`, `28 tick_high:u32`, `32 generation_low:u32`, `36 generation_high:u32`, `40 reserved:[u32;6]` |
@@ -439,13 +460,13 @@ The 112-byte volume record has offsets `0 volume_low:u32`,
 `16 sample:u32`, and `20 occupied:u32`. Array strides equal these record
 sizes; no implicit `vec3` layout is used.
 
-The 64-byte view header contains magic `MORB`, ABI version 1, tick ID, device
+The 64-byte view header contains magic `MORB`, ABI version 2, tick ID, device
 generation, participant engine ID, volume count, cell count, volume-record
 offset, cell-record offset, total bytes, and zero-reserved words.
 Volume records and cell records have the exact field order and sizes in
 [public-api.md](public-api.md#scheduled-behavior-engine-hook).
 
-The 64-byte effect header contains magic `MORE`, ABI version 1, participant
+The 64-byte effect header contains magic `MORE`, ABI version 2, participant
 engine ID, proposal capacity, payload capacity, output proposal count, output
 payload byte count, tick ID, device generation, and zero-reserved words.
 Moria initializes output counts to zero.
@@ -453,7 +474,7 @@ Each proposal slot is 128 bytes:
 
 | Byte | Field |
 | ---: | --- |
-| 0 | kind: unused `0`, fill `1`, patch-runs `2`, move `3`, retire `4` |
+| 0 | kind: unused `0`, fill `1`, patch-runs `2`, move `3`, retire `4`, placement-stream `5`, extract-components `6` |
 | 4 | snapshot index `u32` |
 | 8 | exact expected revision low `u32` |
 | 12 | exact expected revision high `u32` |
@@ -475,14 +496,23 @@ Patch uses the asynchronous extension's 20-byte canonical run record and
 X-fastest indexing.
 Move uses only placement.
 Retire uses only snapshot index/revision/correlation.
+Placement stream uses the v2 64-byte placement-update payload.
+Extract-components uses the v2 piece/assignment payload and the pre-reserved
+identity subrange. The shader treats that subrange as read-only. Because
+binding 1 is physically read-write, Moria compares it byte-for-byte with the
+canonical pre-dispatch table and rejects the participant if any reservation
+byte changed.
 The adapter copies the revision from the indexed view record; Moria compares it
 to the still-pinned revision and rejects the complete participant batch on any
 mismatch.
-Create is not representable in scheduled ABI v1 because its required
-consumer-owned Rust content-source object cannot cross a scheduled effect
-record; a consumer may submit the ordinary `VolumeCommand::Create`.
+Arbitrary create is not representable because its required consumer-owned Rust
+content-source object cannot cross a scheduled effect record.
+Extract-components is not arbitrary create: every published child sample is
+transferred from the indexed pinned source under the conservation and
+directory-epoch rules in
+[adapter-substrate-contracts.md](adapter-substrate-contracts.md).
 
-The 64-byte input header contains magic `MORI`, ABI version 1, participant
+The 64-byte input header contains magic `MORI`, ABI version 2, participant
 engine ID, closed presence (`Absent=0`, `Present=1`), payload byte count,
 total byte count, tick ID, device generation, and zero reserved words.
 `Absent` requires zero payload bytes and `total_bytes == 64`; it is invalid for
@@ -492,7 +522,7 @@ consumer bytes starting at offset 64 with zero alignment padding. The payload
 must not exceed the participant descriptor maximum or its effective binding
 range. The shader sees no schema or type tag beyond these transport fields.
 
-The 64-byte handoff header uses magic `MORH`, ABI version 1, direction,
+The 64-byte handoff header uses magic `MORH`, ABI version 2, direction,
 participant engine ID, edge count, descriptor offset, payload offset, total
 bytes, tick ID, device generation, and zero reserved words. Each 32-byte edge
 descriptor contains the peer engine ID, payload offset/capacity, written byte
@@ -500,7 +530,7 @@ count, closed status, and zero reserved words. Moria initializes outgoing
 payloads to zero; `written_bytes <= capacity` and all reserved/header words are
 validated before transfer. Payload bytes are opaque to Moria.
 
-The 64-byte feedback header uses magic `MORF`, ABI version 1, closed availability
+The 64-byte feedback header uses magic `MORF`, ABI version 2, closed availability
 (`NoneYet`, `Ready`, or `UnavailablePreviousGeneration`), engine ID, source
 tick ID, device generation, participant/proposal counts, total bytes, and zero
 reserved words. `Ready` has `participant_count == 1`; its total bytes are
@@ -509,7 +539,7 @@ reserved words. `Ready` has `participant_count == 1`; its total bytes are
 `total_bytes == 64`; the current generation pair remains present so absence
 cannot be confused with an old ready record. A ready header is followed by one
 fixed 64-byte participant/terminal-decision record and one fixed 48-byte
-record per proposal. Scheduled ABI v1 feedback deliberately contains no
+record per proposal. Scheduled ABI v2 feedback deliberately contains no
 snapshot vector and reserves no bytes for one. `proposal_count` is the number
 of indexed proposal outcomes retained from this participant's prior dispatch,
 and every proposal record repeats its original zero-based proposal index. A
@@ -609,6 +639,12 @@ The exact 48-byte feedback proposal record is `0 status:u32`,
 `ReplacedByLater` use the related engine/proposal pair;
 `PreparationFailed` uses the related volume pair; `TickAborted` refers to the
 complete participant-record abort cause. All unrelated fields are zero.
+Applied placement-stream and component-extraction proposals use proposal
+status tags 4 and 5 respectively, carry their one command ID, and keep the
+single revision/related-volume fields zero because their typed receipts and
+the tick's published vector own the bounded multi-volume result. The adapter
+correlates the status with its retained proposal index; component extraction
+also retains the pre-dispatch child-reservation map.
 
 Execution has one additional closed mapping for tick-global input preflight.
 The participant whose upload fails uses
@@ -635,7 +671,8 @@ no-selected-effect `2`, discarded-by-tick `3`; notification delivered `1`,
 not-applicable `2`, failed-after-terminal-decision `3`; tick disposition
 published `1`, no-publication `2`,
 published-with-notification-failure `3`; proposal status admitted matter `1`,
-admitted volume `2`, rejected `3`; proposal reasons none `0`,
+admitted volume `2`, rejected `3`, applied placement stream `4`, applied
+component extraction `5`; proposal reasons none `0`,
 overlap `1`, replaced `2`, invalid `3`, participant-failed `4`,
 preparation-failed `5`, and tick-aborted `6`. Failure and tick-abort category
 tags are: none `0`; planning `1`, unavailable `2`, access-limit `3`,
@@ -697,12 +734,20 @@ At admission, before the tick may transition to
 - the declared aggregate affected cells, bricks, moves, and retires;
 - ordinary command completion/observation records for that aggregate maximum;
 - worst-case copy-on-write page, brick, scar, and directory transaction
-  records for the declared effects; and
-- fixed per-proposal outcome records.
+  records for the declared effects;
+- fixed per-proposal outcome records;
 - the maximum reusable CPU collision sink, aggregate collision-call counters,
   every declared handoff's host/device/staging bytes and required map slots;
-  and
-- current/prior feedback slots for every GPU participant.
+  current/prior feedback slots for every GPU participant;
+- every possible component-extraction child identity/live/lifetime directory
+  record,
+  assignment/transfer/child-brick byte, provenance/authority version, and one
+  alternate directory root per maximum component-extraction proposal;
+- every compact placement entry and one alternate directory entry/root for
+  each GPU participant's permitted placement stream, including its immutable
+  authority versions; and
+- every enabled egress record, device/staging/host byte, map, completion, and
+  receipt slot.
 
 If the reservation cannot be made, the tick remains queued or fails according
 to `behavior_ticks` overload policy; no adapter runs with partial capacity.
@@ -714,6 +759,9 @@ CPU callback. On preflight failure, all unsubmitted input is released
 immediately and submitted ranges are released only after completion or
 old-generation quarantine. Unused proposal and payload capacity is released
 after proposal validation.
+Unused component-extraction candidates remain unobservable and release after
+GPU validation and last use. Egress device/staging/host permits follow the
+copy/map/decode/delivery lifetime rather than proposal release.
 
 Each participant output is all-or-none at validation.
 An invalid record admits no proposal from that participant.
@@ -726,6 +774,13 @@ Two placement/retire proposals overlap when they address the same volume.
 A retirement overlaps every proposal for that volume.
 Matter and one placement proposal for the same volume do not overlap and may
 share the volume's tick revision.
+An extract-components proposal overlaps every other proposal for its source.
+A placement-stream entry overlaps another
+placement/retire/component-extraction effect for the same volume.
+For composition, each stream entry is tested as a placement effect, but the
+stream remains one whole proposal: if any entry loses under the selected
+conflict policy, the complete stream is rejected or replaced. No pose is
+silently omitted from an all-or-none stream.
 Ordinary create commands remain behind the tick frontier and therefore cannot
 interleave with scheduled composition.
 
@@ -762,6 +817,11 @@ If preparation or publication for one volume fails, every selected proposal
 for that volume receives `PreparationFailed { volume }` with no volume revision
 change; other volumes remain independent and the tick disposition is still
 `Published` if its terminal publication pass completed.
+For a placement stream or component extraction, every addressed
+source/child/placement belongs to that one root-gated proposal. A preparation
+failure in any member rejects the complete proposal and publishes none of its
+directory entries; other independent proposals in the tick may still publish
+under the participant failure policy.
 
 ## Failure and adapter-owned state
 
@@ -887,6 +947,12 @@ its pipelines on Moria's ordered encoder, updates its own buffers, and writes
 proposal records.
 Moria validates and publishes them without reading material or solver state
 back to the CPU.
+One such proof adapter receives multiple CPU-defined activity regions in its
+opaque current input, classifies each persistent body once against their
+deterministic union, and keeps coarse simulation running outside all regions.
+It uses a transition halo and one body table rather than a separate adapter or
+world per geographic region. Changed full/coarse poses are compacted into one
+placement stream, so Moria placements never depend on per-body host commands.
 
 A CPU or GPU damage-and-bond adapter follows the same contract.
 It owns accumulation, bond strength, impacts, fracture, and crumbling rules;
@@ -896,10 +962,20 @@ If it consumes impact data produced by a physics adapter, both adapters share
 an ordering edge with an opaque bounded handoff;
 Moria transports bytes but neither defines nor interprets the impact
 vocabulary.
-If its consumer wants new debris volumes, the scheduled adapter cannot create
-or atomically split them. It may propose edits to existing matter and the
-consumer may later submit ordinary create commands, which are independently
-admitted and cannot be described as part of the scheduled tick transaction.
+If its consumer wants persistent child volumes, the GPU adapter may label
+bounded source-owned pieces and use extract-components. The adapter chooses
+which pieces become children or explicit removals; Moria neither defines
+significance nor creates transient debris. Final child IDs come from the
+canonical reservation subrange before dispatch and the complete source/child
+directory publishes atomically.
+Arbitrary child content and `BaseContentSource` transport remain forbidden.
+
+An enabled GPU adapter may also append fixed-stride opaque records to its
+egress effect subrange. Moria asynchronously stages the initialized prefix and
+returns a distinct egress receipt; it never interprets collisions, impacts,
+destruction, scoring, audio, or another event meaning. Zero records, exact
+capacity, overflow,
+mapping failure, and device loss remain distinct.
 
 An independent reviewer must implement or mock the CPU physics, GPU physics,
 CPU damage-and-bond, and GPU damage-and-bond variants through the public
@@ -919,7 +995,13 @@ adapter traits and attempt to disprove:
    participant without a dummy predecessor, shared-state side channel,
    allocation beyond the ingress permit, raw GPU access, or authority-path
    readback; and
-8. scheduled fracture/debris claims do not include atomic volume creation or
-   split.
+8. component extraction conserves exact source matter and returns usable child
+   identities to GPU-owned adapter state without CPU authority-path readback;
+9. disconnected/overlapping CPU-defined activity regions process a body once,
+   preserve identity/transform/velocity through halo crossings, and retain
+   coarse movement outside every region; and
+10. opaque CPU egress delivers zero/exact prefixes or explicit terminal
+    overflow/failure without leaking authority resources or rerouting GPU
+    handoffs through the CPU.
 
 Any counterexample blocks the behavior-hook architecture claim.

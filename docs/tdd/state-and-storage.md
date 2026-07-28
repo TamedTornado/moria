@@ -127,6 +127,115 @@ CPU result metadata is published only after its readback maps and decodes. A
 snapshot pin ends after the GPU submission that consumed it completes; CPU
 results contain copied values and do not pin GPU versions.
 
+### World directory epochs
+
+Every snapshot first acquires a checked nonzero `WorldDirectoryEpoch` and its
+immutable root slot, then resolves the volume entries and revisions in that
+root. Ordinary commits may publish a structurally shared root with one changed
+entry. Scheduled placement streams and extract-components are the only closed
+operations that prepare several entries and install them with one root/epoch
+gate per proposal. Multiple root-affecting proposals in a tick form a stable
+root chain and publish in participant/proposal order. Failure may reject one
+proposal while another valid proposal publishes under its policy, but device
+loss before confirmation exposes none of the tick's candidate roots and never
+part of one proposal.
+
+The portable directory is a four-level, 32-way immutable-topology radix tree
+keyed by a 16-bit lifetime `VolumeRecordIndex`, not by the reusable runtime
+slot inside `VolumeId`. Retirement leaves that lifetime entry as a tombstone;
+later live-slot reuse maps the new `(slot, generation)` to a different
+lifetime index and cannot overwrite the tombstone. A separate fixed live-slot
+table validates the generation and resolves a live `VolumeId` to its lifetime
+index before directory lookup. Slot index zero is null in every GPU pool; only
+the explicitly declared authority gate inside a live entry mutates.
+
+```text
+DirectoryRootV2 (64 bytes)
+  0  epoch_low:u32
+  4  epoch_high:u32
+  8  root_node_index:u32      // nonzero
+ 12  live_entry_count:u32
+ 16  reserved:[u32;12]
+
+DirectoryNodeV2 (128 bytes)
+  0  child_or_entry_index:[u32;32]
+
+DirectoryEntryVersionV2 (128 bytes)
+  0  volume_id_low:u32
+  4  volume_id_high:u32
+  8  state:u32                // Live=1, Tombstone=2
+  12  mode:u32                 // Static=1, Dynamic=2; zero for tombstone
+  16  volume_key:[u8;16]
+ 32  active_authority_index:atomic<u32> // nonzero for live
+ 36  cell_size:f32            // finite positive for live
+ 40  domain_min:[i32;3]
+ 52  domain_max:[i32;3]
+ 64  source_kind:u32          // External=1, DerivedExtraction=2
+ 68  provenance_index:u32     // zero for External
+ 72  terminal_revision_low:u32  // tombstone only
+ 76  terminal_revision_high:u32
+ 80  reserved:[u32;12]
+
+VolumeAuthorityVersionV2 (64 bytes)
+  0  revision_low:u32
+  4  revision_high:u32
+  8  content_root_index:u32
+ 12  storage_generation:u32
+ 16  translation:[f32;4]      // w=0
+ 32  rotation_xyzw:[f32;4]
+ 48  reserved:[u32;4]
+```
+
+For a live entry, the one portable publication word is
+`active_authority_index`; an ordinary single-volume commit prepares one
+immutable authority version and compare-exchanges that index.
+Snapshots copy the selected authority slot before reading its revision,
+placement, and content root.
+A root-affecting proposal instead prepares new entry records whose authority
+indices already select the prepared versions, then publishes the root slot.
+Old-root readers have already copied their old authority indices, and new work
+resolves only the active root.
+
+Tombstones retain only the stable volume key and terminal revision;
+`volume_id`, `mode`, `active_authority_index`, cell/domain/source/provenance
+facts, and reserved words are zero. The retired runtime handle is invalid and
+is not persisted or reconstructed. Host/WGSL offset, tag, null-index,
+finite-value, and reserved-word tests freeze this internal authority ABI. The
+Rust `[u8; 16]` key mirror is four `u32` words in WGSL with identical
+little-endian wire bytes.
+The Rust upload/readback mirror represents `active_authority_index` as `u32`;
+only the WGSL storage declaration uses `atomic<u32>`, at the same offset and
+size.
+The live-slot table and lifetime directory are validated together: every live
+entry has exactly one matching current-generation slot, no tombstone has a
+live-slot mapping, and no two slots resolve one lifetime record.
+
+Copy-on-write updates allocate at most four nodes per changed entry plus one
+root record, entry version, and authority version as applicable; shared paths
+reduce actual use but never admission's conservative charge. Root, node,
+entry-version, and authority-version pools are independent and fixed. Their
+permits include current state, every prepared root chain, and all reader-pinned
+old versions. Pool pressure queues/rejects before preparation; it never
+compacts a visible root in place.
+
+Construction writes only unreferenced roots, directory entries, page versions,
+and brick slots. A separate ordered dispatch validates the expected epoch and
+source revisions before one `atomic<u32>` compare-exchange switches the active
+root-slot index. The immutable root header contains the new epoch as two
+ordinary `u32` words. Old roots remain pinned through prior readers and last
+GPU use. Because construction and switching are separate ordered dispatches,
+the gate does not rely on one relaxed atomic word to publish unrelated payload
+writes or on unavailable portable 64-bit atomics.
+The coordinator withholds subsequent consumer readers, observations, and
+receipts until the gate submission is queue-confirmed. Loss of an unconfirmed
+generation therefore discards an unobservable candidate root and reconstructs
+the still-pinned old root; it does not guess whether a consumer-visible commit
+occurred.
+
+The exact component-transfer, child frame, placement-stream, and conservation
+protocol is in
+[adapter-substrate-contracts.md](adapter-substrate-contracts.md).
+
 ## Matter mutation transaction
 
 For a command proposed at revision `N + 1`:
@@ -146,11 +255,14 @@ For a command proposed at revision `N + 1`:
    generations, counts, and a transaction-wide error flag.
 7. Insert prepared page versions tagged `N + 1`. Readers holding revision `N`
    ignore them and follow previous links.
-8. A separate publication dispatch, ordered after all prepare/validate
-   dispatches in the same command buffer, reads the transaction-wide status,
-   atomically compares the volume gate against `N`, and writes `N + 1`. This
-   does not rely on cross-workgroup barriers. A failed validation or compare
-   sets the transaction failure flag and does not publish.
+8. Build an immutable `VolumeAuthorityVersionV2` for `N + 1`. A separate
+   publication dispatch, ordered after all prepare/validate dispatches in the
+   same command buffer, reads the transaction-wide status, verifies that the
+   currently selected authority version still contains revision `N`, and
+   compare-exchanges the entry's `atomic<u32>` authority index to the new
+   slot. This does not rely on cross-workgroup barriers or 64-bit atomics. A
+   failed validation or compare sets the transaction failure flag and does not
+   publish.
 9. Queue completion copies the small status block to staging. On successful GPU
    completion, the control plane resolves the receipt and appends the
    observation. On compare failure, an ordered cleanup pass restores every
@@ -228,12 +340,13 @@ Every value is configurable downward/upward within adapter and integer limits.
 The validated config records effective values. These defaults are engineering
 starting points, not universal performance promises.
 
-| Limit | Default | Hard v1 request maximum |
+| Limit | Default | Hard request maximum |
 | --- | ---: | ---: |
 | Consumer-registered nonempty materials | 4,096 | 65,535 (plus reserved empty ID 0) |
 | Material metadata per registration / aggregate | 4 KiB / 16 MiB | 1 MiB / 1 GiB |
 | Concurrently live volumes | 1,024 | 65,535 |
 | Lifetime volume records (live + tombstones) | 4,096 | 65,535; each owns one exact 1..=96-byte UTF-8 name |
+| Directory roots / radix nodes / entry versions / authority versions | 64 / 524,288 / 131,072 / 262,144 | adapter/config bound; fixed 64/128/128/64-byte GPU records |
 | Active interest leases | 64 | 4,096 |
 | Bricks per interest | 4,096 | 65,536 |
 | Detailed resident bricks | 32,768 (64 MiB samples) | adapter/config bound |
@@ -260,7 +373,7 @@ starting points, not universal performance promises.
 | Vertices / indices per brick artifact | 2,048 / 12,288 | fixed v1 maximum |
 | Dressing styles / device instances | 256 / 1,048,576 | configured |
 | Scheduled behavior engines / order edges | 16 / 64 | configured and builder-validated DAG |
-| Scheduled behavior view volumes / bricks / cells | 256 / 8,192 / 262,144 | configured sum of isolated per-participant views from one pinned frontier |
+| Scheduled behavior view volumes / bricks / cells | 256 / 8,192 / 262,144 | configured sum of isolated per-participant views from one pinned frontier; v2 volume hard max is 65,535 |
 | Scheduled behavior CPU / GPU view bytes | 8 MiB / 32 MiB | configured aggregate export pools; each GPU participant binding also fits the adapter limit |
 | Scheduled behavior input records / host bytes / GPU ingress bytes | 16 / 4 MiB / 4 MiB | configured opaque per-participant current input; complete descriptor maxima are reserved before planning and every ordered read-only GPU upload is confirmed before consumer planning |
 | Scheduled behavior CPU collision calls / contacts / bytes | 128 / 4,096 / 320 KiB | configured aggregate calls plus one reusable exact 80-byte contact-slot sink |
@@ -268,6 +381,9 @@ starting points, not universal performance promises.
 | Scheduled behavior proposals / payload / affected cells / affected bricks / directory effects / conflict checks / feedback | 1,024 / 64 MiB / 262,144 / 4,096 / 16 / 1,048,576 / 1 MiB | configured and wholly reserved/bounded before adapters run |
 | Scheduled behavior GPU buffers / live buffer bytes / pipelines / bind groups / WGSL bytes | 256 / 256 MiB / 64 / 256 / 4 MiB | configured aggregate opaque factory resources; buffer bytes use a 64 MiB minimum and 1 GiB/adapter-max clamp, while WGSL is charged before parse |
 | Scheduled GPU adapter dispatches / workgroups | 256 / 1,048,576 | configured counted-encoder limits per tick |
+| Scheduled placement updates / bytes | 65,536 / 4 MiB | configured compact GPU records plus alternate directory root |
+| Scheduled component-extraction proposals / children / assignments / child bricks / bytes | 16 / 256 / 262,144 / 4,096 / 32 MiB | configured and completely reserved before execution, including live/lifetime IDs, pages, scars, transfer and provenance |
+| Scheduled opaque egress maps / receipts / records / device / staging / host bytes | 16 / 64 / 16,384 / 16 MiB / 16 MiB / 16 MiB | configured independent GPU-to-CPU transport; zero/exact/overflow/failure are distinct |
 | Asynchronous GPU extension jobs | 64 | configured |
 | Asynchronous GPU extension registrations / registry bytes | 32 / 4 MiB | configured; 1 MiB WGSL + 128-byte entry point per registration |
 | Candidate effects per extension job | 256 | fixed v1 maximum; batch-reserved before dispatch |
@@ -316,7 +432,7 @@ new stable volume key even after older volumes retire. Telemetry exposes
 current, high-water, limit, and rejection/coalescing counts for every pool in
 the public `ResourceLimits`, including extraction, presentation
 dirty/artifact/instance, behavior input/view/collision/handoff/proposal/feedback/
-opaque-resource/live-factory-buffer-byte/WGSL, and extension-registry
+component-extraction/placement/egress/opaque-resource/live-factory-buffer-byte/WGSL, and extension-registry
 resources. Factory buffer bytes remain charged after logical handle drop while
 a bind group or in-flight submission depends on them; capacity returns only
 after dependency drop and last-use completion. Device-loss recreation begins
@@ -339,6 +455,12 @@ All device-bound handles contain `DeviceGeneration`. On loss:
   generation are quarantined; old-generation consumer-input uploads are also
   quarantined and cannot reach an adapter; the first recovered GPU tick
   receives typed `UnavailablePreviousGeneration` feedback;
+- component extraction without confirmed directory-epoch publication releases
+  unpublished child identities after old-generation quarantine; confirmed
+  publication remains applied and never rolls back to parent-only ownership;
+- placement-stream publication follows the same epoch boundary;
+- a pending opaque egress readback fails explicitly on loss even when its
+  associated publication was already confirmed;
 - CPU adapter state remains consumer-owned; GPU adapter resources/state are
   invalid and must be recreated by that adapter before it reports ready;
 - dirty scar data already durably stored is loaded normally;

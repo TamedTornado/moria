@@ -21,6 +21,8 @@ Bevy RenderApp / Moria render resources
         +-- sparse authority: page table + brick/scar pools + revisions
         +-- collision/query compute
         +-- stable behavior-view exports + proposal validation/publication
+        +-- directory-epoch component-extraction/placement publication
+        +-- bounded opaque adapter-egress staging
         +-- presentation derivation
         +-- staging/readback pool
         +-- asynchronous GPU inspection/effect jobs
@@ -98,6 +100,9 @@ CPU/GPU proposal sinks, whole-proposal conflict resolution, participant/tick
 reports, and adapter lifecycle notifications. It builds transactions through
 `command` and `storage`; it cannot publish a revision itself. Adapter-owned
 state remains behind adapter traits and is never a Moria resource.
+It also owns generic component-extraction reservations, placement-stream
+records, and opaque egress receipts. It never owns component significance,
+activity-region schemas, fidelity classes, event schemas, or simulation state.
 
 ### `query`
 
@@ -151,6 +156,9 @@ only module allowed to turn storage transactions into GPU work. Factory bytes
 remain charged through registered dependencies and last submission use;
 device-loss teardown returns the terminal generation's permits before
 replacement state creation.
+It also owns Scheduled ABI v2 child-reservation and opaque-egress effect
+subranges, component-transfer/validation scratch, alternate directory roots,
+placement compaction, and egress staging maps.
 
 ### `bevy`
 
@@ -205,8 +213,10 @@ Render-world order:
    `behavior_export_participants
    -> ordered_gpu_behavior_and_handoffs
    -> behavior_validate_compose
-   -> behavior_publish -> query/collision -> async_extension_packet
-   -> presentation`.
+   -> behavior_validate_copy_egress
+   -> behavior_prepare_component_extraction_and_placement
+   -> behavior_publish_directory_epoch
+   -> query/collision -> async_extension_packet -> presentation`.
 5. Renderer cleanup: register queue-completion callbacks, map submitted
    readbacks asynchronously, and retire resources whose last submission is
    complete.
@@ -252,6 +262,12 @@ slots: CPU-to-GPU performs an ordered upload, GPU-to-CPU performs completion,
 copy, map, decode, view-drop, and unmap before the successor callback.
 Ordering-only edges allocate no payload. GPU-only chains do not read material
 or proposals back to CPU before publication.
+Component extraction receives final candidate child IDs in a read-only GPU
+mapping before adapter execution and publishes through one directory-root
+epoch without CPU authority-path readback. Placement streams validate and
+publish compacted GPU records through the same root mechanism. Opaque egress
+maps asynchronously after its ordered GPU copy; effect publication does not
+wait for CPU decoding.
 The v1 coordinator does not offload or preempt CPU planners/adapters. It holds
 the pinned frontier and post-frontier barrier until they return, so a slow
 consumer callback stalls the main-world update. P10 qualifies the fixed
@@ -355,7 +371,12 @@ World construction has two phases.
 - material zero is not consumer-registerable;
 - volume domains and coordinate conversions cannot overflow;
 - placements are finite and rigid;
-- every volume has a content source and exact reconstruction fingerprint;
+- versioned directory root/node/entry/authority pools can hold the current
+  directory, every declared root-affecting proposal's conservative
+  four-nodes-per-entry preparation, and configured reader-retained generations;
+- every externally registered volume has a content source and exact
+  reconstruction fingerprint; restored derived-extraction children instead have
+  validated persisted derived bases and provenance;
 - static/dynamic mode matches allowed placement command policy;
 - persistence is configured if dirty-state retirement is enabled;
 - observation fact/payload and staging limits can hold one maximum legal
@@ -370,11 +391,15 @@ World construction has two phases.
   fixed maximum artifact, and dirty records reserve one marker for every live
   volume in addition to the job/exact-key partition;
 - behavior registration/order/per-participant-view/collision/handoff/proposal/
-  double-feedback limits can hold every builder adapter and one declared
-  maximum active tick;
+  double-feedback/component-extraction/placement/egress limits can hold every builder
+  adapter and one declared maximum active tick;
 - behavior consumer-input record/host byte limits cover every input-capable
   participant maximum, and GPU ingress bytes cover every GPU input header,
   aligned payload, and staging/device transport;
+- component-extraction child reservations fit live/lifetime volume records, page/brick/
+  scar/directory pools, and reservation-subrange bytes; placement maxima fit alternate
+  directory-root storage; opaque egress record/device/staging/host/map maxima
+  fit every enabled descriptor independently of handoff and generic staging;
 - asynchronous extension registration count/bytes can hold every
   startup/runtime descriptor within its per-descriptor WGSL and entry-point
   caps.
@@ -395,7 +420,7 @@ Required GPU capabilities are compute shaders, storage buffers, buffer-to-
 buffer copies, at least four writable storage bindings for mutation, and the
 configured binding/allocation limits. Enabling a GPU behavior participant also
 requires at least six storage-buffer bindings in one shader stage for the
-fixed group-0 ABI. Optional timestamps and indirect
+fixed Scheduled ABI v2 group-0 contract. Optional timestamps and indirect
 dispatch are enabled only when reported and have semantic fallbacks.
 Adapter-negotiated capacities use `effective = min(desired, adapter_legal)`;
 startup fails instead of clamping below the consumer's declared minimum or one
