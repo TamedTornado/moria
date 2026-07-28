@@ -859,3 +859,65 @@ GPU handoffs on the GPU path.
 **Rejected.** Unbounded append, silent truncation, interpreting adapter
 records, tying publication authority to CPU event decoding, returning mapped
 authority resources, and routing GPU-to-GPU consumers through CPU egress.
+
+---
+
+## Human review entry — simplest sufficient adapter design
+
+### Verbatim feedback
+
+```text
+Is this as simple as it can be while still satisfying the requirements? If yes, leave the TDD unchanged. If no, revise the TDD to make it the simplest sufficient design.
+```
+
+### Technical decision and clarification
+
+The TDD was not yet as simple as it could be.
+The three required adapter capabilities remain unchanged, but the focused
+adapter document is now a delta over the already selected scheduled-tick,
+copy-on-write, resource-pool, receipt, observation, and persistence contracts.
+It no longer restates whole scheduling, storage, lifecycle, persistence, and
+validation subsystems or makes the proof adapter's region schema,
+classification vocabulary, and exact scan/dispatch decomposition part of
+Moria's architecture.
+
+The smallest sufficient substrate additions are:
+
+1. one source-bound extraction proposal with pre-reserved final child
+   identities and one atomic directory publication gate;
+2. one bounded placement-stream proposal using the same directory gate; and
+3. one optional fixed-stride egress range using the existing asynchronous
+   staging/readback lifecycle.
+
+T34-T36 remain authoritative for ownership, atomicity, boundedness,
+persistence, and failure behavior.
+Their fixed workloads and implementation counts are qualification fixtures,
+not additional public product behavior or a mandate that consumer adapters use
+the proof implementation.
+
+### Unresolved question
+
+None.
+The review calls for engineering simplification and does not require a new
+human product or authority decision.
+
+## T37. Adapter capabilities reuse existing substrate machinery
+
+**Decision.** Component extraction, bulk placement, and opaque egress are
+extensions of one scheduled tick.
+They reuse its permit, participant effect allocation, copy-on-write
+transactions, configured pools, receipts, observations, and device lifecycle.
+There is no separate fracture service, activity-region subsystem,
+multi-fidelity scheduler, event model, or egress runtime.
+The activity-region and fidelity proof remains adapter-owned opaque data and
+code.
+
+**Reason.** The public guarantees require atomic ownership transfer, fresh
+placements, bounded readback, and explicit failure.
+They do not require Moria to duplicate the surrounding scheduling and storage
+architecture or standardize the proof adapter's internal algorithm.
+
+**Rejected.** Removing any of the three required hooks; weakening
+pre-reservation, atomic publication, coarse-outside-region proof, or egress
+failure honesty; retaining duplicate normative descriptions; and promoting
+proof-only region or simulation concepts into Moria.

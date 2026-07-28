@@ -2,908 +2,381 @@
 
 ## Purpose and authority
 
-This file specifies three generic transports required by the scheduled
-behavior boundary:
+This file adds three capabilities to the scheduled behavior contract:
 
-1. atomic extraction of existing authoritative matter into new child volumes;
-2. bounded bulk placement publication for one persistent, multi-fidelity
-   adapter simulation; and
-3. optional bounded opaque GPU-to-CPU adapter egress.
+1. atomically redistribute matter from one existing volume into independently
+   placed child volumes;
+2. publish a bounded batch of dynamic-volume placements; and
+3. return bounded opaque GPU records to the owning CPU consumer.
 
-They trace to the approved design's dynamic-volume, controlled-effect,
-GPU-oriented behavior, persistence, and explicit-failure requirements.
-They do not add physics, damage, weapons, fracture policy, body state,
-significance thresholds, activity-region policy, scoring, audio, or gameplay
-events to Moria.
-An adapter may give the byte and proposal records those meanings; Moria sees
-only bounded regions, existing samples, placements, identities, opaque bytes,
-and publication outcomes.
+These are small extensions of the existing scheduled tick, not separate
+subsystems.
+They reuse `BehaviorTickPermit`, the participant effect allocation, Moria's
+copy-on-write storage transactions, ordinary receipts and observations, and
+the configured GPU/staging pools.
+The public Rust types are normative in [public-api.md](public-api.md), tick
+ordering is normative in [behavior-scheduling.md](behavior-scheduling.md), and
+persistence is normative in [persistence.md](persistence.md).
 
-Scheduled GPU ABI v2 in this file supersedes the six-binding Scheduled ABI v1
-selection in T29, T30, T32, and T33.
-Unchanged v1 record layouts retain their `V1` type names inside v2.
-There is no runtime v1/v2 negotiation in the initial implementation:
-configuration accepts only scheduled ABI version 2.
+Moria owns bounds, identity reservation, validation, publication, lifetime,
+failure, and transport.
+The adapter owns component discovery and significance, activity-region
+meaning, fidelity classes, coarse/full simulation, and the schema and meaning
+of egress bytes.
+No Moria type represents physics, damage, weapons, velocity, forces, debris,
+scoring, audio, or gameplay events.
 
-## Public capability declarations
+Scheduled ABI v2 is the only scheduled ABI accepted by the initial
+implementation.
+It retains v1 record layouts where those layouts did not change.
 
-`BehaviorEngineDescriptor` gains the following fields:
+## Capability declaration and admission
 
-```rust
-pub struct BehaviorEngineDescriptor {
-    // Existing fields remain.
-    pub maximum_placement_updates: u32,
-    pub maximum_component_extraction_proposals: u32,
-    pub maximum_component_extraction_children: u32,
-    pub maximum_component_extraction_assignment_cells: u32,
-    pub maximum_component_extraction_child_bricks: u32,
-    pub maximum_component_extraction_payload_bytes: u64,
-    pub cpu_egress: BehaviorCpuEgressDescriptor,
-}
+`BehaviorEngineDescriptor` declares:
 
-pub struct BehaviorCpuEgressDescriptor {
-    pub schema: [u8; 16],
-    pub record_stride: u32,
-    pub maximum_records: u32,
-    pub maximum_bytes: u64,
-}
-```
+- maximum placement updates;
+- maximum extraction proposals, candidate children, assigned source cells,
+  child bricks, and extraction payload bytes; and
+- an optional egress schema, stride, record count, and byte maximum.
 
-All new maxima are zero for a CPU adapter.
-For a GPU adapter, component-extraction fields are either all zero or all
-nonzero.
-`maximum_component_extraction_children` is the candidate-child capacity of
-each component-extraction proposal. Legal proposal-local piece handles are the
-dense range `1..=maximum_component_extraction_children`. Registration
-checked-multiplies that value by
-`maximum_component_extraction_proposals`; the product is the aggregate child
-identity/directory/transfer reservation charged to world pools. This fixed
-grid lets Moria construct the complete proposal-slot/piece-handle identity
-table before the shader chooses which pieces to publish.
-The checked products and sums must fit the adapter maxima and the world
-resource pools before registration succeeds.
+The complete field-level schema and configuration maxima are in
+[public-api.md](public-api.md).
+CPU adapters declare all three capabilities as zero.
+For a GPU adapter, all extraction maxima are zero together or nonzero
+together.
+Egress is disabled only when all egress fields are zero.
+When enabled, its stride is four-byte aligned and
+`maximum_records * record_stride == maximum_bytes` under checked arithmetic.
+Moria does not interpret the schema identifier or records.
 
-CPU egress is disabled exactly when `maximum_records == 0`,
-`maximum_bytes == 0`, `record_stride == 0`, and `schema == [0; 16]`.
-When enabled, `record_stride` is a multiple of four in `4..=65_536`,
-`maximum_records * record_stride == maximum_bytes`, and the product is checked
-in `u64`.
-The schema identifier and record bytes are opaque to Moria.
-
-The descriptor does not declare activity regions.
-Region definitions remain current-tick consumer input under the existing
-opaque input contract.
-A multi-fidelity adapter defines and validates its own input schema within its
-declared input byte maximum.
+Registration checked-sums each descriptor against the corresponding world
+limits.
+Tick admission atomically reserves the participant effect range and all
+ordinary resources that its declared worst case can consume.
+This includes child identities and volume records, copy-on-write page/brick
+and scar capacity, one directory publication transaction per root-changing
+proposal, placement records, egress working/staging/host bytes, map slots,
+receipts, observations, and cleanup records.
+Admission never holds a partial reservation while waiting for another pool.
+If the complete reservation is unavailable, the tick waits or is rejected
+under its existing overload policy and no adapter executes.
+Unused capacity is released only after validation establishes the used prefix
+and the last GPU or mapped use is complete.
 
 ## Atomic component extraction
 
-### Operation boundary
+### Input and output
 
-`ExtractComponents` is a scheduled GPU substrate effect, not ordinary
-`VolumeCommand::Create` and not arbitrary scheduled creation.
-It can only redistribute samples that are occupied in one pinned source-volume
-revision.
-It cannot introduce a material sample, obtain a content source, clone a cell,
-address another source volume, or create a child with consumer-authored base
-content.
+`ExtractComponents` addresses exactly one pinned source-volume snapshot.
+Its payload contains:
 
-The adapter supplies bounded piece labels and a generic disposition:
+- a bounded set of nonzero proposal-local piece handles;
+- for each piece, `PublishChild` or `RemoveFromMatter`; and
+- a sorted set of source-cell coordinates assigned to those handles.
 
-```rust
-pub struct ComponentPieceHandle(NonZeroU32); // proposal-local
-
-pub enum ComponentPieceDisposition {
-    PublishChild,
-    RemoveFromMatter,
-}
-
-pub struct ComponentExtractionApplied {
-    pub command: CommandId,
-    pub source: VolumeId,
-    pub source_outcome: ComponentSourceApplied,
-    pub children: Vec<ComponentChildApplied>,
-    pub removed_cells: u32,
-    pub directory_epoch: WorldDirectoryEpoch,
-    pub correlation: Correlation,
-}
-
-pub enum ComponentSourceApplied {
-    Remainder { revision: VolumeRevision },
-    Retired { terminal_revision: VolumeRevision },
-}
-
-pub struct ComponentChildApplied {
-    pub piece: ComponentPieceHandle,
-    pub volume: VolumeId,
-    pub key: VolumeKey,
-    pub revision: VolumeRevision, // always 1 at publication
-    pub local_domain: CellAabb,
-    pub placement: RigidPlacement,
-    pub sample_count: u32,
-}
-```
-
-`children` contains only published children and is sorted by ascending
-proposal-local piece handle. `removed_cells` is the exact aggregate of every
-`RemoveFromMatter` piece. No unused reservation appears in the result.
-
-Cells with no piece assignment remain in the source.
-`PublishChild` transfers the assigned samples to a new persistent Moria
+Unassigned source cells remain in the source.
+`PublishChild` transfers the assigned samples to a new persistent dynamic
 volume.
-`RemoveFromMatter` is the ordinary substrate effect of explicit removal;
-Moria reports its exact cell count but creates no debris, effect, or gameplay
-event.
-An adapter may interpret that disposition as transient debris or a visual
-effect and may carry its own data through a handoff or egress.
-Moria does not make that policy choice.
+`RemoveFromMatter` explicitly removes the assigned samples and reports their
+count; Moria gives that removal no debris or gameplay meaning.
 
-Conservation is over canonical source-space records
-`(source_z, source_y, source_x, packed_sample)`, not over material values alone:
+The operation cannot introduce a sample, copy one source cell to two owners,
+address a second source, attach consumer-authored content, or transport a
+`BaseContentSource`.
+The adapter decides which discovered pieces are published or removed.
+Moria validates assignments and conservation but does not define or validate
+the adapter's notion of connectivity.
 
-```text
-source occupied coordinate/sample multiset before
-  = source remainder coordinate/sample multiset after
-  + every child record mapped back by its origin
-  + explicitly removed coordinate/sample multiset
-```
+On success, `ComponentExtractionApplied` reports:
 
-Every source sample appears in exactly one term.
-The required validation proof uses zero explicitly removed cells, so the
-before multiset equals source remainder plus children exactly.
-An unassigned sample is never inferred to be removed.
-GPU validation uses assignment marks and exact counts for this proof, not a
-digest as a substitute. Persistence later uses the existing content-addressed
-chunk digests, but no digest is added to the scheduled authority path or
-treated as proof of conservation.
+- the source remainder revision or source retirement revision;
+- published children ordered by piece handle, including final `VolumeId`,
+  stable key, revision 1, local domain, placement, and sample count;
+- the explicit removed-cell count; and
+- the committed `WorldDirectoryEpoch`.
 
-Moria validates piece-handle uniqueness per assigned source cell and exact
-source membership.
-The adapter owns how it discovered components and which ones are significant.
-Moria does not certify or define connectivity, but the fracture-shaped proof
-adapter must produce six-neighbor connected pieces and the independent oracle
-verifies that property.
+Unused candidate identities never appear in the result.
 
-### Pre-reservation and identity
+### Pre-reserved child identities
 
-Before the tick enters `Preparing`, Moria atomically reserves the worst case
-declared by every enabled GPU participant:
+For every declared proposal slot and legal piece handle, Moria reserves a
+candidate runtime ID and stable key before the adapter dispatch.
+The participant sees the complete dense
+`(proposal_slot, piece_handle) -> VolumeId, VolumeKey` table as read-only
+scheduled input.
+This lets adapter-owned GPU state associate a discovered body with its final
+Moria identity without authority-path readback.
 
-- one proposal and fixed outcome record for every possible component
-  extraction;
-- one live directory entry, permanent lifetime record, `VolumeId`,
-  consumer-visible `VolumeKey`, revision slot, observation fact, presentation
-  marker, and receipt child record for every possible child;
-- one complete alternate world-directory root for every possible
-  root-affecting proposal and every changed directory entry;
-- source and child page keys, page versions, detailed brick slots, scar
-  records, occupancy summaries, transfer records, assignment records, and
-  validation diagnostics;
-- the complete child-reservation and component-extraction payload subranges in
-  the participant effect allocation; and
-- every byte of submission, feedback, persistence provenance, and cleanup
-  bookkeeping needed by the maximum operation.
+Candidates are not live and cannot resolve through a view or effect until the
+extraction publishes.
+Successful children retain their reserved identities.
+Unused or failed candidate handles become permanently invalid; their backing
+slots return to the pools without creating tombstones.
+Moria rejects the participant if it modifies the canonical reservation bytes.
 
-Reservation is one checked acquisition.
-Moria never holds a subset while waiting for another pool.
-Failure leaves the tick queued or rejects it under the behavior-tick overload
-policy; no adapter executes.
-
-Runtime IDs and stable keys are allocated on the CPU from already reserved
-slots before GPU execution, but publication does not depend on a CPU readback.
-`VolumeId` uses the ordinary pre-reserved generational live slot.
-For each extraction proposal, Moria derives a 128-bit `extraction_nonce` with
-UUIDv5 over the world key, behavior tick ID, stable engine key, proposal slot,
-and a retry salt; each `VolumeKey` is UUIDv5 over that nonce and the dense
-reservation slot. It checks the complete candidate set against live keys,
-tombstones, and itself. A collision increments the salt and regenerates the
-whole set; 16 unsuccessful attempts fail identity preflight before any adapter
-runs. This needs neither entropy nor a persisted global counter and remains
-safe when tick IDs restart after restore because all retained keys/tombstones
-participate in collision preflight.
-Unpublished stable keys are reservation candidates, not lifetime records or
-tombstones.
-They are released without becoming observable if unused or if the proposal
-fails.
-Once published, a key consumes its lifetime record permanently.
-No global derived-key counter or namespace is added to persistence; the
-published key and nonce are ordinary immutable child provenance.
-Each candidate reserves both a reusable live slot/generation and a distinct
-lifetime `VolumeRecordIndex`. The directory radix is keyed by the latter, so
-retired parent/child tombstones cannot collide with later live-slot reuse.
-
-The child-reservation subrange of group-0 binding 1 contains a dense mapping
-for each
-`(participant, extraction_proposal_slot, ComponentPieceHandle)` in the
-descriptor's complete proposal-by-piece grid:
+The compact wire record is:
 
 ```text
 ComponentReservationRecordV2 (48 bytes)
-  0  proposal_slot:u32
-  4  piece_handle:u32
-  8  volume_id_low:u32
- 12  volume_id_high:u32
- 16  volume_key:[u8;16]
- 32  state:u32       // Reserved=1, Published=2, Unused=3, Failed=4
- 36  reserved:[u32;3]
+  proposal_slot:u32
+  piece_handle:u32
+  volume_id_low:u32
+  volume_id_high:u32
+  volume_key:[u32;4]
+  state:u32                 // Reserved=1, Published=2, Unused=3, Failed=4
+  reserved:[u32;3]          // zero
 ```
 
-Every possible handle therefore has its final `VolumeId` before the adapter
-dispatch.
-The adapter may copy that mapping into its factory-created GPU body state in
-the same ordered dispatch that writes piece assignments.
-The proposal is all-or-none, so prior feedback's admitted/rejected outcome is
-sufficient to reconcile those associations without an authority-path CPU
-readback.
-The ID is provisional until that feedback says published: it is the child's
-final ID on success and is permanently invalid on failure/unused disposition.
-No Moria view or effect can resolve a provisional candidate as a live volume.
-The reservation section shares the read-write effect buffer because the
-portable six-binding group-0 layout leaves adapter storage bindings available.
-It is immutable by contract: Moria snapshots its canonical bytes before
-dispatch and rejects the complete participant output if the adapter changes
-any reservation byte. Moria alone changes `state` in ordered
-validation/publication passes.
-The Rust mirror spells the 16 key bytes as `[u8; 16]`; WGSL spells the same
-wire bytes as four `u32` words because portable host-shareable WGSL has no
-storage-buffer `u8` scalar.
+The reservation section contains exactly the descriptor-declared
+`maximum_component_extraction_proposals *
+maximum_component_extraction_children` records in proposal-slot then
+piece-handle order; its byte length is therefore `48 * record_count` under
+checked arithmetic.
+It has no second header because the scheduled effect header already supplies
+the section offset and length and the descriptor supplies the dimensions.
 
-### Child frame, placement, and inherited facts
+Stable keys are derived deterministically from the world key, tick,
+participant, proposal slot, candidate slot, and a collision-retry salt.
+The complete candidate set is checked against live keys, retained tombstones,
+and itself before dispatch.
+Only published keys become durable lifetime records.
 
-For each `PublishChild` piece, Moria computes the source cell with the
-lexicographically smallest `(z, y, x)` key and uses its ordinary `(x, y, z)`
-coordinate as the child's integer origin `o`.
-The child axes equal the source local axes.
-Each transferred source coordinate `c` becomes child coordinate `c - o`.
-The child domain is the tight half-open AABB of those coordinates.
-The child inherits the source `cell_size`, material sample bytes, and
-occupancy rule exactly.
-It is published as a dynamic volume.
+### Conservation, frames, and atomic publication
 
-The initial child placement is:
+For every occupied source coordinate/sample pair, validation requires exactly
+one post-operation disposition:
 
 ```text
-child_placement = source_placement * translate(o * source.cell_size)
+source_before = source_remainder + all_children + explicitly_removed
 ```
 
-Rotation is exactly the source rotation.
-Thus every transferred cell occupies the same world-space box immediately
+The equality is an exact multiset equality over source coordinates and packed
+samples.
+A digest is not a substitute for this check.
+Validation rejects duplicate assignments, empty-source assignments,
+out-of-range handles, count/byte overflow, or any missing/duplicated sample.
+
+For a published child, the lexicographically smallest assigned source cell is
+its local origin.
+Each transferred coordinate becomes `source_cell - origin`; the tight
+half-open AABB is the child domain.
+The child inherits cell size, axes, samples, occupancy rules, and material
+registry interpretation.
+Its initial placement is:
+
+```text
+source_placement * translate(origin * source_cell_size)
+```
+
+Therefore each transferred cell occupies the same world-space box immediately
 before and after publication.
-That equality is mathematical; GPU qualification compares each transformed
-corner with tolerance
-`max(8 * f32::EPSILON * max(1, abs(coordinate)), 1e-6 * cell_size)`.
-Integer coordinate/sample ownership remains byte-exact.
-The adapter cannot supply a discontinuous initial transform through the
-component-extraction proposal.
-It may publish later placement updates through the generic placement stream.
 
-The source remains live with one incremented revision when any remainder
-exists.
-If no source sample remains, the same directory transaction publishes its
-retirement tombstone at `source_revision + 1`.
-Each child begins at revision 1.
+Moria builds the source remainder and every child in unreferenced reserved
+storage, validates the complete candidate state, and then installs one
+immutable directory root through one checked `WorldDirectoryEpoch` gate.
+Readers pin a directory epoch before resolving volume revisions, so they see
+either the old source or the complete new source/children directory, never an
+intermediate mixture.
+Old roots and storage remain pinned until every old-epoch reader and the
+publication submission complete.
+Per-volume revisions remain the public freshness identities; the directory
+epoch is only the atomic multi-volume visibility gate.
 
-### Preparation and atomic publication
+### Failure and persistence
 
-Portable WGSL phases are ordered dispatches:
+Cancellation before `Preparing`, pre-dispatch allocation failure, validation
+failure, stale source revision, or device loss before confirmed publication
+leaves the old directory current and eventually releases every candidate and
+reserved resource.
+After `Preparing`, cancellation is too late and cleanup continues even if the
+consumer drops receipts.
+A device generation lost after confirmed publication retains the committed
+outcome and follows the ordinary dirty-state recovery rule.
 
-1. validate proposal headers, source snapshot, labels, assignments, and
-   dispositions;
-2. mark each assigned source cell and stable-compact assignments by piece;
-3. compute per-piece counts and bounds;
-4. build new source and child bricks in unreferenced reserved slots;
-5. validate cell conservation, page/slot generations, occupancy summaries,
-   directory entries, and every counter/byte sentinel;
-6. build a complete unreferenced directory-root version containing the new
-   source entry or tombstone and every child entry;
-7. in a separate ordered publication dispatch, compare the active root slot's
-   `WorldDirectoryEpoch` and source revision, then use one `atomic<u32>`
-   compare-exchange on the active-root-slot index to install the new immutable
-   root; and
-8. after queue completion, emit observations and resolve the
-   component-extraction receipt.
+Each child persists its identity, domain, placement, source-extraction
+provenance, and complete sparse derived base.
+It has no consumer `BaseContentSource`.
+Until its first checkpoint is durable, those derived-base bricks are dirty and
+pinned; loss of the only authoritative copy is
+`UnrecoverableDirtyState`.
+Restore and cold rematerialization load the derived base and then later scars.
+Activity-region input, adapter body state, and egress bytes are never
+checkpointed by Moria.
 
-The construction dispatches never mutate a root visible to readers.
-The publication pass is ordered after payload construction on the same queue;
-it does not rely on one relaxed atomic word to publish unrelated writes.
-The new root header already contains the checked next `u64` epoch as two
-ordinary `u32` words. The only publication word is the `u32` physical root-slot
-index; root-pool capacity is therefore limited to `u32::MAX` and in practice
-to the configured root pool. Payload construction and the gate are separate
-ordered dispatches, so the compare-exchange is not claimed to publish
-unrelated same-dispatch writes.
-Readers acquire one root-slot index and its immutable directory epoch before
-resolving volume entries,
-so they observe either the complete old source or the complete new
-source/children set.
-The coordinator does not submit any consumer reader behind a candidate gate,
-append its observations, or resolve its receipt until queue completion confirms
-that gate's submission. A gate executed in a device generation that is lost
-before confirmation is therefore never semantically committed or externally
-observable; recovery reconstructs the retained old root. This is the same
-confirmed-publication boundary used by ordinary revision gates, not a rollback
-of a visible commit.
-Old roots, source pages, and slots remain pinned until every old-epoch reader
-and the publication submission complete.
+## Placement stream for persistent adapters
 
-No observable state contains duplicated, ownerless, or half-published matter.
-The component-extraction proposal conflicts with every other proposal
-addressing its source volume.
-Two component-extraction proposals for one source in a tick are invalid.
+`PlacementStream` is one scheduled proposal containing a bounded,
+stable-compacted array of rigid placement updates.
+Every entry names a distinct dynamic volume in the participant's pinned
+`VolumeRecords` view and includes its expected revision.
+Moria rejects the complete stream for a duplicate volume, stale revision,
+static volume, malformed transform, or count/byte overflow.
 
-### Failure and cleanup
-
-- Cancellation before `Preparing` releases every candidate ID, directory
-  permit, GPU range, and byte.
-- Validation, assignment, conservation, or capacity sentinel failure leaves
-  the old directory epoch current and releases unpublished IDs/resources after
-  their last GPU use.
-- An unused child slot is released after validation establishes the exact
-  published prefix.
-- Renderer allocation failure before execution publishes nothing and releases
-  the complete reservation.
-- Device loss before gate submission or after submission but before queue
-  confirmation produces typed no-publication device loss. No consumer reader
-  can have acquired the candidate root; old-generation resources are
-  quarantined and candidate IDs never become visible.
-- Device loss after confirmed publication preserves the applied extraction.
-  Recovery then follows the dirty-derived-content rule below and may fail with
-  `UnrecoverableDirtyState`; it never rolls back to the parent-only state.
-- Shutdown cancels only before the ordinary `Preparing` boundary.
-  A submitted component extraction drains to confirmed publication or
-  terminal loss before its resources can be reused.
-
-## Directory epochs and bulk placement
-
-### Directory snapshot authority
-
-`WorldDirectoryEpoch` is a checked nonzero `u64`.
-Every query, collision traversal, scheduled view, checkpoint frontier, and
-presentation job captures an epoch/root slot before it captures volume
-revisions.
-Ordinary single-volume commits may update one entry in a new structurally
-shared root.
-Component-extraction and placement-stream commits update many entries in one
-root per proposal.
-The epoch is an atomic visibility mechanism, not a cross-volume gameplay clock.
-It is stored inside the immutable root; the atomic publication token is the
-single `u32` active-root-slot index, not a portable 64-bit atomic.
-
-Per-volume revisions remain the freshness identity exposed to consumers.
-Directory-epoch exhaustion closes the world to new publication.
-
-### Placement stream
-
-`PlacementStream` is one bounded scheduled GPU proposal whose payload is a
-stable-compacted array of placement updates:
+The compact record is:
 
 ```text
 PlacementUpdateV2 (64 bytes)
-  0  snapshot_index:u32
-  4  flags:u32                 // v2 zero
-  8  expected_revision_low:u32
- 12  expected_revision_high:u32
- 16  translation:[f32;4]
- 32  rotation_xyzw:[f32;4]
- 48  reserved:[u32;4]
+  snapshot_index:u32
+  flags:u32                 // zero
+  expected_revision_low:u32
+  expected_revision_high:u32
+  translation:[f32;4]
+  rotation_xyzw:[f32;4]
+  reserved:[u32;4]          // zero
 ```
 
-Every entry must address a distinct dynamic volume in the participant's
-filtered view.
-Placements are finite and normalized under the ordinary rigid-placement
-rules.
-The array is sorted by snapshot index after stable GPU compaction.
-Duplicate, stale, static, malformed, or over-capacity entries fail the whole
-stream before publication.
-Each GPU participant may emit at most one placement-stream proposal per tick;
-its descriptor maximum is the aggregate entry capacity of that proposal.
+One validated stream publishes all addressed directory entries through one
+directory epoch and advances each addressed volume revision once.
+`PlacementStreamApplied` reports the updated volume/revision pairs in
+ascending snapshot-index order.
+The mechanism avoids host enumeration and one ordinary move command per body;
+it does not choose which objects move or how their poses are calculated.
 
-Moria reserves the descriptor's complete maximum update records, alternate
-directory entries/root bytes, revision values, observation facts, presentation
-markers, outcomes, and GPU scratch before the adapter runs.
-The publication pass installs all valid placement entries under one new
-directory epoch; each addressed volume independently advances its revision by
-one.
-The result reports the exact updated `(VolumeId, VolumeRevision)` vector.
-That vector follows ascending proposal snapshot index, the same order as the
-validated placement records, and contains each updated volume exactly once.
-No ordinary per-volume `VolumeCommand::Move` object, host body enumeration, or
-authority-path CPU readback is created.
-
-When one tick selects several component-extraction proposals and/or participant
-placement streams, Moria orders those proposal transactions by participant
-schedule order and proposal index, prepares an immutable root chain, and
-executes one active-root-slot compare-exchange per proposal.
-Each proposal is all-or-none, but unrelated proposals retain the approved
-independent-publication rule: validation/preparation failure can omit one
-proposal without discarding another under the selected participant policy.
-The ordered gate set is queue-confirmed as one tick submission, so device loss
-before that confirmation exposes none of its candidate roots.
-Each gate dispatch records success; a final ordered verification pass restores
-the still-pinned original active-root slot if any supposedly conflict-free
-compare-exchange failed, then fails the tick as `InternalInvariant`.
-No reader can observe that unconfirmed repair path.
-Every proposal receipt reports its own gate and epoch after confirmation.
-
-The placement stream is the selected bounded update mechanism for a
-GPU-resident adapter's persistent coarse and full-fidelity objects.
-It is still linear in the number of placements actually published, which is
-unavoidable for fresh Moria placements, but removes per-object host
-admission, proposal headers, queue operations, and receipts.
-The GPU compacts only changed placements and Moria performs one validation
-pipeline and one directory-root publication.
-An adapter must not leave a moved persistent Moria volume's placement stale:
-if its consumer-owned state changes the pose, it emits that pose in the current
-stream or fails the participant/tick under its own policy.
-
-## CPU-authored activity regions and persistent multi-fidelity simulation
-
-Moria transports activity-region definitions only as the participant's opaque
-current input.
-The CPU/game layer, not Moria and not the GPU, chooses their count, shapes,
-full-fidelity interiors, and halo widths.
-The adapter validates its own schema and rejects invalid input through its
-ordinary adapter failure.
-
-A conforming multi-fidelity GPU adapter uses one persistent adapter
-registration and one consumer-owned body table for the whole world.
-Geographic regions are not separate Moria adapters or separate Moria worlds.
-Each persistent body has one stable adapter-owned record and, when
-matter-backed, one `VolumeId`.
-The adapter plans one bounded
-`VolumeRecords { maximum_volumes }` scope for its descriptor-allowed
-matter-backed objects, so the placement stream receives snapshot indices
-without exporting their cells merely to update poses. Cell scopes are added
-only for bodies whose adapter-owned work actually inspects matter.
-
-The selected proof algorithm is:
-
-1. upload the CPU-supplied region bytes through binding 5;
-2. dispatch one invocation per persistent body;
-3. test that body against every declared region in stable input order and
-   reduce the matches to one closed adapter-owned class
-   `Full | Halo | Coarse`, with proof-adapter priority
-   `any Full > any Halo > Coarse`;
-4. mark and hierarchical-scan the mutually exclusive predicates;
-5. scatter each body index exactly once into one compact list;
-6. run the adapter's full, transition, or coarse kernels against those lists;
-   and
-7. compact changed Moria placements into one `PlacementStream`.
-
-The class names and region schema belong to the proof adapter, not Moria's
-public vocabulary.
-Overlapping regions form a deterministic union because classification writes
-one result per body before compaction.
-A body matching two regions is never emitted twice.
-The participant's Moria cell records are exported once independently of region
-count; proof kernels visit a matter-backed body's cell range only from that
-body's one compact-list entry.
-Disconnected regions use the same table and passes.
-
-The halo is processed by the adapter's transition path.
-Promotion initializes any full-fidelity representation from the same
-persistent transform and velocity fields used by the coarse representation;
-demotion writes the last full-fidelity state back to those same fields.
-The proof adapter performs these transition copies without numeric conversion
-and asserts bit-identical transform/velocity fields immediately before and
-after the transition step; later integration is a separate adapter operation.
-The body record and `VolumeId` never migrate or change because of geography.
-Consequently a crossing cannot introduce a transform or velocity jump unless
-the adapter itself violates its validated proof oracle.
-
-Bodies outside every region continue through the adapter-owned coarse pass.
-Coarse motion and any remote destruction/debris policy remain adapter
-semantics.
-They may produce placement streams, component extraction, ordinary material
-effects, handoffs, or opaque CPU egress.
-Moria does not choose which outcome applies.
-
-### Dispatch bound after compaction
-
-V2 retains fixed maximum dispatch rather than exposing indirect dispatch.
-For the selected proof capacity of 65,536 persistent bodies and workgroup width
-128, one maximum-list pass dispatches 512 workgroups.
-The portable proof adapter uses exactly:
-
-1. four class-compaction dispatches: local scan/tile totals (`512`
-   workgroups), scan three classes' level-1 totals (`12`), scan level 2 (`3`),
-   then add offsets/scatter (`512`);
-2. three fixed simulation dispatches, one each for the compact full, halo, and
-   coarse lists (`3 * 512`); and
-3. four changed-placement compaction dispatches: local scan/tile totals
-   (`512`), level 1 (`4`), level 2 (`1`), and scatter (`512`).
-
-That is exactly 11 adapter dispatches and at most 3,604 workgroups per tick.
-The proof descriptor declares maxima of 16 dispatches and 8,192 workgroups;
-tick admission charges those declared maxima, not only the expected counts.
-Every pass receives its compacted logical count and guards
-`global_invocation_id < count`.
-Inactive lanes still participate in any workgroup barrier.
-
-Those descriptor maxima fit the default scheduled limits of 256 dispatches and
-1,048,576 workgroups with substantial headroom.
-P11 measures the fixed-overdispatch cost at empty, 1%, 50%, and 100% active
-lists.
-Failure of P11 blocks the fixed-dispatch selection and requires a later
-controlled indirect-dispatch revision; implementation may not silently expose
-raw `INDIRECT` buffers.
+CPU-defined activity regions remain opaque participant input.
+A conforming multi-fidelity adapter uses one persistent body table across all
+regions, classifies a body once against the deterministic union of overlapping
+regions, preserves body and volume identity through promotion/demotion, and
+continues its adapter-owned coarse work outside all full-fidelity regions.
+Those are adapter proof obligations, not Moria data models.
+The initial portable path uses the descriptor's existing fixed dispatch and
+workgroup maxima with guarded inactive lanes; it exposes no raw indirect
+dispatch buffer.
+P11 must prove the declared maximum is viable before this integration claim is
+accepted.
 
 ## Opaque GPU-to-CPU egress
 
-### Transport API
+An enabled GPU participant receives one zero-initialized fixed-stride egress
+range.
+The supplied WGSL helper reserves record indices atomically, preserves the
+full required count, and sets overflow rather than writing beyond capacity.
+Moria copies only a valid initialized prefix to its pre-reserved staging range
+and delivers it through `BehaviorEgressReceipt`.
+Records remain byte-for-byte adapter data.
 
-An enabled GPU participant receives a dedicated zero-initialized egress
-subrange at the end of its effect allocation: an egress header followed by
-`maximum_bytes`.
-Moria supplies a WGSL helper that atomically reserves one fixed-stride record:
-the returned index is written only when it is below `maximum_records`;
-otherwise the helper sets overflow and preserves the full required count.
-The adapter must use that helper for every record.
-Record allocation order is adapter-defined; Moria preserves the initialized
-prefix byte-for-byte and does not sort or decode it.
+The header is:
 
-```rust
-pub type BehaviorEgressReceipt = Receipt<BehaviorEgressCompleted>;
-
-#[derive(Clone)]
-pub struct BehaviorEgressCompleted {
-    pub tick: BehaviorTickId,
-    pub engine: BehaviorEngineId,
-    pub correlation: Correlation,
-    pub schema: [u8; 16],
-    pub record_stride: u32,
-    pub record_count: u32,
-    pub bytes: BehaviorEgressBytes,
-}
-
-pub enum BehaviorEgressTerminal {
-    Disabled,
-    Pending { receipt: BehaviorEgressReceipt },
-    Unavailable { reason: BehaviorEgressFailure },
-}
-
-pub enum BehaviorEgressFailure {
-    ParticipantUnavailable { reason: BehaviorEgressParticipantUnavailable },
-    Overflow { required_records: u32, capacity: u32 },
-    CounterOverflow,
-    InvalidHeader,
-    GpuValidation,
-    ReadbackMap,
-    Decode,
-    CancelledBeforePreparation,
-    Shutdown,
-    DeviceLost { generation: DeviceGeneration },
-}
-
-pub enum BehaviorEgressParticipantUnavailable {
-    Skipped(BehaviorEngineFailure),
-    NotRun(BehaviorParticipantNotRunReason),
-}
+```text
+BehaviorEgressHeaderV2 (80 bytes)
+  magic:u32                 // MORO
+  version:u32               // 2
+  engine:u32
+  status:u32                // Disabled=0, Enabled=1
+  record_stride:u32
+  record_capacity:u32
+  required_records:atomic<u32>
+  overflow:atomic<u32>
+  payload_offset:u32
+  total_bytes:u32
+  tick_low:u32
+  tick_high:u32
+  generation_low:u32
+  generation_high:u32
+  schema:[u32;4]
+  reserved:[u32;2]          // zero
 ```
 
-`BehaviorParticipantOutcome` gains `egress: BehaviorEgressTerminal`.
-An enabled participant receives a receipt at tick admission.
-The tick receipt may become ready after publication while the egress receipt
-is still pending.
-Publication selection and authority never wait for CPU interpretation of
-egress bytes.
-GPU header validation may detect overflow or malformed transport, but that
-failure changes only the egress receipt unless the adapter independently
-failed its proposal output.
-Conversely, a whole-proposal rejection, another participant's tick abort, or
-`NoPublication` does not discard a valid egress prefix from a participant that
-executed. The owning consumer receives the tick disposition and decides what
-the adapter-owned bytes mean. `BehaviorEgressFailure::GpuValidation` is used
-only when dispatch/API failure makes that participant's egress writes
-untrustworthy, not merely because one independently parsed proposal was
-rejected.
+The public result carries tick, participant, correlation, schema, stride,
+record count, and an exact shared byte slice.
+Zero records is successful ready-empty.
+Exact capacity succeeds.
+Overflow or counter saturation fails with no delivered prefix; truncation is
+forbidden.
+Mapping, envelope decode, cancellation, shutdown, participant-not-run, and
+device loss have distinct terminal outcomes listed in
+[public-api.md](public-api.md).
 
-Zero records is a successful result whose
-`BehaviorEgressBytes::as_bytes()` is empty.
-It is distinct from every unavailable/failure variant.
-At exact capacity, all records are delivered.
-When `required_records > maximum_records` or the overflow flag is set, no
-prefix is delivered and the receipt fails with the exact required/capacity
-values.
-The helper uses a saturating compare-exchange loop rather than wrapping
-`required_records`; an attempt beyond `u32::MAX` sets a distinct
-`CounterOverflow` failure and delivers no prefix.
-Silent truncation is forbidden.
+Effect publication never waits for CPU decoding and may complete while egress
+is pending.
+The working range is reusable after its copy's last GPU use; staging is
+reusable only after map completion, view drop, and unmap; host bytes remain
+charged until the last shared result handle is dropped.
+Dropping a receipt does not cancel a submitted copy or release its resources
+early.
+GPU-to-GPU data continues to use scheduled handoffs and is never routed
+through this CPU lane.
 
-The egress receipt uses
-`OperationScope::BehaviorEgress { tick, engine }`.
-Every transport failure maps without loss to
-`OperationErrorKind::BehaviorEgress(the_exact_failure_above)`;
-the outer `device_generation` repeats the generation for `DeviceLost`.
+## Scheduled ABI v2 integration
 
-`revision_changed` on this transport error is the independently confirmed
-tick publication value; it never implies that the bytes were delivered.
-
-### Ordering and lifetime
-
-The GPU pass writes effects and egress in adapter order.
-After the adapter dispatch, Moria validates the egress header and, on a valid
-nonoverflow result, copies exactly
-`record_count * record_stride` initialized bytes to its pre-reserved staging
-range.
-Effect validation/publication may continue in ordered GPU passes without
-waiting for the map.
-
-Queue completion first establishes the publication terminal decision.
-Mapping completion later establishes CPU egress availability.
-For each adapter, Moria releases egress receipts in increasing tick order;
-with one active tick this requires no unbounded reorder queue.
-A ready result includes tick, participant, request correlation, and schema, so
-the owning consumer can decode it without inspecting solver state.
-
-The working egress range is reusable only after its copy's last GPU use.
-The staging range is reusable only after successful/failed map completion,
-mapped-view drop, and unmap.
-Tick admission allocates one maximum-size host result-pool slot before adapter
-execution. Mapping copies the initialized prefix into that slot; the public
-`BehaviorEgressBytes` exposes only the exact prefix and owns the slot until
-drop. Receipt/result cloning shares that same intrusive reference-counted slot;
-it never duplicates prefix bytes or performs a post-dispatch allocation. The
-host-byte permit returns only after the retained terminal result and every
-clone drop. Undeliverable delivery discards and returns the slot after terminal
-cleanup.
-Dropping the public receipt does not cancel submitted readback; Moria still
-maps or fails it and reclaims every permit.
-
-Cancellation before `Preparing` fails the egress receipt as cancelled and
-releases all capacity.
-After `Preparing`, cancellation is too late.
-`shutdown(CancelNotPrepared)` fails an accepted queued/waiting tick's egress
-receipt as `Shutdown`; `shutdown(Drain)` lets it proceed normally. Shutdown
-drains submitted egress; if terminal device/shutdown handling makes mapping
-impossible, the receipt receives the explicit `Shutdown` failure before the
-shutdown report completes.
-Device loss before map completion yields `DeviceLost`, even when publication
-was already confirmed; the tick outcome still truthfully reports that
-publication.
-A map or decode failure yields its own terminal status and quarantines the
-staging slot until safe unmap/destruction.
-`Decode` means Moria could not validate/copy its fixed transport envelope,
-length, or alignment after mapping. Moria never decodes an adapter record;
-consumer schema-decoding failure occurs after successful delivery and is not a
-Moria transport outcome.
-
-No public egress type contains a raw device, queue, mapped view, Moria
-authority resource, or solver buffer.
-GPU-to-GPU consumers continue to use ordered handoffs or adapter-owned
-factory buffers.
-Moria never routes a GPU handoff through this CPU channel.
-
-## Scheduled GPU ABI v2
-
-Group 0 retains exactly six storage bindings:
+Group 0 remains exactly six storage bindings:
 
 | Binding | Access | Contents |
 | ---: | --- | --- |
 | 0 | read-only | participant stable view |
-| 1 | read-write | effect header; proposal/payload, immutable-by-contract child-reservation, and opaque CPU-egress subranges |
+| 1 | read-write | effects, child reservations, and optional egress |
 | 2 | read-only | incoming handoffs |
 | 3 | read-write | outgoing handoffs |
 | 4 | read-only | prior feedback |
 | 5 | read-only | current consumer input |
 
-The unchanged v1 view, volume, cell, input, handoff, and feedback layouts are
-embedded exactly.
-The effect header uses ABI version 2 and adds proposal kinds
-placement stream `5` and extract components `6`. Its former reserved words at
-offsets 48, 52, 56, and 60 are
+The 64-byte effect header keeps its existing fields and uses its former four
+reserved words for aligned
 `reservation_offset`, `reservation_bytes`, `egress_offset`, and
-`egress_bytes`. Each offset is four-byte aligned; zero bytes requires a zero
-offset. The ordered nonoverlapping sections all fit the one effective binding
-range. Moria initializes and validates every section boundary before dispatch
-and again before accepting output.
-The combined internal effect allocation uses
-`STORAGE | COPY_SRC | COPY_DST`: `COPY_DST` initializes headers,
-reservations, counters, and zeroed payload; `COPY_SRC` copies the egress prefix
-to staging. These usages do not expose a raw buffer or make the child
-reservation bytes adapter-authoritative.
-An ordinary create record remains unrepresentable.
+`egress_bytes`.
+Sections are nonoverlapping and their checked aligned sum must fit one effective
+storage binding.
+Proposal kind 5 is `PlacementStream`; kind 6 is `ExtractComponents`.
+Arbitrary create remains unrepresentable.
 
-`ComponentReservationHeaderV2` is 64 bytes:
-
-```text
-0 magic:u32 = MORR
-4 version:u32 = 2
-8 engine:u32
-12 record_count:u32
-16 record_offset:u32
-20 total_bytes:u32
-24 tick_low:u32
-28 tick_high:u32
-32 generation_low:u32
-36 generation_high:u32
-40 reserved:[u32;6]
-```
-
-The header is followed by 48-byte reservation records in proposal-slot then
-piece-handle order.
-The empty table is a valid header with zero records and `total_bytes == 64`.
-
-An extract-components proposal's payload begins with:
+The extraction payload uses a 64-byte header, 32-byte piece records, and
+24-byte sorted assignment records.
 
 ```text
 ComponentExtractionPayloadHeaderV2 (64 bytes)
-  0 piece_count:u32
-  4 assignment_count:u32
-  8 piece_offset:u32
- 12 assignment_offset:u32
- 16 total_bytes:u32
- 20 reserved:[u32;11]
+  piece_count:u32
+  assignment_count:u32
+  piece_offset:u32
+  assignment_offset:u32
+  total_bytes:u32
+  reserved:[u32;11]         // zero
 
 ComponentPieceRecordV2 (32 bytes)
-  0 piece_handle:u32
-  4 disposition:u32          // PublishChild=1, RemoveFromMatter=2
-  8 declared_cell_count:u32
- 12 reserved0:u32
- 16 reserved:[u32;4]
+  piece_handle:u32
+  disposition:u32           // PublishChild=1, RemoveFromMatter=2
+  declared_cell_count:u32
+  reserved0:u32             // zero
+  reserved:[u32;4]          // zero
 
 ComponentAssignmentRecordV2 (24 bytes)
-  0 source_x:i32
-  4 source_y:i32
-  8 source_z:i32
- 12 piece_handle:u32
- 16 reserved:[u32;2]
+  source_x:i32
+  source_y:i32
+  source_z:i32
+  piece_handle:u32
+  reserved:[u32;2]          // zero
 ```
 
-Records are sorted by piece handle, then source Z/Y/X.
-Counts, ranges, reserved words, duplicate cells, empty-source assignments, and
-unreserved handles are validated.
+Counts, ranges, reserved words, duplicate cells, source membership, and
+candidate handles are validated before publication.
+All logical 64-bit values use the scheduled low/high `u32` representation.
+The effect allocation has `STORAGE | COPY_SRC | COPY_DST`; shader access and
+the restricted encoder/factory rules remain those of
+[behavior-scheduling.md](behavior-scheduling.md).
 
-`BehaviorEgressHeaderV2` is 80 bytes:
+## Evidence obligations
 
-```text
-0  magic:u32 = MORO
-4  version:u32 = 2
-8  engine:u32
-12 status:u32              // Disabled=0, Enabled=1
-16 record_stride:u32
-20 record_capacity:u32
-24 required_records:atomic<u32>
-28 overflow:atomic<u32>
-32 payload_offset:u32
-36 total_bytes:u32
-40 tick_low:u32
-44 tick_high:u32
-48 generation_low:u32
-52 generation_high:u32
-56 schema:[u8;16]           // WGSL mirror: array<u32,4>
-72 reserved:[u32;2]
-```
+The existing validation layers must prove:
 
-Moria initializes counters, overflow, payload, padding, and reserved words to
-zero.
-Disabled requires zero stride/capacity/counters and `total_bytes == 80`.
-Enabled requires descriptor equality and
-`total_bytes == align4(80 + maximum_bytes)`.
-After execution, `overflow != 0` or `required_records > record_capacity`
-produces the explicit overflow failure and no payload delivery.
-
-All count-to-byte arithmetic is checked before allocation and again on GPU.
-The combined effect binding fits `max_storage_buffer_binding_size`. Scheduled
-v2 requires the same six group-0 storage bindings as v1, so devices whose
-per-stage limit is eight still leave two storage bindings for adapter groups.
-
-## Resource limits
-
-`ResourceLimits` and `ResourceKind` add independent fields:
-
-| Field | Default | Hard maximum / relationship |
-| --- | ---: | --- |
-| `directory_roots` | 64 desired / 4 minimum | 2,048; current, prepared, and pinned old roots |
-| `directory_nodes` | 524,288 desired / 32,768 minimum | 4,194,304; conservative charge is four 128-byte nodes per changed entry |
-| `directory_entry_versions` | 131,072 desired / 8,192 minimum | 1,048,576 128-byte versions |
-| `volume_authority_versions` | 262,144 desired / 65,536 minimum | 4,194,304 64-byte immutable revision/placement/content-root versions |
-| `behavior_placement_updates` | 65,536 | 1,048,576; aggregate descriptor maxima fit |
-| `behavior_placement_bytes` | 4 MiB | 64 MiB; `>= 64 * behavior_placement_updates` |
-| `behavior_component_extraction_proposals` | 16 | 1,024 |
-| `behavior_component_extraction_children` | 256 | 4,096; `live_volumes` and `volume_records` each cover initial live records plus this reserved maximum |
-| `behavior_component_extraction_assignment_cells` | 262,144 | 1,048,576 |
-| `behavior_component_extraction_child_bricks` | 4,096 | 65,536 |
-| `behavior_component_extraction_bytes` | 32 MiB | 256 MiB; covers the effect-buffer mapping, canonical comparison shadow, payload, transfer, and validation records |
-| `behavior_egress_maps` | 16 | 256; at least enabled GPU participant count |
-| `behavior_egress_receipts` | 64 | 4,096; bounds pending and retained terminal egress results |
-| `behavior_egress_records` | 16,384 | 1,048,576; aggregate descriptor maxima fit |
-| `behavior_egress_device_bytes` | 16 MiB desired / 1 MiB minimum | 256 MiB and adapter allocation; aggregate `align4(80 + maximum_bytes)` ranges fit |
-| `behavior_egress_staging_bytes` | 16 MiB desired / 1 MiB minimum | 256 MiB and adapter allocation; aggregate payload maxima fit |
-| `behavior_egress_host_bytes` | 16 MiB | 256 MiB; aggregate exact decoded deliveries fit |
-
-These pools do not alias proposal, handoff, generic staging, command,
-observation, or adapter factory-resource pools.
-Tick admission reserves their complete descriptor maxima before execution.
-Because child reservations and egress share the participant's effect buffer,
-registration also checked-sums the aligned effect header, proposal records and
-payload, reservation section, and egress section against one effective storage
-binding range. This is a layout constraint, not permission to merge their
-accounting pools.
-For every selected root-affecting proposal it reserves one root slot, one
-entry and authority version per changed source/child/placement, and four radix
-nodes per changed entry; path sharing only releases unused capacity after
-construction.
-Telemetry reports current, high-water, waiting/rejected, last-use-delayed
-bytes, overflow count, map/decode failure count, unused component-extraction
-reservations, matter-conservation failures, placement update count, and
-directory-root publication bytes/latency.
-
-## Persistence and rematerialization
-
-Every child has:
-
-```text
-DerivedExtractionProvenanceV2 {
-    parent_volume_key,
-    parent_revision,          // pinned revision before extraction
-    extraction_command_id,
-    extraction_nonce,
-    reservation_slot,        // dense proposal candidate slot, not runtime slot
-    piece_handle,
-    sample_count,
-}
-```
-
-This is substrate provenance, not a behavior label.
-The child does not have a consumer `BaseContentSource`.
-Its publication creates an internal derived-content base consisting of every
-nonempty child brick plus the provenance record.
-Those bricks are dirty authoritative persistence input.
-They remain pinned in retained GPU/scar capacity until a checkpoint is durable.
-Before that checkpoint, device loss is `UnrecoverableDirtyState` under the
-existing rule.
-
-Checkpoint format v2 adds the provenance tag and stores the complete sparse
-derived base for each child.
-Later edits are ordinary full-brick scars relative to that stored derived
-base.
-Restore recreates child identity, domain, cell size, dynamic mode, placement,
-provenance, and sample bytes without a consumer content source.
-The parent need not still be live.
-Cold rematerialization loads the persisted derived base first, then later
-scars.
-Count/chunk mismatch, missing derived chunk, or an attempt to attach a consumer
-source to the child fails restore.
-
-Placement streams persist only the resulting committed per-volume placements
-and revisions.
-Activity-region input, adapter body/fidelity state, coarse/full state,
-handoffs, and egress bytes are never persisted by Moria.
-
-## Required validation
-
-The validation plan must retain all prior scheduled-adapter evidence and add:
-
-1. one real-GPU adapter labels at least three connected pieces in one source,
-   publishes at least two children, retains a source remainder, and proves
-   exact coordinate/sample conservation and tolerance-bounded world-box
-   continuity across the one directory-epoch gate;
-2. every candidate identity/resource is reserved before adapter execution,
-   the validated reservation subrange maps piece handles to final IDs, and the adapter updates its
-   factory-owned body table without CPU authority-path readback;
-3. cancellation, every validation sentinel, exhausted live/lifetime/page/
-   brick/scar/byte pool, renderer OOM, device loss before and after the gate,
-   shutdown, unused child slots, and old-reader reclamation leak no capacity;
-4. checkpoint/restore and cold rematerialization reproduce child identity,
-   provenance, placement, samples, occupancy, and later edits without a
+1. exact extraction conservation, child frame continuity, GPU-visible final
+   IDs, old-or-new directory visibility, and query/collision/observation
+   agreement;
+2. cancellation, every malformed count/range/reserved word, pool exhaustion,
+   stale revision, device loss on both sides of publication, old-reader
+   reclamation, and unused-candidate cleanup;
+3. checkpoint/restore and cold rematerialization of derived children without a
    consumer source;
-5. a proof adapter consumes CPU-authored disconnected and overlapping regions,
-   processes each body once in the overlap, preserves one body/volume identity
-   across halo promotion/demotion, has no transform/velocity discontinuity,
-   and continues coarse motion/destruction-shaped generic effects outside all
-   regions;
-6. the placement stream publishes compacted full/coarse changes without host
-   body enumeration, stale Moria placement, duplicate volume entry, or
-   per-object ordinary move proposals;
-7. fixed maximum dispatch is measured at empty, sparse, half, and full active
-   lists and passes P11 on every claimed backend family; and
-8. an adapter-owned egress struct unknown to Moria round-trips byte-exactly for
-   zero records, one record, exact capacity, and multiple ticks; one-over
-   capacity, malformed header, cancellation, shutdown, map/decode failure, and
-   device loss produce distinct terminal results with no silent bytes or
-   leaked/reused-early buffers.
+4. disconnected and overlapping CPU regions, one-time classification,
+   continuous identity/transform through transitions, and continued
+   adapter-owned coarse work;
+5. unique bulk placement publication without host body enumeration or stale
+   Moria placement;
+6. fixed-dispatch feasibility at the declared maximum on every claimed backend
+   family;
+7. byte-exact egress for zero, one, exact capacity, multiple ticks, and
+   adapter-unknown schemas; and
+8. explicit overflow, mapping/decode failure, cancellation, shutdown, device
+   loss, ordered delivery, and no early resource reuse.
 
-The adversarial reviewer must also demonstrate that none of these APIs adds a
-Moria type for physics, damage, weapons, scoring, audio, region significance,
-velocity, force, health, or debris policy.
+C11-C13 and P11-P13 in [validation.md](validation.md) are the retained
+correctness and blocking performance receipts.
+None of those proofs may use raw Moria storage, a CPU authority-path component
+readback, or a behavior-specific Moria type.

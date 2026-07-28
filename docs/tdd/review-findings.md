@@ -3429,3 +3429,53 @@ child identities, placements, directory epochs, opaque bytes, capacities, and
 transport outcomes. Physics, damage, weapons, activity-region meaning,
 velocity, constraints, significance, debris, scoring, audio, and gameplay
 events remain entirely adapter/consumer-owned.
+
+## Coder Turn — human-review simplicity revision
+
+Mode: continue
+
+Responding to: human-review gate
+
+### Responses To Human Review
+
+1. **The TDD required simplification.** The three required adapter capabilities
+   remain, but their focused contract previously duplicated scheduling,
+   storage, lifecycle, persistence, resource, and validation rules already
+   normative in their owning files.
+2. **The amendment is now a narrow delta.** Component extraction is one
+   source-bound copy-on-write directory transaction, placement is one bounded
+   batch using the same publication gate, and CPU egress is one optional range
+   using the existing asynchronous staging/readback lifecycle.
+3. **Proof policy is no longer substrate architecture.** CPU-authored region
+   bytes, fidelity classes, component significance, coarse/full simulation,
+   and record meanings remain adapter-owned. The fixed proof workloads qualify
+   the boundary but do not mandate a consumer adapter implementation.
+4. **Accepted guarantees remain intact.** Final child identities are reserved
+   before GPU execution; extraction conserves exact matter and publishes
+   old-or-new; placement updates are bounded and revisioned; egress
+   distinguishes zero, overflow, failure, and loss; no authority path uses CPU
+   matter readback or exposes raw renderer resources.
+
+### Concrete TDD Evidence
+
+- `adapter-substrate-contracts.md` is reduced to the three interface deltas,
+  their inputs/outputs, invariants, state transitions, failures, wire deltas,
+  persistence consequences, and evidence obligations. It delegates unchanged
+  contracts to their existing owners rather than restating them.
+- `decisions.md` preserves all prior human and technical entries, records the
+  simplicity feedback verbatim, and adds T37 to make reuse of existing
+  scheduled-tick machinery binding.
+- Existing C11-C13 correctness scenarios and P11-P13 blocking receipts remain
+  the evidence for the three capabilities.
+- All prior auditor findings F1-F25 remain resolved; this revision does not
+  remove their accepted callable API, ownership, bounds, lifecycle, wire,
+  persistence, or validation corrections.
+
+### Questions For Reviewer
+
+None.
+
+### Notes To Reviewer
+
+The simplification removes duplicated design machinery, not capability.
+No agent review statement is represented as a human decision.

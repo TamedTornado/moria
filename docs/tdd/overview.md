@@ -51,8 +51,10 @@ for an arbitrary engine's raw device/resources or command/submission model.
 Scheduled ABI v2 also supplies pre-reserved child identities for atomic
 component extraction, one compact placement stream for GPU-resident persistent
 objects, and optional bounded opaque GPU-to-CPU egress. These are substrate
-transports only; adapters own component significance, activity-region schema,
-coarse/full simulation, events, and every behavior meaning.
+transports implemented by extending the existing tick permit, effect
+allocation, copy-on-write publication, receipts, and staging pools; they are
+not separate services. Adapters own component significance, activity-region
+schema, coarse/full simulation, events, and every behavior meaning.
 
 ## Document map
 
@@ -63,7 +65,7 @@ coarse/full simulation, events, and every behavior meaning.
 | [state-and-storage.md](state-and-storage.md) | Coordinates, material encoding, sparse GPU layout, atomic publication, revisions, and resource bounds |
 | [lifecycles.md](lifecycles.md) | Startup, interest, commands, queries, observations, shutdown, and device loss |
 | [behavior-scheduling.md](behavior-scheduling.md) | Scheduled CPU/GPU behavior hooks, ordering, synchronization, composition, state ownership, and tick publication |
-| [adapter-substrate-contracts.md](adapter-substrate-contracts.md) | Atomic component extraction, directory epochs, placement streams, multi-fidelity adapter integration, opaque CPU egress, and Scheduled ABI v2 |
+| [adapter-substrate-contracts.md](adapter-substrate-contracts.md) | Narrow Scheduled ABI v2 deltas for atomic component extraction, bulk placement, and opaque CPU egress |
 | [collision-and-presentation.md](collision-and-presentation.md) | Matter-derived collision, surface generation, dressing, and stale-view rules |
 | [persistence.md](persistence.md) | Scar model, checkpoint format, restore, durability, and base reconstruction |
 | [validation.md](validation.md) | Automated, real-GPU, portability, performance, and human evidence obligations |
