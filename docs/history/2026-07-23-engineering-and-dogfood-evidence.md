@@ -424,6 +424,23 @@ review findings naturally demand that it be propagated and completed
 everywhere. The loop can converge on a coherent but unnecessarily large design
 without ever asking whether the mechanism should exist.
 
+This also exposed a missing PM responsibility. The technical-design auditor
+was adversarial about consistency and implementability, but accepted the
+drafter's chosen architecture as the premise of review. Its findings therefore
+made the new protocol more complete and more entrenched. No active role was
+asking whether the human decision authorized that amount of mechanism, whether
+an existing primitive could satisfy it, or whether the smallest sufficient
+answer should delete most of the revision. An adversarial technical reviewer
+is not automatically an adversarial PM.
+
+The resulting failure is a complexity ratchet: the drafter invents a large
+mechanism; the reviewer finds gaps inside it; the drafter fills those gaps; and
+each valid correction increases the cost of reconsidering the original choice.
+The missing control is an authority-and-simplicity review before technical
+completion. It must compare the proposed delta directly to the human decision,
+challenge the necessity of every new concept, and be empowered to request
+deletion or human arbitration rather than only internal completion.
+
 The agreed operator cutoff is the next independent auditor pass. If the
 correction produces another layer of new cross-contract defects or another
 large expansion, the remedy is not another completion pass:
