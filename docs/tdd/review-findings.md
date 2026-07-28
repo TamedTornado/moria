@@ -3354,3 +3354,82 @@ T25. This is intentional because the human external-behavior review described
 the copied-packet facility as retainable only “if useful,” while the current
 mechanical-simplicity review requires removal of unnecessary mechanisms. No
 human product decision is reclassified or reopened.
+
+## Auditor Turn — 2026-07-28T15:03:52Z
+
+Mode: approved
+
+Responding to: 2026-07-28T14:59:00Z
+
+### Prior Findings Status
+
+#### F1–F25 — resolved — The approved implementation contracts remain intact
+
+The complete rereview found no regression in the previously closed facade,
+identity, bounds, sparse authority, atomic publication, query/collision,
+observation, presentation, persistence, lifecycle, recovery, scheduled
+behavior, participant ingress, feedback, shutdown, portability, or blocking
+performance contracts. In particular, the callable scheduled behavior
+registration and tick facade remains present
+(`docs/tdd/public-api.md:66-105,952-1033,2468-3350`), and the implementation
+instructions still require the restricted six-binding renderer-owned GPU
+surface, complete resource accounting, and fail-before-consumer input
+preflight behavior (`docs/tdd/overview.md:252-337`).
+
+The exact P9 oracle and the corrected pre-`Preparing` shutdown boundary remain
+unchanged (`docs/tdd/validation.md:620-620`;
+`docs/tdd/lifecycles.md:359-383`). The simplification therefore does not
+reopen F24 or F25.
+
+### New Findings
+
+None. The copied-packet WGSL facility was an optional second GPU effect
+protocol rather than a distinct approved product capability. Its removal is
+technically coherent and leaves the TDD implementation-ready.
+
+The active documents contain no remaining extension registration, job,
+effect-batch, state-pool, delta-packet, C10, extension real-GPU scenario, or P10
+contract. The only remaining mentions are the explicitly superseded
+historical decisions T7, T11, T16, and the GPU-delta portion of T25
+(`docs/tdd/decisions.md:72-88,119-134,174-186,275-289`), with T34 recording the
+replacement boundary (`docs/tdd/decisions.md:664-698`). Active scenario and
+performance numbering is contiguous at C1–C9 and P1–P9
+(`docs/tdd/validation.md:369-540,592-661`).
+
+The approved GPU-oriented behavior outcome remains represented once, through
+the scheduled coordinator: independently implemented adapters receive
+participant-filtered stable views and current opaque input, use only the
+restricted factory and counted encoder, and return generic fill/patch/move/
+retire proposals through Moria validation and publication without authority-
+path CPU readback (`docs/tdd/public-api.md:2468-3349`;
+`docs/tdd/behavior-scheduling.md:3-34,279-686`). C9 adversarially proves both
+CPU and GPU physics- and damage-shaped consumers without importing their
+vocabulary or granting storage/device/submission ownership
+(`docs/tdd/validation.md:450-540`), while P7 and P9 retain blocking GPU-only
+and mixed-path feasibility gates (`docs/tdd/validation.md:618-620,638-642`).
+Ordinary nonscheduled consumers still have asynchronous bounded queries,
+snapshots, observations, commands, receipts, and explicit failure, so removing
+the custom shader job does not remove the general async consumer contract.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm the simplification applies T34
+faithfully: it removes the duplicate custom GPU protocol without weakening the
+approved GPU-residency direction, the generic external-behavior seam, or the
+ordinary asynchronous facade.
+
+### Notes To Coder
+
+The retained architecture is materially simpler: one scheduled custom GPU
+adapter/effect ABI, plus ordinary public async operations for nonscheduled
+consumers. Dependency direction, resource ownership, device-loss quarantine,
+and validation evidence remain coherent after the deletion. No protected human
+question is outstanding.
+
+### Approval
+
+Approved.
