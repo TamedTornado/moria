@@ -117,13 +117,22 @@ bounded owner through the TECH-070 methods, including a complete
 `ReplayRequest` and the `OwnedBytes` received by each store. It asserts
 unchanged values on failed construction/push, no partial byte extension,
 UTF-8/64-byte validation, exact length/capacity, and admission charging.
+It also constructs and round-trips every private-field ID, digest, key, and
+lineage through its normative constructor/accessor family. It rejects zero for
+every nonzero scalar ID, rejects `0x8000_0000` for each high-bit-reserved ID,
+rejects the all-zero `ReplayStreamKey`, and proves no public tuple constructor
+or unchecked conversion compiles; unconstrained fixed-byte and counter types
+preserve zero and every input bit.
 Its CPU participant downcasts its own state lease, iterates exact replay
 record views, decodes a TECH-053 collider view, and exercises wrong-type,
 capacity, cancellation, and dropped-lease cases. Its GPU participant creates
 pipelines from `io_bind_group_layout`, binds every primary wrapper, inspects
 all ranges/capacities/metadata, writes status/effect/event/state/snapshot
-records, and proves mixed attempts, bad ranges/layouts, overflow, missing
-status, and stale generations fail before publication.
+records, and proves mixed attempts and bad ranges are rejected at Moria
+wrapper construction, while an incompatible pipeline selected before or after
+infallible `bind_io` is captured by the balanced post-encoding wgpu validation
+scope. Both that scoped error and overflow, missing status, or stale generation
+fail before publication.
 
 Genesis configuration supplies a nonzero consumer-chosen replay stream key.
 Two worlds using the same `(ReplaySinkId, ReplayStreamKey)` in one client
@@ -131,9 +140,18 @@ reject the second freeze without a sink call, while distinct pairs reach their
 exact sequence-zero request. A post-genesis append-failure fixture confirms
 tick `t`, then fails that append: the tick receipt remains `Ready`, the world
 enters `Failed`, the exact record stays pinned, new ticks are rejected, one
-world-lifecycle observation and the replay failure/high-water telemetry appear,
-and shutdown reports the undurable record before releasing it. Device loss
+world-lifecycle observation carries the bounded `ReplayExportFailure`, the
+actual `FailureCounter { code: ErrorCode::StoreFailure, ... }` and replay
+failure/high-water telemetry appear, and `ShutdownReport` repeats the same
+sink/stream/sequence/tick-range/count/length/digest/failure metadata before
+releasing the raw bytes. Device loss
 does not rewrite the request; wrong/late completions cannot recover the world.
+With otherwise default budgets, an accepted genesis failure after its
+sequence-zero call consumes one retired-stream slot but releases the sole world
+slot; a new builder with a distinct stream reaches genesis, while the retired
+pair still returns `DuplicateId`. Four such invoked streams consume the
+default retired pool and the fifth returns
+`RetiredReplayStreamCapacity` before a sink call.
 
 The participant slice exercises every row of both
 `ParticipantFailurePolicy` variants at genesis, ordinary preparation,

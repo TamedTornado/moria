@@ -204,7 +204,7 @@ The fields bound these retained resources:
 
 | Group | What it bounds | Overload behavior |
 | --- | --- | --- |
-| `identity` | world/material/volume/participant/input/base-authority/content-store/checkpoint-store/replay-sink/RNG identities; live operation, terminal-receipt, root-pin, and artifact-lease records and retained result bytes | reject the registration/admission; held receipt/root/artifact leases apply backpressure rather than grow |
+| `identity` | world/material/volume/participant/input/base-authority/content-store/checkpoint-store/replay-sink/RNG identities; the separate client-lifetime active/retired replay-stream reservation pool; live operation, terminal-receipt, root-pin, and artifact-lease records and retained result bytes | reject the registration/admission; an exhausted retired-stream pool returns `RetiredReplayStreamCapacity` before sequence-zero callback; held receipt/root/artifact leases apply backpressure rather than grow |
 | `canonical` | sole pending tick, input/correlation bytes, command target size, changed bricks, and all candidate scan/sort/output scratch | return owned batch before admission, command failure, or tick `NoAdvance(CanonicalBudget)` as appropriate |
 | `content` | base request queue, invoked callback sinks and bytes, one materialization job, resident dense/uniform/radix/directory records, and authoritative GPU pages | delay/reject materialization or retire eligible cache; never evict a pin/scar/frontier |
 | `query` | queued/in-flight queries, inspected bricks, revision list, result records/bytes, staging slots, and aggregate readback bytes | reject and return request, wait only when request selected `Wait`, or finish capacity failure; never truncate `Complete` |
@@ -225,6 +225,9 @@ first violation:
    `rollback.active_corrections == 1`,
    `checkpoint.staging_slots <= 3`, and
    `runtime.render_completion_cells == 32`.
+   `identity.retired_replay_streams_per_client` is a client-level pool, not a
+   per-world registry count; one permit is reserved before every sequence-zero
+   replay callback and is never borrowed from `identity.worlds`.
 2. `IdentityBudgets.operation_records_per_world` is at least the sum of the
    configured pending tick, base request queue, interest control queue, query
    queue, checkpoint queue, public replay attempts, active correction, one

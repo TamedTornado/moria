@@ -1185,3 +1185,215 @@ The replay stream key is per builder rather than global `MoriaConfig`, so one
 deriving identities; duplicate `(sink, stream)` pairs remain fail-closed. The
 terminal append policy does not roll back an already-confirmed tick or pretend
 the failed export became durable. `git diff --check` passes.
+
+## Auditor Turn — 2026-07-29T18:18:52Z
+
+Mode: continue
+
+Responding to: 2026-07-29T18:12:50Z
+
+### Prior Findings Status
+
+1. **The public bounded-owner and participant lease surface —
+   resolved.** `TECH-070` now defines fallible construction, mutation,
+   inspection, iteration, length/capacity, and consuming operations for the
+   bounded owners (`interfaces.md:672-783`). `TECH-029` provides typed
+   participant-state downcast, exact replay-record iteration, and a
+   source-bound collider view with pin and cancellation behavior
+   (`interfaces.md:2088-2177,2343-2360`). `TECH-054` now exposes concrete GPU
+   metadata/range/binding methods. The newly selected GPU method semantics
+   still contain an implementation defect, recorded separately below.
+2. **Live replay stream identity and append-failure policy —
+   partially_resolved.** `begin_world` now accepts the consumer-selected stream
+   key, the frozen `(sink, stream)` pair reaches every append, and the TDD
+   explicitly chooses terminal `Ready -> Failed` behavior with no redrive
+   (`interfaces.md:207-213,280-292,402-404`;
+   `content-persistence.md:700-763`). That answers the prior consequential
+   question. The promised shutdown evidence has no representable public field,
+   and the new tombstone accounting contradicts the stated retry path; see New
+   Findings 1 and 2.
+3. **Manifest and known-length blob loads — resolved.** `BlobLimits` now
+   distinguishes `Some(expected_bytes)` from the one initial unknown-length
+   manifest lookup, exact-length blob completion is enforceable, and complete
+   manifest framing/checksum/trailing-byte validation handles the unknown
+   length (`content-persistence.md:193-223,299-337,555-570`). The matching
+   negative fixtures are explicit (`validation.md:100-113`).
+4. **Complete rollback allocation bound — resolved.** `TECH-036` counts both
+   direct canonical inputs and participant effects and derives the corrected
+   `1,988,100,096`-byte default bound (`gpu-runtime.md:275-318`). The default
+   fixture exercises both independent 4,096-record sources
+   (`validation.md:154-160`).
+
+### New Findings
+
+1. **The selected terminal replay failure cannot be represented by the
+   promised shutdown result.** `TECH-047` says shutdown reports the exact
+   pinned replay record as undurable before releasing it, and validation
+   asserts that observable outcome (`content-persistence.md:737-757`;
+   `validation.md:131-136`). However, `ShutdownReport` contains only the last
+   confirmed frontier, checkpoint-oriented `last_durable`, abandoned facade
+   receipt IDs, dirty scar/metadata summaries, and an optional checkpoint
+   result (`interfaces.md:591-603`). It has no replay stream, sequence, tick
+   range, record digest/bytes, or replay-durability status. `WorldLifecycleFact`
+   likewise carries only state, device generation, and `OperationError`
+   (`interfaces.md:1596-1600`); that error identifies the sink and committed
+   frontier but not the failed append identity. Therefore the validation claim
+   and the shutdown contract are not implementable as written. Add a closed,
+   bounded replay-export failure/durability record to `ShutdownReport` (and to
+   the lifecycle fact if that observation is meant to identify the append),
+   including enough of the original `ReplaySinkRequest` identity to distinguish
+   the undurable record. State its count/byte bound and release behavior. Also
+   replace the nonexistent `FailureCounter::StoreFailure` name in
+   `content-persistence.md:747` with the actual
+   `FailureCounter { code: ErrorCode::StoreFailure, ... }` contract.
+
+2. **Replay-stream tombstones consume the world budget and make the documented
+   genesis retry impossible under the normative default.** `identity.worlds`
+   defaults to one (`interfaces.md:74-76`), while any construction failure
+   after the sequence-zero call leaves a client-lifetime tombstone that “counts
+   against `identity.worlds`” (`interfaces.md:289-292`). The genesis lifecycle
+   nevertheless promises that after an accepted failure the consumer can
+   construct a new builder (`interfaces.md:1206-1209`). With the default
+   budget, the tombstone permanently occupies the only world slot, so even a
+   new builder using a different stream cannot follow that retry contract.
+   Normal sequential shutdown/recreation also accumulates the same
+   client-lifetime pressure without a separately named capacity. Give retired
+   stream reservations their own finite client-level budget and overload
+   outcome, or revise the accounting/lifecycle so a replacement builder is
+   actually admissible while reused `(sink, stream)` pairs remain rejected.
+   Add the accepted-genesis-failure/default-budget retry fixture, not only the
+   simultaneous duplicate-pair fixture.
+
+3. **`TECH-054` promises eager GPU pass/layout validation that the exposed wgpu
+   API cannot perform.** `bind_io` receives only
+   `&mut wgpu::ComputePass` (`collision-presentation.md:288-325`), but a wgpu
+   compute pass exposes no query for the currently selected pipeline layout,
+   bind-group compatibility, encoder identity, or device generation, and
+   `set_bind_group` itself has no fallible return. A participant can also bind
+   the group and select an incompatible pipeline afterward. Consequently the
+   claim that `bind_io` validates the pass/layout and returns a participant
+   error while encoding no dispatch is not implementable
+   (`collision-presentation.md:396-406,433-436`). wgpu can report this mismatch
+   later through the balanced validation scope, which is sufficient to prevent
+   publication, but that is a different milestone and error path. Either make
+   `bind_io` an infallible binding operation and specify that scoped
+   post-encoding wgpu validation fails the attempt, or replace the raw pass with
+   a Moria-owned encoder/pipeline abstraction capable of the promised eager
+   checks. Update the external GPU fixture to assert the selected achievable
+   behavior.
+
+4. **Constrained public identity newtypes still have neither validating
+   constructors nor coherent field visibility.** `TECH-005` specifies nonzero
+   and range-constrained IDs and says public constructors validate those rules,
+   but its only callable shape is a public-field tuple struct such as
+   `MaterialId(pub u16)`, `ParticipantId(pub u32)`, and
+   `InputSourceId(pub u32)` (`architecture.md:14-25,32-54`). Provider and
+   persistence IDs repeat the same public-field pattern
+   (`content-persistence.md:15-24`). If those fields remain public, tuple
+   construction bypasses the claimed validation; if implementation makes them
+   private under the latitude stated in `interfaces.md:3-5`, an external
+   consumer has no normative constructor or raw-value accessor. `TECH-070`
+   claims every public named type is closed and indexes these as fixed-width
+   newtypes, but defines methods only for bounded collection/byte owners
+   (`interfaces.md:672-805`). Define the minimal `try_from_raw`/`get` (and
+   fixed-byte equivalents) for every constrained or opaque consumer-supplied
+   newtype, with private fields where construction invariants matter, or
+   explicitly make boundary validation—not construction—the contract. Extend
+   the external compile/use fixture to construct valid IDs and reject each
+   reserved/out-of-range value through the selected public path.
+
+### Questions For Coder
+
+None. The terminal replay policy choice is now explicit; the remaining issues
+are ordinary contract-representability and API corrections.
+
+### Answers To Coder
+
+No coder questions were pending. I verified the claimed terminal choice:
+post-genesis replay append failure preserves the already-confirmed frontier
+and tick receipt, fails the world, and exposes no redrive or sink fallback.
+
+### Notes To Coder
+
+The revised bounded-owner, CPU participant, known-length load, and rollback
+equation work is sound and should be preserved. Independent mechanical checks
+still find 70 unique `TECH-001` through `TECH-070` headings, exactly one
+`Implements:` line per contract, 351 unique normative pairs, all 43 approved
+requirements, no `REQ-042`, and exact parity with `traceability.md`.
+`git diff --check` passed and the worktree was clean before this required
+ledger append.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-29T18:29:39Z
+
+Mode: continue
+
+Responding to: 2026-07-29T18:18:52Z
+
+### Responses To Findings
+
+1. Addressed. `TECH-047` now defines the closed `ReplayExportFailure` record
+   with the exact sink and original stream/sequence/tick-range/count/length/
+   digest identity plus failure code. The record appears in both the terminal
+   `WorldLifecycleFact` and `ShutdownReport`, is bounded to one record and
+   128 retained bytes by per-stream append serialization, and is constructed
+   before shutdown releases the pinned raw record. The nonexistent
+   `FailureCounter::StoreFailure` reference is replaced with the actual
+   `FailureCounter { code: ErrorCode::StoreFailure, ... }` shape.
+2. Addressed. `IdentityBudgets` now has a separate client-level
+   `retired_replay_streams_per_client` pool (default 4, maximum 64).
+   Genesis reserves its eventual tombstone before the sequence-zero callback;
+   exhaustion returns `RetiredReplayStreamCapacity` without invoking the
+   sink. Active/retired streams no longer consume `identity.worlds`, and an
+   accepted genesis failure releases the default sole world permit while
+   preserving only the failed pair's tombstone.
+3. Addressed. Every GPU participant `bind_io` is now an infallible group-zero
+   binding operation. The contract no longer claims that a raw
+   `ComputePass` can expose or eagerly validate its selected pipeline/layout
+   or encoder identity. Moria wraps the complete participant encoding in a
+   balanced wgpu validation scope; incompatible pipeline selection before or
+   after binding fails the attempt before any participant result or canonical
+   frontier can publish.
+4. Addressed. Constrained and opaque identity/key newtypes now have private
+   fields and exact validating or lossless constructor/accessor families.
+   Nonzero/high-bit-reserved IDs reject invalid raw values,
+   `ReplayStreamKey` rejects the all-zero reserved value, fixed-byte keys,
+   digests, lineages, and unconstrained counters preserve all bits, and
+   Moria-created IDs expose inspection without public construction.
+   `QuatQ14` also now has a private field and explicit normalized
+   construction/composition/inverse API, removing the adjacent unchecked
+   constrained-newtype ambiguity.
+
+### TDD Changes Made
+
+- Revised `architecture.md` with private identity/digest fields,
+  `NewtypeValueError`, exact scalar/byte constructor and accessor contracts,
+  and a callable validated `QuatQ14` surface.
+- Revised `interfaces.md` with the retired-stream pool and overload outcome,
+  replacement-genesis accounting, replay-failure fields on lifecycle and
+  shutdown results, private consumer identifiers, and the complete
+  public-type index.
+- Revised `content-persistence.md` with provider/key constructors, the exact
+  replay-export failure record, per-stream append serialization, telemetry
+  shape, metadata bounds, and shutdown pin-release ordering.
+- Revised `collision-presentation.md` to use achievable infallible wgpu
+  binding plus scoped post-encoding validation.
+- Revised `gpu-runtime.md` with the separate client-level replay-stream
+  resource bound and pre-callback overload behavior.
+- Revised `validation.md` with external identity construction/rejection,
+  accepted-genesis-failure retry, tombstone exhaustion, exact replay-failure
+  reporting, and incompatible-pipeline validation-scope fixtures.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+No stable `TECH` ID or `Implements:` link changed. Mechanical checks find 70
+unique `TECH-001` through `TECH-070` contracts, exactly one `Implements:` line
+per contract, 351 normative pairs, all 43 approved requirements, no
+`REQ-042`, and exact traceability parity. `git diff --check` passes.

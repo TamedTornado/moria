@@ -286,8 +286,7 @@ impl<'a> GpuParticipantStateLease<'a> {
     pub fn range(&self) -> GpuBufferRange;
 }
 impl<'a> ParticipantGpuInput<'a> {
-    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>)
-        -> Result<(), ParticipantError>;
+    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>);
     pub fn metadata(&self) -> GpuParticipantIoMetadata;
     pub fn input_range(&self) -> GpuBufferRange;
     pub fn collider_range(&self) -> GpuBufferRange;
@@ -301,28 +300,24 @@ impl<'a> ParticipantEventSink<'a> {
     pub fn capacity(&self) -> u32;
 }
 impl<'a> GpuParticipantStateSink<'a> {
-    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>)
-        -> Result<(), ParticipantError>;
+    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>);
     pub fn metadata(&self) -> GpuParticipantIoMetadata;
     pub fn range(&self) -> GpuBufferRange;
 }
 impl<'a> GpuSnapshotInput<'a> {
-    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>)
-        -> Result<(), ParticipantError>;
+    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>);
     pub fn metadata(&self) -> GpuParticipantIoMetadata;
     pub fn bytes(&self) -> GpuBufferRange;
     pub fn digest(&self) -> BlobDigest;
 }
 impl<'a> GpuSnapshotOutput<'a> {
-    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>)
-        -> Result<(), ParticipantError>;
+    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>);
     pub fn metadata(&self) -> GpuParticipantIoMetadata;
     pub fn range(&self) -> GpuBufferRange;
     pub fn capacity_bytes(&self) -> u32;
 }
 impl<'a> GpuParticipantReplayInput<'a> {
-    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>)
-        -> Result<(), ParticipantError>;
+    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>);
     pub fn metadata(&self) -> GpuParticipantIoMetadata;
     pub fn range(&self) -> GpuBufferRange;
     pub fn first_tick(&self) -> Option<Tick>;
@@ -393,8 +388,11 @@ An unused binding references a shared four-byte zero buffer with a logical
 range of zero. Each storage range is page-local, fits `u32`, lies inside its
 effective binding, and its physical binding offset is aligned to the granted
 `min_storage_buffer_offset_alignment`; larger world pools remain paged under
-TECH-033. `prepare_device` builds its pipeline layout from the exact
-`io_bind_group_layout`; a pipeline using a different layout fails preparation.
+TECH-033. `prepare_device` receives the exact `io_bind_group_layout` and the
+adapter is required to include it as group zero in every participant pipeline.
+wgpu does not expose pipeline-layout or encoder identity from a
+`ComputePass`, so this requirement is not claimed to be eagerly inspectable by
+a wrapper.
 
 Exactly one wrapper is the primary binder for an encode call:
 `GpuParticipantStateSink` for genesis, `ParticipantGpuInput` for tick,
@@ -431,9 +429,20 @@ Moria staging slot; mapping, digest verification, and `CheckpointStore`
 handoff follow TECH-045. It is never same-frame CPU visibility.
 
 Every accessor is allocation-free and valid only for the borrowed
-device-generation lifetime. `bind_io` validates that the pass, layout, wrapper
-attempt, and `DeviceGeneration` match; mismatch returns an encoder validation
-failure for the owning participant operation and encodes no dispatch.
+device-generation lifetime. `bind_io` is an infallible call to
+`ComputePass::set_bind_group(0, ...)` for the wrapper's Moria-created group;
+it does not and cannot query the pass's selected pipeline, later pipeline
+changes, encoder identity, layout compatibility, or device generation.
+Moria guarantees wrapper attempt/generation consistency when it constructs
+the borrowed call arguments. The complete participant encoding is enclosed in
+one balanced wgpu validation scope that is popped and resolved before the
+attempt may publish. Selecting an incompatible pipeline before or after
+`bind_io`, dispatching with a mismatched group-zero layout, or otherwise
+misusing the pass therefore yields scoped wgpu validation, fails the owning
+participant attempt as `ParticipantFailure`, and publishes no destination
+token, effects, events, or canonical frontier. An adapter's own synchronous
+validation may still make `encode_*` return `Err`, but `bind_io` itself has no
+fallible milestone.
 Generation loss closes every wrapper from that generation, rejects any
 mapped/status result as `LateGeneration`, and retains its ranges only until
 the last submitted use completes. Moria maps or copies back the bounded status,

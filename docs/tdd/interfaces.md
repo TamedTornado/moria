@@ -73,6 +73,7 @@ pub struct ResourceBudgets {
 
 pub struct IdentityBudgets {
     pub worlds: u32,                         // default 1; max 16
+    pub retired_replay_streams_per_client: u32, // default 4; max 64
     pub materials_per_world: u32,            // default 4,096; max 65,535
     pub volumes_per_world: u32,              // default 65,536; max 1,048,576
     pub participants_per_world: u32,         // default 64; max 1,024
@@ -286,10 +287,25 @@ first to reserve it proceeds and every later freeze returns
 reuse by another process or client, so cross-process uniqueness remains the
 consumer's responsibility and a sink may reject such reuse as
 `StoreErrorCode::Corrupt`.
-Failure before the sequence-zero sink call releases the reservation. Once that
-call is invoked, shutdown or construction failure converts it to a bounded
-retired tombstone for the `MoriaClient` lifetime so a new world cannot restart
-the same stream at sequence zero. Tombstones count against `identity.worlds`.
+Before accepting genesis, Moria also reserves one
+`identity.retired_replay_streams_per_client` permit for the stream's eventual
+tombstone. Exhaustion returns
+`ConfigErrorCode::RetiredReplayStreamCapacity` with
+`ConfigField::Budgets(ResourceBudgetField { group: BudgetGroup::Identity,
+field_code: 2 })` and the unchanged builder; identity field codes follow
+`IdentityBudgets` declaration order starting at one. No sink call occurs.
+Failure before the sequence-zero sink call releases both reservations. Once
+that call is invoked, the tombstone
+permit is committed for the `MoriaClient` lifetime: the reservation is
+`Active` while a world exists and becomes `Retired` on normal shutdown or
+construction failure, so that pair can never restart at sequence zero.
+Active/retired stream reservations do not count against `identity.worlds`.
+An accepted genesis failure releases its world permit before the receipt
+becomes terminal, so at the default `worlds == 1` a new builder using a
+different stream remains admissible while the failed pair remains rejected.
+The separate default of four stream tombstones permits that retry and bounds
+sequential recreation; a fifth sequence-zero attempt in one client fails with
+the named capacity error before consumer code.
 `PersistenceConfig.default_checkpoint_store` is the ID used by the public
 request-construction helpers and must resolve, but every admitted checkpoint,
 restore, shutdown checkpoint, and recovery request carries and binds its exact
@@ -322,7 +338,7 @@ pub struct MaterialDefinition {
     pub presentation: MaterialPresentation,
 }
 
-pub struct AssetHandleId(pub u64);
+pub struct AssetHandleId(u64);
 
 pub struct MaterialPresentation {
     pub surface: SurfaceStyle,
@@ -354,6 +370,9 @@ pub struct GenesisVolume {
     pub base: BaseAuthorityId,
 }
 ```
+
+`AssetHandleId` is an opaque consumer asset-registry key with infallible
+`from_raw(u64)` and `get(self) -> u64`; Moria assigns no meaning to zero.
 
 Material presentation contains only surface style and asset handles required
 by Moria's rendering; arbitrary consumer metadata stays outside Moria.
@@ -600,6 +619,7 @@ pub struct ShutdownReport {
     pub abandoned_receipts: BoundedVec<ReceiptId>,
     pub dirty_roots: BoundedVec<DirtyRootSummary>,
     pub checkpoint: Option<CheckpointCommitted>,
+    pub replay_export_failure: Option<ReplayExportFailure>,
 }
 
 pub struct TelemetryCounter {
@@ -786,16 +806,16 @@ The mechanical public-type index is:
 
 | Names | Resolution and owner |
 | --- | --- |
-| `WorldId`, `MaterialId`, `VolumeId`, `ParticipantId`, `InputSourceId`, `RngStreamId`, `BaseContentSourceId`, `BaseAuthorityId`, `ContentBlobStoreId`, `CheckpointStoreId`, `ReplaySinkId`, `ReplayStreamKey`, `BaseRequestId`, `InterestId`, `CorrelationId`, `ObservationStreamId`, `ReceiptId`, `DeviceGeneration`, `Tick`, `VolumeRevision`, `CanonicalOrder` | fixed-width copy newtypes; TECH-005, TECH-021, TECH-025, TECH-037, TECH-041, TECH-043, and TECH-047 |
-| `CanonicalHash`, `ContentDigest`, `ContractDigest`, `SchemaDigest`, `BlobDigest` | distinct 32-byte digest newtypes; TECH-008/009/041/043 |
+| `WorldId`, `MaterialId`, `VolumeId`, `ParticipantId`, `InputSourceId`, `RngStreamId`, `BaseContentSourceId`, `BaseAuthorityId`, `ContentBlobStoreId`, `CheckpointStoreId`, `ReplaySinkId`, `BaseRequestId`, `InterestId`, `CorrelationId`, `ObservationStreamId`, `ReceiptId`, `DeviceGeneration`, `Tick`, `VolumeRevision`, `CanonicalOrder`, `AssetHandleId`, `CheckpointKey`, `ReplayStreamKey`, `ContentLineage` | private-field fixed-width copy newtypes with the exact validating/infallible constructor and accessor families in TECH-005/017/018/021/022/025/037/041/043/047; no tuple construction |
+| `CanonicalHash`, `ContentDigest`, `ContractDigest`, `SchemaDigest`, `BlobDigest`, `EvidenceDigest` | distinct private-field 32-byte digest newtypes with lossless byte constructors/accessors; TECH-005/008/009/041/043 |
 | `WorldPointQ`, `WorldVectorQ`, `WorldAabbQ`, `LocalCellPoint`, `LocalCellAabb`, `BrickCoord`, `SegmentQ`, `PlacementQ`, `QuatQ14`, `Q23_8`, `CellWire` | fixed-width canonical values; TECH-006/007/018/051 |
 | `MoriaClient`, `WorldBuilder`, every `*Permit`, `*Receipt`, `ObservationSubscription`, and every participant/root/artifact lease or state token | opaque generational handles; their owning operation contract defines clone/drop/pin behavior, and no handle exposes storage beyond the explicit participant-only views in TECH-029/054 |
 | `BoundedVec<T>`, `BoundedBytes`, `BoundedBytes64`, `BoundedUtf8<N>`, `OwnedBytes`, `BoundedOwnerError`, `VecConstructionRejected<T>`, `BytesConstructionRejected`, `BoundedPushRejected<T>` | callable finite owners and lossless construction failures; TECH-070 and the accepting resource contract |
 | `ParticipantTokenMetadata`, `ParticipantReplayRecordView`, `ColliderArtifactView`, `SnapshotMetadata`, `PreparedParticipantState` | immutable bounded participant-owned state/replay/collider views and staged state record; TECH-016/029/053 |
 | `CanonicalContract`, `RollbackConfig`, `PersistenceConfig`, `PresentationConfig`, `QualificationPolicy`, `CandidateDiagnostics`, `TickReservation`, `BlobLimits`, `RestoreLimits`, every `*Descriptor`, and every `*Limits` | closed configuration/request records; TECH-017/019/029/036/040/041/043/046/054 |
 | `CanonicalInput` and its variant payloads, `QueryKind`, `QueryScope`, `CollisionShapeQ`, `VolumeSelector`, `VolumeKind`, participant strategy/failure policy, and all lifecycle/poll/start/persistence policy enums | closed tagged enums in TECH-018/020/022/023/025/028/029/030/041/051 |
-| `QueryResult`, `Observation`, `ObservedVolumeSummary`, `ObservedRegionSummary`, `TelemetrySnapshot`, `FrontierSummary`, and every receipt `Ready` payload | the concrete bounded records in TECH-020/022/025/026/038/045-048/070; their worst-case bytes are reserved before admission |
-| `ConfigError`, `AdmissionError`, `ReserveError`, `PushError`, `BatchError`, `CanonicalFailure`, and every operation-specific `*Error`/`*Unavailable` | closed typed errors under TECH-027; each has stable code, scope, retryability, and committed-effect fields |
+| `QueryResult`, `Observation`, `ObservedVolumeSummary`, `ObservedRegionSummary`, `TelemetrySnapshot`, `FrontierSummary`, `ReplayExportFailure`, and every receipt `Ready` payload | the concrete bounded records in TECH-020/022/025/026/038/045-048/070; their worst-case bytes are reserved before admission |
+| `NewtypeValueError`, `ConfigError`, `AdmissionError`, `ReserveError`, `PushError`, `BatchError`, `CanonicalFailure`, and every operation-specific `*Error`/`*Unavailable` | closed typed errors under TECH-005/027; each has stable variants and, for operation errors, scope, retryability, and committed-effect fields |
 | `BaseBrickCompletion`, participant completion/effect/event/state/snapshot sinks, checkpoint/content-store sinks, and `ReplayAppendSink` | non-clone Moria-owned bounded completion tokens; TECH-016/029/036/041/043/045/047/054 |
 | Bevy/wgpu names in `moria::bevy::gpu_participant` | deliberately coupled borrowed adapter types, generation-scoped and never general-facade or durable types; TECH-003/031/054 |
 
@@ -1248,7 +1268,7 @@ requires a new owning request or explicit lifecycle retry.
 Implements: REQ-004, REQ-009, REQ-016, REQ-018, REQ-031
 
 ```rust
-pub struct InterestId(pub u64);
+pub struct InterestId(u64);
 
 pub enum VolumeSelector {
     One(VolumeId),
@@ -1278,6 +1298,10 @@ pub struct InterestWithdrawal {
     pub id: InterestId,
 }
 ```
+
+`InterestId` has infallible `from_raw(u64)` and `get(self) -> u64`; all bit
+patterns are valid and uniqueness among live interests is checked at
+admission.
 
 The TECH-070 `upsert_interest` and `withdraw_interest` calls use a bounded
 noncanonical control queue and return `InterestReceipt`; admission rejection
@@ -1418,8 +1442,8 @@ an unmet `Wait` condition returns `Unavailable(FrontierTooOld)` and
 Implements: REQ-005, REQ-012, REQ-017, REQ-021
 
 ```rust
-pub struct CorrelationId(pub [u8; 16]);
-pub struct ObservationStreamId(pub [u8; 16]);
+pub struct CorrelationId([u8; 16]);
+pub struct ObservationStreamId([u8; 16]);
 
 pub struct ObservationSubscriptionRequest {
     pub world: WorldId,
@@ -1597,8 +1621,13 @@ pub struct WorldLifecycleFact {
     pub state: WorldState,
     pub generation: DeviceGeneration,
     pub failure: Option<OperationError>,
+    pub replay_export_failure: Option<ReplayExportFailure>,
 }
 ```
+
+`CorrelationId` has infallible `from_bytes`, `as_bytes`, and `to_bytes`
+methods; all bit patterns are consumer-valid. `ObservationStreamId` is
+Moria-created and exposes `as_bytes` and `to_bytes` but no public constructor.
 
 Subscription admission validates a nonempty kind filter and resolves
 `volumes` to one sorted, unique, finite set of IDs already present in the
@@ -1832,6 +1861,7 @@ pub struct ConfigError {
 
 pub enum ConfigErrorCode {
     DuplicateId,
+    RetiredReplayStreamCapacity,
     MissingReference,
     WrongProviderKind,
     ContractMismatch,

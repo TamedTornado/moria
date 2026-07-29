@@ -29,29 +29,72 @@ to an absent or retired ID are typed validation failures. Physical node,
 buffer, slot, entity, task, and submission IDs never appear in canonical
 encoding, persistence, replay, observations, or the public identity types.
 
-```rust
-pub struct WorldId(pub [u8; 16]);
-pub struct MaterialId(pub u16);
-pub struct VolumeId(pub u64);
-pub struct ParticipantId(pub u32);
-pub struct InputSourceId(pub u32);
-pub struct RngStreamId(pub u32);
-pub struct Tick(pub u64);
-pub struct VolumeRevision(pub u64);
-pub struct CanonicalOrder(pub u32);
-pub struct DeviceGeneration(pub u64);
-pub struct ReceiptId(pub u64);
+All identity and digest fields are private. The following are the exact
+consumer construction and inspection methods; tuple construction is not part
+of the public API:
 
-pub struct CanonicalHash(pub [u8; 32]);
-pub struct ContentDigest(pub [u8; 32]);
-pub struct ContractDigest(pub [u8; 32]);
-pub struct SchemaDigest(pub [u8; 32]);
-pub struct BlobDigest(pub [u8; 32]);
-pub struct EvidenceDigest(pub [u8; 32]);
+```rust
+pub enum NewtypeValueError {
+    ZeroReserved,
+    OutOfRange,
+    AllZeroReserved,
+}
+
+pub struct WorldId([u8; 16]);
+pub struct MaterialId(u16);
+pub struct VolumeId(u64);
+pub struct ParticipantId(u32);
+pub struct InputSourceId(u32);
+pub struct RngStreamId(u32);
+pub struct Tick(u64);
+pub struct VolumeRevision(u64);
+pub struct CanonicalOrder(u32);
+pub struct DeviceGeneration(u64);
+pub struct ReceiptId(u64);
+
+pub struct CanonicalHash([u8; 32]);
+pub struct ContentDigest([u8; 32]);
+pub struct ContractDigest([u8; 32]);
+pub struct SchemaDigest([u8; 32]);
+pub struct BlobDigest([u8; 32]);
+pub struct EvidenceDigest([u8; 32]);
+
+impl MaterialId {
+    pub fn try_from_raw(raw: u16) -> Result<Self, NewtypeValueError>;
+    pub fn get(self) -> u16;
+}
+impl VolumeId {
+    pub fn try_from_raw(raw: u64) -> Result<Self, NewtypeValueError>;
+    pub fn get(self) -> u64;
+}
+impl ParticipantId {
+    pub fn try_from_raw(raw: u32) -> Result<Self, NewtypeValueError>;
+    pub fn get(self) -> u32;
+}
+impl InputSourceId {
+    pub fn try_from_raw(raw: u32) -> Result<Self, NewtypeValueError>;
+    pub fn get(self) -> u32;
+}
+impl RngStreamId {
+    pub fn try_from_raw(raw: u32) -> Result<Self, NewtypeValueError>;
+    pub fn get(self) -> u32;
+}
 ```
 
-Public constructors validate the nonzero/range rules above. Digest types are
-not implicitly interchangeable even though their wire widths match.
+`MaterialId::try_from_raw` and `VolumeId::try_from_raw` reject zero.
+`ParticipantId`, `InputSourceId`, and `RngStreamId` reject zero and values
+greater than `0x7fff_ffff`. There is no unchecked or lossy constructor.
+
+`WorldId` has `from_bytes([u8; 16])`, `as_bytes(&self) -> &[u8; 16]`, and
+`to_bytes(self) -> [u8; 16]`; every 16-byte value is valid. `Tick`,
+`VolumeRevision`, `CanonicalOrder`, `DeviceGeneration`, and `ReceiptId` have
+infallible `from_raw` and `get` methods using their displayed scalar width;
+zero is valid for those value/counter types. Each 32-byte hash/digest above has
+infallible `from_bytes([u8; 32])`, `as_bytes(&self) -> &[u8; 32]`, and
+`to_bytes(self) -> [u8; 32]`. Digest types are not implicitly interchangeable
+even though their wire widths match. All types in this block are
+`Copy + Eq + Ord + Hash`; constructors and accessors allocate nothing and
+preserve every bit.
 
 ### TECH-006 — Material cells, bricks, and logical domains
 
@@ -213,15 +256,27 @@ pub struct SegmentQ {
     pub start: WorldPointQ,
     pub end: WorldPointQ,
 }
-pub struct QuatQ14(pub [i16; 4]); // x, y, z, w
+pub struct QuatQ14([i16; 4]); // private x, y, z, w
 pub struct PlacementQ {
     pub translation: WorldPointQ,
     pub orientation: QuatQ14,
 }
+
+impl QuatQ14 {
+    pub fn try_from_components(
+        components_xyzw: [i16; 4],
+    ) -> Result<Self, CanonicalFailure>;
+    pub fn components(self) -> [i16; 4];
+    pub fn try_compose(self, rhs: Self) -> Result<Self, CanonicalFailure>;
+    pub fn inverse(self) -> Self;
+}
 ```
 
-`WorldAabbQ` is half-open. Each constructor applies the arithmetic and
-orientation validation above rather than accepting raw unchecked fields.
+`QuatQ14` has no public field or unchecked constructor; its methods apply the
+normalization, composition, sign, shell, and inverse rules above.
+`WorldAabbQ` is half-open. Facade admission validates its public coordinate
+fields and every `PlacementQ` use, so constructing an aggregate record cannot
+bypass domain, range, or AABB rules.
 
 ## Canonical bytes and commitments
 

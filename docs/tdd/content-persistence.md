@@ -13,15 +13,15 @@ Implements: REQ-004, REQ-008, REQ-014, REQ-020, REQ-021
 Every genesis volume selects one:
 
 ```rust
-pub struct BaseContentSourceId(pub u32);
-pub struct BaseAuthorityId(pub u32);
-pub struct ContentBlobStoreId(pub u32);
-pub struct CheckpointStoreId(pub u32);
-pub struct ReplaySinkId(pub u32);
-pub struct BaseRequestId(pub u64);
-pub struct CheckpointKey(pub [u8; 32]);
-pub struct ReplayStreamKey(pub [u8; 32]);
-pub struct ContentLineage(pub [u8; 16]);
+pub struct BaseContentSourceId(u32);
+pub struct BaseAuthorityId(u32);
+pub struct ContentBlobStoreId(u32);
+pub struct CheckpointStoreId(u32);
+pub struct ReplaySinkId(u32);
+pub struct BaseRequestId(u64);
+pub struct CheckpointKey([u8; 32]);
+pub struct ReplayStreamKey([u8; 32]);
+pub struct ContentLineage([u8; 16]);
 
 pub enum BaseAuthority {
     Uniform {
@@ -40,6 +40,16 @@ pub enum BaseAuthority {
     },
 }
 ```
+
+Each provider ID has `try_from_raw(u32) -> Result<Self, NewtypeValueError>` and
+`get(self) -> u32`; it rejects zero and values above `0x7fff_ffff`.
+`BaseRequestId` is Moria-created and exposes only `get(self) -> u64`.
+`CheckpointKey` has infallible `from_bytes`, `as_bytes`, and `to_bytes`
+methods. `ReplayStreamKey::try_from_bytes([u8; 32])` rejects the all-zero
+reserved key with `NewtypeValueError::AllZeroReserved` and otherwise preserves
+all bytes; it also has `as_bytes` and `to_bytes`. `ContentLineage` has
+infallible `from_bytes`, `as_bytes`, and `to_bytes`. Fields are private, every
+type is `Copy + Eq + Ord + Hash`, and there is no unchecked tuple constructor.
 
 `lineage` is a semantic family label; `manifest_root` is the exact identity.
 Matching lineage alone is never sufficient. The manifest is a canonical
@@ -631,6 +641,12 @@ pub struct ReplaySinkRequest {
     pub digest: BlobDigest,
 }
 
+pub struct ReplayExportFailure {
+    pub sink: ReplaySinkId,
+    pub request: ReplaySinkRequest,
+    pub failure: ErrorCode,
+}
+
 pub struct ReplayAppendSink { /* private completion token */ }
 
 impl ReplayAppendSink {
@@ -721,11 +737,13 @@ tick record {
 Records are length-prefixed, checksummed, bounded, and committed only after the
 tick confirms. Presentation and timing are excluded. During private genesis,
 Moria first appends the
-header as sequence zero (`first_tick == last_tick == Tick(0)`,
+header as sequence zero (`first_tick == last_tick == Tick::from_raw(0)`,
 `record_count == 0`) and publishes tick zero only after that completion is
 durable; failure fails `GenesisReceipt` and publishes no world. Each later
-confirmed tick record is appended in sequence
-order through that registered sink. Moria reserves the immutable
+confirmed tick record is appended in sequence order through that registered
+sink. At most one append for a given world stream is invoked at once; the
+configured in-flight record/byte budgets cover all worlds and providers
+without weakening this per-stream order. Moria reserves the immutable
 record bytes, one callback cell, and one in-flight record/byte permit before
 invocation. `ReplayAppendSink` has the same one-terminal, drop, cancellation,
 duplicate, digest, and generation rules as TECH-043. A sink result cannot
@@ -744,7 +762,9 @@ already-returned `TickConfirmed` remains valid;
 the failure is reported as `OperationError { code: StoreFailure,
 scope: Provider(ReplaySink(id)), retryability: Never,
 committed: Frontier(the_confirmed_frontier), ... }` in one
-`WorldLifecycleFact`, the `FailureCounter::StoreFailure` telemetry bucket, and
+`WorldLifecycleFact`, a
+`FailureCounter { code: ErrorCode::StoreFailure, count: ... }` telemetry
+bucket, and
 the replay-sink pinned-record/byte/oldest-age counters. The exact undurable
 record and every earlier required record remain pinned until shutdown releases
 the world; a checkpoint does not relabel the failed replay append as durable.
@@ -755,6 +775,18 @@ Replay append has no consumer cancellation point. Shutdown stops invoking
 later appends, waits for or closes the one already-invoked completion cell
 under the bounded provider-drain rule, reports the confirmed frontier as
 committed but the replay record as undurable, and then releases the pin.
+The failure transition appends exactly one `WorldLifecycleFact` whose
+`replay_export_failure` is the closed `ReplayExportFailure` above; every other
+lifecycle fact carries `None`. `ShutdownReport.replay_export_failure` repeats
+that same fixed metadata. Because one stream has at most one invoked append,
+both fields are `Option`, not a growable list. The record contains the exact
+sink, stream, sequence, tick range, record count, byte length, digest, and
+failure code from the original request; it does not copy the pinned replay
+bytes. Its retained v1 allocation is at most 128 bytes and is reserved in the
+observation/terminal-receipt budgets before invoking the append. Shutdown
+constructs and retains the report metadata before releasing the raw replay
+record bytes and their pin; dropping the report later releases only its
+ordinary terminal-receipt record.
 Device loss does not cancel a host store call or change its stream/sequence;
 its completion remains valid because replay bytes are device-independent.
 A completion carrying a closed world attempt/generation may only acknowledge
