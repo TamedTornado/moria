@@ -1,0 +1,2169 @@
+[
+  {
+    "id": "M-001",
+    "title": "[setup] Establish the single-crate Moria scaffold",
+    "labels": [
+      "setup",
+      "auto"
+    ],
+    "depends_on": [],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-001"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-008"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-001"
+      ]
+    },
+    "body": "**Category:** setup\n**Automation:** auto\n**Depends on:** none\n**Produces:** `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `AGENTS.md`, `src/lib.rs`\n\n## Description\n\nCreate the approved Rust 2024 `moria` library package, pin Rust 1.95 and Bevy 0.19, declare the TDD-approved narrow dependencies and features, and install the repository rules. Keep `src/lib.rs` a thin facade with no gameplay or renderer implementation. This implements `TECH-001` under `REQ-002`, `REQ-008`.\n\n## Inputs\n\n- `docs/tdd/overview.md` repository shape and exact checks\n- `docs/tdd/architecture.md` dependency policy\n- Cargo and rustup\n- Authorization chain: `TECH-001` → `REQ-002`, `REQ-008`\n\n## Acceptance Criteria\n\n- [ ] The package is a single library crate rather than a workspace and commits `Cargo.lock`\n- [ ] Feature selection rejects the unsupported wasm GPU target and introduces no async runtime or second wgpu device\n- [ ] `AGENTS.md` contains the exact formatting, module, dependency, and test rules from the TDD\n- [ ] `cargo check --all-targets --all-features` passes\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-002",
+    "title": "[component] Define stable and runtime identities",
+    "labels": [
+      "component",
+      "auto"
+    ],
+    "depends_on": [
+      "M-001"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-004",
+        "TECH-014",
+        "TECH-024"
+      ],
+      "design_requirements": [
+        "REQ-003",
+        "REQ-017",
+        "REQ-018",
+        "REQ-021",
+        "REQ-008"
+      ],
+      "authority": [
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-003",
+        "C-005",
+        "C-004",
+        "C-010",
+        "C-015",
+        "C-001"
+      ]
+    },
+    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** M-001\n**Produces:** `src/identity/mod.rs`, `src/volume/identity.rs`, `tests/host/identity.rs`\n\n## Description\n\nImplement UUID-backed stable world, material, and volume keys; opaque generational runtime IDs; nonzero monotonic operation and volume revisions; and canonical bounded volume names. Retired stable keys remain lifetime tombstones and runtime handles reject stale generations. This implements `TECH-004`, `TECH-014`, `TECH-024` under `REQ-003`, `REQ-017`, `REQ-018`, `REQ-021`, `REQ-008`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` identities and revisions\n- `docs/tdd/state-and-storage.md` exhaustion rules\n- `uuid` and Rust checked arithmetic\n- Authorization chain: `TECH-004`, `TECH-014`, `TECH-024` → `REQ-003`, `REQ-017`, `REQ-018`, `REQ-021`, `REQ-008`\n\n## Acceptance Criteria\n\n- [ ] Nonnil stable keys and scoped uniqueness are validated deterministically\n- [ ] Runtime IDs are opaque and stale generations are rejected before work admission\n- [ ] Revision and operation counters never wrap or reuse and return the documented terminal exhaustion\n- [ ] Names accept exactly 1..=96 UTF-8 bytes and retain canonical exact-capacity storage\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-003",
+    "title": "[component] Encode material samples and occupancy",
+    "labels": [
+      "component",
+      "auto"
+    ],
+    "depends_on": [
+      "M-001",
+      "M-002"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-002"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-003",
+        "REQ-004",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-004",
+        "C-010"
+      ]
+    },
+    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** M-001, M-002\n**Produces:** `src/material/mod.rs`, `src/material/sample.rs`, `tests/host/material_sample.rs`\n\n## Description\n\nDefine `MaterialKey`, `MaterialId`, material registration values, the four-byte host-shareable `MaterialSample`, empty semantics, coverage-based occupancy, and reserved-zero flags. Keep behavioral metadata outside material authority. This implements `TECH-002` under `REQ-001`, `REQ-003`, `REQ-004`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` material records\n- `docs/tdd/state-and-storage.md` material sample and occupancy\n- `bytemuck` checked derives\n- Authorization chain: `TECH-002` → `REQ-001`, `REQ-003`, `REQ-004`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] `MaterialSample` has the exact material/coverage/flags field order, alignment, and four-byte size\n- [ ] Material ID zero is canonical empty and cannot be consumer-registered\n- [ ] Occupancy is true exactly for nonempty material with coverage at least 128\n- [ ] Invalid material IDs and nonzero v1 flags fail with the documented typed errors\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-004",
+    "title": "[component] Implement checked volume coordinates and placement",
+    "labels": [
+      "component",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-003"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-002",
+        "TECH-004"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-003",
+        "REQ-004",
+        "REQ-018",
+        "REQ-017"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-004",
+        "C-010",
+        "C-005"
+      ]
+    },
+    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** M-002, M-003\n**Produces:** `src/volume/geometry.rs`, `src/volume/mod.rs`, `tests/host/volume_geometry.rs`\n\n## Description\n\nImplement signed `i32` cell/brick coordinates, finite local domains, checked cell-to-brick conversion for fixed 8³ bricks, and rigid dynamic-volume placement. Preserve volume-local coordinates without privileged axes, scale, or shear. This implements `TECH-002`, `TECH-004` under `REQ-001`, `REQ-003`, `REQ-004`, `REQ-018`, `REQ-017`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` bounds and coordinates\n- `docs/tdd/state-and-storage.md` coordinate model\n- Rust checked integer and finite-float operations\n- Authorization chain: `TECH-002`, `TECH-004` → `REQ-001`, `REQ-003`, `REQ-004`, `REQ-018`, `REQ-017`\n\n## Acceptance Criteria\n\n- [ ] Negative coordinates use the specified Euclidean brick mapping and local-cell index\n- [ ] Every coordinate, extent, byte-count, and transform conversion rejects overflow\n- [ ] Placements accept only finite translations and normalized quaternions\n- [ ] Moving a placement does not rewrite local material coordinates\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-005",
+    "title": "[config] Validate core world and storage limits",
+    "labels": [
+      "config",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-003",
+      "M-004"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-002",
+        "TECH-014",
+        "TECH-024",
+        "TECH-038"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-003",
+        "REQ-004",
+        "REQ-018",
+        "REQ-021",
+        "REQ-008",
+        "REQ-015"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-004",
+        "C-010",
+        "C-015",
+        "C-001"
+      ]
+    },
+    "body": "**Category:** config\n**Automation:** auto\n**Depends on:** M-002, M-003, M-004\n**Produces:** `src/config/mod.rs`, `src/config/limits.rs`, `tests/host/config_validation.rs`\n\n## Description\n\nImplement the core `MoriaConfig` fields and deterministic validation for identities, volume records, coordinates, sparse pages/bricks, revisions, directory roots, queues, extraction freeze limits, names, and desired/minimum renderer capabilities. Feature issues extend the config with their own independently reviewed pools. This implements `TECH-002`, `TECH-014`, `TECH-024`, `TECH-038` under `REQ-001`, `REQ-003`, `REQ-004`, `REQ-018`, `REQ-021`, `REQ-008`, `REQ-015`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` core configuration schema\n- `docs/tdd/architecture.md` startup validation matrix\n- `docs/tdd/state-and-storage.md` core default and hard limits\n- Authorization chain: `TECH-002`, `TECH-014`, `TECH-024`, `TECH-038` → `REQ-001`, `REQ-003`, `REQ-004`, `REQ-018`, `REQ-021`, `REQ-008`, `REQ-015`\n\n## Acceptance Criteria\n\n- [ ] Every core world, live/lifetime-volume, sparse-storage, directory, queue, and extraction-freeze limit has a typed field and documented hard maximum\n- [ ] Validation reports all core errors in deterministic field order instead of stopping at the first\n- [ ] Checked core aggregate formulas reject overflow and configurations unable to hold one maximum legal base operation\n- [ ] Requested and effective capability values remain separately observable and no allocation is attempted during host validation\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-006",
+    "title": "[integration] Bound the base-content ownership crossing",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-004",
+      "M-005"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-021",
+        "TECH-023",
+        "TECH-026"
+      ],
+      "design_requirements": [
+        "REQ-005",
+        "REQ-018",
+        "REQ-021",
+        "REQ-008"
+      ],
+      "authority": [
+        "C-010",
+        "AD-003",
+        "C-004",
+        "C-003",
+        "C-015",
+        "C-001"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-003, M-004, M-005\n**Produces:** `src/config/content.rs`, `src/content/port.rs`, `src/content/sink.rs`, `src/content/mod.rs`, `tests/host/content_port.rs`\n\n## Description\n\nDefine the borrowed content descriptor, fixed inline callback error, exact request batches, and Moria-owned permit-backed output sink. The callback may fill only homogeneous values or exact 512-sample detailed slots and cannot return variable owned data. This implements `TECH-021`, `TECH-023`, `TECH-026` under `REQ-005`, `REQ-018`, `REQ-021`, `REQ-008`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` base content source contract\n- `docs/tdd/architecture.md` content trust boundary\n- Exact boxed slices and fixed inline UTF-8 diagnostics\n- Authorization chain: `TECH-021`, `TECH-023`, `TECH-026` → `REQ-005`, `REQ-018`, `REQ-021`, `REQ-008`\n\n## Acceptance Criteria\n\n- [ ] Descriptor identity is borrowed and accepted lineage is copied into canonical bounded ownership\n- [ ] The complete exact-length output sink exists and is byte-charged before callback invocation\n- [ ] Overlength, duplicate, missing, invalid-material, and poisoned writes fail without installing partial content\n- [ ] Adversarial callbacks cannot transfer an oversized collection, descriptor, lineage, or diagnostic allocation\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-007",
+    "title": "[system] Execute content batches on bounded workers",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-005",
+      "M-006"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-006",
+        "TECH-021"
+      ],
+      "design_requirements": [
+        "REQ-005",
+        "REQ-008",
+        "REQ-021",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-010",
+        "AD-003",
+        "C-001",
+        "C-003",
+        "C-015",
+        "C-004"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-005, M-006\n**Produces:** `src/content/workers.rs`, `tests/host/content_workers.rs`\n\n## Description\n\nImplement the dedicated bounded native content-worker pool and its atomic callback-slot plus worst-case-response-byte admission. Keep permits charged through validation, installation or cleanup, catch callback panics, and never invoke consumer code while holding a Moria lock. This implements `TECH-006`, `TECH-021` under `REQ-005`, `REQ-008`, `REQ-021`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/architecture.md` threading and progress\n- `docs/tdd/lifecycles.md` region lifecycle\n- `crossbeam-channel` bounded queues\n- Authorization chain: `TECH-006`, `TECH-021` → `REQ-005`, `REQ-008`, `REQ-021`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] A batch starts only after count and exact worst-case bytes are acquired atomically\n- [ ] Capacity pressure queues or rejects according to configuration without shrinking the request\n- [ ] Panic, cancellation, invalid output, and worker replacement produce the documented terminal outcomes and release every permit\n- [ ] Concurrent stress never exceeds configured workers or response bytes\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-008",
+    "title": "[state] Implement receipts and the cancellation race",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-001",
+      "M-002",
+      "M-005"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-005",
+        "TECH-018"
+      ],
+      "design_requirements": [
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-010",
+        "AD-003",
+        "C-003",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** M-001, M-002, M-005\n**Produces:** `src/command/receipt.rs`, `src/command/lifecycle.rs`, `tests/host/receipt_lifecycle.rs`\n\n## Description\n\nImplement runtime-neutral `Send` receipts, nonblocking status polling, wakeup-only futures, typed operation states, and the single atomic cancellation boundary at `Preparing`. Dropping a receipt never cancels accepted work. This implements `TECH-005`, `TECH-018` under `REQ-005`, `REQ-012`, `REQ-015`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` admission, permits, and receipts\n- `docs/tdd/lifecycles.md` command/query/checkpoint lifecycles\n- `futures-core` and `futures-channel`\n- Authorization chain: `TECH-005`, `TECH-018` → `REQ-005`, `REQ-012`, `REQ-015`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Every accepted receipt reaches exactly one terminal result and repeated polling is stable\n- [ ] Queue rejection returns the original payload before ownership transfer\n- [ ] Cancellation wins only before the atomic transition to `Preparing`; later requests return `TooLate`\n- [ ] `CancelNotPrepared` drains prepared and submitted work without relabeling it cancelled\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-009",
+    "title": "[state] Model sparse bricks and occupancy summaries",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-004",
+      "M-005"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-002"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-003",
+        "REQ-004",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-004",
+        "C-010"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** M-003, M-004, M-005\n**Produces:** `src/storage/model.rs`, `src/storage/oracle.rs`, `tests/host/sparse_model.rs`\n\n## Description\n\nImplement the device-independent sparse model for empty, homogeneous, and detailed 8³ bricks plus exact occupancy summaries. Provide a small CPU oracle used by feature tests without becoming a production CPU mirror. This implements `TECH-002` under `REQ-001`, `REQ-003`, `REQ-004`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/state-and-storage.md` brick representations and occupancy hierarchy\n- `docs/tdd/validation.md` CPU oracle obligations\n- Fixed-size arrays and checked indexes\n- Authorization chain: `TECH-002` → `REQ-001`, `REQ-003`, `REQ-004`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] Empty and homogeneous pages allocate no detailed brick slot\n- [ ] Detailed bricks contain exactly 512 four-byte samples\n- [ ] Brick and coarser occupancy summaries have no false negatives and update exactly after edits\n- [ ] Generated edit sequences match the independent CPU oracle\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-010",
+    "title": "[state] Implement the bounded GPU sparse hash table",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-004",
+      "M-005",
+      "M-009"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-003"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-004",
+        "REQ-005",
+        "REQ-017",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-004",
+        "C-010",
+        "AD-003",
+        "C-005"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-003, M-004, M-005, M-009\n**Produces:** `src/gpu/sparse.rs`, `assets/shaders/sparse_table.wgsl`, `tests/gpu/sparse_table.rs`\n\n## Description\n\nImplement segmented storage buffers, bounded open-addressed brick hashing, explicit slot states, finite probe limits, tombstones, duplicate handling, detailed-slot allocation, and typed exhaustion. Use ordered dispatch phases for multiword publication. This implements `TECH-003` under `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/state-and-storage.md` page table\n- `docs/tdd/architecture.md` portability strategy\n- wgpu 29 and Naga 29 validators\n- Authorization chain: `TECH-003` → `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] Naga parses and validates the complete WGSL module with the deployed capabilities\n- [ ] Lookup consumes only published occupied entries and preserves reachability across deletion\n- [ ] Near-full, full, collision-heavy, tombstone-heavy, duplicate, probe-exhausted, and allocator-edge fixtures return exact typed outcomes\n- [ ] Real GPU readback matches the CPU sparse model on a qualified adapter\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-011",
+    "title": "[state] Pin MVCC snapshots and reclaim old versions",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-009",
+      "M-010"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-003",
+        "TECH-004"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-004",
+        "REQ-005",
+        "REQ-017",
+        "REQ-018",
+        "REQ-003"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-004",
+        "C-010",
+        "AD-003",
+        "C-005",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-009, M-010\n**Produces:** `src/storage/revisions.rs`, `src/gpu/revisions.rs`, `assets/shaders/revision_gate.wgsl`, `tests/gpu/revision_pins.rs`\n\n## Description\n\nImplement per-volume revision chains, committed-revision acquisition, snapshot pins, one-word revision gates, and submission-aware retirement of old page versions and slots. Readers must resolve one committed old-or-new view. This implements `TECH-003`, `TECH-004` under `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`, `REQ-003`.\n\n## Inputs\n\n- `docs/tdd/state-and-storage.md` revisions and snapshots\n- `docs/tdd/lifecycles.md` query lifecycle\n- wgpu queue completion and Naga validation\n- Authorization chain: `TECH-003`, `TECH-004` → `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`, `REQ-003`\n\n## Acceptance Criteria\n\n- [ ] A snapshot resolves only versions at or before its acquired committed revision\n- [ ] Old versions remain allocated until all GPU submissions and reader pins that can reach them complete\n- [ ] Late completions from an older device generation cannot publish or release a reused slot\n- [ ] Concurrent-reader fixtures observe the complete old or complete new revision, never a mixture\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-012",
+    "title": "[system] Admit and order ordinary commands",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-004",
+      "M-005",
+      "M-008",
+      "M-011"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-004",
+        "TECH-005",
+        "TECH-014"
+      ],
+      "design_requirements": [
+        "REQ-003",
+        "REQ-017",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-021",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-003",
+        "C-005",
+        "C-010",
+        "AD-003",
+        "C-015",
+        "C-004"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-002, M-004, M-005, M-008, M-011\n**Produces:** `src/command/admission.rs`, `src/command/mod.rs`, `tests/host/command_admission.rs`\n\n## Description\n\nImplement permits, owned command validation, bounded per-world ingress, per-volume FIFO order, lifetime-key checks, revision preconditions, and typed synchronous rejection. Admission does not claim completion. This implements `TECH-004`, `TECH-005`, `TECH-014` under `REQ-003`, `REQ-017`, `REQ-005`, `REQ-012`, `REQ-015`, `REQ-021`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` facade operations and matter/volume commands\n- `docs/tdd/lifecycles.md` command lifecycle\n- `crossbeam-channel` bounded ingress\n- Authorization chain: `TECH-004`, `TECH-005`, `TECH-014` → `REQ-003`, `REQ-017`, `REQ-005`, `REQ-012`, `REQ-015`, `REQ-021`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] Invalid or over-capacity requests return the original command unchanged\n- [ ] Accepted operations receive stable IDs and preserve FIFO order within one volume\n- [ ] Independent volumes may progress independently without inventing a cross-volume revision\n- [ ] Stale handles, retired keys, closed queues, and failed worlds reject with exact public variants\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-013",
+    "title": "[state] Publish atomic matter mutations",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-009",
+      "M-010",
+      "M-011",
+      "M-012"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-003",
+        "TECH-004"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-004",
+        "REQ-005",
+        "REQ-017",
+        "REQ-018",
+        "REQ-003"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-004",
+        "C-010",
+        "AD-003",
+        "C-005",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-009, M-010, M-011, M-012\n**Produces:** `src/command/mutation.rs`, `src/gpu/mutation.rs`, `assets/shaders/mutation.wgsl`, `tests/gpu/mutation_atomicity.rs`\n\n## Description\n\nImplement bounded fill and patch transactions as copy-on-write preparation, validation, and one revision-gate publication. Every targeted cell commits at one new revision or no committed state changes. This implements `TECH-003`, `TECH-004` under `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`, `REQ-003`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` matter commands\n- `docs/tdd/state-and-storage.md` matter mutation transaction\n- wgpu 29 error scopes and Naga 29\n- Authorization chain: `TECH-003`, `TECH-004` → `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`, `REQ-003`\n\n## Acceptance Criteria\n\n- [ ] Payload, coordinate, material, capacity, and expected-revision validation occurs before publication\n- [ ] Forced failure after admission releases unreferenced allocations and leaves samples, revision, observation, and scar state unchanged\n- [ ] Over-dispatched shader lanes guard logical bounds and every phase is ordered without cross-workgroup spin waiting\n- [ ] Real-GPU multi-brick mutations match the CPU oracle and expose only all-old or all-new snapshots\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-014",
+    "title": "[state] Apply volume creation movement and retirement",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-004",
+      "M-006",
+      "M-008",
+      "M-012",
+      "M-013"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-004",
+        "TECH-014",
+        "TECH-024",
+        "TECH-038"
+      ],
+      "design_requirements": [
+        "REQ-003",
+        "REQ-017",
+        "REQ-018",
+        "REQ-021",
+        "REQ-008",
+        "REQ-015"
+      ],
+      "authority": [
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-003",
+        "C-005",
+        "C-004",
+        "C-010",
+        "C-015",
+        "C-001"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** M-002, M-004, M-006, M-008, M-012, M-013\n**Produces:** `src/volume/registry.rs`, `src/command/volume.rs`, `tests/host/volume_commands.rs`\n\n## Description\n\nImplement ordinary create, move, and retire commands for static and dynamic volumes, including live-slot reuse, permanent lifetime tombstones, placement revision advancement, and dirty-retirement policy. Ordinary operations remain single-volume. This implements `TECH-004`, `TECH-014`, `TECH-024`, `TECH-038` under `REQ-003`, `REQ-017`, `REQ-018`, `REQ-021`, `REQ-008`, `REQ-015`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` volume commands\n- `docs/tdd/lifecycles.md` world and region lifecycles\n- `docs/tdd/state-and-storage.md` volume metadata\n- Authorization chain: `TECH-004`, `TECH-014`, `TECH-024`, `TECH-038` → `REQ-003`, `REQ-017`, `REQ-018`, `REQ-021`, `REQ-008`, `REQ-015`\n\n## Acceptance Criteria\n\n- [ ] Create becomes ready only after its initial directory/material state is committed\n- [ ] Move is accepted only for dynamic volumes and advances the same per-volume revision stream\n- [ ] Retirement preserves the stable-key tombstone and refuses unsafe dirty-state loss\n- [ ] Live capacity can be reused while lifetime-key capacity never reuses or aliases a retired stable key\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-015",
+    "title": "[state] Publish versioned world-directory roots",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-005",
+      "M-010",
+      "M-011",
+      "M-014"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-034",
+        "TECH-035",
+        "TECH-038"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-011",
+        "REQ-017",
+        "REQ-019",
+        "REQ-009",
+        "REQ-003",
+        "REQ-015",
+        "REQ-018",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-005",
+        "AD-002",
+        "C-003",
+        "C-007",
+        "C-016",
+        "AD-005",
+        "C-004",
+        "C-002",
+        "C-006",
+        "AD-004",
+        "C-010",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-002, M-005, M-010, M-011, M-014\n**Produces:** `src/storage/directory.rs`, `src/gpu/directory.rs`, `assets/shaders/directory_root.wgsl`, `tests/gpu/directory_epoch.rs`\n\n## Description\n\nImplement immutable versioned directory roots, checked epoch/range allocation, reader retention, alternate-root preparation, one-gate publication, and the sticky allocator-closed capability. This issue supplies the shared publication primitive, not extraction or placement policy. This implements `TECH-034`, `TECH-035`, `TECH-038` under `REQ-006`, `REQ-011`, `REQ-017`, `REQ-019`, `REQ-009`, `REQ-003`, `REQ-015`, `REQ-018`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/state-and-storage.md` world directory epochs\n- `docs/tdd/public-api.md` exhausted admission matrix\n- wgpu ordered dispatch and Naga validation\n- Authorization chain: `TECH-034`, `TECH-035`, `TECH-038` → `REQ-006`, `REQ-011`, `REQ-017`, `REQ-019`, `REQ-009`, `REQ-003`, `REQ-015`, `REQ-018`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Directory epochs start at one and never wrap, reuse, or partially reserve a failed range\n- [ ] Readers pinned to an old root remain valid until submission and reader retention permit reclamation\n- [ ] Closure preserves the current root and rejects only root-changing publication\n- [ ] Lower-epoch checked-range exhaustion records the sticky closed bit independently of the numeric epoch\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-016",
+    "title": "[state] Manage bounded snapshot interest",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-004",
+      "M-005",
+      "M-007",
+      "M-014",
+      "M-015"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-019",
+        "TECH-038"
+      ],
+      "design_requirements": [
+        "REQ-009",
+        "REQ-012",
+        "REQ-016",
+        "REQ-003",
+        "REQ-015",
+        "REQ-018",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-004",
+        "C-003",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-010",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** M-004, M-005, M-007, M-014, M-015\n**Produces:** `src/interest/mod.rs`, `src/interest/lifecycle.rs`, `tests/host/interest_lifecycle.rs`\n\n## Description\n\nImplement declare, update, inspect, and withdraw for bounded interest leases. `All` resolves then-live membership and exact local bricks at accepted placements; later create, retire, or move never expands the lease. This implements `TECH-019`, `TECH-038` under `REQ-009`, `REQ-012`, `REQ-016`, `REQ-003`, `REQ-015`, `REQ-018`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` interest contract\n- `docs/tdd/lifecycles.md` interest and region lifecycles\n- Bounded content materialization from the content owner\n- Authorization chain: `TECH-019`, `TECH-038` → `REQ-009`, `REQ-012`, `REQ-016`, `REQ-003`, `REQ-015`, `REQ-018`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Acceptance exposes the resolved member set and rejects leases exceeding volume or brick limits\n- [ ] Update replaces the snapshot atomically and withdrawal only makes safely unpinned regions eviction-eligible\n- [ ] Dirty scars and in-flight readers prevent unsafe cooling\n- [ ] Interest and ordinary bounded materialization remain legal after directory allocator closure\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-017",
+    "title": "[integration] Start Moria on Bevy renderer resources",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-001",
+      "M-005",
+      "M-006",
+      "M-009",
+      "M-010",
+      "M-015"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-001",
+        "TECH-010"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-008",
+        "REQ-013",
+        "REQ-020"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-001",
+        "C-011",
+        "C-012"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-001, M-005, M-006, M-009, M-010, M-015\n**Produces:** `src/bevy/mod.rs`, `src/bevy/plugin.rs`, `src/gpu/startup.rs`, `tests/gpu/startup.rs`\n\n## Description\n\nImplement `ValidatedMoria::into_bevy`, `MoriaPlugin`, RenderApp lookup, capability negotiation, renderer-owned device/queue use, `RenderStartup` resource construction, and typed startup receipts. No standalone or second-device path is authorized. This implements `TECH-001`, `TECH-010` under `REQ-002`, `REQ-008`, `REQ-013`, `REQ-020`.\n\n## Inputs\n\n- `docs/tdd/architecture.md` startup ownership and validation\n- Bevy 0.19 `RenderApp`, `RenderDevice`, `RenderQueue`, and `RenderStartup`\n- wgpu 29 reported features, limits, and downlevel flags\n- Authorization chain: `TECH-001`, `TECH-010` → `REQ-002`, `REQ-008`, `REQ-013`, `REQ-020`\n\n## Acceptance Criteria\n\n- [ ] Missing `RenderApp` fails at `RendererLookup` and never falls back to a private device\n- [ ] Qualification reports every unmet feature and numeric limit in deterministic order\n- [ ] Effective capacities are clamped only above declared minima and can hold one maximum enabled operation\n- [ ] Partial startup failure tears down every allocation and a success returns the exact operational state and adapter report\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-018",
+    "title": "[integration] Drive bounded work through Bevy schedules",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-007",
+      "M-008",
+      "M-010",
+      "M-011",
+      "M-012",
+      "M-017"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-005"
+      ],
+      "design_requirements": [
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-010",
+        "AD-003",
+        "C-003",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-007, M-008, M-010, M-011, M-012, M-017\n**Produces:** `src/bevy/schedules.rs`, `src/gpu/completion.rs`, `tests/gpu/schedule_progress.rs`\n\n## Description\n\nWire main-world admission/completion stages, bounded extraction, render preparation, the ordered root compute graph, queue completion callbacks, and asynchronous mapping. Progress is schedule-driven and never supplied by receipt polling. This implements `TECH-005` under `REQ-005`, `REQ-012`, `REQ-015`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/architecture.md` Bevy integration and schedule order\n- Bevy 0.19 render schedules and root render graph\n- wgpu 29 submission, callback, and map APIs\n- Authorization chain: `TECH-005` → `REQ-005`, `REQ-012`, `REQ-015`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Extraction freezes only configured records and bytes and defers excess work without dropping it\n- [ ] Dependent GPU phases execute in the documented order on Bevy's queue\n- [ ] Submission, GPU completion, map completion, decode, and terminal delivery are represented as distinct milestones\n- [ ] No render schedule blocks waiting for a callback, mapping, worker, or consumer future\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-019",
+    "title": "[state] Quarantine a lost renderer generation",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-007",
+      "M-008",
+      "M-011",
+      "M-015",
+      "M-017",
+      "M-018"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-003",
+        "TECH-005",
+        "TECH-018"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-004",
+        "REQ-005",
+        "REQ-017",
+        "REQ-018",
+        "REQ-012",
+        "REQ-015",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-004",
+        "C-010",
+        "AD-003",
+        "C-005",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-007, M-008, M-011, M-015, M-017, M-018\n**Produces:** `src/gpu/generation.rs`, `tests/gpu/device_generation.rs`\n\n## Description\n\nImplement terminal device-generation marking, exhaustive `Recovering` admission behavior, old-callback quarantine, and safe lifetime tracking for work already submitted to the lost generation. Reconstruction is a later issue after persistence is available. This implements `TECH-003`, `TECH-005`, `TECH-018` under `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`, `REQ-012`, `REQ-015`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/state-and-storage.md` device loss state\n- `docs/tdd/lifecycles.md` recovery admission matrix\n- wgpu device-loss notification and completion callbacks\n- Authorization chain: `TECH-003`, `TECH-005`, `TECH-018` → `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`, `REQ-012`, `REQ-015`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Device loss fails submitted work, requeues only work not yet submitted, and closes new GPU-dependent admission during `Recovering`\n- [ ] Late callbacks from the old generation cannot publish, satisfy receipts, release current-generation permits, or make mapped bytes valid\n- [ ] Consumer cancellation after submission does not release old-generation resources before their terminal lifetime event\n- [ ] The transition records enough retained/durable-scar coverage to let later reconstruction decide recoverable versus terminal\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-020",
+    "title": "[system] Execute bounded sample and region queries",
+    "labels": [
+      "system",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-008",
+      "M-009",
+      "M-010",
+      "M-011",
+      "M-016",
+      "M-018"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-002",
+        "TECH-003",
+        "TECH-017"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-003",
+        "REQ-004",
+        "REQ-018",
+        "REQ-005",
+        "REQ-017",
+        "REQ-010",
+        "REQ-019",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-004",
+        "C-010",
+        "AD-003",
+        "C-005",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** assisted\n**Depends on:** M-008, M-009, M-010, M-011, M-016, M-018\n**Produces:** `src/query/material.rs`, `src/query/mod.rs`, `src/gpu/query.rs`, `tests/gpu/material_queries.rs`\n\n## Description\n\nImplement point-sample and bounded region material inspection with explicit result, traversal, readiness, encoding, and partial-coverage budgets. Unknown, cold, failed, and device-lost matter remain distinct from empty. This implements `TECH-002`, `TECH-003`, `TECH-017` under `REQ-001`, `REQ-003`, `REQ-004`, `REQ-018`, `REQ-005`, `REQ-017`, `REQ-010`, `REQ-019`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` sample and region query descriptors/results\n- `docs/tdd/lifecycles.md` query lifecycle\n- Public snapshot pins and portable staging readback\n- Authorization chain: `TECH-002`, `TECH-003`, `TECH-017` → `REQ-001`, `REQ-003`, `REQ-004`, `REQ-018`, `REQ-005`, `REQ-017`, `REQ-010`, `REQ-019`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Point and bounded region results identify every observed volume and exact committed revision\n- [ ] Row-major and homogeneous-run encodings cover the same exact sample set\n- [ ] Readiness policies reject, wait, or internally materialize exactly as specified and partial results omit only unavailable regions\n- [ ] GPU readback values and status match the CPU oracle for deep, overlapping, cold, stale, and output-bound fixtures\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-021",
+    "title": "[component] Compute private collision facts from matter",
+    "labels": [
+      "component",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-004",
+      "M-009",
+      "M-010",
+      "M-011"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-009",
+        "TECH-013",
+        "TECH-017"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-010",
+        "REQ-013",
+        "REQ-019",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-011",
+        "C-007",
+        "AD-005",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** component\n**Automation:** assisted\n**Depends on:** M-004, M-009, M-010, M-011\n**Produces:** `src/collision/mod.rs`, `src/collision/kernel.rs`, `src/gpu/collision.rs`, `tests/gpu/collision_kernel.rs`\n\n## Description\n\nImplement the private collision broad and narrow phases over committed occupied cells and volume placement. Return generic bounded facts only; do not import public query policy or presentation meshes. This implements `TECH-009`, `TECH-013`, `TECH-017` under `REQ-001`, `REQ-010`, `REQ-013`, `REQ-019`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/collision-and-presentation.md` collision pipeline\n- `docs/tdd/state-and-storage.md` occupancy authority\n- wgpu/Naga compute validation\n- Authorization chain: `TECH-009`, `TECH-013`, `TECH-017` → `REQ-001`, `REQ-010`, `REQ-013`, `REQ-019`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Broad phase honors exact candidate-brick limits and narrow phase honors exact candidate-cell limits\n- [ ] Contacts derive from material coverage and committed placement even when presentation is missing or stale\n- [ ] Overlapping dynamic volumes retain separate identities and deterministic fact ordering\n- [ ] Hit overflow returns no truncated facts and all shader results match the CPU fact oracle\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-022",
+    "title": "[system] Orchestrate public collision queries",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-008",
+      "M-016",
+      "M-020",
+      "M-021"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-013",
+        "TECH-017"
+      ],
+      "design_requirements": [
+        "REQ-010",
+        "REQ-019",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-007",
+        "AD-005",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-008, M-016, M-020, M-021\n**Produces:** `src/query/collision.rs`, `tests/host/collision_queries.rs`\n\n## Description\n\nTranslate public collision shapes, readiness/partial policy, traversal budgets, and result codecs into private collision plans, then encode `ContactFact` results. Keep the storage-to-collision-to-query dependency acyclic. This implements `TECH-013`, `TECH-017` under `REQ-010`, `REQ-019`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` collision query records\n- `docs/tdd/collision-and-presentation.md` ordering and overflow\n- Private `collision` fact interface\n- Authorization chain: `TECH-013`, `TECH-017` → `REQ-010`, `REQ-019`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Every non-point shape requires explicit candidate-brick and candidate-cell authorization within v1 maxima\n- [ ] Partial coverage never hides contacts inside a brick reported as inspected\n- [ ] Output overflow fails with no facts rather than truncating\n- [ ] Public codecs reject invalid tags, lengths, alignment, and stale revisions deterministically\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-023",
+    "title": "[system] Resolve bounded occupancy queries",
+    "labels": [
+      "system",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-020",
+      "M-021",
+      "M-022"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-009",
+        "TECH-013",
+        "TECH-017"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-010",
+        "REQ-013",
+        "REQ-019",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-011",
+        "C-007",
+        "AD-005",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** assisted\n**Depends on:** M-020, M-021, M-022\n**Produces:** `src/query/occupancy.rs`, `src/gpu/occupancy.rs`, `tests/gpu/occupancy_queries.rs`\n\n## Description\n\nImplement point, region, and collision-shape occupancy results as a separate query workload with explicit candidate traversal, readiness, and completeness. Occupancy may be reported only when every required sample is known. This implements `TECH-009`, `TECH-013`, `TECH-017` under `REQ-001`, `REQ-010`, `REQ-013`, `REQ-019`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` occupancy target and result contract\n- `docs/tdd/collision-and-presentation.md` matter authority\n- Sample/region query and private collision kernel\n- Authorization chain: `TECH-009`, `TECH-013`, `TECH-017` → `REQ-001`, `REQ-010`, `REQ-013`, `REQ-019`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Point and region occupancy matches exact material coverage at the acquired revisions\n- [ ] Shape occupancy uses the separately authorized collision traversal budgets\n- [ ] Any unavailable required sample yields wait/failure/partial status rather than false unoccupied\n- [ ] Traversal, hit, result, stale, and device-loss failures retain their distinct public outcomes\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-024",
+    "title": "[system] Capture bounded world and region snapshots",
+    "labels": [
+      "system",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-011",
+      "M-016",
+      "M-023"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-003",
+        "TECH-004",
+        "TECH-019"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-004",
+        "REQ-005",
+        "REQ-017",
+        "REQ-018",
+        "REQ-003",
+        "REQ-009",
+        "REQ-012",
+        "REQ-016"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-004",
+        "C-010",
+        "AD-003",
+        "C-005",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** assisted\n**Depends on:** M-011, M-016, M-023\n**Produces:** `src/query/snapshot.rs`, `src/gpu/snapshot.rs`, `tests/gpu/snapshot_queries.rs`\n\n## Description\n\nImplement bounded world/region snapshot queries for selected contents, exact volume revisions, placements, lifecycle states, and resumable gap metadata. This workload captures state summaries rather than sample arrays or collision facts. This implements `TECH-003`, `TECH-004`, `TECH-019` under `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`, `REQ-003`, `REQ-009`, `REQ-012`, `REQ-016`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` snapshot scope, contents, and result records\n- `docs/tdd/state-and-storage.md` snapshot pins\n- Long-lived snapshot-membership rules\n- Authorization chain: `TECH-003`, `TECH-004`, `TECH-019` → `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`, `REQ-003`, `REQ-009`, `REQ-012`, `REQ-016`\n\n## Acceptance Criteria\n\n- [ ] `All` pins then-live volume membership and explicit region scopes are sorted, nonoverlapping, and bounded\n- [ ] The result reports exact directory and per-volume revisions plus typed live/cold/failed/retired state\n- [ ] Output pressure returns a bounded resume token without silently omitting a requested member\n- [ ] Concurrent create, retire, move, and mutation fixtures retain one coherent pinned frontier\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-025",
+    "title": "[state] Retain bounded observations and gap snapshots",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-004",
+      "M-005",
+      "M-008",
+      "M-014",
+      "M-015"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-004",
+        "TECH-019",
+        "TECH-022"
+      ],
+      "design_requirements": [
+        "REQ-003",
+        "REQ-017",
+        "REQ-009",
+        "REQ-012",
+        "REQ-016"
+      ],
+      "authority": [
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-003",
+        "C-005",
+        "C-004"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** M-002, M-004, M-005, M-008, M-014, M-015\n**Produces:** `src/config/observation.rs`, `src/observation/mod.rs`, `src/observation/ring.rs`, `tests/host/observations.rs`\n\n## Description\n\nImplement the bounded world fact ring, subscription snapshot membership, independent cursors, append-time geometry envelopes, overflow gaps, and live/retired member resnapshots. Filtering must not reconstruct historical placement from the current directory. This implements `TECH-004`, `TECH-019`, `TECH-022` under `REQ-003`, `REQ-017`, `REQ-009`, `REQ-012`, `REQ-016`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` observation API\n- `docs/tdd/lifecycles.md` observation lifecycle\n- `docs/tdd/state-and-storage.md` directory revisions\n- Authorization chain: `TECH-004`, `TECH-019`, `TECH-022` → `REQ-003`, `REQ-017`, `REQ-009`, `REQ-012`, `REQ-016`\n\n## Acceptance Criteria\n\n- [ ] Each fact is charged with its fixed append-time local/world envelope and move facts retain old and new bounds\n- [ ] Subscriptions pin then-live IDs and do not expand until explicit resubscribe\n- [ ] Overwrite reports a gap and a bounded snapshot includes typed state for every pinned live or retired member\n- [ ] Empty history, sequence boundaries, payload pressure, and retired-member recovery have deterministic outcomes\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-026",
+    "title": "[integration] Encode nonadvancing GPU observation deltas",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-018",
+      "M-025"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-025"
+      ],
+      "design_requirements": [
+        "REQ-012",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-003",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-018, M-025\n**Produces:** `src/observation/gpu_delta.rs`, `src/gpu/observation_delta.rs`, `tests/gpu/observation_delta.rs`\n\n## Description\n\nFreeze and encode an independent subscriber cursor, accepted filter, closed frontier, status, and matching fact envelopes for asynchronous GPU inspection. The operation never advances the ordinary CPU cursor. This implements `TECH-025` under `REQ-012`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` GPU observation delta records\n- `docs/tdd/architecture.md` immutable extraction capture\n- wgpu staging and Naga ABI validation\n- Authorization chain: `TECH-025` → `REQ-012`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] The frontier represents `Empty` or a nonempty retained oldest/head pair exactly, with zero words reserved for empty\n- [ ] Complete, paged, overwritten, and unsupported-fact boundaries are distinct and blocked boundaries emit no effects\n- [ ] Gap recovery uses a bounded non-resuming subscription-state snapshot\n- [ ] GPU encoding and readback do not read or mutate the CPU subscriber cursor\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-027",
+    "title": "[component] Encode checkpoint format v2 manifests",
+    "labels": [
+      "component",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-003",
+      "M-004",
+      "M-005",
+      "M-009",
+      "M-014",
+      "M-015"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-012",
+        "TECH-014",
+        "TECH-024",
+        "TECH-038"
+      ],
+      "design_requirements": [
+        "REQ-014",
+        "REQ-003",
+        "REQ-018",
+        "REQ-021",
+        "REQ-008",
+        "REQ-015"
+      ],
+      "authority": [
+        "C-009",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-004",
+        "C-010",
+        "C-003",
+        "C-015",
+        "C-001"
+      ]
+    },
+    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** M-002, M-003, M-004, M-005, M-009, M-014, M-015\n**Produces:** `src/config/persistence.rs`, `src/persistence/manifest.rs`, `tests/persistence/manifest_codec.rs`, `tests/fixtures/checkpoint-v2-open.bin`, `tests/fixtures/checkpoint-v2-closed-low-epoch.bin`\n\n## Description\n\nImplement the TDD's explicitly selected custom binary checkpoint v2 manifest with fixed widths, checked offsets, whole-world membership, canonical names, tombstones, source references, integrity metadata, and an independent directory-allocator-closed flag. Do not use serde as the durable layout. This implements `TECH-012`, `TECH-014`, `TECH-024`, `TECH-038` under `REQ-014`, `REQ-003`, `REQ-018`, `REQ-021`, `REQ-008`, `REQ-015`.\n\n## Inputs\n\n- `docs/tdd/persistence.md` exact format-v2 manifest\n- `crc32fast` for record corruption checks\n- `blake3` for manifest integrity and source fingerprints\n- Authorization chain: `TECH-012`, `TECH-014`, `TECH-024`, `TECH-038` → `REQ-014`, `REQ-003`, `REQ-018`, `REQ-021`, `REQ-008`, `REQ-015`\n\n## Acceptance Criteria\n\n- [ ] The manifest codec validates magic, version, flags, reserved bits, counts, offsets, lengths, alignment, CRCs, and BLAKE3 before allocation\n- [ ] Whole-world stable identity, live and retired records, placements, revisions, names, and source lineage round-trip byte exactly\n- [ ] The lower-epoch closed golden fixture preserves closure independently of epoch value\n- [ ] Golden fixtures are read-only and incompatible, truncated, duplicate, reordered, and oversized manifests fail at the documented layer\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-028",
+    "title": "[component] Encode sparse full-brick scar chunks",
+    "labels": [
+      "component",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-003",
+      "M-009",
+      "M-027"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-008"
+      ],
+      "design_requirements": [
+        "REQ-014"
+      ],
+      "authority": [
+        "C-009"
+      ]
+    },
+    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** M-002, M-003, M-009, M-027\n**Produces:** `src/persistence/scar_codec.rs`, `tests/persistence/scar_codec.rs`, `tests/fixtures/checkpoint-v2-scar-chunk.bin`\n\n## Description\n\nImplement the separate format-v2 scar-chunk artifact for complete changed 8³ brick payloads, coordinates, revisions, compression tag, checksums, and exact reconstruction identity. Untouched base bricks and presentation artifacts are never encoded. This implements `TECH-008` under `REQ-014`.\n\n## Inputs\n\n- `docs/tdd/persistence.md` exact scar chunk format\n- `crc32fast` per-record validation\n- `blake3` chunk integrity\n- Authorization chain: `TECH-008` → `REQ-014`\n\n## Acceptance Criteria\n\n- [ ] Every encoded scar contains exactly one full committed brick payload with checked coordinate and revision fields\n- [ ] Malformed compression tags, lengths, offsets, CRCs, hashes, duplicate coordinates, and trailing data fail before scar installation\n- [ ] Sparse multi-brick chunks round-trip semantically without serializing untouched external base bricks\n- [ ] The golden scar fixture is read-only and codec changes require an explicit migration test\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-029",
+    "title": "[integration] Commit checkpoints transactionally",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-007",
+      "M-008",
+      "M-011",
+      "M-025",
+      "M-027",
+      "M-028"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-008",
+        "TECH-012"
+      ],
+      "design_requirements": [
+        "REQ-014"
+      ],
+      "authority": [
+        "C-009"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-007, M-008, M-011, M-025, M-027, M-028\n**Produces:** `src/persistence/store.rs`, `src/persistence/mod.rs`, `tests/persistence/store_transaction.rs`\n\n## Description\n\nImplement whole-world checkpoint capture, bounded persistence-worker transport, chunk staging, durable store transaction ordering, checkpoint frontiers, and dirty-scar release only after durable commit. This implements `TECH-008`, `TECH-012` under `REQ-014`.\n\n## Inputs\n\n- `docs/tdd/persistence.md` store transaction and dirty coverage\n- `docs/tdd/public-api.md` checkpoint store port\n- Bounded native worker queues and codec v2\n- Authorization chain: `TECH-008`, `TECH-012` → `REQ-014`\n\n## Acceptance Criteria\n\n- [ ] A checkpoint pins one coherent whole-world frontier while allowing later revisions to remain dirty\n- [ ] Manifest publication occurs only after every referenced chunk is durably committed\n- [ ] Store rejection, panic, cancellation-before-preparing, I/O failure, and shutdown leave prior durable state usable\n- [ ] Dirty scars remain pinned until the exact covering checkpoint commits and are never discarded under pressure\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-030",
+    "title": "[system] Restore external-base worlds from checkpoints",
+    "labels": [
+      "system",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-006",
+      "M-007",
+      "M-009",
+      "M-015",
+      "M-017",
+      "M-019",
+      "M-027",
+      "M-029"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-006",
+        "TECH-008",
+        "TECH-012",
+        "TECH-038"
+      ],
+      "design_requirements": [
+        "REQ-005",
+        "REQ-008",
+        "REQ-021",
+        "REQ-014",
+        "REQ-003",
+        "REQ-015",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-010",
+        "AD-003",
+        "C-001",
+        "C-003",
+        "C-015",
+        "C-009",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-004"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** assisted\n**Depends on:** M-006, M-007, M-009, M-015, M-017, M-019, M-027, M-029\n**Produces:** `src/persistence/restore.rs`, `tests/persistence/restore_external.rs`\n\n## Description\n\nImplement bounded manifest/chunk reads, whole-world membership validation, source-lineage and reconstruction-fingerprint checks, base materialization plus scar replay, and operational-state restoration for externally sourced volumes. This implements `TECH-006`, `TECH-008`, `TECH-012`, `TECH-038` under `REQ-005`, `REQ-008`, `REQ-021`, `REQ-014`, `REQ-003`, `REQ-015`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/persistence.md` restore validation and base-plus-scar materialization\n- Public `CheckpointReader` and bounded content source\n- Checkpoint v2 codec\n- Authorization chain: `TECH-006`, `TECH-008`, `TECH-012`, `TECH-038` → `REQ-005`, `REQ-008`, `REQ-021`, `REQ-014`, `REQ-003`, `REQ-015`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] Restore requires exact saved live-volume membership and accepts extra registered materials only when no saved sample refers to them\n- [ ] Base mismatch, missing chunks, corrupt data, stale source output, and scar replay failure publish no ready world\n- [ ] Restored regions begin cold with zero runtime leases and rematerialize through public interest, sample/region query, and ordinary mutation paths\n- [ ] Closed checkpoints restore to `DirectoryEpochExhausted` while ordinary cold materialization remains usable\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-031",
+    "title": "[ui] Derive dual-contoured surfaces from matter",
+    "labels": [
+      "ui",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-004",
+      "M-009",
+      "M-010",
+      "M-011"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-009"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-010",
+        "REQ-013",
+        "REQ-019"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-011",
+        "C-007",
+        "AD-005"
+      ]
+    },
+    "body": "**Category:** ui\n**Automation:** assisted\n**Depends on:** M-003, M-004, M-009, M-010, M-011\n**Produces:** `src/presentation/contour.rs`, `src/gpu/contour.rs`, `assets/shaders/dual_contour.wgsl`, `tests/gpu/dual_contour.rs`\n\n## Description\n\nImplement bounded per-brick GPU dual contouring over the committed presentation source field, with material-selected smooth or feature-preserving treatment and explicit mesh overflow. Derived geometry never becomes occupancy authority. This implements `TECH-009` under `REQ-001`, `REQ-010`, `REQ-013`, `REQ-019`.\n\n## Inputs\n\n- `docs/tdd/collision-and-presentation.md` presentation source field and dual contouring\n- Material surface descriptors\n- wgpu 29 and Naga 29\n- Authorization chain: `TECH-009` → `REQ-001`, `REQ-010`, `REQ-013`, `REQ-019`\n\n## Acceptance Criteria\n\n- [ ] Surface derivation samples the documented brick halo at one source revision and placement\n- [ ] Empty, uniform, sharp constructed, smooth organic, deep-volume, and edited cut-face fixtures produce bounded valid meshes\n- [ ] Vertex/index overflow is typed and never installs a truncated mesh\n- [ ] Naga validation and real-GPU diagnostic readback pass without consulting collision meshes as truth\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-032",
+    "title": "[state] Manage presentation jobs and stale artifacts",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-005",
+      "M-011",
+      "M-013",
+      "M-014",
+      "M-018",
+      "M-031"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-009",
+        "TECH-020"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-010",
+        "REQ-013",
+        "REQ-019",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-011",
+        "C-007",
+        "AD-005",
+        "C-004",
+        "C-010"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-005, M-011, M-013, M-014, M-018, M-031\n**Produces:** `src/config/presentation.rs`, `src/presentation/lifecycle.rs`, `src/presentation/pools.rs`, `tests/gpu/presentation_lifecycle.rs`\n\n## Description\n\nImplement bounded dirty markers, artifact/job/mesh pools, halo invalidation, fair draining, cancellation, stale labeling, and revision/placement checks at installation. Reserve one dirty marker per live volume independently of ordinary dirty records. This implements `TECH-009`, `TECH-020` under `REQ-001`, `REQ-010`, `REQ-013`, `REQ-019`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/collision-and-presentation.md` presentation resource pressure\n- `docs/tdd/lifecycles.md` presentation lifecycle\n- Configured presentation pools\n- Authorization chain: `TECH-009`, `TECH-020` → `REQ-001`, `REQ-010`, `REQ-013`, `REQ-019`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] A mutation dirties the exact affected artifact halo and coalesces duplicate work without losing eventual rebuild\n- [ ] Installation succeeds only when source revision and placement still match; policy may retain only explicitly stale-labeled prior output\n- [ ] Pool pressure and failures affect presentation status only and never material truth\n- [ ] The 27-artifact local and 13,824-artifact maximum-command workloads drain fairly within configured bounds\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-033",
+    "title": "[integration] Register dressing and install Bevy render entities",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-005",
+      "M-017",
+      "M-018",
+      "M-031",
+      "M-032"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-010",
+        "TECH-015"
+      ],
+      "design_requirements": [
+        "REQ-013",
+        "REQ-020"
+      ],
+      "authority": [
+        "C-011",
+        "C-012",
+        "C-013"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-003, M-005, M-017, M-018, M-031, M-032\n**Produces:** `src/presentation/dressing.rs`, `src/bevy/presentation.rs`, `tests/gpu/dressing_install.rs`\n\n## Description\n\nImplement builder-time dressing registration, exact material-key filters, stable style keys, bounded descriptors and instance pools, plus native Bevy render-entity installation from completed artifacts. Dressing is derived and absent from persistence. This implements `TECH-010`, `TECH-015` under `REQ-013`, `REQ-020`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` presentation API\n- `docs/tdd/collision-and-presentation.md` dressing and rendering ownership\n- Bevy 0.19 asset handles and renderer resources\n- Authorization chain: `TECH-010`, `TECH-015` → `REQ-013`, `REQ-020`\n\n## Acceptance Criteria\n\n- [ ] Duplicate/unknown style keys, invalid filters, and descriptors exceeding configured pools fail builder validation\n- [ ] One style may serve several materials without embedding style identity into material truth\n- [ ] Completed instances install only at matching source revision and placement and remain disposable\n- [ ] No standalone, WebGPU, WebGL/GLES, or second-device rendering path is exposed\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-034",
+    "title": "[system] Register ordered behavior participants",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-004",
+      "M-005",
+      "M-008",
+      "M-011",
+      "M-012",
+      "M-016",
+      "M-021"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-027",
+        "TECH-028"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-018",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-004",
+        "C-010",
+        "C-003",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-004, M-005, M-008, M-011, M-012, M-016, M-021\n**Produces:** `src/config/behavior.rs`, `src/behavior/registry.rs`, `src/behavior/frontier.rs`, `src/behavior/mod.rs`, `tests/host/behavior_registry.rs`\n\n## Description\n\nImplement builder-time CPU/GPU participant descriptors, stable-key ordering DAG validation, access planning, one-active-tick serialization, ordinary-command frontier draining, and separately authorized participant views pinned to one committed frontier. This implements `TECH-027`, `TECH-028` under `REQ-006`, `REQ-018`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` scheduled behavior hook\n- `docs/tdd/behavior-scheduling.md` registration/planning/access\n- Stable topological sort and storage snapshot interface\n- Authorization chain: `TECH-027`, `TECH-028` → `REQ-006`, `REQ-018`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Unknown keys, duplicate keys, cycles, illegal access, and aggregate registration excess fail deterministically\n- [ ] Stable-key tie order makes every valid DAG plan reproducible\n- [ ] One tick drains its captured pre-frontier work and blocks post-frontier publication until terminal behavior publication/failure\n- [ ] Each participant sees only its authorized records from the same pinned frontier\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-035",
+    "title": "[state] Preflight bounded participant ingress",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-005",
+      "M-008",
+      "M-018",
+      "M-034"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-031",
+        "TECH-033"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-018",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-004",
+        "C-010",
+        "C-003",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-005, M-008, M-018, M-034\n**Produces:** `src/behavior/ingress.rs`, `src/gpu/behavior_ingress.rs`, `tests/gpu/behavior_ingress.rs`\n\n## Description\n\nImplement one immutable participant-addressed current input per tick, complete record/host/upload reservation, synchronous shape validation, stable ordered GPU upload, and confirmation before invoking any planner or adapter. This implements `TECH-031`, `TECH-033` under `REQ-006`, `REQ-018`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/behavior-scheduling.md` ingress and GPU preflight\n- `docs/tdd/public-api.md` tick request records\n- Bounded staging/device transport\n- Authorization chain: `TECH-031`, `TECH-033` → `REQ-006`, `REQ-018`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Unknown/stale participants, duplicates, input for `None`, missing required input, and size/capacity excess reject synchronously with the request unchanged\n- [ ] Cancellation before preflight releases every ingress permit without consumer execution\n- [ ] All GPU uploads complete and validate before the first planner sees the same immutable bytes\n- [ ] Upload failure reports the addressed participant as skipped and all unaffected participants as not run; device loss marks all not run\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-036",
+    "title": "[integration] Execute synchronous CPU behavior adapters",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-020",
+      "M-021",
+      "M-034",
+      "M-035"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-027",
+        "TECH-028",
+        "TECH-032"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-018",
+        "REQ-021",
+        "REQ-019"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-004",
+        "C-010",
+        "C-003",
+        "C-015",
+        "C-007",
+        "C-016",
+        "AD-005"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-020, M-021, M-034, M-035\n**Produces:** `src/behavior/cpu.rs`, `tests/host/cpu_behavior.rs`\n\n## Description\n\nImplement borrowed CPU tick views, exact proposal sinks, the pre-reserved collision helper sink, current input, incoming handoffs, prior feedback, and synchronous main-thread callback execution while the tick frontier is held. This implements `TECH-027`, `TECH-028`, `TECH-032` under `REQ-006`, `REQ-018`, `REQ-021`, `REQ-019`.\n\n## Inputs\n\n- `docs/tdd/behavior-scheduling.md` CPU adapter execution\n- `docs/tdd/architecture.md` main-world coordinator\n- Private collision fact kernel and command transaction builder\n- Authorization chain: `TECH-027`, `TECH-028`, `TECH-032` → `REQ-006`, `REQ-018`, `REQ-021`, `REQ-019`\n\n## Acceptance Criteria\n\n- [ ] CPU callbacks receive no ordinary query receipt, storage handle, or owned unbounded result\n- [ ] Collision helper facts borrow the exact pre-reserved sink and cannot bypass tick accounting\n- [ ] Callback panic or invalid proposal becomes the specified participant/tick failure without direct publication\n- [ ] Adapter working state remains consumer-owned across rejection, checkpointing, shutdown, and recovery\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-037",
+    "title": "[component] Validate Scheduled ABI v2 wire layouts",
+    "labels": [
+      "component",
+      "auto"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-004",
+      "M-005",
+      "M-034",
+      "M-035"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-028",
+        "TECH-029",
+        "TECH-030",
+        "TECH-032"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-018",
+        "REQ-021",
+        "REQ-012",
+        "REQ-019"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-004",
+        "C-010",
+        "C-003",
+        "C-015",
+        "C-007",
+        "C-016",
+        "AD-005"
+      ]
+    },
+    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** M-003, M-004, M-005, M-034, M-035\n**Produces:** `src/gpu/abi/scheduled.rs`, `assets/shaders/scheduled_abi_v2.wgsl`, `tests/host/scheduled_abi.rs`\n\n## Description\n\nDefine and validate the exact six-binding Scheduled ABI v2 base records, explicit low/high `u32` pairs for logical 64-bit values, participant-local view metadata, proposal records, current input, handoffs, and 64-byte terminal feedback. This implements `TECH-028`, `TECH-029`, `TECH-030`, `TECH-032` under `REQ-006`, `REQ-018`, `REQ-021`, `REQ-012`, `REQ-019`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` scheduled behavior ABI\n- `docs/tdd/behavior-scheduling.md` Scheduled GPU ABI v2\n- bytemuck layout assertions and official Naga 29 parser/validator\n- Authorization chain: `TECH-028`, `TECH-029`, `TECH-030`, `TECH-032` → `REQ-006`, `REQ-018`, `REQ-021`, `REQ-012`, `REQ-019`\n\n## Acceptance Criteria\n\n- [ ] Rust and WGSL field order, scalar type, offset, alignment, size, stride, binding usage, and effective range agree exactly\n- [ ] Group 0 has exactly six bindings and exposes neither raw renderer/storage resources nor an aggregate participant view\n- [ ] Every tick disposition, abort cause, conflict identity, stage, generation, notification state, flag, and failed-hook count round-trips losslessly\n- [ ] Malformed WGSL, illegal tags/flags, undersized ranges, overflowed word pairs, and incompatible layouts fail at the expected validation layer\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-038",
+    "title": "[integration] Enforce the restricted GPU behavior resource factory",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-005",
+      "M-017",
+      "M-018",
+      "M-034",
+      "M-037"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-028",
+        "TECH-029",
+        "TECH-032"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-018",
+        "REQ-021",
+        "REQ-019"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-004",
+        "C-010",
+        "C-003",
+        "C-015",
+        "C-007",
+        "C-016",
+        "AD-005"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-005, M-017, M-018, M-034, M-037\n**Produces:** `src/config/behavior.rs`, `src/gpu/behavior_factory.rs`, `src/bevy/behavior.rs`, `tests/gpu/behavior_factory.rs`\n\n## Description\n\nImplement generation-bound opaque GPU resources, restricted usage classes, a counted encoder, per-adapter maxima, and the aggregate live-byte semaphore. Moria owns every allocation, dependency, command encoder, and submission. This implements `TECH-028`, `TECH-029`, `TECH-032` under `REQ-006`, `REQ-018`, `REQ-021`, `REQ-019`.\n\n## Inputs\n\n- `docs/tdd/behavior-scheduling.md` GPU resource and encoder contract\n- Bevy renderer-owned wgpu 29 resources\n- Configured adapter/factory count and byte pools\n- Authorization chain: `TECH-028`, `TECH-029`, `TECH-032` → `REQ-006`, `REQ-018`, `REQ-021`, `REQ-019`\n\n## Acceptance Criteria\n\n- [ ] The public adapter seam cannot obtain `RenderDevice`, queue, raw wgpu buffers, raw encoders, authority buffers, or another participant's resource\n- [ ] Logical bytes are acquired before renderer allocation and renderer OOM returns the permit without registering a handle\n- [ ] Usage validation permits `COPY_DST` only where selected and rejects binding/dispatch/range excess before encoding\n- [ ] Bytes remain charged through dependent handles and last GPU use, and terminal-generation teardown reaches zero before recreation\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-039",
+    "title": "[integration] Dispatch isolated GPU behavior participants",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-011",
+      "M-018",
+      "M-034",
+      "M-035",
+      "M-037",
+      "M-038"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-027",
+        "TECH-028",
+        "TECH-032"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-018",
+        "REQ-021",
+        "REQ-019"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-004",
+        "C-010",
+        "C-003",
+        "C-015",
+        "C-007",
+        "C-016",
+        "AD-005"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-011, M-018, M-034, M-035, M-037, M-038\n**Produces:** `src/gpu/behavior_dispatch.rs`, `assets/shaders/behavior_support.wgsl`, `tests/gpu/behavior_dispatch.rs`\n\n## Description\n\nBuild separately filtered GPU exports from one pinned frontier, bind each participant's input/handoff/feedback and write-only targets, encode within declared dispatch limits, and preserve GPU-only authority flow without mandatory readback. This implements `TECH-027`, `TECH-028`, `TECH-032` under `REQ-006`, `REQ-018`, `REQ-021`, `REQ-019`.\n\n## Inputs\n\n- `docs/tdd/behavior-scheduling.md` GPU adapter execution\n- Restricted factory and counted encoder\n- Scheduled ABI v2\n- Authorization chain: `TECH-027`, `TECH-028`, `TECH-032` → `REQ-006`, `REQ-018`, `REQ-021`, `REQ-019`\n\n## Acceptance Criteria\n\n- [ ] Each participant export contains only authorized volume/cell records with metric/domain data and the common pinned frontier\n- [ ] Consecutive GPU adapters execute in declared order without seeing prior proposals as committed matter\n- [ ] Dispatch counts, workgroups, ranges, and output slots are prebounded and over-dispatch guards logical extents\n- [ ] Purpose-built GPU proof adapters complete without authority-path CPU readback or access to Moria storage\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-040",
+    "title": "[state] Transfer handoffs across processors",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-018",
+      "M-034",
+      "M-035",
+      "M-036",
+      "M-037",
+      "M-038",
+      "M-039"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-028",
+        "TECH-029"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-018",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-004",
+        "C-010",
+        "C-003",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-018, M-034, M-035, M-036, M-037, M-038, M-039\n**Produces:** `src/behavior/transport.rs`, `src/gpu/behavior_transport.rs`, `tests/gpu/behavior_transport.rs`\n\n## Description\n\nImplement pre-reserved ordering handoffs for CPU-to-GPU, GPU-to-CPU, and same-processor edges. Ordering-only edges allocate no payload; every processor transition has an owned bounded upload/copy/map/decode state machine. This implements `TECH-028`, `TECH-029` under `REQ-006`, `REQ-018`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/behavior-scheduling.md` processor handoff contract\n- Bounded upload/copy/map/decode lifecycle\n- Scheduled ABI handoff records\n- Authorization chain: `TECH-028`, `TECH-029` → `REQ-006`, `REQ-018`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Every declared handoff reserves exact host/device/staging/map bytes before execution\n- [ ] GPU-to-CPU views are read only after completion/map and dropped before unmap; CPU-to-GPU upload completes before successor dispatch\n- [ ] Same-processor handoffs preserve declared order without unnecessary readback or upload\n- [ ] Cancellation, mapping, decoding, device loss, and producer failure yield the closed transition outcomes and reclaim safely\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-041",
+    "title": "[state] Deliver lossless next-tick behavior feedback",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-037",
+      "M-040"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-028",
+        "TECH-029",
+        "TECH-030"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-018",
+        "REQ-021",
+        "REQ-012"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-004",
+        "C-010",
+        "C-003",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-037, M-040\n**Produces:** `src/behavior/feedback.rs`, `src/gpu/behavior_feedback.rs`, `tests/gpu/behavior_feedback.rs`\n\n## Description\n\nImplement double-buffered, read-only next-tick participant feedback and the exact mapping from closed tick/participant reports to the fixed 64-byte wire record. Feedback never repeats snapshot vectors or appears in the producing tick. This implements `TECH-028`, `TECH-029`, `TECH-030` under `REQ-006`, `REQ-018`, `REQ-021`, `REQ-012`.\n\n## Inputs\n\n- `docs/tdd/behavior-scheduling.md` feedback lifetime and mapping\n- `docs/tdd/public-api.md` completed behavior reports\n- Validated Scheduled ABI v2 feedback record\n- Authorization chain: `TECH-028`, `TECH-029`, `TECH-030` → `REQ-006`, `REQ-018`, `REQ-021`, `REQ-012`\n\n## Acceptance Criteria\n\n- [ ] Every terminal disposition and abort cause maps losslessly, including both conflict participants, transition stage, generation, notification outcome, and failed-hook count\n- [ ] Tick-wide and participant-specific revision-change bits are set independently according to selected/published volume membership\n- [ ] Proposal indices remain stable so adapters can correlate with their own prior snapshots without Moria storing snapshot vectors\n- [ ] Device loss, missed tick, and double-buffer reuse cannot relabel or expose partial feedback\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-042",
+    "title": "[state] Compose and publish scheduled proposals",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-012",
+      "M-013",
+      "M-018",
+      "M-025",
+      "M-034",
+      "M-036",
+      "M-039",
+      "M-040",
+      "M-041"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-027",
+        "TECH-028",
+        "TECH-030"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-018",
+        "REQ-021",
+        "REQ-012"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-004",
+        "C-010",
+        "C-003",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-012, M-013, M-018, M-025, M-034, M-036, M-039, M-040, M-041\n**Produces:** `src/behavior/composition.rs`, `src/gpu/behavior_compose.rs`, `tests/gpu/behavior_composition.rs`\n\n## Description\n\nValidate complete CPU/GPU proposals, resolve overlaps by declared whole-proposal policy, prepare selected per-volume transactions, publish at most one behavior revision per affected volume, and produce closed participant/tick reports. This implements `TECH-027`, `TECH-028`, `TECH-030` under `REQ-006`, `REQ-018`, `REQ-021`, `REQ-012`.\n\n## Inputs\n\n- `docs/tdd/behavior-scheduling.md` admission and composition\n- Ordinary command transaction builder and observation owner\n- Scheduled feedback ABI\n- Authorization chain: `TECH-027`, `TECH-028`, `TECH-030` → `REQ-006`, `REQ-018`, `REQ-021`, `REQ-012`\n\n## Acceptance Criteria\n\n- [ ] `RejectLater`, `ReplaceEarlier`, and `FailTick` act on whole proposals in stable declared order\n- [ ] All participants read the original frontier; no selected proposal becomes visible before the publication phase\n- [ ] Preparation failure, tick-wide abort, no-selected-effect, participant publication, and post-publication report-hook failure map exactly without undoing publication\n- [ ] Invalid, stale, conflicting, or over-capacity proposals cannot bypass normal validation, revision, scar, observation, or receipt rules\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-043",
+    "title": "[state] Reserve component-extraction children and identities",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-002",
+      "M-005",
+      "M-014",
+      "M-015",
+      "M-034",
+      "M-037",
+      "M-042"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-034",
+        "TECH-037"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-011",
+        "REQ-017",
+        "REQ-019",
+        "REQ-007",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-005",
+        "AD-002",
+        "C-003",
+        "C-007",
+        "C-016",
+        "AD-005",
+        "C-015",
+        "C-004",
+        "C-010"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** M-002, M-005, M-014, M-015, M-034, M-037, M-042\n**Produces:** `src/config/behavior.rs`, `src/behavior/extraction_reservation.rs`, `tests/host/extraction_reservation.rs`\n\n## Description\n\nPre-reserve every possible extraction proposal, child identity, live/lifetime record, page/brick/scar/provenance record, receipt, directory range, and byte; derive collision-resistant candidate stable keys; and expose the complete dense piece-handle-to-final-ID mapping before adapter execution. This implements `TECH-034`, `TECH-037` under `REQ-006`, `REQ-011`, `REQ-017`, `REQ-019`, `REQ-007`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/adapter-substrate-contracts.md` capability and extraction reservation\n- `docs/tdd/public-api.md` extraction descriptors\n- Checked aggregate configuration and directory epoch allocator\n- Authorization chain: `TECH-034`, `TECH-037` → `REQ-006`, `REQ-011`, `REQ-017`, `REQ-019`, `REQ-007`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] Legal piece handles are exactly the descriptor-bounded dense range and every proposal slot has a preassigned final `VolumeId`\n- [ ] Registration checked-sums proposal-count products and all backing pool requirements\n- [ ] Candidate stable-key retries are deterministic and only published keys consume lifetime records\n- [ ] Admission or cancellation failure releases the entire reservation without invoking adapter code or leaking identities\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-044",
+    "title": "[state] Publish atomic source-bound component extraction",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-009",
+      "M-010",
+      "M-011",
+      "M-013",
+      "M-015",
+      "M-039",
+      "M-042",
+      "M-043"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-034",
+        "TECH-037"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-011",
+        "REQ-017",
+        "REQ-019",
+        "REQ-007",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-005",
+        "AD-002",
+        "C-003",
+        "C-007",
+        "C-016",
+        "AD-005",
+        "C-015",
+        "C-004",
+        "C-010"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-009, M-010, M-011, M-013, M-015, M-039, M-042, M-043\n**Produces:** `src/behavior/extraction.rs`, `src/gpu/extraction.rs`, `assets/shaders/extract_components.wgsl`, `tests/gpu/component_extraction.rs`\n\n## Description\n\nValidate GPU-labeled samples from one pinned source, build the changed source and persistent children in unreferenced storage, conserve ownership, and publish the complete alternate directory with one epoch gate. Arbitrary scheduled creation remains impossible. This implements `TECH-034`, `TECH-037` under `REQ-006`, `REQ-011`, `REQ-017`, `REQ-019`, `REQ-007`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/adapter-substrate-contracts.md` extraction conservation and publication\n- Scheduled ABI v2 canonical child map\n- wgpu ordered dispatch and Naga validation\n- Authorization chain: `TECH-034`, `TECH-037` → `REQ-006`, `REQ-011`, `REQ-017`, `REQ-019`, `REQ-007`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] Every source sample remains in the source, transfers to exactly one child, or is explicitly reported removed; duplication and implicit loss reject the whole proposal\n- [ ] Child origin is the lexicographically smallest assigned source cell and placement preserves every transferred world-space cell box\n- [ ] Readers observe the old directory or the complete new source/children directory and child IDs are usable by GPU adapter state without CPU authority readback\n- [ ] Validation, allocation, device loss, duplicate label, missing assignment, and publication failure leave the old root current and reclaim all unpublished resources\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-045",
+    "title": "[component] Persist extracted child provenance and derived bases",
+    "labels": [
+      "component",
+      "auto"
+    ],
+    "depends_on": [
+      "M-027",
+      "M-029",
+      "M-030",
+      "M-043",
+      "M-044"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-034",
+        "TECH-037"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-011",
+        "REQ-017",
+        "REQ-019",
+        "REQ-007",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-005",
+        "AD-002",
+        "C-003",
+        "C-007",
+        "C-016",
+        "AD-005",
+        "C-015",
+        "C-004",
+        "C-010"
+      ]
+    },
+    "body": "**Category:** component\n**Automation:** auto\n**Depends on:** M-027, M-029, M-030, M-043, M-044\n**Produces:** `src/persistence/derived.rs`, `tests/persistence/derived_children.rs`, `tests/fixtures/checkpoint-v2-derived-child.bin`\n\n## Description\n\nExtend checkpoint v2's selected derived-child records with source provenance and complete sparse derived bases, then restore/rematerialize them without a consumer `BaseContentSource`. Keep uncheckpointed derived content dirty. This implements `TECH-034`, `TECH-037` under `REQ-006`, `REQ-011`, `REQ-017`, `REQ-019`, `REQ-007`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/adapter-substrate-contracts.md` extraction persistence\n- `docs/tdd/persistence.md` derived volume format and restore\n- Checkpoint v2 codec\n- Authorization chain: `TECH-034`, `TECH-037` → `REQ-006`, `REQ-011`, `REQ-017`, `REQ-019`, `REQ-007`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] Published children persist stable identity, frame, placement, revisions, source provenance, and their complete sparse derived base\n- [ ] Derived bases round-trip semantically and rebuild device-specific sparse state without external source callbacks\n- [ ] Uncheckpointed derived bytes remain dirty and cause truthful unrecoverable device-loss behavior\n- [ ] Corrupt provenance, incomplete base coverage, duplicate child identity, and membership mismatch fail restore without partial readiness\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-046",
+    "title": "[state] Publish bounded GPU placement streams",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-004",
+      "M-005",
+      "M-011",
+      "M-015",
+      "M-034",
+      "M-037",
+      "M-039",
+      "M-042"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-035",
+        "TECH-037"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-009",
+        "REQ-019",
+        "REQ-007",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-004",
+        "C-007",
+        "C-016",
+        "AD-005",
+        "C-015",
+        "C-010"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-004, M-005, M-011, M-015, M-034, M-037, M-039, M-042\n**Produces:** `src/config/behavior.rs`, `src/behavior/placement.rs`, `src/gpu/placement.rs`, `assets/shaders/placement_stream.wgsl`, `tests/gpu/placement_stream.rs`\n\n## Description\n\nImplement the one-per-participant compact placement stream, behavior-only `VolumeRecords` export, GPU validation, alternate-root construction, one directory-epoch publication, and per-volume revision advancement. Region and fidelity semantics remain opaque adapter data. This implements `TECH-035`, `TECH-037` under `REQ-006`, `REQ-009`, `REQ-019`, `REQ-007`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/adapter-substrate-contracts.md` placement stream\n- `docs/tdd/behavior-scheduling.md` scheduled placement integration\n- Portable fixed-dispatch proof bounds\n- Authorization chain: `TECH-035`, `TECH-037` → `REQ-006`, `REQ-009`, `REQ-019`, `REQ-007`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] One enabled maximum covers one stream/root transaction and is not multiplied by generic proposal slots\n- [ ] Records are unique, dynamic-volume-only, finite, revision-bound, initialized, and within declared count/byte limits\n- [ ] All updated placements publish under one new directory root while each affected volume advances its own revision exactly once\n- [ ] Disconnected/overlapping opaque-region proof data classifies each persistent body once and continued coarse movement keeps placements fresh at the fixed 65,536-body dispatch bound\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-047",
+    "title": "[integration] Deliver bounded opaque GPU egress",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-005",
+      "M-008",
+      "M-018",
+      "M-035",
+      "M-037",
+      "M-038",
+      "M-039",
+      "M-042"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-036",
+        "TECH-037"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-012",
+        "REQ-021",
+        "REQ-007",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-003",
+        "C-015",
+        "C-004",
+        "C-010"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-005, M-008, M-018, M-035, M-037, M-038, M-039, M-042\n**Produces:** `src/config/behavior.rs`, `src/behavior/egress.rs`, `src/gpu/egress.rs`, `tests/gpu/behavior_egress.rs`\n\n## Description\n\nImplement optional fixed-stride adapter-owned egress in its dedicated Scheduled ABI v2 subrange, atomic record allocation, initialized-prefix validation, asynchronous ordered staging/map/decode, and independent typed receipts. Publication never waits for CPU interpretation. This implements `TECH-036`, `TECH-037` under `REQ-006`, `REQ-012`, `REQ-021`, `REQ-007`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/adapter-substrate-contracts.md` opaque egress\n- `docs/tdd/lifecycles.md` asynchronous GPU extension lifecycle\n- wgpu portable staging readback\n- Authorization chain: `TECH-036`, `TECH-037` → `REQ-006`, `REQ-012`, `REQ-021`, `REQ-007`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] Zero records returns ready-empty, exact capacity delivers every initialized record, and one-over/overflow fails with no prefix\n- [ ] Receipts carry tick, participant, correlation, and schema identity in adapter tick order\n- [ ] Device, staging, host, map, and receipt capacity is acquired before execution and released only after last GPU use, view drop/unmap, and result drop\n- [ ] Cancellation, shutdown, mapping, decode, and device loss remain distinct from successful zero output and from published matter\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-048",
+    "title": "[integration] Register and validate asynchronous WGSL extensions",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-003",
+      "M-005",
+      "M-008",
+      "M-017"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-007",
+        "TECH-016"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-011",
+        "REQ-019"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-005",
+        "AD-002",
+        "C-007",
+        "C-016",
+        "AD-005"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-003, M-005, M-008, M-017\n**Produces:** `src/config/extension.rs`, `src/gpu/extension_registry.rs`, `src/gpu/abi/extension.rs`, `tests/host/extension_validation.rs`\n\n## Description\n\nImplement bounded startup/runtime extension registration, the closed Extension ABI v1 layouts and kinds, entry-point/workgroup caps, opaque handles/state, and shader validation. Use the official matching Naga parser/validator rather than a home-grown WGSL parser. This implements `TECH-007`, `TECH-016` under `REQ-006`, `REQ-011`, `REQ-019`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` Extension ABI v1\n- `docs/tdd/architecture.md` extension trust boundary\n- Naga 29 parser and semantic validator\n- Authorization chain: `TECH-007`, `TECH-016` → `REQ-006`, `REQ-011`, `REQ-019`\n\n## Acceptance Criteria\n\n- [ ] Every Rust/WGSL packet, snapshot, inspection, state, diagnostic, candidate, and patch-run layout has exact offset/size/stride assertions\n- [ ] Registration accepts only one allowed compute entry point and the closed binding schema with no internal-storage binding\n- [ ] Malformed/invalid WGSL, illegal bindings, nonuniform barriers, unsupported capability, oversized workgroups, and byte/count excess fail at the expected layer\n- [ ] Registered WGSL and entry-point bytes remain charged within per-extension and aggregate pools\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-049",
+    "title": "[integration] Build asynchronous material inspection packets",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-011",
+      "M-018",
+      "M-020",
+      "M-048"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-007",
+        "TECH-016"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-011",
+        "REQ-019"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-005",
+        "AD-002",
+        "C-007",
+        "C-016",
+        "AD-005"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-011, M-018, M-020, M-048\n**Produces:** `src/gpu/extension_packet.rs`, `assets/shaders/extension_packet.wgsl`, `tests/gpu/extension_packets.rs`\n\n## Description\n\nCapture bounded material/query inputs at exact revisions, encode fixed ABI v1 sample/region inspection packets in extension-owned buffers, and dispatch the registered shader without exposing sparse storage. This implements `TECH-007`, `TECH-016` under `REQ-006`, `REQ-011`, `REQ-019`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` asynchronous material WGSL jobs\n- `docs/tdd/lifecycles.md` extension lifecycle\n- Public sample/region query capture and wgpu ordered dispatch\n- Authorization chain: `TECH-007`, `TECH-016` → `REQ-006`, `REQ-011`, `REQ-019`\n\n## Acceptance Criteria\n\n- [ ] Packets contain only authorized copied samples and exact captured revisions, never page tables, brick pools, or raw buffers\n- [ ] Every input, snapshot, state, diagnostic, dispatch, output, and staging byte is admitted before execution\n- [ ] Stale, cold, partial, overflowed, cancelled, and device-lost captures produce the closed extension outcomes\n- [ ] Real GPU readback matches host packet fixtures for empty, deep, overlapping, stale, and maximum-capacity material inputs\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-050",
+    "title": "[integration] Build asynchronous observation-delta packets",
+    "labels": [
+      "integration",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-026",
+      "M-048",
+      "M-049"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-007",
+        "TECH-016",
+        "TECH-025"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-011",
+        "REQ-019",
+        "REQ-012",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-005",
+        "AD-002",
+        "C-007",
+        "C-016",
+        "AD-005",
+        "C-003",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** assisted\n**Depends on:** M-026, M-048, M-049\n**Produces:** `src/gpu/extension_observation.rs`, `assets/shaders/extension_observation.wgsl`, `tests/gpu/extension_observation.rs`\n\n## Description\n\nCapture a subscriber's independent cursor/filter/frontier and encode the closed Extension ABI v1 observation-delta workload. Preserve complete, paged, overwritten, unsupported-fact, and empty-frontier status without advancing CPU observation state. This implements `TECH-007`, `TECH-016`, `TECH-025` under `REQ-006`, `REQ-011`, `REQ-019`, `REQ-012`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` extension observation-delta inspection\n- `docs/tdd/decisions.md` T25 nonadvancing semantics\n- Public immutable GPU observation-delta capture\n- Authorization chain: `TECH-007`, `TECH-016`, `TECH-025` → `REQ-006`, `REQ-011`, `REQ-019`, `REQ-012`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Empty history remains explicitly empty and pre-sequence-1 reads do not invent a fact\n- [ ] Complete and paged packets emit only matching retained facts and exact append-time envelopes\n- [ ] Overwritten or unsupported boundaries block effects and return a bounded non-resuming state snapshot\n- [ ] Dispatch, readback, cancellation, decode failure, and device loss leave the ordinary subscriber cursor unchanged\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-051",
+    "title": "[state] Validate and admit asynchronous extension effects",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-008",
+      "M-012",
+      "M-013",
+      "M-018",
+      "M-048",
+      "M-049"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-007",
+        "TECH-011",
+        "TECH-016"
+      ],
+      "design_requirements": [
+        "REQ-006",
+        "REQ-011",
+        "REQ-019",
+        "REQ-005",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-008",
+        "AD-007",
+        "C-005",
+        "AD-002",
+        "C-007",
+        "C-016",
+        "AD-005",
+        "C-010",
+        "AD-003",
+        "C-004"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-008, M-012, M-013, M-018, M-048, M-049\n**Produces:** `src/gpu/extension_effects.rs`, `src/command/extension.rs`, `assets/shaders/extension_effects.wgsl`, `tests/gpu/extension_effects.rs`\n\n## Description\n\nReserve the complete worst-case extension effect batch before dispatch, decode the closed candidate/patch-run ABI, validate the entire output against captured revisions, and all-or-none admit ordinary child commands whose receipts then complete independently. This implements `TECH-007`, `TECH-011`, `TECH-016` under `REQ-006`, `REQ-011`, `REQ-019`, `REQ-005`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` extension effect descriptors\n- `docs/tdd/decisions.md` T7/T11/T16\n- Ordinary command admission and Naga-validated extension ABI\n- Authorization chain: `TECH-007`, `TECH-011`, `TECH-016` → `REQ-006`, `REQ-011`, `REQ-019`, `REQ-005`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] Worst-case child records, aggregate payload bytes, diagnostics, state, and receipt slots are acquired before shader execution\n- [ ] Invalid tags, ranges, counts, materials, targets, revisions, overflow flags, and malformed patch runs reject the complete batch\n- [ ] No candidate directly mutates authority or bypasses ordinary validation, scars, revisions, observations, receipts, or publication\n- [ ] After all-or-none child admission, independent child terminal failures remain individually observable and all reserved capacity is eventually released\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-052",
+    "title": "[state] Reconstruct renderer state after device loss",
+    "labels": [
+      "state",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-019",
+      "M-030",
+      "M-020",
+      "M-023",
+      "M-024",
+      "M-026",
+      "M-033",
+      "M-039",
+      "M-045",
+      "M-046",
+      "M-047",
+      "M-050",
+      "M-051"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-003",
+        "TECH-005",
+        "TECH-008",
+        "TECH-034",
+        "TECH-038"
+      ],
+      "design_requirements": [
+        "REQ-001",
+        "REQ-004",
+        "REQ-005",
+        "REQ-017",
+        "REQ-018",
+        "REQ-012",
+        "REQ-015",
+        "REQ-021",
+        "REQ-014",
+        "REQ-006",
+        "REQ-011",
+        "REQ-019",
+        "REQ-003"
+      ],
+      "authority": [
+        "C-003",
+        "C-016",
+        "C-004",
+        "C-010",
+        "AD-003",
+        "C-005",
+        "C-015",
+        "C-009",
+        "C-008",
+        "AD-007",
+        "AD-002",
+        "C-007",
+        "AD-005",
+        "C-002",
+        "C-006",
+        "AD-004"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** assisted\n**Depends on:** M-019, M-030, M-020, M-023, M-024, M-026, M-033, M-039, M-045, M-046, M-047, M-050, M-051\n**Produces:** `src/bevy/recovery.rs`, `src/gpu/reconstruct.rs`, `tests/gpu/device_recovery.rs`\n\n## Description\n\nRe-run renderer startup for a new generation, reconstruct external and derived material authority from registered bases plus retained/durable scars, recreate every device-owned pool and adapter resource, and return readiness only after exact committed revisions are restored. This implements `TECH-003`, `TECH-005`, `TECH-008`, `TECH-034`, `TECH-038` under `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`, `REQ-012`, `REQ-015`, `REQ-021`, `REQ-014`, `REQ-006`, `REQ-011`, `REQ-019`, `REQ-003`.\n\n## Inputs\n\n- `docs/tdd/state-and-storage.md` recovery state\n- `docs/tdd/persistence.md` base-plus-scar and derived-base reconstruction\n- Device-generation quarantine and all device-bound feature owners\n- Authorization chain: `TECH-003`, `TECH-005`, `TECH-008`, `TECH-034`, `TECH-038` → `REQ-001`, `REQ-004`, `REQ-005`, `REQ-017`, `REQ-018`, `REQ-012`, `REQ-015`, `REQ-021`, `REQ-014`, `REQ-006`, `REQ-011`, `REQ-019`, `REQ-003`\n\n## Acceptance Criteria\n\n- [ ] Every committed external and derived volume reconstructs to the exact logical samples, placements, revisions, and directory root before readiness\n- [ ] Factory, behavior, query, presentation, extension, staging, egress, and directory resources are recreated only for the new generation\n- [ ] Missing GPU-only dirty scars or any failed reconstruction makes the world terminal with `UnrecoverableDirtyState` rather than rolling back\n- [ ] The sticky allocator bit survives and successful reconstruction returns to `DirectoryEpochExhausted` when publication was closed\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-053",
+    "title": "[state] Shut down worlds without ambiguous receipts",
+    "labels": [
+      "state",
+      "auto"
+    ],
+    "depends_on": [
+      "M-007",
+      "M-008",
+      "M-012",
+      "M-014",
+      "M-018",
+      "M-019",
+      "M-029",
+      "M-034",
+      "M-047",
+      "M-051",
+      "M-052"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-005",
+        "TECH-018",
+        "TECH-038"
+      ],
+      "design_requirements": [
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-021",
+        "REQ-003",
+        "REQ-018"
+      ],
+      "authority": [
+        "C-010",
+        "AD-003",
+        "C-003",
+        "C-015",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-004"
+      ]
+    },
+    "body": "**Category:** state\n**Automation:** auto\n**Depends on:** M-007, M-008, M-012, M-014, M-018, M-019, M-029, M-034, M-047, M-051, M-052\n**Produces:** `src/command/shutdown.rs`, `src/bevy/shutdown.rs`, `tests/host/shutdown.rs`\n\n## Description\n\nImplement graceful and immediate shutdown as explicit world states: reject new work, apply the selected queued-work policy, honor the shared preparation point of no return, drain or fail accepted receipts, finish persistence obligations as configured, and release device/worker resources. This implements `TECH-005`, `TECH-018`, `TECH-038` under `REQ-005`, `REQ-012`, `REQ-015`, `REQ-021`, `REQ-003`, `REQ-018`.\n\n## Inputs\n\n- `docs/tdd/lifecycles.md` shutdown lifecycle and failure table\n- `docs/tdd/public-api.md` shutdown facade\n- Receipt, persistence, behavior, and device-generation owners\n- Authorization chain: `TECH-005`, `TECH-018`, `TECH-038` → `REQ-005`, `REQ-012`, `REQ-015`, `REQ-021`, `REQ-003`, `REQ-018`\n\n## Acceptance Criteria\n\n- [ ] Startup and shutdown receipts are noncancellable and every previously accepted receipt reaches one truthful terminal outcome\n- [ ] Graceful shutdown drains `Preparing` and later work while immediate policy cancels only operations still before preparation\n- [ ] No queued callback, GPU submission, mapping, egress, or store transaction outlives the resource it uses\n- [ ] Shutdown remains available in `DirectoryEpochExhausted`, recovery, and failure states according to the exhaustive matrix\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-054",
+    "title": "[integration] Expose the complete public facade",
+    "labels": [
+      "integration",
+      "auto"
+    ],
+    "depends_on": [
+      "M-001",
+      "M-002",
+      "M-003",
+      "M-004",
+      "M-005",
+      "M-006",
+      "M-007",
+      "M-008",
+      "M-009",
+      "M-010",
+      "M-011",
+      "M-012",
+      "M-013",
+      "M-014",
+      "M-015",
+      "M-016",
+      "M-017",
+      "M-018",
+      "M-019",
+      "M-020",
+      "M-021",
+      "M-022",
+      "M-023",
+      "M-024",
+      "M-025",
+      "M-026",
+      "M-027",
+      "M-028",
+      "M-029",
+      "M-030",
+      "M-031",
+      "M-032",
+      "M-033",
+      "M-034",
+      "M-035",
+      "M-036",
+      "M-037",
+      "M-038",
+      "M-039",
+      "M-040",
+      "M-041",
+      "M-042",
+      "M-043",
+      "M-044",
+      "M-045",
+      "M-046",
+      "M-047",
+      "M-048",
+      "M-049",
+      "M-050",
+      "M-051",
+      "M-052",
+      "M-053"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-001",
+        "TECH-005"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-008",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-021"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-001",
+        "C-010",
+        "AD-003",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** integration\n**Automation:** auto\n**Depends on:** M-001, M-002, M-003, M-004, M-005, M-006, M-007, M-008, M-009, M-010, M-011, M-012, M-013, M-014, M-015, M-016, M-017, M-018, M-019, M-020, M-021, M-022, M-023, M-024, M-025, M-026, M-027, M-028, M-029, M-030, M-031, M-032, M-033, M-034, M-035, M-036, M-037, M-038, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-046, M-047, M-048, M-049, M-050, M-051, M-052, M-053\n**Produces:** `src/lib.rs`, `src/facade.rs`, `tests/contract/public_facade.rs`\n\n## Description\n\nAssemble the domain-owned public values and callable operations into the thin `MoriaBuilder`, validated plugin/facade, world-handle, permit, receipt, query, observation, persistence, behavior, extension, telemetry-summary, and shutdown surface. Do not expose internal storage or privileged harness paths. This implements `TECH-001`, `TECH-005` under `REQ-002`, `REQ-008`, `REQ-005`, `REQ-012`, `REQ-015`, `REQ-021`.\n\n## Inputs\n\n- `docs/tdd/public-api.md` complete normative consumer contract\n- `docs/tdd/overview.md` binding invariants\n- All preceding domain modules\n- Authorization chain: `TECH-001`, `TECH-005` → `REQ-002`, `REQ-008`, `REQ-005`, `REQ-012`, `REQ-015`, `REQ-021`\n\n## Acceptance Criteria\n\n- [ ] Every normative public operation and closed input/output/error type in `public-api.md` is callable and documented with bounds, revisions, cancellation, and failure semantics\n- [ ] Facade and handles meet the specified `Send + Sync` contract without leaking Bevy render, wgpu, page-table, brick-pool, mesh-buffer, or adapter-owned state types\n- [ ] External-style compile tests can configure, start, inspect, mutate, observe, checkpoint, schedule behavior, submit extension work, and shut down using public paths only\n- [ ] No physics, damage, generation, gameplay, camera, or world-specific axis policy appears in the public substrate\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  }
+]
