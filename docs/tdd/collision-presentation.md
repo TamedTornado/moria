@@ -43,8 +43,91 @@ Narrow phase transforms the consumer shape into volume-local space and uses
 fixed-point slab, closest-feature, and separating-axis tests. Products and
 squared distances use TECH-007's exact 64-bit semantics. Contact normal is a
 canonical signed Q1.14 vector; ties select x, then y, then z, then negative
-before positive face. Time of impact is unsigned Q0.32 in `[0,1]` with floor
-rounding, conservatively choosing the earliest representable contact.
+before positive face. `TimeOfImpactWire` is an unsigned Q0.32 value stored in
+`u64` with the only valid range `0..=0x1_0000_0000`, so exact time one is
+representable. Conversion uses floor rounding, conservatively choosing the
+earliest representable contact.
+
+The normative collision algorithm is `moria-collision-v1`:
+
+1. A placement maps local point `p` by TECH-007's exact
+   `translation + R(p - pivot)` sequence. World shapes are converted to volume
+   local space with the exact inverse sequence. Sphere radius and box/capsule
+   extents are unchanged; AABB orientation becomes `inverse(volume_q)`,
+   oriented-box orientation becomes
+   `normalize(inverse(volume_q) * shape_q)`, and capsule endpoints are
+   transformed separately. No world-space float AABB is fed to narrow phase.
+2. Cell `(x,y,z)` has Q23.8 bounds
+   `[256x,256(x+1)) × [256y,256(y+1)) × [256z,256(z+1))`. A point overlaps
+   only when `lo <= p < hi` on every axis. For positive-size shape contact,
+   the geometric high planes are included and equality is overlap; duplicate
+   boundary cells remain distinct facts and TECH-024 orders them.
+3. Sphere/box uses `q_i = clamp(c_i, lo_i, hi_i)`,
+   `d = c - q`, and overlap iff `dot(d,d) <= r*r`. If `d == 0`, the witness
+   face is the minimum of `(c-lo, hi-c)` in axis/sign tie order. Capsule/box
+   minimizes squared distance from `p(u)=a+u(b-a)`, `0<=u<=1`, to the box.
+   It creates rational breakpoints `(plane-a_i)/(b_i-a_i)` for every crossed
+   low/high plane, sorts them by checked cross multiplication, and on each
+   interval fixes the three clamp states. The resulting
+   `D(u)=A*u*u+B*u+C` is evaluated at both endpoints and at
+   `clamp(-B/(2A))` when `A != 0`; rational values are compared without first
+   rounding. The winning witness is the least `u`, then axis/sign order.
+   Capsule overlap is `D_min <= r*r`. A zero-length capsule takes the sphere
+   path; a zero-radius sphere/capsule takes the point/segment path.
+4. AABB/box and oriented-box/box use SAT. Shape vertices are made once by
+   applying TECH-007 rotation to each signed half-extent and adding the center.
+   The ordered axes are cell x/y/z, shape x/y/z, then
+   `cross(cell_axis_i, shape_axis_j)` for `(i,j)` lexicographically. Zero axes
+   are skipped. Vertex projections are checked `i128` dot products. Strictly
+   disjoint intervals separate; touching intervals overlap. The contact axis
+   has minimum rational depth `interval_overlap / ceil_sqrt(dot(axis,axis))`;
+   depths compare by cross multiplication, then axis-list order. Its sign
+   points from the cell center toward the shape center; a zero center
+   projection selects the negative sign before positive.
+5. Point/box trace uses the three slab intervals. For axis delta `d==0`, a
+   start outside that slab rejects; otherwise entry and exit are the exact
+   plane fractions `(plane-start)/d`, with numerator/denominator sign
+   normalized. Fractions are intersected with `[0,1]` by `i128` cross
+   multiplication in x/y/z order. AABB and oriented-box sweeps use continuous
+   SAT on the same ordered axes: with projected velocity `v`, each axis
+   contributes entry `(cell_min-shape_max)/v` and exit
+   `(cell_max-shape_min)/v`, swapped when `v<0`; `v==0` must already overlap.
+6. Translating sphere/box is the same piecewise quadratic closest-feature
+   calculation as step 3 with tick parameter `t`. Translating capsule/box
+   minimizes `distance(box, a + t*delta + u*(b-a))` over
+   `[t,u] in [0,1]^2`. For each of the 27 coordinate clamp-state combinations,
+   it solves the checked 2×2 integer normal equations, evaluates every feasible
+   interior solution and all `t/u` boundaries, and rejects candidates outside
+   their clamp region. Singular systems reduce to their one-dimensional
+   boundary cases. Candidates are ordered by earliest `t`, then least `u`,
+   then clamp-state axis/sign order. This finite active-set enumeration is the
+   only capsule-sweep algorithm; iterative conservative advancement is not
+   conforming.
+7. Linear and quadratic crossing fractions remain exact until output.
+   Quadratic discriminants use checked `i128` and unsigned integer square root.
+   The earliest crossing is converted with
+   `floor(2^32 * numerator / denominator)`; an irrational quadratic root uses
+   the greatest Q0.32 integer whose rational time does not exceed the root,
+   found by a fixed 32-step high-to-low bit test against the original
+   polynomial. Initial overlap is time zero. If the interval intersection is
+   empty through time one, the result is `NoHit`.
+8. A nonzero witness/axis `n` becomes Q1.14 by
+   `round_ties_even(16384*n_i/ceil_sqrt(dot(n,n)))` per component. An interior
+   zero witness uses the selected face unit vector. Sphere/capsule contact
+   point is the box witness; polytope contact point is the component-wise
+   ties-to-even midpoint of the cell support point along `n` and shape support
+   point along `-n`, with support-vertex ties resolved by encoded vertex order.
+   Sweep witnesses are evaluated at the exact winning rational time and only
+   then rounded once to Q23.8 ties-to-even.
+
+Every fraction has a positive denominator and is reduced by binary GCD before
+storage. No epsilon exists. A zero sweep delta runs static overlap and returns
+zero or `NoHit`. Invalid extents, a nonrepresentable transform, checked
+overflow, singular case not covered by the stated boundary reduction, or a
+normal/contact outside its wire range is a typed collision arithmetic failure;
+ordinary queries become `Unavailable`, while a canonical participant tick is
+`NoAdvance`. CPU and WGSL must execute the same axis, candidate, and reduction
+order.
 
 ### TECH-052 — Sparse collision traversal and facts
 
@@ -116,26 +199,65 @@ pub trait BevyGpuParticipant: Send + Sync + 'static {
 }
 
 pub trait GpuParticipantDeviceState: Send + Sync {
-    fn encode(
+    fn encode_genesis(
         &mut self,
         pass: &mut wgpu::ComputePass<'_>,
+        output: GpuParticipantStateSink<'_>,
+    ) -> Result<(), ParticipantError>;
+    fn encode_tick(
+        &mut self,
+        pass: &mut wgpu::ComputePass<'_>,
+        source: GpuParticipantStateLease<'_>,
         input: ParticipantGpuInput<'_>,
         effects: ParticipantEffectSink<'_>,
+        output: GpuParticipantStateSink<'_>,
+    ) -> Result<(), ParticipantError>;
+    fn encode_restore_snapshot(
+        &mut self,
+        pass: &mut wgpu::ComputePass<'_>,
+        snapshot: GpuSnapshotInput<'_>,
+        output: GpuParticipantStateSink<'_>,
+    ) -> Result<(), ParticipantError>;
+    fn encode_reconstruct(
+        &mut self,
+        pass: &mut wgpu::ComputePass<'_>,
+        request: GpuParticipantReplayInput<'_>,
+        output: GpuParticipantStateSink<'_>,
+    ) -> Result<(), ParticipantError>;
+    fn encode_snapshot_export(
+        &mut self,
+        pass: &mut wgpu::ComputePass<'_>,
+        source: GpuParticipantStateLease<'_>,
+        output: GpuSnapshotOutput<'_>,
     ) -> Result<(), ParticipantError>;
 }
 ```
 
 `ParticipantGpuInput` exposes a Moria-created read-only bind group for the
 bounded canonical collider artifact, immutable participant input bytes, exact
-counts, tick/root/artifact hash, and the participant's own registered buffers.
+counts, tick/root/artifact hash, and its leased source-state plus declared
+scratch buffers.
 It cannot return Moria's radix, brick, page-table, allocator, or mutable
 buffers. `ParticipantEffectSink` is a Moria-owned fixed-slot buffer whose
 schema is ordinary command wire plus one status/commitment record. The
 participant cannot submit the encoder or increase capacity.
 
+`prepare_device` owns only pipelines, layouts, and other rebuildable
+generation resources; it may not contain the participant's active canonical
+state. `GpuParticipantStateSink` allocates from the participant's declared
+fixed-capacity state pool and returns an immutable generation-tagged opaque
+token. Tick, restore, and reconstruct encoders read one source and write one
+unreferenced destination; source and destination aliasing is rejected before
+encoding. Moria pins source/destination buffers through queue completion and
+then installs or aborts tokens solely through the `FrontierBundle` lifecycle
+in TECH-016. Snapshot export copies exactly the descriptor-bounded bytes to a
+Moria staging slot; mapping, digest verification, and `CheckpointStore`
+handoff follow TECH-045. It is never same-frame CPU visibility.
+
 Moria invokes adapters in `ParticipantId` order in the canonical preparation
 schedule, then validates effect tags, bounds, preconditions, unique local
-sequences, unused-zero slots, overflow flags, and commitment before normal
+sequences, unused-zero slots, overflow flags, participant and RNG-state
+commitments, state-token metadata, and snapshot digest/size before normal
 transition processing. The output remains GPU-resident through validation and
 application; only bounded canonical outcomes/commitment are read back for
 receipt and replay. Thus a GPU behavior engine need not round-trip occupancy or
@@ -144,7 +266,12 @@ effects through CPU, while admission and publication remain identical.
 Adapter pipeline/device creation failure, panic caught at the FFI/callback
 boundary where possible, validation error, output overflow, or old generation
 causes `NoAdvance`. There is no automatic CPU implementation swap. Device
-state reconstructs in `RenderStartup`.
+resources reconstruct in `RenderStartup`; old-generation state tokens are
+terminal and are restored into new staged tokens from a durable snapshot or
+canonical reconstruction log before publication. A correction never asks the
+device adapter to mutate its current token in place. On correction failure,
+shutdown, or generation loss, uninstalled tokens drain their last queue use and
+return to the bounded pool without affecting the pinned live token.
 
 ## Derived presentation
 

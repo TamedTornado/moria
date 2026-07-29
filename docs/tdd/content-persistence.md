@@ -125,10 +125,10 @@ Implements: REQ-001, REQ-014, REQ-017, REQ-028, REQ-032
 - live and retired volume identities, domains, kinds, placements, and scar
   root hashes;
 - content-addressed scar radix nodes and brick blobs;
-- `next_volume_serial`, simulation-domain normalized intervals, and declared
-  participant RNG commitments;
-- participant IDs/contracts/input schemas/strategies/commitments and snapshot
-  blob digests where applicable;
+- `next_volume_serial` and simulation-domain normalized intervals;
+- participant IDs/contracts/input schemas/strategies/commitments, complete RNG
+  descriptors and current RNG-state commitments, and snapshot blob digests
+  where applicable;
 - replay prefix/suffix digests sufficient for the configured recovery point;
 - completeness counts, total uncompressed bytes, and manifest checksum.
 
@@ -146,15 +146,47 @@ readback/store budget. Admission pins that immutable root and participant
 frontier. New ticks may confirm concurrently; they remain dirty relative to
 the checkpoint.
 
-Checkpoint traversal follows scar and metadata nodes only. GPU blobs are copied
+Canonical substrate traversal follows scar and metadata nodes only; participant
+snapshots use the separate export path below. GPU blobs are copied
 through bounded staging slots in lexicographic logical-key order, mapped,
 decoded, digest-verified, and handed to the store. It never scans untouched
 base cells or serializes derived state. Completion reports exactly:
 
 ```text
 checkpoint key, durable tick/root, per-volume revisions,
-participant commitments, scar/node/blob counts, compressed/uncompressed bytes
+participant commitments, scar/node/blob and participant-snapshot-blob counts,
+compressed/uncompressed bytes
 ```
+
+The pinned participant frontier is part of traversal. For every
+`PerTickSnapshot` participant in `ParticipantId` order, checkpoint admission
+reserves its declared `max_bytes` against both the participant-export pool and
+the checkpoint's total byte budget. Moria invokes the public CPU/GPU snapshot
+export operation on the exact pinned state token. Export state is:
+
+```text
+Pinned -> ExportReserved -> Exporting -> BytesVerified
+       -> BlobPutPending -> BlobDurable -> ManifestReferenced
+       \-> Failed
+```
+
+The export result is bound to participant ID/contract, pinned tick/root,
+participant commitment, snapshot length/digest, and device generation where
+applicable. Moria checks all fields, exact length, and BLAKE3 digest before
+calling `CheckpointStore::put_blob`; the store completion must confirm the
+same digest. At most three aggregate checkpoint staging slots and 64 MiB of
+store writes, including scar and participant bytes, are in flight. Snapshot
+participants cannot provide an external locator instead of bytes.
+Reconstructible participants contribute descriptor, commitment, and required
+replay range but no snapshot blob.
+
+`commit_manifest` is not called until every scar/node/metadata and participant
+snapshot blob has reached `BlobDurable`. The manifest references exactly those
+verified digests. Any participant export, generation, mapping, store, size, or
+digest failure enters `Failed`, publishes no manifest, and cannot report that
+participant frontier durable. Submitted exports and puts drain for lifetime
+safety; the root and participant tokens remain pinned until all reservations
+are released.
 
 Failure keeps the root and all later dirty truth live, reports whether orphan
 blobs may exist, and publishes no manifest. Cancelling before a submitted
@@ -176,13 +208,16 @@ Restore is world construction, not a post-genesis mutation:
 4. load every referenced scar/node/snapshot blob, enforce bounds, decompress,
    and verify its uncompressed digest;
 5. rebuild new-generation GPU pages and radix roots from logical keys;
-6. ask snapshot participants to restore and reconstructible participants to
-   prove their declared starting commitment;
+6. ask snapshot participants to create staged tokens from verified snapshot
+   bytes and reconstructible participants to create staged tokens while
+   proving their declared starting commitment and RNG-state commitments;
 7. recompute every root bottom-up and compare the saved world root;
 8. publish the restored frontier and readiness context, then permit the next
    tick.
 
-The live world remains absent until all steps pass. Corruption, missing IDs or
+The restored GPU root and all participant tokens remain in one private genesis
+bundle until all steps pass; adapter calls never mutate a live singleton.
+Publishing that bundle is one pointer swap. Corruption, missing IDs or
 blobs, unsupported contract, wrong lineage/root, content-source inability,
 participant mismatch, resource exhaustion, unqualified backend, or hash
 disagreement fails the entire restore. Migration/rebase is a separate
@@ -230,17 +265,24 @@ confirmed frontier and a complete contiguous input sequence from
 bytes, output roots, participant resources, and pins the original live and
 target roots before starting.
 
-Moria installs the target in a private replay context, restores each
-participant strategy, and sends replacement batches through the ordinary
-transition. Intermediate roots remain private and do not emit consumer
+Moria creates a private replay context from the target root and target
+participant tokens. Snapshot adapters return new staged tokens from the pinned
+target snapshot; reconstructible adapters return new staged tokens after
+replaying the bounded prefix. Each replacement tick consumes only the prior
+private token and returns the next one through the ordinary transition.
+Intermediate roots and participant tokens remain private and do not emit consumer
 observations or presentation work. Expected hashes, when supplied, are checked
 at each tick. Failure discards private roots and keeps the original live
 frontier. Success atomically replaces the live frontier with the final
-corrected root, emits one correction observation plus canonical outcome range,
-and schedules only the final accumulated dirty regions for derived rebuild.
+corrected `FrontierBundle`, emits one correction observation plus canonical
+outcome range, and schedules only the final accumulated dirty regions for
+derived rebuild.
 
-Original frontiers and participant state remain pinned until success/failure
-and all GPU readers complete. Target outside the window, missing state,
+Original frontiers and participant tokens remain pinned until success/failure
+and all GPU readers complete. On failure, staged CPU tokens drop immediately
+after callback closure and staged GPU tokens enter generation-tagged retire
+queues until their last submission completes; no participant restore-back call
+is needed or permitted. Target outside the window, missing state,
 resource bound, participant failure, content mismatch, or divergence is
 terminal for that correction and never advances the world.
 
@@ -256,7 +298,10 @@ returns `PersistenceBackpressure`; Moria never silently drops the only recovery
 record.
 
 Checkpoint traversal defaults to 16 MiB mapped bytes and 64 MiB store writes
-in flight, with three staging slots. A manifest may reference at most the
+in flight, with three staging slots shared by scar and participant exports.
+The sum of declared snapshot maxima must fit the configured checkpoint byte
+budget and the 64 MiB per-frontier compiled maximum; otherwise genesis or
+checkpoint admission fails before export. A manifest may reference at most the
 configured scar nodes/bricks and 4 GiB uncompressed data in v1; lower consumer
 limits are honored. Counts/offsets use checked `u64`, while individual wire
 sequences remain `u32` bounded.

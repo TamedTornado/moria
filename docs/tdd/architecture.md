@@ -16,7 +16,9 @@ Implements: REQ-003, REQ-017, REQ-028, REQ-033
 value committed at genesis. Material IDs are consumer-supplied nonzero `u16`
 values. Participant IDs are nonzero `u32` values no greater than
 `0x7fff_ffff`; input-source IDs are nonzero `u32` values with their high bit
-clear; RNG-stream IDs are nonzero `u32` values. Each is unique in its registry.
+clear. RNG-stream IDs are nonzero `u32` values scoped to and unique within one
+participant descriptor; Moria has no global RNG registry and consumes no
+randomness of its own. Each other ID is unique in its world registry.
 `VolumeId` is a nonzero `u64`. Genesis volumes may claim explicit unique IDs;
 canonical `next_volume_serial` starts one above their maximum. Sorted
 post-genesis create commands allocate and increment it. IDs are never reused,
@@ -78,11 +80,27 @@ division by zero, invalid shift, and a nonrepresentable result return stable
 canonical failure tags; saturation is used only by an input verb that names
 it explicitly.
 
+Products, sums, dot products, squared lengths, and integer square roots whose
+operands are stored Q23.8 or Q1.14 values use checked signed 64-bit
+intermediates. Exact rational comparison in collision interval clipping and
+SAT depth comparison uses checked signed 128-bit two's-complement semantics.
+The WGSL baseline implements these as reviewed two-word and four-word `u32`
+helpers respectively. Overflow at either width is
+`CanonicalFailure::ArithmeticOverflow`; an implementation may not reassociate,
+reduce early, saturate, or use floating point to avoid it.
+
 Orientation is a canonical unit quaternion `QuatQ14Wire([i16; 4])`, component
 order `(x,y,z,w)`, scale 16,384. Registration and composition:
 
-1. calculate products and norm with checked signed 64-bit integer arithmetic;
-2. normalize using integer square root and ties-to-even division;
+1. registration treats the four input components as one integer vector;
+   composition computes the raw Q2.28 Hamilton product in this exact order:
+   `x=aw*bx+ax*bw+ay*bz-az*by`,
+   `y=aw*by-ax*bz+ay*bw+az*bx`,
+   `z=aw*bz+ax*by-ay*bx+az*bw`,
+   `w=aw*bw-ax*bx-ay*by-az*bz`, evaluating terms left-to-right;
+2. calculate `norm = isqrt(x*x+y*y+z*z+w*w)` with checked signed 64-bit
+   products/sums, and normalize each component directly as
+   `round_ties_even(component*16384/norm)` without an earlier Q14 reduction;
 3. choose the sign whose first nonzero component in `(w,x,y,z)` is positive;
 4. reject a zero norm or a component outside `i16`;
 5. apply the same procedure after every composition.
@@ -94,6 +112,26 @@ orientation quantization displacement less than one cell; a generated
 exhaustive-bound proof is retained with the arithmetic tests. Float transforms
 are one-way derived presentation values and are never accepted back as a
 canonical placement.
+
+Canonical vector rotation does not use quaternion multiplication. It first
+builds this signed Q2.28 matrix, with `S = 1 << 28`, from the normalized Q1.14
+components:
+
+```text
+[ S-2(yy+zz)   2(xy-wz)    2(xz+wy)   ]
+[ 2(xy+wz)     S-2(xx+zz)  2(yz-wx)   ]
+[ 2(xz-wy)     2(yz+wx)    S-2(xx+yy) ]
+```
+
+Each matrix term is calculated exactly in `i64`. For each output component,
+the three matrix×Q23.8 products are checked and summed left-to-right in the
+displayed order, then reduced once by `2^28` with round-to-nearest,
+ties-to-even. Inverse rotation uses the transpose of this same matrix; it does
+not rebuild a second matrix from a rounded inverse. Placement is exactly
+`world = translation + rotate(orientation, local - pivot)` and its inverse is
+`local = pivot + rotate_transpose(orientation, world - translation)`, with a
+checked operation at every subtraction and addition. Collision, CPU oracle,
+WGSL, persistence verification, and replay all use this sequence.
 
 ## Canonical bytes and commitments
 
@@ -114,10 +152,11 @@ schema-tested binary format:
 - every decoder rejects trailing bytes, nonminimal variants, excessive
   lengths, invalid tags, and arithmetic overflow.
 
-Human labels and correlation metadata are noncanonical bounded UTF-8 and do
-not appear in replay identity or hashes. Contract, schema, arithmetic, shader,
-and hash-domain versions are fixed digests in genesis. CPU encoding and WGSL
-wire layout have byte-for-byte fixtures for every record.
+Human labels are bounded UTF-8; correlation metadata is a bounded ID and opaque
+byte payload. Both are noncanonical and do not appear in replay identity or
+hashes. Contract, schema, arithmetic, shader, and hash-domain versions are
+fixed digests in genesis. CPU encoding and WGSL wire layout have byte-for-byte
+fixtures for every record.
 
 ### TECH-009 — Merkle commitment
 
@@ -177,9 +216,10 @@ payload is byte-identical to verified base content.
 
 The world root includes sorted immutable registries, volume roots and
 placements, canonical simulation-domain union, `next_volume_serial`,
-participant commitments, declared participant RNG commitments, current tick,
-and contract identities. Runtime residency and readiness are a separate cache
-indexed by `(base digest, volume, brick)`.
+participant commitments (including their ordered canonical RNG-state
+commitments), current tick, and contract identities. Runtime residency and
+readiness are a separate cache indexed by
+`(base digest, volume, brick)`.
 
 ### TECH-011 — Deterministic tick ordering and conflict rules
 
@@ -256,15 +296,21 @@ A tick attempt has these ordered phases:
 9. validate all diagnostic, overflow, participant, and output records;
 10. encode outcomes and calculate the new world root;
 11. await GPU completion and bounded outcome/hash mapping;
-12. atomically swap the host-visible live root handle, confirm participant
-    commitments, append replay records, and emit observations.
+12. deliver one generation-tagged candidate envelope through the reserved
+    render-to-main completion bridge, then atomically swap the main-world
+    `FrontierBundle` containing the GPU root token and participant state
+    tokens, confirm the receipt, append replay records, and emit observations.
 
 Dependent GPU phases are ordered dispatches on one queue. No shader uses a
 cross-workgroup spin protocol. Before step 12, only private slots refer to the
-candidate root. Any failure or device-generation mismatch discards/retire-
-queues those slots and leaves `State[t]`, its revisions, snapshots, and hash
-live. Step 12 occurs in one exclusive coordinator system; readers acquire
-either the old or new root, never a mixture.
+candidate root. Any failure, missing bridge reservation, or device-generation
+mismatch discards/retire-queues those slots and leaves `State[t]`, its
+revisions, participant state, snapshots, and hash live. Step 12 occurs in the
+exclusive main-world publication system specified by TECH-032. The root token
+names already completed device objects retained in the render world, so
+subsequent extracted work can use it without a second render-world “live”
+swap. Readers acquire either the old or new immutable `FrontierBundle`, never
+a mixture.
 
 ## Snapshot sharing and rollback
 
@@ -278,7 +324,8 @@ frontier retains:
 
 ```text
 tick, world_root_hash, GPU root handle, immutable metadata root,
-tick-batch digest, outcome digest, participant commitments
+tick-batch digest, outcome digest, participant commitments,
+opaque participant state tokens and snapshot metadata
 ```
 
 The frontier is O(changed bricks × radix depth) additional logical state.
@@ -322,18 +369,92 @@ Implements: REQ-006, REQ-029, REQ-030, REQ-033, REQ-035, REQ-037, REQ-043
 Every participant registers exactly one strategy:
 `PerTickSnapshot { max_bytes }` or
 `ReconstructibleFromCanonicalStateAndLog { max_replay_ticks }`.
-For every attempted tick it receives the source root hash, its bounded input
-slice, and canonical artifact leases. It returns a bounded ordered effect list
-and a 32-byte commitment. Effects are normal commands and have no privileged
-mutation path.
+Its canonical state is participant-owned in meaning and representation, but it
+must be encapsulated in an immutable opaque state token whose lifetime Moria
+can pin. There is no adapter-global mutable canonical state. A token is bound
+to `(participant, contract, tick, world_root, commitment,
+device_generation?)`, and only the originating adapter may inspect it.
 
-A tick confirms only after every participant accepts the same frontier and its
-commitment is included in the world root. Snapshot participants durably own
-their opaque snapshot bytes; Moria pins a receipt/handle and verifies its
-digest and size. Reconstructible participants receive replay bytes and must
-reproduce commitments. Missing, oversized, late-generation, or divergent
-participant products cause `NoAdvance` or rollback failure; Moria never
-interprets or repairs the participant state.
+For every attempted tick the adapter receives a lease to the source token,
+source root hash, bounded input slice, and canonical artifact leases. It
+constructs a new uninstalled token and returns a bounded ordered effect list,
+a 32-byte participant commitment, and, for each declared RNG stream, the
+canonical RNG-state commitment specified below. Effects are ordinary commands
+and have no privileged mutation path. Preparing a token may not mutate the
+source token. A tick confirms only when the exclusive coordinator installs one
+immutable `FrontierBundle` containing the candidate root and every prepared
+participant token. Before that swap all tokens are private; after it the old
+bundle remains pinned for readers and rollback. Thus participant installation
+cannot partially commit independently of substrate publication.
 
-Participant completion order is irrelevant. Products occupy preassigned
-participant-ID slots and are combined in ID order.
+A rollback or correction creates a private `CorrectionContext` containing
+tokens restored from the target frontier. Each replayed tick produces the next
+private token in that context. Success installs only the final bundle; failure
+or cancellation drops every private token after its CPU/GPU leases drain and
+leaves the original live bundle untouched. Snapshot restore and reconstruct
+operations therefore return staged tokens; they never mutate an in-place
+participant. Device-generation loss terminally invalidates staged GPU tokens
+from that generation. Old-generation completion may release resources but
+cannot enter a live or correction bundle.
+
+Every CPU and GPU participant operation uses the same bounded lifecycle:
+
+```text
+Reserved(source pin + destination bytes)
+  -> Preparing | RestoringSnapshot | Reconstructing
+  -> PreparedPrivate
+  -> InstalledInFrontier
+  \-> Failed -> Aborting -> DrainingLastUse -> Reclaimed
+```
+
+Only `PreparedPrivate` may enter a bundle, and installation is the host pointer
+swap rather than an adapter callback. A sink completion moves to
+`PreparedPrivate`; duplicate completion is rejected. Cancellation is accepted
+only before preparation is submitted. After submission it suppresses
+installation, drains the token, and returns its fixed permit. Descriptor maxima
+for source state, destination state, effects, snapshot bytes, replay ticks, and
+artifact leases are reserved before the operation; no callback may grow them.
+
+For `PerTickSnapshot`, each prepared token also exposes immutable
+`SnapshotMetadata { uncompressed_bytes, digest }` and a bounded asynchronous
+export operation. Moria pins the token for the rollback window. Participant
+code owns the snapshot schema, while Moria owns the lifecycle of the handle and
+copies verified snapshot bytes into `CheckpointStore` for durable checkpoints
+as specified by TECH-045. The participant is not allowed to substitute a
+durable external locator. `ReconstructibleFromCanonicalStateAndLog` tokens
+declare their maximum replay prefix and must reproduce every intermediate
+commitment from canonical genesis/frontier plus log bytes.
+
+Moria itself has no RNG algorithm or RNG state. A participant using randomness
+that can affect canonical output must list every stream in its genesis
+descriptor:
+
+```text
+RngContract {
+  stream_id: nonzero u32,
+  algorithm_id: 16 bytes,
+  algorithm_version: u32,
+  algorithm_contract_digest: 32 bytes,
+  state_schema_digest: 32 bytes,
+  seed_bytes: 0..=64 canonical bytes
+}
+```
+
+The referenced algorithm contract must completely specify seed decoding,
+state bytes, next-state/output transition, rejection sampling, and exhaustion.
+Each participant commitment contains, in `stream_id` order,
+`(stream_id, state_byte_len:u32, BLAKE3(state_bytes))`. Snapshot bytes contain
+the complete state bytes for every stream. A reconstructible participant must
+derive them from the descriptor seed and canonical log and reproduce those
+digests. OS entropy, wall clock, thread identity, and undeclared streams are
+conformance failures. These descriptors and state commitments are included in
+genesis, world hashing, retained frontiers, checkpoints, replay, restore, and
+qualification evidence; a 32-byte participant commitment alone is not treated
+as an RNG specification.
+
+Missing, oversized, wrong-source, duplicate, late-generation, or divergent
+products cause `NoAdvance` or rollback failure. Participant completion order
+is irrelevant: products occupy preassigned `ParticipantId` slots and are
+combined in ID order. Moria never interprets participant behavior or RNG
+meaning, but it validates every declared bound, identity, digest, and lifecycle
+transition.

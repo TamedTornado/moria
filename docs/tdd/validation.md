@@ -20,8 +20,9 @@ Required deterministic tests include:
 
 - golden bytes and digests for every canonical record and hash domain;
 - arithmetic edges for every operation, overflow, division, shift, ties-even
-  rounding, quaternion normalization/composition/inverse, and the maximum-
-  radius displacement proof;
+  rounding, quaternion normalization/composition/inverse, exact Q2.28
+  quaternion-vector matrix rotation/inverse, checked i64/i128 helper parity,
+  and the maximum-radius displacement proof;
 - generated edit state machines with create/retire/move/erase/place/patch,
   overlaps, stale preconditions, revision exhaustion, and failed atomic
   commands;
@@ -30,7 +31,13 @@ Required deterministic tests include:
 - hash sensitivity for matter, placement, IDs/allocator, simulation domain,
   participant/RNG commitment, and insensitivity to derived cache mutations;
 - collision properties: no fact targets empty matter, all returned facts carry
-  the source revision, stable tie order, and CPU/GPU parity;
+  the source revision, and CPU/GPU parity for every
+  `moria-collision-v1` formula. Golden edge fixtures cover closed-low/open-high
+  points, face/edge/corner touches, inside witnesses, zero radius/extent/
+  capsule/sweep, transform round trips, quaternion half-step rounding,
+  parallel slabs, all 15 SAT axes and zero cross axes, equal penetration ties,
+  capsule breakpoint/clamp regions, singular 2×2 sweep systems, irrational
+  quadratic TOI floors, support-vertex ties, and every arithmetic failure;
 - decoder fuzzing for truncation, trailing bytes, invalid tags/counts, zip
   bombs, corrupt hashes, and allocation overflow.
 
@@ -38,6 +45,12 @@ Schedule-perturbation tests submit identical sealed bytes under randomized
 producer threads, insertion orders, worker counts, completion notifications,
 cache layouts, and physical-slot histories. Canonical outcomes/bytes/hashes
 must remain identical.
+
+The oracle also registers one participant RNG stream with a published toy
+algorithm contract. Golden tests cover seed decoding, every state/output step,
+snapshot state bytes, reconstruction from genesis/log, state-digest changes,
+rollback, checkpoint, replay, exhaustion, undeclared stream rejection, and
+proof that Moria itself requests no entropy.
 
 ### TECH-060 — Headless Bevy contract tests
 
@@ -52,9 +65,13 @@ open a window or depend on wall time.
 Required slices cover every legal transition and invalid transition rejection,
 permit drop/queue close, receipt drop after submission, cancellation lifetime,
 gap and resnapshot, interest withdrawal with pins, checkpoint failure,
-participant duplicate/late completion, shutdown with dirty truth, and a missing
-`RenderApp`. The missing-renderer case reports `BackendUnavailable`; it is not
-a GPU test and does not install a no-op canonical backend.
+participant duplicate/late completion, participant source-token immutability,
+private correction success/abort, snapshot export failure, completion-bridge
+reservation/exhaustion/duplicate/old-generation drain, correlation propagation
+and gap expiry, query minimum-revision wait/stale behavior, shutdown with dirty
+truth, and a missing `RenderApp`. The missing-renderer case reports
+`BackendUnavailable`; it is not a GPU test and does not install a no-op
+canonical backend.
 
 `moria-qualify` compiles as a separate binary crate and imports only public
 `moria`. A lint/test fails if it enables a test-only facade feature or imports a
@@ -99,6 +116,10 @@ empty/near-full/full resident directories, collision-heavy keys, 32-probe
 exhaustion, duplicate contenders, tombstone-heavy caches, allocation-counter
 edges, failed construction, multi-brick atomic failure, old-root readers during
 publication, delayed reclaim, and compaction preserving every live mapping.
+Bridge fixtures hold a decoded canonical completion in the render world and
+prove the main world still exposes the old bundle, then drain the reserved
+envelope and prove root, receipt, replay, participant, and observation fields
+change in the same exclusive publication system.
 
 The suite intentionally destroys/loses a test device where the backend harness
 supports it. Outstanding work must fail, old callbacks must not publish,
@@ -152,9 +173,13 @@ facade:
 3. **Dynamic volume:** query and collide, rotate/translate by an admitted
    placement input, edit local matter, checkpoint, and restore the same ID.
 4. **Atomic mutation:** inject a post-admission diagnostic failure into a
-   multi-brick command before publication. Every targeted old cell/revision/
-   observation remains unchanged. The failure seam is the same checked
-   diagnostic flag used for production GPU failure, not a mutation bypass.
+   multi-brick command before publication by constructing a public
+   `QualificationPolicy::Candidate` with TECH-040's one-shot
+   `AfterBrickConstructionBeforePublication` diagnostic. Every targeted old
+   cell/revision/observation remains unchanged. `moria-qualify` imports that
+   public type exactly as an external crate; the failure is the same checked
+   production diagnostic record and cleanup route, not a storage or mutation
+   hook.
 5. **Truth versus view:** remove presentation, make it stale, corrupt/discard
    derived buffers, and rebuild. Matter/collision/hash bytes remain identical;
    smooth and crisp surfaces show honest exposed cuts when current.
@@ -210,6 +235,16 @@ untouched matter, then replays to identical per-tick outcomes/hashes. One
 snapshot participant and one reconstructible participant exercise success,
 capacity exhaustion, missing state, and divergence. Pin/reclaim counters prove
 state is live exactly while reachable.
+
+The snapshot participant exports distinct recognizable bytes at every
+frontier. Tests hold participant blob puts pending while scar puts complete and
+prove the manifest cannot commit or report durability; wrong bytes/digest,
+oversize, export cancellation, store failure, and device loss all leave no
+manifest. Restore receives the exact stored bytes and returns a staged token.
+Correction tests make the snapshot participant succeed and the reconstructible
+participant fail after several private ticks, then prove the original live
+participant tokens/commitments and substrate root are unchanged and every
+staged token is reclaimed after its last GPU use.
 
 Poisoning each canonical influence category changes its appropriate leaf/root
 at the first affected tick. Poisoning mesh/cache/telemetry does not.

@@ -124,7 +124,11 @@ impl MoriaClient {
 }
 
 impl TickPermit {
-    pub fn push(&mut self, input: CanonicalInput) -> Result<(), PushError>;
+    pub fn push(
+        &mut self,
+        input: CanonicalInput,
+        correlation: Option<CorrelationMetadata>,
+    ) -> Result<(), PushError>;
     pub fn seal(self) -> Result<SealedTickBatch, BatchError>;
 }
 
@@ -139,8 +143,9 @@ impl MoriaClient {
 Reservation atomically claims bounded queue bytes and one pending-tick slot;
 dropping an unused permit releases them without input loss. `seal` canonical-
 encodes, sorts, detects duplicate keys, verifies declared counts, and consumes
-the builder. A sealed batch owns immutable bytes, its BLAKE3 digest, and the
-unforgeable reservation token.
+the builder. A sealed batch owns immutable canonical bytes, its BLAKE3 digest,
+the unforgeable reservation token, and a separately bounded noncanonical
+correlation sidecar keyed by the resulting `CanonicalOrder`.
 
 Only the next tick is accepted; classifications are `WrongWorld`,
 `BeforeNext`, `AfterNext`, `AlreadyPending`, `WorldNotReady`, `DependencyNotReady`,
@@ -171,12 +176,21 @@ pub struct InputHeader {
     pub expected_volume_revision: Option<VolumeRevision>,
     pub expected_source_hash: Option<CanonicalHash>,
 }
+
+pub struct CorrelationMetadata {
+    pub id: CorrelationId,       // consumer-selected 128-bit value
+    pub payload: BoundedBytes64, // 0..=64 uninterpreted bytes
+}
 ```
 
 Every variant has a closed `u8` wire tag and explicit maximum encoded size.
 Convenience helpers only construct these values; they cannot submit or mutate.
 No `Restore`, arbitrary callback, raw shader, raw buffer, or test mutation is a
-canonical input.
+canonical input. Correlation is explicitly not part of `InputHeader` or
+canonical input bytes. At `seal`, it is associated with the input's unique
+canonical key and then its sorted `CanonicalOrder`; it cannot affect sorting,
+validation, outcomes, hashes, or participant input. Its bytes count against
+the tick reservation and observation byte budgets.
 
 ```rust
 pub enum CommandOutcome {
@@ -202,6 +216,16 @@ out-of-domain shape, arithmetic overflow, logical capacity, and participant
 effect validation have stable wire tags. A command failure may coexist with
 other command outcomes in a confirmed tick because it is itself deterministic;
 a tick-global fault produces no confirmed outcome list.
+
+Receipt and observation APIs return
+`CommandOutcomeView { canonical: CommandOutcome, correlation:
+Option<CorrelationMetadata> }`. The canonical outcome encoding contains no
+correlation bytes. The sidecar lives until both the terminal receipt cache and
+the corresponding observation-ring record expire. An observation gap may
+therefore lose correlation and reports that fact; bounded resnapshot does not
+reconstruct it. `moria-replay-v1` intentionally omits correlation, so replayed
+outcomes carry `None`. Consumers that need correlation after replay retain
+their own mapping keyed by `(tick, CanonicalOrder)`.
 
 ### TECH-021 — Receipt lifecycle and cancellation
 
@@ -284,6 +308,7 @@ Implements: REQ-005, REQ-010, REQ-017, REQ-019, REQ-021
 pub struct QueryRequest {
     pub world: WorldId,
     pub at: QueryFrontier,
+    pub freshness: QueryFreshness,
     pub scope: QueryScope,
     pub kind: QueryKind,
     pub completeness: Completeness,
@@ -293,6 +318,21 @@ pub struct QueryRequest {
 pub enum QueryFrontier {
     LatestCommitted,
     Retained { tick: Tick, root_hash: CanonicalHash },
+}
+
+pub struct QueryFreshness {
+    pub minimum: BoundedVec<MinimumVolumeRevision>,
+    pub if_unmet: MinimumRevisionPolicy,
+}
+
+pub struct MinimumVolumeRevision {
+    pub volume: VolumeId,
+    pub revision: VolumeRevision,
+}
+
+pub enum MinimumRevisionPolicy {
+    Wait,
+    ReturnStale,
 }
 
 pub enum QueryKind {
@@ -309,6 +349,9 @@ Query limits cap inspected bricks, returned cells/hits, encoded result bytes,
 and workgroups. The default per request is 4,096 bricks, 65,536 records, and
 4 MiB result bytes; configuration may lower but not exceed the compiled
 portable maxima. A request larger than its limit is rejected before work.
+`minimum` is limited by `QueryLimits.max_volume_revisions`, must contain unique
+`VolumeId`s in increasing order after admission normalization, and every ID
+must be selected by the query scope.
 
 `Completeness::Complete` returns `Pending(ReadinessReason)` or
 `Unavailable(Failure)` rather than partial data. `ExplicitPartial` returns
@@ -333,10 +376,15 @@ order. Output capacity is precomputed; overflow returns
 complete result.
 
 A query pins its root at admission. It may complete after later ticks and
-still truthfully reports its older frontier. `minimum_revision` that is not met
-returns pending or stale according to the request; Moria does not relabel.
+still truthfully reports its older frontier. A `freshness.minimum` entry that
+is not met returns pending or stale according to the request; Moria does not relabel.
 Results from a reclaimed, device-lost, or hash-mismatched root finish
-`Unavailable`, not empty.
+`Unavailable`, not empty. For `LatestCommitted`, `Wait` leaves the request
+pending without pinning an older root until every minimum is met;
+`ReturnStale` pins the current root and returns a result explicitly labeled
+`stale` with each unmet pair. A retained frontier can never become newer, so
+an unmet `Wait` condition returns `Unavailable(FrontierTooOld)` and
+`ReturnStale` behaves as above.
 
 ## Observations and telemetry
 
@@ -367,6 +415,10 @@ within-tick order, root hash, relevant revisions, and contract version.
 Coalescing is allowed only for lifecycle/presentation telemetry and retains
 the covered sequence range. Canonical outcome observations are never
 coalesced.
+
+An outcome observation also carries the optional bounded correlation sidecar
+from TECH-020. Correlation expiry follows ring expiry and is never synthesized
+after a gap; all canonical fields remain independently usable.
 
 Poll limits bound records and bytes. Overwrite advances `oldest_available` and
 produces `Gap`; no API returns the newest cursor while hiding lost history.
@@ -461,31 +513,85 @@ Implements: REQ-005, REQ-006, REQ-030, REQ-035
 ```rust
 pub trait CanonicalParticipant: Send + Sync + 'static {
     fn descriptor(&self) -> ParticipantDescriptor;
-    fn prepare(
+    fn prepare_genesis(
         &self,
+        request: ParticipantGenesisRequest,
+        sink: ParticipantStateSink,
+    );
+    fn prepare_tick(
+        &self,
+        source: ParticipantStateLease,
         request: ParticipantTickRequest,
         sink: ParticipantCompletionSink,
     );
-    fn restore(
+    fn restore_snapshot(
         &self,
-        request: ParticipantRestoreRequest,
-        sink: ParticipantRestoreSink,
+        request: ParticipantSnapshotRestoreRequest,
+        snapshot: OwnedBytes,
+        sink: ParticipantStateSink,
+    );
+    fn reconstruct(
+        &self,
+        request: ParticipantReconstructRequest,
+        log: ParticipantReplayLease,
+        sink: ParticipantStateSink,
+    );
+    fn export_snapshot(
+        &self,
+        source: ParticipantStateLease,
+        request: ParticipantSnapshotExportRequest,
+        sink: ParticipantSnapshotSink,
     );
 }
 ```
 
 The callback form avoids imposing Tokio or a `Send` future. Calls are
 nonblocking; completion sinks accept exactly one result and reject wrong
-participant/tick/source hash, duplicate completion, excessive bytes/effects,
-or a closed device generation. The descriptor fixes contract/input versions,
-strategy, maximum input/effect/snapshot/artifact bytes, and failure policy at
-genesis.
+participant/tick/source token/hash, duplicate completion, excessive
+bytes/effects, or a closed device generation. `ParticipantStateSink` and
+`ParticipantCompletionSink` accept an opaque immutable
+`PreparedParticipantState` token bound as specified by TECH-016; the adapter
+can inspect a later lease to its own token, but consumers and Moria cannot.
+There is no `commit` callback: installing the immutable token is the
+coordinator's infallible `FrontierBundle` pointer swap. Dropping an uninstalled
+token is abort. The descriptor fixes contract/input versions, strategy,
+maximum input/effect/snapshot/artifact/state-token bytes, canonical RNG
+contracts, and failure policy at genesis.
+
+```rust
+pub struct ParticipantDescriptor {
+    pub id: ParticipantId,
+    pub contract: ContractDigest,
+    pub input_schema: SchemaDigest,
+    pub strategy: ParticipantRollbackStrategy,
+    pub rng: BoundedVec<ParticipantRngContract>,
+    pub limits: ParticipantLimits,
+    pub failure: ParticipantFailurePolicy,
+}
+
+pub struct ParticipantRngContract {
+    pub stream: RngStreamId,
+    pub algorithm_id: [u8; 16],
+    pub algorithm_version: u32,
+    pub algorithm_contract: ContractDigest,
+    pub state_schema: SchemaDigest,
+    pub seed: BoundedBytes64,
+}
+```
+
+RNG entries are sorted by stream ID and follow TECH-016. An adapter declaring
+no entries attests that no randomness can affect its canonical state or
+effects; Moria provides no implicit stream.
 
 CPU participants receive immutable canonical input bytes and a bounded collider
 artifact already keyed to `State[t]`; they do not receive cell storage.
 Participant effects are `Erase`, `Place`, `Patch`, or `SetPlacement` values
-with normal preconditions. Snapshot bytes remain opaque to Moria but their
-size, digest, retention, and restoration result are coordinated.
+with normal preconditions. `prepare_tick` may read only its source lease and
+must return a distinct token. Snapshot bytes remain opaque to Moria but their
+size, digest, retention, export, durable storage, and staged restoration result
+are coordinated. For the reconstructible strategy, `reconstruct` receives the
+bounded canonical log and returns a staged token whose per-tick commitments
+must match.
 
 The Bevy GPU adapter has equivalent semantics and is specified in
 [collision-presentation.md](collision-presentation.md). Registering both CPU

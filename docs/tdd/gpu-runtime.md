@@ -22,6 +22,24 @@ a second wgpu device. `ExtractSchedule` copies only bounded request descriptors,
 immutable canonical bytes, and root-generation deltas. Large content moves
 through owned staging permits, not cloned ECS structures.
 
+Plugin finish creates one `Arc<RenderCompletionBridge>` and inserts a clone
+into both worlds. It is a mutex-protected, preallocated fixed ring, not an ECS
+event channel: extraction remains one-way, while render completions return
+through this explicitly shared transport. Each admitted GPU job must reserve
+one ring cell before extraction and carries
+`(JobId, WorldId, DeviceGeneration, attempt_nonce)`. The compiled maximum is 32
+job cells, at least the sum of the configured canonical, query, checkpoint,
+materialization, genesis, and presentation in-flight slots, plus two dedicated
+generation/shutdown control cells. Materialization shares the query/readback
+slot pool. Exhausted cells apply admission backpressure; the
+render thread never drops or overwrites a completion.
+
+GPU root and participant tokens carried by an envelope are internal
+generation-tagged IDs into render-world ownership tables, not wgpu handles.
+The main-world bundle may copy those IDs for pinning and later extraction, but
+only `RenderApp` resolves them to device objects; they never enter public IDs,
+canonical bytes, replay, or persistence.
+
 Device-independent plugin and ABI descriptors initialize in the main world.
 All recovery-sensitive GPU resources initialize through Bevy 0.19
 `RenderStartup`, so a new render device builds a new device generation.
@@ -33,10 +51,18 @@ Implements: REQ-005, REQ-013, REQ-033, REQ-040
 Moria defines render-system sets with explicit edges:
 
 ```text
-Extract:
+Main First:
+  MoriaCollectRenderCompletions
+    -> MoriaPublishCanonical
+    -> MoriaFinalizeOtherReceipts
+
+Main PostUpdate:
+  MoriaCoordinateRequests
+
+ExtractSchedule:
   ExtractMoriaRequests
 
-Render:
+Render schedule / root RenderGraph:
   MoriaPrepareResources
     -> MoriaEncodeCanonical
     -> MoriaSubmitCanonical
@@ -50,6 +76,24 @@ root `RenderGraph` subgraph after preparation and before presentation consumes
 new roots. Query dispatches against already committed roots may run alongside
 derived work but never interleave with candidate publication. CPU callback and
 mapping progress is polled in `MoriaDriveCompletion`.
+
+`MoriaDriveCompletion` moves a terminal envelope into its already reserved
+bridge cell only after mapping and decode. On the next main-world `First`,
+`MoriaCollectRenderCompletions` drains at most the configured 32 cells into a
+fixed `JobId` table. The exclusive `MoriaPublishCanonical` system accepts
+exactly one envelope for the sole pending canonical attempt, revalidates world,
+attempt nonce, source frontier, device generation, mapped diagnostic counts,
+participant products, and root hash, then performs TECH-013 step 12 as one
+`Arc<FrontierBundle>` swap. That same critical section updates receipt state,
+rollback deque, replay log, participant commitments/tokens, revision metadata,
+and canonical observations before any later main-world system can read them.
+Noncanonical job completions are finalized only afterward.
+
+Duplicate envelopes are an invariant failure and terminally fail the
+generation; an unknown or already-aborted `JobId` is acknowledged only for
+lifetime cleanup. An old-generation envelope may release its reserved cell and
+render resources but cannot publish. The main world never waits while holding
+the bridge mutex, and callback timing cannot select a tick outcome.
 
 Presentation may lag by frames. Extraction never waits for it. Rollback
 suppresses intermediate replay-derived work and emits one final dirty-root
@@ -167,9 +211,11 @@ Baseline defaults and compiled maxima are:
 | interest records | 4,096 | 16,384 | reject update |
 | observation records/world | 8,192 | 65,536 | explicit gap |
 | in-flight canonical pool | 1 | 1 | backpressure |
-| in-flight query/readback slots | 3 | 8 | reject or wait via permit |
+| in-flight query/materialization/readback slots | 3 | 8 | reject or wait via permit |
 | in-flight presentation slots | 3 | 8 | coalesce newest dirty revision |
 | participant effects/tick | 4,096 | 4,096 | `NoAdvance` |
+| participant tokens+snapshots/frontier | declared sum | 64 MiB | reject genesis / `NoAdvance` |
+| render completion bridge | 32 cells | 32 cells | reserve before extraction |
 | rollback frontiers | 32 | budget-derived | reject genesis/tick pressure |
 
 One in-flight permit owns all input, scratch, output, diagnostic, and staging
@@ -203,6 +249,14 @@ Pool telemetry records capacity, bytes, high-water marks, oldest age,
 submission-to-complete, complete-to-map, decode time, and cancellation point.
 Timeouts are diagnostics only: wall-clock expiry may mark the world
 environmentally failed, but cannot select or publish a canonical result.
+
+The bridge reserves one cell for every extracted job until the main world
+acknowledges its terminal envelope. Shutdown closes new reservations, asks the
+render world to terminalize every extracted job, and drains all reserved cells
+before removing either bridge clone. Device loss writes one dedicated
+`GenerationLost` control record and terminalizes each job into its own reserved
+cell. If fixed-ring accounting is violated, the world fails closed; no
+completion is silently replaced.
 
 ## Device loss and recovery
 
@@ -261,16 +315,30 @@ standalone second-device operation are excluded current targets.
 
 ### TECH-040 — Authority and candidate modes
 
-Implements: REQ-008, REQ-021, REQ-026, REQ-039
+Implements: REQ-008, REQ-021, REQ-023, REQ-026, REQ-039
 
 `QualificationPolicy` has two modes:
 
 - `RequireQualified(EvidenceDigest)`: genesis succeeds only when the
   digest-sealed qualification manifest exactly matches runtime tuple and all
   canonical contract digests. This is the only authority mode.
-- `Candidate`: runs the identical public API and kernels to produce evidence,
-  but every frontier is labeled `UNQUALIFIED_CANDIDATE` and cannot be exported
-  as an authoritative checkpoint or a passing conformance claim.
+- `Candidate { diagnostics }`: runs the identical public API and kernels to
+  produce evidence, but every frontier is labeled `UNQUALIFIED_CANDIDATE` and
+  cannot be exported as an authoritative checkpoint or a passing conformance
+  claim.
+
+`CandidateDiagnostics` is a normal public configuration type available to any
+external consumer. It is bounded to one optional
+`FaultOnce { tick, command_order, stage }`; v1 has the single stage
+`AfterBrickConstructionBeforePublication`. The selected ordinary matter
+command passes normal admission and construction, after which the production
+diagnostic/status record is set to `InjectedCandidateFailure` before
+TECH-013 validation step 9. The coordinator then follows the ordinary
+`FailedNoAdvance` cleanup path. The fault plan cannot write cells, roots,
+outcomes, or buffers, cannot target authority mode, is not a canonical input,
+and is recorded in candidate evidence. Authority configuration rejects
+nonempty diagnostics. This seam is qualification control, not a mutation
+bypass or a self-reported correctness result.
 
 There is no automatic CPU, alternate GPU, or relaxed-shader fallback in an
 authority world. A driver, OS, adapter, wgpu/Naga, canonical shader, encoding,
