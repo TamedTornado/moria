@@ -598,8 +598,14 @@ reconcile the existing TDD around an untested assumption.
 
 Run this audit concurrently with product-amendment drafting.
 
-Classify every existing or proposed operation that can affect canonical state
-as:
+Moria has no surviving transition-kernel implementation selected for reuse.
+The superseded TDD and discarded implementation are not audit inputs and must
+not be used to anchor the regenerated design.
+
+Rung 0a first produces a greenfield inventory of every transition-path kernel
+or algorithmic operation required to satisfy this amendment. It then classifies
+the concrete candidate mechanism proposed for the rung 0b spike, plus any
+future implementation explicitly proposed for reuse, as:
 
 - `clean`: its result is already canonical and order-independent under
   specified semantics;
@@ -609,7 +615,7 @@ as:
   allocation, append, reduction, or completion order; or
 - `unknown`: evidence is insufficient to classify it.
 
-The audit includes:
+The greenfield inventory and candidate audit include:
 
 - public mutation and publication paths;
 - placement and coordinate transforms;
@@ -628,7 +634,7 @@ The audit includes:
 
 For every non-clean entry, retain:
 
-- source document and, when code exists, source location;
+- candidate mechanism and, when code exists, source location;
 - current arithmetic and ordering assumptions;
 - canonical state affected;
 - proposed remediation;
@@ -637,8 +643,10 @@ For every non-clean entry, retain:
 - whether the old mechanism should be replaced rather than repaired.
 
 The audit report becomes an appendix to this amendment before product-design
-approval. It is a costed blast radius, not a claim that the historical TDD or
-discarded implementation remains authoritative.
+approval. It is a costed greenfield implementation surface and feasibility
+risk register. It is not a historical TDD review. If no implementation has
+been selected for reuse, the report must say so explicitly rather than
+manufacturing findings against discarded work.
 
 ### Rung 0b: cross-vendor feasibility spike
 
