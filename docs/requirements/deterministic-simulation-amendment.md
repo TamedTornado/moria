@@ -589,23 +589,26 @@ following outcomes. The fresh TDD chooses precise fixtures and mechanisms.
 - Client-local rendering interest cannot activate or deactivate canonical
   simulation state.
 
-## Sequencing gates before TDD regeneration
+## Sequencing gates before TDD approval and planning reseal
 
-The premise must be tested before a fresh full TDD is accepted. Do not
-reconcile the existing TDD around an untested assumption.
+The product design is regenerated and approved from this amendment first.
+The fresh TDD is then generated from zero. The determinism premise must be
+tested before that TDD is approved or the planning package is resealed.
 
 ### Rung 0a: transition-path kernel audit
-
-Run this audit concurrently with product-amendment drafting.
 
 Moria has no surviving transition-kernel implementation selected for reuse.
 The superseded TDD and discarded implementation are not audit inputs and must
 not be used to anchor the regenerated design.
 
-Rung 0a first produces a greenfield inventory of every transition-path kernel
-or algorithmic operation required to satisfy this amendment. It then classifies
-the concrete candidate mechanism proposed for the rung 0b spike, plus any
-future implementation explicitly proposed for reuse, as:
+Rung 0a begins only after the fresh TDD has produced concrete transition-path
+kernel and algorithm proposals and completed its first simplicity revision.
+Running it earlier would allow an unauthoritative side exercise to invent the
+technical architecture.
+
+Rung 0a inventories every transition-path kernel or algorithmic operation
+proposed by that fresh TDD. It then classifies each concrete proposed mechanism
+as:
 
 - `clean`: its result is already canonical and order-independent under
   specified semantics;
@@ -615,7 +618,7 @@ future implementation explicitly proposed for reuse, as:
   allocation, append, reduction, or completion order; or
 - `unknown`: evidence is insufficient to classify it.
 
-The greenfield inventory and candidate audit include:
+The TDD kernel inventory and audit include:
 
 - public mutation and publication paths;
 - placement and coordinate transforms;
@@ -634,19 +637,19 @@ The greenfield inventory and candidate audit include:
 
 For every non-clean entry, retain:
 
-- candidate mechanism and, when code exists, source location;
+- TDD contract and proposed mechanism;
 - current arithmetic and ordering assumptions;
 - canonical state affected;
 - proposed remediation;
 - portability risks;
 - estimated implementation and validation cost; and
-- whether the old mechanism should be replaced rather than repaired.
+- whether the proposed mechanism should be replaced rather than repaired.
 
-The audit report becomes an appendix to this amendment before product-design
-approval. It is a costed greenfield implementation surface and feasibility
-risk register. It is not a historical TDD review. If no implementation has
-been selected for reuse, the report must say so explicitly rather than
-manufacturing findings against discarded work.
+The audit report becomes part of the TDD review record and is a blocking input
+to the TDD drafter's next revision. It is a costed implementation surface and
+feasibility risk register, not a historical TDD review. Every
+`float-tainted`, `order-tainted`, or unresolved `unknown` item must be repaired,
+replaced, or explicitly block TDD approval.
 
 ### Rung 0b: cross-vendor feasibility spike
 
@@ -778,10 +781,11 @@ that one quantization step moves a voxel by less than one cell at the maximum
 supported volume radius and that derived floating-point forms never feed back
 into canonical state.
 
-## Rung 0a audit appendix
+## Rung 0a audit status
 
 **Status:** Not yet performed.
 
-The audit report required above must be appended or linked here before this
-amendment is approved as product-design authority. Absence of the audit blocks
-approval; it must not be silently treated as an empty finding set.
+This is expected because the fresh TDD does not yet exist. The audit is not a
+prerequisite for approving the product design. It becomes mandatory after the
+fresh TDD's first simplicity revision and blocks TDD approval and planning
+reseal until its findings are resolved.
