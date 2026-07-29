@@ -23,7 +23,7 @@
       "id": "S-003",
       "path": "docs/product-design-decisions.md",
       "role": "human_product_design_decisions",
-      "sha256": "8041ad81acf24b05e879a2dd43c2db0cb535b84f41a605614cb9af996e5c1b6d",
+      "sha256": "624d21afe3ebc40585f244ba4a98f28011212d13b8d0e36c7c9a665637e0f5ec",
       "referenced_paths": [
         "docs/design-document.md"
       ]

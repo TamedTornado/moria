@@ -1208,39 +1208,9 @@ but its character, controls, camera, route, palette, assets, generator, and
 performance target remain harness content. No walkable harness is required to
 declare the substrate itself complete.
 
-### Technical-design and feasibility gates
-
-**Requirement: REQ-042. Authority: C-015, D-010.**
-
-The prior TDD and discarded implementation are historical evidence, not a
-revision target or source of selected mechanisms. A fresh TDD must first
-propose the transition path and complete its initial simplicity revision.
-Only then does the blocking transition-path audit inventory every proposed
-authoritative operation and classify it as clean, float-tainted, order-tainted,
-or unknown. The inventory includes mutation/publication, placement and
-orientation, allocation, compaction and reduction, collision, participant
-effects, directories and activation, hashing/encoding, persistence,
-snapshot/restore/reclamation, and content activation. Every non-clean item is
-costed and then repaired, replaced, or left as an explicit blocker before TDD
-approval.
-
-Before the planning package is resealed, a representative cross-vendor spike
-must exercise the TDD's proposed fixed-point placement/orientation, canonical
-matter mutation and conflict resolution, dirty discovery, deterministic
-allocation and compaction, hierarchical hashes, retained snapshots, rollback,
-replay, and observer-side byte comparison. Identical fixture bytes run on
-actual Metal and Vulkan hardware; initial Vulkan evidence should include two
-vendors when suitable hardware is available. DX12 remains present but
-unqualified until it passes on actual hardware. A divergent byte fails the
-gate; performance cannot convert it to a pass.
-
-The spike proves representative feasibility, not completed-engine conformance.
-The production implementation must still pass REQ-039 for every claimed
-qualified backend and rerun it after affected canonical changes.
-
 ## 11. Scope reconciliation
 
-**Requirement: REQ-024. Authority: C-001, C-002, C-003, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-013, C-014, C-015, C-016, AD-001, AD-002, AD-003, AD-004, AD-005, AD-006, AD-007, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, D-010.**
+**Requirement: REQ-024. Authority: C-001, C-002, C-003, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-013, C-014, C-015, C-016, AD-001, AD-002, AD-003, AD-004, AD-005, AD-006, AD-007, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009.**
 
 The subordinate design sources contain useful ideas at mixed levels of
 authority. This design resolves them as follows.
@@ -1355,8 +1325,7 @@ The product outcomes do not select:
 - rollback fixture scale, population, dirty rate, strategy mix, frame interval,
   hardware profiles, measured-curve format, and other acceptance thresholds;
   and
-- benchmark scenes, milestone order, and task decomposition beyond the
-  explicitly required audit and cross-vendor feasibility gates.
+- benchmark scenes, milestone order, and task decomposition.
 
 Technical design should retain alternatives long enough to measure them
 against GPU residency, portability, bounded access, sparse scale, presentation
@@ -1364,13 +1333,6 @@ quality, mutation latency, canonical semantics, rollback cost, and
 cross-backend conformance. No technical selection may add a privileged consumer
 path, make completion timing authoritative, or elevate a game-specific behavior
 into substrate policy.
-
-The separate netcode feasibility ladder is retained as research only. Its
-latency scenarios, prediction rule, correction histograms, physics experiments,
-mitigation knobs, kill criteria, phase maps, and later integration sketch add
-no Moria requirement and do not gate approval of this product design. Only the
-amendment's Moria-owned determinism and representative feasibility gates are
-selected here.
 
 ## 12. Resolved human design decisions
 
@@ -1384,10 +1346,10 @@ remain technical-design concerns.
 
 ### Deterministic-simulation decisions
 
-**Requirement: REQ-043. Authority: C-008, C-010, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, D-010.**
+**Requirement: REQ-043. Authority: C-008, C-010, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009.**
 
-The deterministic-simulation amendment resolves these additional calls, whose
-full consequences appear throughout this document:
+Human product-design review resolves these additional calls, whose full
+consequences appear throughout this document:
 
 - **D-002:** canonical numbered-tick authority is mandatory after genesis; no
   nondeterministic convenience mutation path exists.
@@ -1406,15 +1368,10 @@ full consequences appear throughout this document:
   and joins coordinated commitments without surrendering behavior ownership.
 - **D-009:** simulation-domain lifecycle is tick-stamped canonical state,
   separate from local interest.
-- **D-010:** the fresh-TDD transition audit and representative cross-vendor
-  spike are blocking feasibility gates in the specified sequence.
-
 No human product-design question remains open. Rollback workload parameters,
 initial hardware tuples as available, and canonical orientation representation
 are resolved outcomes requiring TDD parameterization, not invitations to
-revisit the product decisions. The rung-0a audit is correctly pending until the
-fresh TDD has concrete proposals and has completed its first simplicity
-revision.
+revisit the product decisions.
 
 ## 13. Completion criteria
 
@@ -1458,6 +1415,4 @@ public facade alone:
     qualification cases.
 
 Passing one curated demo or meeting one machine's performance table is not a
-substitute for these contract outcomes. Passing separate netcode research rungs
-is neither a Moria completion criterion nor permission to import their gameplay
-or networking scope.
+substitute for these contract outcomes.

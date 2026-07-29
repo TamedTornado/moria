@@ -33,8 +33,7 @@ technical-design concerns.
 
 ### D-002. Mandatory canonical tick authority
 
-**Status:** Resolved in the deterministic-simulation amendment supplied by the
-human operator.
+**Status:** Resolved by human product-design review.
 
 **Decision:** Deterministic tick authority is mandatory for every Moria world.
 World construction and verified content installation establish a canonical
@@ -49,8 +48,7 @@ Moria. Technical design selects the encoding and transition mechanisms.
 
 ### D-003. Canonical simulation representation
 
-**Status:** Resolved in the deterministic-simulation amendment supplied by the
-human operator.
+**Status:** Resolved by human product-design review.
 
 **Decision:** Canonical transitions use integer or exactly specified
 fixed-point semantics. Canonical results may not depend on floating-point
@@ -67,8 +65,7 @@ that must satisfy these product semantics.
 
 ### D-004. Local replay and cross-GPU determinism
 
-**Status:** Resolved in the deterministic-simulation amendment supplied by the
-human operator.
+**Status:** Resolved by human product-design review.
 
 **Decision:** Identical canonical genesis bytes and ordered tick-batch bytes
 produce identical canonical results and per-tick hashes within one qualified
@@ -82,8 +79,7 @@ if they render or pass local replay tests.
 
 ### D-005. Bounded rollback and performance qualification
 
-**Status:** Resolved in the deterministic-simulation amendment supplied by the
-human operator.
+**Status:** Resolved by human product-design review.
 
 **Decision:** Moria retains a configurable rollback window with a universal
 minimum capacity of 20 confirmed ticks. A retained snapshot shares unchanged
@@ -102,8 +98,7 @@ not Moria gameplay.
 
 ### D-006. Incremental hashes and public replay
 
-**Status:** Resolved in the deterministic-simulation amendment supplied by the
-human operator.
+**Status:** Resolved by human product-design review.
 
 **Decision:** Every confirmed tick has a canonical simulation hash covering
 all state capable of changing a future canonical result, including coordinated
@@ -119,8 +114,7 @@ domains and contract versions must be explicit.
 
 ### D-007. Derived-cache freedom and deterministic collision
 
-**Status:** Resolved in the deterministic-simulation amendment supplied by the
-human operator.
+**Status:** Resolved by human product-design review.
 
 **Decision:** Presentation and other derived caches are outside the canonical
 determinism boundary and cannot influence simulation. Collision facts used by
@@ -135,8 +129,7 @@ canonical collision exists.
 
 ### D-008. Coordinated participant rollback
 
-**Status:** Resolved in the deterministic-simulation amendment supplied by the
-human operator.
+**Status:** Resolved by human product-design review.
 
 **Decision:** Every external behavior participant capable of affecting
 canonical state registers one explicit rollback strategy:
@@ -151,8 +144,7 @@ gameplay policy.
 
 ### D-009. Canonical simulation-domain lifecycle
 
-**Status:** Resolved in the deterministic-simulation amendment supplied by the
-human operator.
+**Status:** Resolved by human product-design review.
 
 **Decision:** Simulation-domain activation and deactivation are canonical,
 tick-stamped state, distinct from local render, inspection, or materialization
@@ -163,24 +155,6 @@ resolve to one deterministic union.
 **Boundary retained:** Consumers define what activity and any coarse simulation
 mean. Moria transports and coordinates that state without defining gameplay.
 Technical design may initially require session-scale simulation residency.
-
-### D-010. Determinism feasibility gates
-
-**Status:** Resolved in the deterministic-simulation amendment supplied by the
-human operator.
-
-**Decision:** The fresh technical design is generated from zero. After its
-first simplicity revision, a complete transition-path audit must classify and
-resolve float-tainted, order-tainted, and unknown authoritative operations.
-Before the planning package is resealed, a representative cross-vendor spike
-must prove the proposed canonical discipline on actual Metal and Vulkan
-hardware; DX12 remains unqualified until it independently passes. Production
-backend qualification requires the complete conformance suite.
-
-**Boundary retained:** The audit evaluates proposals selected by the fresh
-technical design; it does not select product mechanisms in advance. Separate
-netcode feasibility rungs add no Moria scope and do not gate approval of this
-product design.
 
 ## Open human questions
 
@@ -222,24 +196,23 @@ choices.
 
 ---
 
-## Deterministic-simulation amendment entry
+## Deterministic-simulation decisions
 
 ### Recorded human direction
 
-The human-supplied amendment requires Moria to serve as authoritative
-voxel-world state inside deterministic simulations with rollback, replay, and
-cross-machine desync detection. It explicitly preserves GPU-resident authority
-and external ownership of physics, damage, generation, networking, and gameplay
+The human requires Moria to serve as authoritative voxel-world state inside
+deterministic simulations with rollback, replay, and cross-machine desync
+detection. This direction explicitly preserves GPU-resident authority and
+external ownership of physics, damage, generation, networking, and gameplay
 policy.
 
 ### Decision and clarification
 
-Decisions D-002 through D-010 preserve the amendment's settled product calls.
-The design must integrate them throughout mutation, lifecycle, collision,
-persistence, behavior-extension, failure, validation, and performance
-experience. Technical parameters TP-001 through TP-003 remain for the fresh
-technical design to select and prove; they are not open product-boundary
-questions.
+Decisions D-002 through D-009 preserve the settled product calls. The design
+must integrate them throughout mutation, lifecycle, collision, persistence,
+behavior-extension, failure, validation, and performance experience. Their
+technical parameters remain for the technical design to select and prove; they
+are not open product-boundary questions.
 
 ### Unresolved question
 
