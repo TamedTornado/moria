@@ -270,19 +270,30 @@ On device loss Moria:
    `FailedNoAdvance(DeviceLost)`;
 2. preserves the last confirmed root identity, tick log, checkpoint identity,
    and participant commitments on the host, but makes GPU queries unavailable;
-3. asks Bevy `RenderStartup` to construct a new generation;
-4. verifies that the replacement adapter matches a current qualified tuple;
-5. restores the newest compatible durable checkpoint and replays confirmed
-   canonical batches, bounded by `recovery_replay_cap` (default 256 ticks);
-6. compares every retained expected hash and participant commitment;
-7. republishes the same frontier or enters terminal `Failed`.
+3. applies every GPU participant's TECH-029 failure policy: any `FailWorld`
+   participant makes the world `Failed`; otherwise the world enters
+   `RecoveringParticipant` and waits for an explicit `request_recovery`;
+4. reserves one bounded recovery attempt, asks Bevy `RenderStartup` to
+   construct a new generation, and verifies that the replacement adapter
+   matches a current qualified tuple;
+5. restores the newest compatible durable checkpoint—including its
+   participant snapshot and exact replay-record blobs—and replays the
+   confirmed in-memory suffix, bounded by `recovery_replay_cap` (default 256
+   ticks);
+6. compares every retained expected hash, participant commitment, and RNG
+   commitment;
+7. republishes the same frontier and returns to `Ready`, or applies
+   `NoAdvanceExplicitRetry` by remaining `RecoveringParticipant` with an
+   explicit failed recovery receipt.
 
 The confirmed tick log stores inputs and bounded canonical outcome/participant
 records, not a voxel mirror. If there is no compatible checkpoint/genesis
 source, replay exceeds its bound, a participant cannot restore, the tuple is
-unqualified, or a hash diverges, automatic recovery fails explicitly. The last
-durable checkpoint remains usable; Moria never fabricates empty matter or
-publishes a different state as recovery.
+unqualified, or a hash diverges, that recovery attempt fails explicitly.
+Moria never loops or schedules a timer retry; the consumer may request another
+bounded attempt or shut down. The last durable checkpoint remains usable;
+Moria never fabricates empty matter or publishes a different state as
+recovery.
 
 Device loss during checkpoint readback leaves the manifest uncommitted and the
 root pinned until failure cleanup. Device-bound objects are never retained

@@ -89,8 +89,9 @@ helpers respectively. Overflow at either width is
 `CanonicalFailure::ArithmeticOverflow`; an implementation may not reassociate,
 reduce early, saturate, or use floating point to avoid it.
 
-Orientation is a canonical unit quaternion `QuatQ14Wire([i16; 4])`, component
-order `(x,y,z,w)`, scale 16,384. Registration and composition:
+Orientation is a canonical quantized unit quaternion
+`QuatQ14Wire([i16; 4])`, component order `(x,y,z,w)`, scale
+`S = 16,384`. Registration and composition:
 
 1. registration treats the four input components as one integer vector;
    composition computes the raw Q2.28 Hamilton product in this exact order:
@@ -98,40 +99,63 @@ order `(x,y,z,w)`, scale 16,384. Registration and composition:
    `y=aw*by-ax*bz+ay*bw+az*bx`,
    `z=aw*bz+ax*by-ay*bx+az*bw`,
    `w=aw*bw-ax*bx-ay*by-az*bz`, evaluating terms left-to-right;
-2. calculate `norm = isqrt(x*x+y*y+z*z+w*w)` with checked signed 64-bit
-   products/sums, and normalize each component directly as
-   `round_ties_even(component*16384/norm)` without an earlier Q14 reduction;
-3. choose the sign whose first nonzero component in `(w,x,y,z)` is positive;
-4. reject a zero norm or a component outside `i16`;
-5. apply the same procedure after every composition.
+2. calculate the exact positive integer squared norm
+   `N = x*x+y*y+z*z+w*w` with checked signed 64-bit products/sums; reject
+   `N == 0`;
+3. for each component magnitude `a`, compute the exact
+   `round_ties_even(a*S/sqrt(N))` without first truncating `sqrt(N)`: a
+   15-step binary search finds the largest `q in 0..=S` for which
+   `q*q*N <= a*a*S*S`; compare `4*a*a*S*S` with
+   `(2*q+1)*(2*q+1)*N` in checked `i128`, choosing `q`, `q+1`, or the even
+   one on equality (`q == S` cannot increment), then restore the component
+   sign;
+4. require every result component to fit `i16` and require the quantized-unit
+   shell
+   `abs(rx*rx+ry*ry+rz*rz+rw*rw - S*S) <= 32,769`; failure of this
+   postcondition is `CanonicalFailure::InvalidOrientation`;
+5. choose the sign whose first nonzero component in `(w,x,y,z)` is positive;
+6. apply the same procedure after every composition.
 
-Inverse negates `(x,y,z)` and repeats sign canonicalization. The algorithm is
-closed over `QuatQ14Wire` and cannot accumulate backend-dependent drift. The
-declared 4,095-cell maximum radius makes the worst representable one-step
-orientation quantization displacement less than one cell; a generated
-exhaustive-bound proof is retained with the arithmetic tests. Float transforms
-are one-way derived presentation values and are never accepted back as a
-canonical placement.
+This comparison is the normative square-root rounding algorithm; an
+implementation may not substitute division by `isqrt(N)`. In particular,
+registration input `(1,1,0,0)` normalizes to
+`(11585,11585,0,0)` rather than remaining length `sqrt(2)`. The shell bound
+follows from rounding four exact normalized components by at most one half each.
+Inverse negates `(x,y,z)` and repeats sign canonicalization; it does not
+renormalize because the squared norm is unchanged. The algorithm is closed
+over `QuatQ14Wire` and cannot accumulate backend-dependent drift.
 
-Canonical vector rotation does not use quaternion multiplication. It first
-builds this signed Q2.28 matrix, with `S = 1 << 28`, from the normalized Q1.14
-components:
+Canonical vector rotation does not assume that the quantized components have
+an exactly representable Euclidean length. From the stored components it
+recomputes `D = x*x+y*y+z*z+w*w` and builds this signed rational rotation
+numerator:
 
 ```text
-[ S-2(yy+zz)   2(xy-wz)    2(xz+wy)   ]
-[ 2(xy+wz)     S-2(xx+zz)  2(yz-wx)   ]
-[ 2(xz-wy)     2(yz+wx)    S-2(xx+yy) ]
+[ D-2(yy+zz)   2(xy-wz)    2(xz+wy)   ]
+[ 2(xy+wz)     D-2(xx+zz)  2(yz-wx)   ]
+[ 2(xz-wy)     2(yz+wx)    D-2(xx+yy) ]
 ```
 
-Each matrix term is calculated exactly in `i64`. For each output component,
-the three matrix×Q23.8 products are checked and summed left-to-right in the
-displayed order, then reduced once by `2^28` with round-to-nearest,
-ties-to-even. Inverse rotation uses the transpose of this same matrix; it does
-not rebuild a second matrix from a rounded inverse. Placement is exactly
+The denominator of every entry is the same exact positive `D`. This is the
+scale-independent quaternion rotation formula, so before the final
+fixed-point rounding the rational transform is orthogonal even when the
+stored quaternion lies anywhere in the permitted quantized-unit shell. Each
+numerator term is calculated exactly in `i64`. For each output component, the
+three numerator×vector products are checked and summed left-to-right in the
+displayed order, then divided once by `D` with round-to-nearest, ties-to-even.
+Inverse rotation uses the transpose of this same numerator and denominator; it
+does not rebuild a second matrix from a rounded inverse. Placement is exactly
 `world = translation + rotate(orientation, local - pivot)` and its inverse is
 `local = pivot + rotate_transpose(orientation, world - translation)`, with a
 checked operation at every subtraction and addition. Collision, CPU oracle,
 WGSL, persistence verification, and replay all use this sequence.
+
+The declared 4,095-cell maximum radius makes the worst representable
+one-component orientation quantization step, including final Q23.8 transform
+rounding, less than one cell. Retained generated proofs cover the unit-shell
+postcondition, rational orthogonality, transpose inverse, composition closure,
+and this displacement bound. Float transforms are one-way derived
+presentation values and are never accepted back as canonical placement.
 
 ## Canonical bytes and commitments
 
@@ -423,7 +447,10 @@ copies verified snapshot bytes into `CheckpointStore` for durable checkpoints
 as specified by TECH-045. The participant is not allowed to substitute a
 durable external locator. `ReconstructibleFromCanonicalStateAndLog` tokens
 declare their maximum replay prefix and must reproduce every intermediate
-commitment from canonical genesis/frontier plus log bytes.
+commitment from canonical genesis/frontier plus exact log bytes. A durable
+checkpoint owns content-addressed copies of the required replay records as
+specified by TECH-044 through TECH-049; an in-memory range or digest without
+those bytes is not a reconstruction source.
 
 Moria itself has no RNG algorithm or RNG state. A participant using randomness
 that can affect canonical output must list every stream in its genesis
@@ -457,4 +484,8 @@ products cause `NoAdvance` or rollback failure. Participant completion order
 is irrelevant: products occupy preassigned `ParticipantId` slots and are
 combined in ID order. Moria never interprets participant behavior or RNG
 meaning, but it validates every declared bound, identity, digest, and lifecycle
-transition.
+transition. The descriptor's closed `ParticipantFailurePolicy` controls
+whether such a failed canonical operation leaves the world retryable at its
+last frontier or terminally fails it; TECH-029 defines the complete matrix.
+No policy can omit the participant, reuse its prior token as the next tick's
+state, synthesize an empty commitment, or publish a partial bundle.

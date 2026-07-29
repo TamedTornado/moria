@@ -77,8 +77,9 @@ Only the canonical tick coordinator can replace the live canonical root.
 Consumers own input bytes, base-content production, the semantics and opaque
 representation of participant state, and checkpoint storage. Moria owns
 lifecycle pins for immutable participant state tokens and copies declared
-snapshot blobs into that checkpoint storage. Moria also owns admitted copies
-of input, material truth,
+snapshot blobs plus reconstructible participants' required replay-record blobs
+into that checkpoint storage. Moria also owns admitted copies of input,
+material truth,
 physical GPU allocation, revision publication, canonical outcomes, and derived
 work. A successful queue operation means admission only. Authority changes
 only when a receipt reaches `Confirmed`.

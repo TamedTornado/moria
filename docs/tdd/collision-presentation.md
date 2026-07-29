@@ -50,7 +50,7 @@ earliest representable contact.
 
 The normative collision algorithm is `moria-collision-v1`:
 
-1. A placement maps local point `p` by TECH-007's exact
+1. A placement maps local point `p` by TECH-007's exact rational-rotation
    `translation + R(p - pivot)` sequence. World shapes are converted to volume
    local space with the exact inverse sequence. Sphere radius and box/capsule
    extents are unchanged; AABB orientation becomes `inverse(volume_q)`,
@@ -111,20 +111,32 @@ The normative collision algorithm is `moria-collision-v1`:
    found by a fixed 32-step high-to-low bit test against the original
    polynomial. Initial overlap is time zero. If the interval intersection is
    empty through time one, the result is `NoHit`.
-8. A nonzero witness/axis `n` becomes Q1.14 by
-   `round_ties_even(16384*n_i/ceil_sqrt(dot(n,n)))` per component. An interior
-   zero witness uses the selected face unit vector. Sphere/capsule contact
-   point is the box witness; polytope contact point is the component-wise
-   ties-to-even midpoint of the cell support point along `n` and shape support
-   point along `-n`, with support-vertex ties resolved by encoded vertex order.
-   Sweep witnesses are evaluated at the exact winning rational time and only
-   then rounded once to Q23.8 ties-to-even.
+8. A nonzero local witness/axis `n` becomes Q1.14 using TECH-007's exact
+   square-root rounding comparison with scale 16,384 and no sign
+   canonicalization; its direction is from the occupied cell toward the query
+   shape. An interior zero witness uses the selected face unit vector.
+   Sphere/capsule local contact point is the box witness; polytope local
+   contact point is the component-wise ties-to-even midpoint of the cell
+   support point along `n` and shape support point along `-n`, with
+   support-vertex ties resolved by encoded vertex order. Sweep witnesses are
+   evaluated at the exact winning rational time and only then rounded once to
+   local Q23.8 ties-to-even.
+9. Public contact facts are always world-space. Transform the local contact
+   point with TECH-007's exact `translation + R(local - pivot)` sequence.
+   Rotate the directed local Q1.14 normal with TECH-007's same rational
+   numerator/denominator, reducing each component once to Q1.14 ties-to-even,
+   then normalize that rounded vector with the exact square-root comparison
+   from TECH-007 and without quaternion-style sign canonicalization. A zero
+   rotated vector or failed quantized-unit-shell postcondition is an arithmetic
+   failure. This conversion occurs after winner selection and cannot change
+   fact ordering or the selected face.
 
 Every fraction has a positive denominator and is reduced by binary GCD before
 storage. No epsilon exists. A zero sweep delta runs static overlap and returns
 zero or `NoHit`. Invalid extents, a nonrepresentable transform, checked
 overflow, singular case not covered by the stated boundary reduction, or a
-normal/contact outside its wire range is a typed collision arithmetic failure;
+world normal/contact outside its wire range is a typed collision arithmetic
+failure;
 ordinary queries become `Unavailable`, while a canonical participant tick is
 `NoAdvance`. CPU and WGSL must execute the same axis, candidate, and reduction
 order.
@@ -143,11 +155,20 @@ leaf hash; masks may accelerate but cannot report occupied matter empty.
 Trace uses three-axis integer DDA with rational comparisons; sweep broad phase
 uses the union of start/end bounds. Candidate facts occupy fixed input slots,
 then stable mark/scan/scatter and sort establish TECH-024 order. A complete
-fact is:
+fact uses the following named wire types:
+
+```rust
+pub struct WorldContactPointQWire(pub [i32; 3]); // Q23.8 world coordinates
+pub struct WorldContactNormalQWire(pub [i16; 3]); // Q1.14, cell toward shape
+```
+
+The normal is not sign-canonicalized because its direction is semantic. A
+complete fact is:
 
 ```text
 tick, world root, volume/revision, local cell, material,
-time_of_impact, contact point, normal, source leaf hash
+time_of_impact, world_contact_point: WorldContactPointQWire,
+world_contact_normal: WorldContactNormalQWire, source leaf hash
 ```
 
 `NoHit` is emitted only if every required brick was ready and inspected.
@@ -265,13 +286,18 @@ effects through CPU, while admission and publication remain identical.
 
 Adapter pipeline/device creation failure, panic caught at the FFI/callback
 boundary where possible, validation error, output overflow, or old generation
-causes `NoAdvance`. There is no automatic CPU implementation swap. Device
-resources reconstruct in `RenderStartup`; old-generation state tokens are
-terminal and are restored into new staged tokens from a durable snapshot or
-canonical reconstruction log before publication. A correction never asks the
-device adapter to mutate its current token in place. On correction failure,
-shutdown, or generation loss, uninstalled tokens drain their last queue use and
-return to the bounded pool without affecting the pinned live token.
+causes `NoAdvance`, after which the descriptor's TECH-029
+`ParticipantFailurePolicy` selects retryable last-frontier or terminal-world
+handling. There is no automatic CPU implementation swap. Device resources
+reconstruct in `RenderStartup`; old-generation state tokens are terminal and
+are restored into new staged tokens from a durable snapshot or exact canonical
+replay-record bytes before publication. Under
+`NoAdvanceExplicitRetry`, generation loss holds the world in
+`RecoveringParticipant` until that equality-checked reconstruction succeeds;
+under `FailWorld` it enters `Failed`. A correction never asks the device
+adapter to mutate its current token in place. On correction failure, shutdown,
+or generation loss, uninstalled tokens drain their last queue use and return
+to the bounded pool without affecting the pinned live token.
 
 ## Derived presentation
 

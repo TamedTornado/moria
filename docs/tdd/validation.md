@@ -20,9 +20,13 @@ Required deterministic tests include:
 
 - golden bytes and digests for every canonical record and hash domain;
 - arithmetic edges for every operation, overflow, division, shift, ties-even
-  rounding, quaternion normalization/composition/inverse, exact Q2.28
-  quaternion-vector matrix rotation/inverse, checked i64/i128 helper parity,
-  and the maximum-radius displacement proof;
+  rounding, exact square-root quaternion normalization (including
+  `(1,1,0,0)`), composition/inverse, quantized-unit-shell membership,
+  rational quaternion-vector rotation/transpose inverse and orthogonality,
+  checked i64/i128 helper parity, and the maximum-radius displacement proof;
+  generated accepted-quaternion cases assert the shell after every
+  registration/composition and the retained proof checks all permitted
+  rounding branches;
 - generated edit state machines with create/retire/move/erase/place/patch,
   overlaps, stale preconditions, revision exhaustion, and failed atomic
   commands;
@@ -35,6 +39,9 @@ Required deterministic tests include:
   `moria-collision-v1` formula. Golden edge fixtures cover closed-low/open-high
   points, face/edge/corner touches, inside witnesses, zero radius/extent/
   capsule/sweep, transform round trips, quaternion half-step rounding,
+  exact world-space contact point/normal bytes for rotated and translated
+  dynamic volumes, directed-normal preservation and post-rotation
+  renormalization,
   parallel slabs, all 15 SAT axes and zero cross axes, equal penetration ties,
   capsule breakpoint/clamp regions, singular 2×2 sweep systems, irrational
   quadratic TOI floors, support-vertex ties, and every arithmetic failure;
@@ -72,6 +79,11 @@ and gap expiry, query minimum-revision wait/stale behavior, shutdown with dirty
 truth, and a missing `RenderApp`. The missing-renderer case reports
 `BackendUnavailable`; it is not a GPU test and does not install a no-op
 canonical backend.
+
+The participant slice exercises every row of both
+`ParticipantFailurePolicy` variants at genesis, ordinary preparation,
+correction, durable restore, device loss/recovery, checkpoint export, and
+shutdown; it asserts that no row can publish without the participant.
 
 `moria-qualify` compiles as a separate binary crate and imports only public
 `moria`. A lint/test fails if it enables a test-only facade feature or imports a
@@ -125,6 +137,9 @@ The suite intentionally destroys/loses a test device where the backend harness
 supports it. Outstanding work must fail, old callbacks must not publish,
 device-bound state must reconstruct or reach the documented terminal failure,
 and root semantics after successful replay must match.
+It also compares exact rotated dynamic-volume collision fact wire bytes,
+including world-space contact points and directed normals, rather than only
+hit membership.
 
 Evidence records input/output digests and decoded comparisons. “Shader
 compiled,” “queue submitted,” “frame rendered,” a mock, or a software adapter
@@ -208,6 +223,11 @@ committed tick/revision change, observation, and retained dirty state. The test
 asserts unknown never becomes empty, no scar disappears, no internal storage
 handle escapes, and no timing-selected tick confirms.
 
+External participant rows are expanded for every
+`ParticipantFailurePolicy`/failure-site pair in TECH-029, including
+`RecoveringParticipant`, successful explicit recovery, recovery mismatch, and
+terminal-world behavior.
+
 I/O, materialization, callback, and presentation schedules are permuted while
 the same activation input bytes run. Simulation-domain normalized bytes and
 hashes must match. Overlapping activity regions produce one union. Camera and
@@ -245,6 +265,16 @@ Correction tests make the snapshot participant succeed and the reconstructible
 participant fail after several private ticks, then prove the original live
 participant tokens/commitments and substrate root are unchanged and every
 staged token is reclaimed after its last GPU use.
+
+The reconstructible participant checkpoint persists several
+`moria-checkpoint-replay-v1` chunks, terminates the process fixture, discards
+all in-memory log state, and restores using only manifest-referenced
+digest-verified blobs. Its declared RNG stream must reproduce every
+intermediate and final state commitment. Missing, reordered, overlapping,
+gapped, corrupt, oversized, and store-failed chunks prevent manifest commit or
+restore as appropriate. Holding replay blob puts pending while every scar and
+snapshot blob is durable proves that the manifest cannot commit and the
+checkpoint is not a recovery anchor; byte accounting includes those chunks.
 
 Poisoning each canonical influence category changes its appropriate leaf/root
 at the first affected tick. Poisoning mesh/cache/telemetry does not.

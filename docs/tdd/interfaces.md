@@ -486,7 +486,8 @@ Implements: REQ-008, REQ-015, REQ-016, REQ-021
 ```text
 Configuring -> VerifyingGenesis -> Ready <-> Replaying
                               \-> Failed
-Ready/Replaying/Failed -> ShuttingDown -> Closed
+Ready/Replaying -> RecoveringParticipant -> Ready | Failed
+Ready/Replaying/RecoveringParticipant/Failed -> ShuttingDown -> Closed
 ```
 
 `Failed` exposes the last trustworthy frontier but rejects new ticks; bounded
@@ -577,11 +578,42 @@ pub struct ParticipantRngContract {
     pub state_schema: SchemaDigest,
     pub seed: BoundedBytes64,
 }
+
+pub enum ParticipantFailurePolicy {
+    NoAdvanceExplicitRetry, // canonical descriptor tag 0
+    FailWorld,              // canonical descriptor tag 1
+}
 ```
 
 RNG entries are sorted by stream ID and follow TECH-016. An adapter declaring
 no entries attests that no randomness can affect its canonical state or
 effects; Moria provides no implicit stream.
+
+`ParticipantFailurePolicy` is a closed, genesis-bound choice. It applies only
+after registration/admission; malformed descriptors always fail configuration.
+There is no skip, stale-token reuse, empty-commitment, CPU-fallback, or
+best-effort variant. Unknown wire tags are rejected during descriptor
+decoding. Its exact behavior is:
+
+| Failure site | `NoAdvanceExplicitRetry` | `FailWorld` |
+| --- | --- | --- |
+| Genesis preparation | Fail construction; no genesis is published | Same |
+| Ordinary tick preparation/validation | Terminally fail that tick receipt as `NoAdvance(Participant(id, code))`; retain `State[t]` and `Ready`; only a new explicit submission may retry | Same `NoAdvance`, then enter `Failed` with `State[t]` as last trustworthy frontier |
+| Retained rollback/correction | Fail the correction, drain private tokens, retain the original live bundle and `Ready` | Same atomic abort, then enter `Failed` |
+| Durable restore/reconstruction | Fail construction; no restored bundle is published | Same |
+| Device generation loss | Fail the affected attempt and enter `RecoveringParticipant`; reject ticks until an explicit bounded recovery recreates an equal-commitment token from a retained snapshot or durable replay bytes | Enter `Failed` immediately; drain old-generation work without publication |
+| Snapshot export/checkpoint | Fail only the checkpoint because the installed token remains trustworthy; explicit checkpoint retry is allowed | Same; persistence failure does not corrupt canonical participant state |
+| Shutdown | Close new participant permits, suppress publication, drain submitted uses, and report abandonment | Same |
+
+Each explicit retry is one newly admitted, resource-reserved operation; Moria
+performs no timer-driven or unbounded internal retry. Recovery installs a
+replacement token only when participant ID, contract, tick, root, commitment,
+RNG commitments, and new device generation exactly match the retained
+frontier. It changes no canonical bytes and emits a lifecycle observation.
+Recovery mismatch follows the same policy row again. A non-retryable adapter
+contract violation or proven commitment divergence is reported distinctly;
+the policy still selects operation-scoped versus world-terminal handling but
+never permits publication.
 
 CPU participants receive immutable canonical input bytes and a bounded collider
 artifact already keyed to `State[t]`; they do not receive cell storage.
@@ -589,9 +621,10 @@ Participant effects are `Erase`, `Place`, `Patch`, or `SetPlacement` values
 with normal preconditions. `prepare_tick` may read only its source lease and
 must return a distinct token. Snapshot bytes remain opaque to Moria but their
 size, digest, retention, export, durable storage, and staged restoration result
-are coordinated. For the reconstructible strategy, `reconstruct` receives the
-bounded canonical log and returns a staged token whose per-tick commitments
-must match.
+are coordinated. For the reconstructible strategy, `reconstruct` receives
+bounded canonical replay-record bytes (from pinned memory for recent
+correction or digest-verified checkpoint blobs after restart) and returns a
+staged token whose per-tick commitments must match.
 
 The Bevy GPU adapter has equivalent semantics and is specified in
 [collision-presentation.md](collision-presentation.md). Registering both CPU

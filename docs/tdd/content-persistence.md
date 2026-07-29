@@ -129,7 +129,13 @@ Implements: REQ-001, REQ-014, REQ-017, REQ-028, REQ-032
 - participant IDs/contracts/input schemas/strategies/commitments, complete RNG
   descriptors and current RNG-state commitments, and snapshot blob digests
   where applicable;
-- replay prefix/suffix digests sufficient for the configured recovery point;
+- for every reconstructible participant, its required inclusive replay tick
+  range and a sorted list of content-addressed
+  `moria-checkpoint-replay-v1` chunk descriptors `{first_tick, last_tick,
+  record_count, uncompressed_bytes, blob_digest}` whose exact bytes cover the
+  union of all such ranges without gaps or overlap;
+- replay prefix/suffix digests binding that covered range to the public
+  `moria-replay-v1` sequence;
 - completeness counts, total uncompressed bytes, and manifest checksum.
 
 Derived meshes, dressing, resident base-cache entries, physical slots, Bevy
@@ -155,7 +161,7 @@ base cells or serializes derived state. Completion reports exactly:
 ```text
 checkpoint key, durable tick/root, per-volume revisions,
 participant commitments, scar/node/blob and participant-snapshot-blob counts,
-compressed/uncompressed bytes
+replay-record/chunk counts, compressed/uncompressed bytes
 ```
 
 The pinned participant frontier is part of traversal. For every
@@ -175,18 +181,41 @@ participant commitment, snapshot length/digest, and device generation where
 applicable. Moria checks all fields, exact length, and BLAKE3 digest before
 calling `CheckpointStore::put_blob`; the store completion must confirm the
 same digest. At most three aggregate checkpoint staging slots and 64 MiB of
-store writes, including scar and participant bytes, are in flight. Snapshot
-participants cannot provide an external locator instead of bytes.
+store writes, including scar, participant, and replay bytes, are in flight.
+Snapshot participants cannot provide an external locator instead of bytes.
 Reconstructible participants contribute descriptor, commitment, and required
-replay range but no snapshot blob.
+replay range but no snapshot blob. Moria takes the union of those ranges,
+pins every exact confirmed `moria-replay-v1` tick record, and rejects
+checkpoint admission if any record is absent or a participant's range exceeds
+its declared `max_replay_ticks`. Chunks contain at most 64 consecutive records
+and at most 8 MiB uncompressed; an oversized individual record is one
+single-record chunk only if it fits both the checkpoint request and
+`max_log_bytes`, otherwise admission fails. Chunk encoding retains the exact
+length-prefixed tick-record bytes and adds only the
+`moria-checkpoint-replay-v1` version, first/last tick, record count, and
+checksum. It never reconstructs records from digests.
 
-`commit_manifest` is not called until every scar/node/metadata and participant
-snapshot blob has reached `BlobDurable`. The manifest references exactly those
-verified digests. Any participant export, generation, mapping, store, size, or
-digest failure enters `Failed`, publishes no manifest, and cannot report that
-participant frontier durable. Submitted exports and puts drain for lifetime
-safety; the root and participant tokens remain pinned until all reservations
-are released.
+Replay chunks use the same bounded durable state machine:
+
+```text
+LogPinned -> BytesReserved -> ChunkEncoded -> BytesVerified
+          -> BlobPutPending -> BlobDurable -> ManifestReferenced
+          \-> Failed
+```
+
+Encoding and storage reserve the chunk's declared uncompressed bytes before
+work starts. Moria verifies tick continuity, each embedded record checksum and
+digest, the chunk length, and its BLAKE3 blob digest before
+`CheckpointStore::put_blob`; store completion must confirm that digest.
+
+`commit_manifest` is not called until every scar/node/metadata,
+participant-snapshot, and required replay chunk has reached `BlobDurable`. The
+manifest references exactly those verified digests. Any participant export,
+generation, mapping, replay gap/encode, store, size, or digest failure enters
+`Failed`, publishes no manifest, and cannot report that participant frontier
+durable. Submitted exports and puts drain for lifetime safety; the root,
+participant tokens, and log records remain pinned until all reservations are
+released.
 
 Failure keeps the root and all later dirty truth live, reports whether orphan
 blobs may exist, and publishes no manifest. Cancelling before a submitted
@@ -205,22 +234,27 @@ Restore is world construction, not a post-genesis mutation:
 2. verify all contract versions and manifest digest;
 3. match material, base lineage **and exact manifest roots**, volume sources,
    qualification tuple, and participant registrations;
-4. load every referenced scar/node/snapshot blob, enforce bounds, decompress,
-   and verify its uncompressed digest;
+4. load every referenced scar/node/snapshot/replay-chunk blob, enforce bounds,
+   decompress, and verify its uncompressed digest; validate each replay
+   chunk's tick interval, embedded record checksum/digest, exact continuity,
+   and prefix/suffix digest against the manifest before exposing a
+   `ParticipantReplayLease`;
 5. rebuild new-generation GPU pages and radix roots from logical keys;
 6. ask snapshot participants to create staged tokens from verified snapshot
-   bytes and reconstructible participants to create staged tokens while
-   proving their declared starting commitment and RNG-state commitments;
+   bytes and reconstructible participants to create staged tokens from only
+   the restored canonical frontier plus their manifest-declared replay range,
+   while proving every reproduced intermediate commitment and the saved final
+   participant/RNG-state commitments;
 7. recompute every root bottom-up and compare the saved world root;
 8. publish the restored frontier and readiness context, then permit the next
    tick.
 
 The restored GPU root and all participant tokens remain in one private genesis
 bundle until all steps pass; adapter calls never mutate a live singleton.
-Publishing that bundle is one pointer swap. Corruption, missing IDs or
-blobs, unsupported contract, wrong lineage/root, content-source inability,
-participant mismatch, resource exhaustion, unqualified backend, or hash
-disagreement fails the entire restore. Migration/rebase is a separate
+Publishing that bundle is one pointer swap. Corruption, missing IDs, replay
+gaps, missing blobs, unsupported contract, wrong lineage/root, content-source
+inability, participant mismatch, resource exhaustion, unqualified backend, or
+hash disagreement fails the entire restore. Migration/rebase is a separate
 consumer-authored tool that produces a new genesis identity; Moria does not
 guess or mutate an old checkpoint in place.
 
@@ -298,13 +332,25 @@ returns `PersistenceBackpressure`; Moria never silently drops the only recovery
 record.
 
 Checkpoint traversal defaults to 16 MiB mapped bytes and 64 MiB store writes
-in flight, with three staging slots shared by scar and participant exports.
+in flight, with three staging slots shared by scar, participant, and replay
+blobs.
 The sum of declared snapshot maxima must fit the configured checkpoint byte
 budget and the 64 MiB per-frontier compiled maximum; otherwise genesis or
 checkpoint admission fails before export. A manifest may reference at most the
 configured scar nodes/bricks and 4 GiB uncompressed data in v1; lower consumer
 limits are honored. Counts/offsets use checked `u64`, while individual wire
 sequences remain `u32` bounded.
+
+The union of reconstructible participant ranges must also fit
+`max_log_ticks`, `max_log_bytes`, the checkpoint request's total byte budget,
+the 4 GiB manifest maximum, and the three-slot/64 MiB in-flight limits.
+Replay-record and replay-chunk bytes count in checkpoint progress, completion,
+telemetry, manifest completeness totals, and recovery-anchor accounting. A
+checkpoint is a recovery anchor for a reconstructible participant only after
+every required chunk and then the manifest are durable. Once that anchor is
+visible, older in-memory records may be released only if they are not required
+by rollback, correction, another participant range, or an attached replay
+sink.
 
 Rollback capacity is tick- and byte-bounded. A tick whose worst-case COW state
 would exceed the canonical budget receives `NoAdvance(CanonicalBudget)`;

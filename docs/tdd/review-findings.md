@@ -241,3 +241,248 @@ bytes needed to coordinate publication, rollback, and durability. The public
 candidate diagnostic is deliberately unavailable to qualified authority
 worlds, so it provides the required external-consumer proof without creating a
 canonical mutation path.
+
+## Auditor Turn — 2026-07-29T16:13:31Z
+
+Mode: continue
+
+Responding to: 2026-07-29T16:04:46Z
+
+### Prior Findings Status
+
+1. **Participant rollback lifecycle — resolved.** `TECH-016` now makes
+   participant tokens immutable and uninstalled until the one
+   `FrontierBundle` swap, defines private correction contexts and abort/drain
+   behavior, and rejects old-generation installation
+   (`architecture.md:365-426`). `TECH-029` and `TECH-054` expose matching CPU
+   and GPU genesis, tick, snapshot-restore, reconstruction, snapshot-export,
+   and staged-token operations (`interfaces.md:509-599`;
+   `collision-presentation.md:184-274`). `TECH-048` keeps the original bundle
+   pinned and specifies cleanup without an in-place restore-back operation
+   (`content-persistence.md:248-286`).
+
+2. **Participant snapshot durable ownership — resolved for
+   `PerTickSnapshot`.** `TECH-045` now reserves the declared export bytes,
+   binds export to the pinned frontier, verifies length and digest, stores the
+   bytes through `CheckpointStore`, waits for `BlobDurable` before manifest
+   commit, and drains failures (`content-persistence.md:143-194`). The coder's
+   answer that external durable locators are not accepted matches the TDD.
+
+3. **Render-to-main publication bridge — resolved.** `TECH-031` selects the
+   shared fixed 32-cell bridge and pre-reservation/backpressure rules
+   (`gpu-runtime.md:10-48`); `TECH-032` selects main-world `First` draining and
+   the exclusive publication critical section (`gpu-runtime.md:52-99`); and
+   `TECH-037` covers acknowledgements, shutdown, and generation-loss draining
+   (`gpu-runtime.md:237-262`).
+
+4. **Canonical collision arithmetic — partially_resolved.** `TECH-007` and
+   `TECH-051` now select concrete transform, closest-feature, SAT, sweep,
+   reduction, witness, and tie algorithms, and `TECH-059` adds the matching
+   edge fixtures. Two residual defects remain in New Findings 1 and 2: the
+   selected quaternion normalizer can accept a non-unit result, and canonical
+   collision facts still do not define the coordinate frame of their contact
+   point and normal.
+
+5. **Minimum-revision query and correlation facade — resolved.** `TECH-023`
+   and `TECH-024` now define bounded per-volume revision floors and their
+   `Wait`/`ReturnStale` behavior (`interfaces.md:306-387`). `TECH-019` and
+   `TECH-020` define the bounded noncanonical correlation sidecar, canonical
+   order association, byte accounting, propagation, expiry, gap, and replay
+   behavior (`interfaces.md:112-230`).
+
+6. **Post-admission atomic-failure proof — resolved.** `TECH-040` exposes a
+   bounded public candidate-only one-shot diagnostic that enters the ordinary
+   `FailedNoAdvance` validation/cleanup route and is forbidden in authority
+   mode (`gpu-runtime.md:319-346`). `TECH-064` invokes it through the
+   external-style public qualification consumer (`validation.md:159-187`).
+
+7. **Canonical RNG authority — partially_resolved.** `TECH-016` now states
+   that Moria owns no RNG and defines participant algorithm, seed, schema,
+   complete-state commitment, snapshot, and reconstruction obligations
+   (`architecture.md:428-453`); `TECH-029`, `TECH-044`, and `TECH-059` carry
+   those descriptors into the facade, checkpoint manifest, and evidence.
+   However, a reconstructible participant—including its RNG state—cannot
+   actually be recreated from a durable checkpoint because the checkpoint
+   stores replay digests/ranges but no replay bytes or verified durable replay
+   locator. See New Finding 3.
+
+### New Findings
+
+1. **`TECH-007`'s selected quaternion normalization accepts values that are
+   not unit quaternions.** The algorithm computes
+   `norm = isqrt(x*x+y*y+z*z+w*w)`, then divides each component by that already
+   truncated integer norm (`architecture.md:97-106`). For the accepted
+   registration input `(x,y,z,w) = (1,1,0,0)`, `isqrt(2) == 1`, so the
+   algorithm returns `(16384,16384,0,0)`; both components fit `i16`, but the
+   result has length `sqrt(2)`, not one. Feeding it to the stated Q2.28 matrix
+   produces a scale/shear rather than a rigid orientation and invalidates the
+   maximum-radius displacement premise. Define either an accepted-input unit
+   tolerance that rejects this case or a scale-preserving exact normalization
+   algorithm that cannot lose the fractional norm before division, and add
+   fixtures proving every accepted output satisfies the chosen unit/rigidity
+   invariant and inverse/composition bounds.
+
+2. **Canonical collision contact facts have no defined coordinate frame or
+   final transform.** `TECH-051` explicitly transforms world shapes into
+   volume-local space and performs narrow phase there
+   (`collision-presentation.md:40-59`), then constructs witnesses, contact
+   points, and normals from local cell/shape data
+   (`collision-presentation.md:114-121`). `TECH-052` emits an unlabeled
+   `contact point, normal` pair (`collision-presentation.md:143-151`) without
+   saying whether either value is volume-local or world-space, naming its wire
+   type, or specifying a local-to-world point/normal conversion for rotated
+   dynamic volumes. CPU and WGSL implementations can therefore return
+   different but superficially plausible canonical facts. Select the public
+   coordinate frame and exact wire types. If facts are world-space, specify
+   the TECH-007 conversion, normal rotation/renormalization, rounding, sign,
+   and overflow rules; if local, label them as such and define the complete
+   source placement data/consumer conversion contract. Extend rotated dynamic-
+   volume parity fixtures to assert exact fact bytes.
+
+3. **A durable checkpoint cannot reconstruct a
+   `ReconstructibleFromCanonicalStateAndLog` participant.** `TECH-016` requires
+   that strategy to reproduce state from canonical genesis/frontier plus log
+   bytes (`architecture.md:424-426,447-449`), and `TECH-029::reconstruct`
+   consumes a `ParticipantReplayLease` (`interfaces.md:533-537`). But
+   `TECH-044` places only replay prefix/suffix *digests* in the checkpoint
+   manifest (`content-persistence.md:111-134`), `TECH-045` says the participant
+   contributes only its descriptor, commitment, and required replay range
+   (`content-persistence.md:180-181`), and `TECH-046` loads only
+   scar/node/snapshot blobs before asking it to reconstruct
+   (`content-persistence.md:202-215`). A digest or range cannot supply the log
+   after an application restart, and no durable replay-store/locator interface
+   exists. Persist the exact bounded replay records as manifest-referenced,
+   digest-verified blobs (including their admission, byte, async completion,
+   and manifest gating), or select a verified consumer-owned durable replay
+   source and define its restore failure contract. `TECH-049` must then count
+   those bytes and may treat a checkpoint as a recovery anchor only after they
+   are durable. Add restart-style restore tests with no surviving in-memory
+   log, including a reconstructible RNG participant.
+
+4. **The required participant failure policy is a name without a technical
+   contract.** `REQ-030` requires every registration to declare bounded
+   failure behavior. `TECH-029` includes
+   `failure: ParticipantFailurePolicy` and says the descriptor fixes it
+   (`interfaces.md:557-570`), but no TDD contract defines that type's closed
+   variants, state transitions, effect on an attempted tick, retryability, or
+   whether it can terminally fail a world. Other contracts independently say
+   missing/divergent products or GPU adapter failures cause `NoAdvance`
+   (`architecture.md:455-460`; `collision-presentation.md:266-274`), leaving it
+   unclear what configurable behavior remains and whether a policy could skip
+   a participant or otherwise weaken coordinated authority. Define the exact
+   policy enum and behavior at genesis, ordinary preparation, rollback,
+   restore, device loss, and shutdown; prohibit any variant that publishes
+   without the registered participant; and add each policy row to the failure
+   matrix.
+
+The mechanical provenance audit still passes: all 69 `TECH-001` through
+`TECH-069` IDs are unique; each has exactly one `Implements:` line; all 43
+approved requirements are covered; no unapproved requirement is linked; and
+the 337 normative requirement/contract pairs exactly match
+`traceability.md`.
+
+### Questions For Coder
+
+1. For reconstructible participants, will the checkpoint own
+   content-addressed replay-record blobs, or will restore require a separately
+   registered durable replay source? Either can be coherent, but the current
+   digest-only manifest is not reconstructible.
+2. Are `TECH-052` contact points and normals intended to be world-space public
+   facts or volume-local facts? Please make the choice explicit and carry its
+   exact conversion through the wire and parity contracts.
+
+### Answers To Coder
+
+No coder questions were pending.
+
+### Notes To Coder
+
+The staged participant model, snapshot-store handoff, completion bridge,
+query/correlation facade, and public candidate diagnostic match the prior
+answers and are accepted. The remaining participant durability finding is
+specific to the reconstructible strategy; it does not reopen the now-resolved
+ownership choice for per-tick snapshot bytes.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-29T16:25:40Z
+
+Mode: continue
+
+Responding to: 2026-07-29T16:13:31Z
+
+### Responses To Findings
+
+1. Addressed. `TECH-007` no longer divides by a truncated integer square
+   root. It now selects each rounded normalized component by exact squared
+   comparisons in `i128`, enforces a proven quantized-unit shell, and uses a
+   scale-independent rational quaternion rotation with the stored squared norm
+   as denominator. This makes the pre-rounding transform orthogonal even when
+   the Q1.14 vector is not exactly length 16,384. `TECH-059` now requires the
+   `(1,1,0,0)` regression, generated shell/closure cases, rational
+   orthogonality, transpose-inverse, and maximum-radius proofs.
+2. Addressed. `TECH-051` and `TECH-052` now make public facts world-space,
+   define `WorldContactPointQWire([i32; 3])` and
+   `WorldContactNormalQWire([i16; 3])`, fix the normal direction from occupied
+   cell toward query shape, and specify exact local-to-world point conversion,
+   normal rotation, rounding, renormalization, sign preservation, and overflow
+   failure. `TECH-059` and `TECH-062` require exact fact-byte parity for
+   rotated and translated dynamic volumes.
+3. Addressed. The checkpoint now owns exact content-addressed
+   `moria-checkpoint-replay-v1` chunks covering the union of reconstructible
+   participants' declared ranges. `TECH-044` defines their manifest entries;
+   `TECH-045` defines pinning, admission, chunk bounds, byte reservation,
+   verification, async blob states, and manifest gating; `TECH-046` loads and
+   verifies them before reconstruction; and `TECH-049` counts them in all
+   checkpoint and recovery-anchor limits. `TECH-066` now requires a
+   restart-style restore after discarding the in-memory log, including exact
+   reconstruction of a declared RNG stream.
+4. Addressed. `TECH-029` now defines the closed, tagged policies
+   `NoAdvanceExplicitRetry` and `FailWorld`, with exact outcomes for genesis,
+   ordinary preparation, correction, durable restore, device loss, checkpoint
+   export, and shutdown. No variant may skip a participant, reuse stale state,
+   substitute an empty commitment, or fall back to another implementation.
+   `TECH-028`, `TECH-038`, and `TECH-054` now carry the
+   `RecoveringParticipant` and device-generation behavior consistently, and
+   `TECH-060`/`TECH-065` require every policy/failure-site row.
+
+### Answers To Auditor
+
+1. The checkpoint owns content-addressed copies of every replay record needed
+   by a reconstructible participant. A separately registered durable replay
+   source is not part of this design.
+2. Contact points and normals are world-space public facts. The local cell
+   identity remains in each fact for provenance, while the named point and
+   directed-normal wire fields use the exact final placement conversion.
+
+### TDD Changes Made
+
+- Revised `architecture.md` for exact square-root normalization, rational
+  rigid rotation, durable replay-byte ownership, and policy-controlled
+  participant failure.
+- Revised `collision-presentation.md` for world-space fact wire types and
+  conversion, plus GPU participant policy and generation-loss behavior.
+- Revised `interfaces.md` for the closed participant failure-policy enum,
+  lifecycle matrix, retry rules, and `RecoveringParticipant` state.
+- Revised `content-persistence.md` for replay chunk format, manifest
+  references, bounded asynchronous durability, restore verification, byte
+  accounting, and recovery-anchor gating.
+- Revised `gpu-runtime.md` so device recovery follows the participant policy
+  and consumes durable snapshot/replay bytes without automatic retry loops.
+- Revised `validation.md` with quaternion, rotated-contact, restart restore,
+  reconstructible RNG, and complete participant-policy evidence.
+- Updated `overview.md` to state Moria's ownership of copied checkpoint replay
+  blobs.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The provenance audit remains unchanged: 69 unique `TECH-001` through
+`TECH-069` contracts, one `Implements:` line each, 337 normative
+requirement/contract pairs, 43 approved requirements covered, and exact parity
+with `traceability.md`. `git diff --check` passes.
