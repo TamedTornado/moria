@@ -73,7 +73,7 @@ Required slices cover every legal transition and invalid transition rejection,
 permit drop/queue close, receipt drop after submission, cancellation lifetime,
 full TECH-070 callable-shape compile/use, ownership return on every admission
 rejection, every TECH-021 family/phase/cancellation/retry/device-loss/shutdown
-row, gap and bounded resnapshot/resume, subscription creation/start/filter/
+row (including public replay), gap and bounded resnapshot/resume, subscription creation/start/filter/
 close/drop, interest withdrawal with pins, checkpoint failure,
 participant duplicate/late completion, participant source-token immutability,
 private correction success/abort, snapshot export failure, completion-bridge
@@ -97,6 +97,17 @@ duplicate/late/generation completion, source panic, and resource release.
 They assert that no source-owned `Vec`, writer, error chain, or diagnostic
 allocation enters a Moria queue.
 
+Provider-registry fixtures call every builder registration method, reject
+duplicate IDs without replacement, and fail freeze for every missing or
+wrong-kind base-authority/source/content-store/input-source/checkpoint-store/
+replay-sink reference. Store fixtures compile external implementations of
+`ContentBlobStore`, `CheckpointStore`, and `ReplaySink`; exercise exact,
+short, long, dropped, duplicate, cancelled, and late-generation sink methods;
+and prove `load_manifest(key)` sees either the complete atomically committed
+manifest or `NotFound`, never a partial value. Checkpoint, restore, shutdown
+checkpoint, and recovery each use the exact request store ID and never fall
+through after that store fails.
+
 The participant slice exercises every row of both
 `ParticipantFailurePolicy` variants at genesis, ordinary preparation,
 correction, durable restore, device loss/recovery, checkpoint export, and
@@ -113,6 +124,13 @@ zero/min/default/max/max+1 and exercises every TECH-036 cross-limit inequality,
 including checked-arithmetic overflow. Passing genesis retains exactly the
 declared queue/pool/output capacities in telemetry; failing genesis invokes no
 consumer callback and allocates no device page.
+An explicit `default-budget-smoke-v1` uses every normative `ResourceBudgets`
+default, a qualifying baseline adapter with the declared 2 GiB authoritative
+ceiling, the default 65,536-volume capacity, and aggregate participant
+frontier claims of 64 MiB. It asserts the exact 1,967,128,576-byte
+`required_20_bytes` calculation, reaches `GenesisReady`, and retains 20
+frontiers. A companion changes only `changed_bricks_per_tick` to 16,384 under
+the 2 GiB byte defaults and must reject before callback/device allocation.
 
 `moria-qualify` compiles as a separate binary crate and imports only public
 `moria`. A lint/test fails if it enables a test-only facade feature or imports a
@@ -212,7 +230,9 @@ facade:
 1. **Public boundary:** configure, verify genesis, interest, sample/region/
    trace/overlap/sweep, mutate, create filtered observation subscriptions,
    force/recover a gap, read telemetry, checkpoint, correct, restore, request
-   device recovery where supported, and shut down through every TECH-070
+   a private-world public replay from exported records, produce a bounded
+   earliest-divergence artifact from one poisoned expected hash, request device
+   recovery where supported, and shut down through every TECH-070
    callable without a private import.
 2. **Deep volume:** a static volume has voids, signed-density boundaries,
    material bands, and authored structures across all axes. Queries and edits
@@ -310,6 +330,16 @@ gapped, corrupt, oversized, and store-failed chunks prevent manifest commit or
 restore as appropriate. Holding replay blob puts pending while every scar and
 snapshot blob is durable proves that the manifest cannot commit and the
 checkpoint is not a recovery anchor; byte accounting includes those chunks.
+
+Public replay tests retain/export exact live records through a registered
+`ReplaySink`, discard every live world/root/log object, then pass only the
+owned `ReplayRequest` header and records to a new frozen builder. Every tick's
+expected root/outcome/participant bytes are compared before private advance;
+success publishes only the final world. Poisoning each expected category
+returns the earliest exact `DivergenceArtifact` without publishing a world.
+Fixtures cover record/sink count and byte backpressure, dropped/duplicate/
+late sink completion, absent/gapped/reordered records, cancellation before and
+after private submission, artifact-capacity rejection, and device loss.
 
 Poisoning each canonical influence category changes its appropriate leaf/root
 at the first affected tick. Poisoning mesh/cache/telemetry does not.
@@ -418,8 +448,9 @@ The implementation-ready completion gate is:
 2. implementation-completeness validation proves every normative public Rust
    name is defined, every TECH-070 callable compiles from the external-style
    binary, every async family has the TECH-021 admission/cancel/terminal/
-   retry/shutdown/generation tests, and every resource/callback/observation/
-   participant ownership bound has executable evidence;
+   retry/shutdown/generation tests, and every provider registry,
+   key-based manifest load, resource/callback/observation/participant/replay
+   ownership bound has executable evidence;
 3. the exact local commands in TECH-004 pass;
 4. all CPU/headless/public-boundary/failure/persistence/rollback tests pass;
 5. every WGSL module and negative fixture passes at its named layer;

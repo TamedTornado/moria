@@ -160,10 +160,25 @@ fact uses the following named wire types:
 ```rust
 pub struct WorldContactPointQWire(pub [i32; 3]); // Q23.8 world coordinates
 pub struct WorldContactNormalQWire(pub [i16; 3]); // Q1.14, cell toward shape
+pub struct TimeOfImpactWire(pub u64); // Q0.32, 0..=0x1_0000_0000
+
+pub struct CollisionFact {
+    pub tick: Tick,
+    pub world_root: CanonicalHash,
+    pub volume: VolumeId,
+    pub revision: VolumeRevision,
+    pub local_cell: LocalCellPoint,
+    pub material: MaterialId,
+    pub time_of_impact: TimeOfImpactWire,
+    pub world_contact_point: WorldContactPointQWire,
+    pub world_contact_normal: WorldContactNormalQWire,
+    pub source_leaf_hash: CanonicalHash,
+}
 ```
 
-The normal is not sign-canonicalized because its direction is semantic. A
-complete fact is:
+The normal is not sign-canonicalized because its direction is semantic. The
+closed `CollisionFact` above is the complete fact; its field order is its wire
+order. Conceptually it contains:
 
 ```text
 tick, world root, volume/revision, local cell, material,
@@ -210,6 +225,29 @@ Implements: REQ-002, REQ-005, REQ-006, REQ-012, REQ-030, REQ-044
 The deliberately Bevy/wgpu-coupled seam is:
 
 ```rust
+pub struct GpuParticipantDescriptor {
+    pub participant: ParticipantDescriptor,
+    pub shader_contract: ContractDigest,
+    pub workgroup_size: u32,
+    pub scratch_bytes: u64,
+}
+pub struct GpuParticipantContract {
+    pub device_generation: DeviceGeneration,
+    pub granted_limits_digest: ContractDigest,
+    pub collider_abi: ContractDigest,
+    pub effect_abi: ContractDigest,
+    pub event_abi: ContractDigest,
+    pub state_abi: ContractDigest,
+}
+pub struct GpuParticipantStateLease<'a> { /* borrowed immutable state binding */ }
+pub struct ParticipantGpuInput<'a> { /* borrowed input/artifact bindings */ }
+pub struct ParticipantEffectSink<'a> { /* borrowed fixed-slot effect binding */ }
+pub struct ParticipantEventSink<'a> { /* borrowed fixed-slot event binding */ }
+pub struct GpuParticipantStateSink<'a> { /* borrowed unreferenced state binding */ }
+pub struct GpuSnapshotInput<'a> { /* borrowed verified snapshot binding */ }
+pub struct GpuSnapshotOutput<'a> { /* borrowed fixed-size staging binding */ }
+pub struct GpuParticipantReplayInput<'a> { /* borrowed exact replay binding */ }
+
 pub trait BevyGpuParticipant: Send + Sync + 'static {
     fn descriptor(&self) -> GpuParticipantDescriptor;
     fn prepare_device(

@@ -13,6 +13,16 @@ Implements: REQ-004, REQ-008, REQ-014, REQ-020, REQ-021
 Every genesis volume selects one:
 
 ```rust
+pub struct BaseContentSourceId(pub u32);
+pub struct BaseAuthorityId(pub u32);
+pub struct ContentBlobStoreId(pub u32);
+pub struct CheckpointStoreId(pub u32);
+pub struct ReplaySinkId(pub u32);
+pub struct BaseRequestId(pub u64);
+pub struct CheckpointKey(pub [u8; 32]);
+pub struct ReplayStreamKey(pub [u8; 32]);
+pub struct ContentLineage(pub [u8; 16]);
+
 pub enum BaseAuthority {
     Uniform {
         cell: CellWire,
@@ -47,6 +57,17 @@ pub trait BaseContentSource: Send + Sync + 'static {
     );
 }
 
+pub trait ContentBlobStore: Send + Sync + 'static {
+    fn descriptor(&self) -> ContentBlobStoreDescriptor;
+    fn get_blob(&self, digest: BlobDigest, limits: BlobLimits, done: LoadSink);
+}
+
+pub struct ContentBlobStoreDescriptor {
+    pub id: ContentBlobStoreId,
+    pub contract: ContractDigest,
+    pub max_blob_bytes: u64,
+}
+
 pub struct BaseSourceDescriptor {
     pub id: BaseContentSourceId,
     pub contract: ContractDigest,
@@ -79,6 +100,12 @@ pub enum BaseCompletionDisposition {
     AlreadyCompleted,
     Cancelled,
     LateGeneration,
+}
+
+pub enum BaseCompletionWriteError {
+    TooLong,
+    Cancelled,
+    AlreadyTerminal,
 }
 
 pub struct BaseBrickCompletion { /* private Moria completion-cell token */ }
@@ -165,14 +192,106 @@ Persistence is store-neutral:
 
 ```rust
 pub trait CheckpointStore: Send + Sync + 'static {
+    fn descriptor(&self) -> CheckpointStoreDescriptor;
     fn put_blob(&self, digest: BlobDigest, bytes: OwnedBytes, done: StoreSink);
     fn get_blob(&self, digest: BlobDigest, limits: BlobLimits, done: LoadSink);
+    fn load_manifest(
+        &self,
+        key: CheckpointKey,
+        limits: BlobLimits,
+        done: ManifestLoadSink,
+    );
     fn commit_manifest(
         &self,
         key: CheckpointKey,
         manifest: OwnedBytes,
         done: CommitSink,
     );
+}
+
+pub struct CheckpointStoreDescriptor {
+    pub id: CheckpointStoreId,
+    pub contract: ContractDigest,
+    pub max_blob_bytes: u64,
+    pub max_manifest_bytes: u64,
+    pub atomic_manifest_visibility: bool,
+}
+
+pub struct BlobLimits {
+    pub max_bytes: u64,
+}
+
+pub struct StoreFailure {
+    pub code: StoreErrorCode,
+    pub retryability: Retryability,
+    pub diagnostic: BoundedUtf8<96>,
+}
+
+pub enum StoreErrorCode {
+    Unavailable,
+    PermissionDenied,
+    Capacity,
+    Corrupt,
+    NotFound,
+    UnsupportedAtomicCommit,
+    Internal,
+}
+
+pub enum StoreCompletionDisposition {
+    Accepted,
+    InvalidCompletion,
+    AlreadyCompleted,
+    Cancelled,
+    LateGeneration,
+}
+
+pub enum StoreCompletionWriteError {
+    TooLong,
+    AlreadyTerminal,
+    Cancelled,
+}
+
+pub struct StoreSink { /* private put-blob completion token */ }
+pub struct LoadSink { /* private get-blob completion token */ }
+pub struct ManifestLoadSink { /* private key-load completion token */ }
+pub struct CommitSink { /* private manifest-commit completion token */ }
+
+impl StoreSink {
+    pub fn stored(
+        self,
+        digest: BlobDigest,
+        durable_bytes: u64,
+    ) -> StoreCompletionDisposition;
+    pub fn fail(self, failure: StoreFailure) -> StoreCompletionDisposition;
+}
+
+impl LoadSink {
+    pub fn write(&mut self, bytes: &[u8])
+        -> Result<(), StoreCompletionWriteError>;
+    pub fn finish(
+        self,
+        digest: BlobDigest,
+    ) -> StoreCompletionDisposition;
+    pub fn fail(self, failure: StoreFailure) -> StoreCompletionDisposition;
+}
+
+impl ManifestLoadSink {
+    pub fn write(&mut self, bytes: &[u8])
+        -> Result<(), StoreCompletionWriteError>;
+    pub fn finish(
+        self,
+        key: CheckpointKey,
+    ) -> StoreCompletionDisposition;
+    pub fn fail(self, failure: StoreFailure) -> StoreCompletionDisposition;
+}
+
+impl CommitSink {
+    pub fn committed(
+        self,
+        key: CheckpointKey,
+        manifest_digest: BlobDigest,
+    ) -> StoreCompletionDisposition;
+    pub fn fail(self, failure: StoreFailure) -> StoreCompletionDisposition;
 }
 ```
 
@@ -181,17 +300,45 @@ BLAKE3 digests of uncompressed canonical bytes; zstd is a storage encoding
 whose version/options are recorded and whose decode has a maximum output.
 Deduplication is optional and cannot change semantics.
 
-Every `StoreSink`, `LoadSink`, and `CommitSink` is a non-`Clone` token into the
+Every `StoreSink`, `LoadSink`, `ManifestLoadSink`, and `CommitSink` is a
+non-`Clone` token into the
 same bounded completion-cell discipline as TECH-041. Moria reserves the
 callback slot, worst-case result/diagnostic bytes, and operation record before
-calling the store. `LoadSink` accepts sequential bounded copies into a
+calling the store. Load sinks accept sequential bounded copies into a
 Moria-owned `BlobLimits.max_bytes` buffer, not an `OwnedBytes` returned by the
-store; commit/put completions carry only a closed status code and a
-`BoundedUtf8<96>` diagnostic. Duplicate, dropped, cancelled, and late
-completions have the same explicit dispositions and cannot commit a manifest.
+store. `finish` requires the exact reserved byte length and expected digest for
+a blob and the exact reserved byte length and requested key for a manifest.
+Short output, identity mismatch, or a wrong durable-byte count returns
+`InvalidCompletion` and fails the owning operation. `stored` and `committed`
+likewise echo the expected identity. A long write, write after terminal, or
+write after cancellation returns the closed `StoreCompletionWriteError`
+variants `TooLong`, `AlreadyTerminal`, or `Cancelled`. Commit/put completions
+carry only the closed status and bounded diagnostic. Duplicate, dropped,
+cancelled, and late completions have
+the explicit dispositions above and cannot commit a manifest.
 `OwnedBytes` passed *to* `put_blob`/`commit_manifest` is immutable Moria-owned
 input whose lifetime is pinned through completion; the store receives no
 allocator or growable Moria collection.
+Builder freeze rejects a checkpoint-store descriptor whose
+`atomic_manifest_visibility` is false or whose declared maxima cannot satisfy
+the configured checkpoint limits.
+
+`CheckpointKey` is a consumer-selected fixed 32-byte opaque key scoped to one
+registered `CheckpointStoreId`. It is the store-visible locator for the
+atomically visible manifest; it is not a blob digest. `load_manifest` is the
+only key-to-manifest operation and returns `NotFound` for an invisible,
+uncommitted, or absent key. A successful `CommitSink::committed` means a later
+`load_manifest` on that store and key observes the complete exact manifest
+bytes or a store failure—never an older partial write. Recommitting an existing
+key with different bytes is rejected as `Corrupt`; idempotent recommit of the
+same manifest digest may succeed.
+
+Dropping any live sink reports `ProducerDropped`; cancellation closes it and
+waits only for an active bounded copy to leave the cell; old-generation
+success is `LateGeneration` and releases lifetime state without delivering
+bytes. Store calls are never automatically retried. A new checkpoint, restore,
+recovery, or bundled-content operation owns the explicit retry and a fresh
+sink/reservation.
 
 The native reference store writes content-addressed blobs first, verifies
 length/digest, fsyncs them, writes a manifest to a unique temporary name,
@@ -209,6 +356,7 @@ Implements: REQ-001, REQ-014, REQ-017, REQ-028, REQ-032
 
 - product, canonical encoding, arithmetic, hash, transition, and persistence
   schema digests;
+- checkpoint-store ID, store contract digest, and store-visible checkpoint key;
 - world/genesis ID, exact base lineage and manifest roots, material registry;
 - confirmed and durable tick, world root hash, per-volume revisions;
 - live and retired volume identities, domains, kinds, placements, and scar
@@ -239,16 +387,47 @@ Implements: REQ-005, REQ-014, REQ-017, REQ-018
 ```rust
 pub struct CheckpointRequest {
     pub world: WorldId,
+    pub store: CheckpointStoreId,
     pub key: CheckpointKey,
     pub frontier: FrontierSummary,
     pub max_uncompressed_bytes: u64,
     pub max_manifest_nodes: u32,
     pub max_manifest_blobs: u32,
 }
+
+pub struct DurableFrontier {
+    pub store: CheckpointStoreId,
+    pub key: CheckpointKey,
+    pub frontier: FrontierSummary,
+}
+
+pub struct ParticipantCommitmentFact {
+    pub participant: ParticipantId,
+    pub contract: ContractDigest,
+    pub state_bytes: u64,
+    pub state_digest: CanonicalHash,
+    pub rng_state_digests: BoundedVec<CanonicalHash>,
+}
+
+pub struct CheckpointCommitted {
+    pub durable: DurableFrontier,
+    pub volume_revisions: BoundedVec<VolumeRevisionFact>,
+    pub participant_commitments: BoundedVec<ParticipantCommitmentFact>,
+    pub scar_nodes: u32,
+    pub scar_blobs: u32,
+    pub participant_snapshot_blobs: u32,
+    pub replay_records: u32,
+    pub replay_chunks: u32,
+    pub compressed_bytes: u64,
+    pub uncompressed_bytes: u64,
+    pub manifest_digest: BlobDigest,
+}
 ```
 
 A checkpoint request names an exact confirmed `(tick, root_hash)` and a maximum
-readback/store budget. Admission pins that immutable root and participant
+readback/store budget and one exact frozen-registry `CheckpointStoreId`.
+Unknown stores reject admission and no fallback to the configured default or
+another registered store occurs. Admission pins that immutable root and participant
 frontier, reserves one queue/operation/receipt record and the declared staging
 and terminal-result bytes, and returns the TECH-070 `CheckpointReceipt`.
 Admission rejection returns the unchanged `CheckpointRequest`. New ticks may
@@ -333,6 +512,7 @@ Implements: REQ-008, REQ-014, REQ-021, REQ-029, REQ-035
 
 ```rust
 pub struct RestoreRequest {
+    pub store: CheckpointStoreId,
     pub key: CheckpointKey,
     pub limits: RestoreLimits,
 }
@@ -343,11 +523,20 @@ pub struct RestoreLimits {
     pub uncompressed_bytes: u64,
     pub replay_ticks: u32,
 }
+
+pub struct RestoreReady {
+    pub frontier: FrontierSummary,
+    pub durable_source: DurableFrontier,
+    pub next_tick: Tick,
+    pub rebuilt_bricks: u32,
+}
 ```
 
 Restore is world construction, not a post-genesis mutation:
 
-1. load and bounded-decode the manifest;
+1. resolve `request.store` in the frozen builder registry, call that exact
+   store's key-based `load_manifest(request.key, ...)`, and bounded-decode the
+   returned manifest;
 2. verify all contract versions and manifest digest;
 3. match material, base lineage **and exact manifest roots**, volume sources,
    qualification tuple, and participant registrations;
@@ -380,12 +569,114 @@ only on admission. Rejection returns both in `RestoreRejected`; acceptance
 returns `RestoreReceipt`. Cancellation/failure destroys the private bundle and
 publishes no world. Retry is a new call with a returned or newly constructed
 builder; restore never attaches to or replaces an already-published world.
+The manifest records its `CheckpointStoreId`; restore rejects a mismatch even
+if another registered store happens to return identical bytes.
 
 ## Replay and rollback
 
 ### TECH-047 — Replay record and divergence artifact
 
 Implements: REQ-032, REQ-034, REQ-035, REQ-038, REQ-043
+
+The mandatory live-record export seam is:
+
+```rust
+pub trait ReplaySink: Send + Sync + 'static {
+    fn descriptor(&self) -> ReplaySinkDescriptor;
+    fn append(
+        &self,
+        request: ReplaySinkRequest,
+        bytes: OwnedBytes,
+        done: ReplayAppendSink,
+    );
+}
+
+pub struct ReplaySinkDescriptor {
+    pub id: ReplaySinkId,
+    pub contract: ContractDigest,
+    pub max_record_bytes: u64,
+    pub max_records_in_flight: u32,
+}
+
+pub struct ReplaySinkRequest {
+    pub stream: ReplayStreamKey,
+    pub sequence: u64,
+    pub first_tick: Tick,
+    pub last_tick: Tick,
+    pub record_count: u32,
+    pub bytes: u64,
+    pub digest: BlobDigest,
+}
+
+pub struct ReplayAppendSink { /* private completion token */ }
+
+impl ReplayAppendSink {
+    pub fn stored(
+        self,
+        stream: ReplayStreamKey,
+        sequence: u64,
+        digest: BlobDigest,
+    ) -> StoreCompletionDisposition;
+    pub fn fail(self, failure: StoreFailure) -> StoreCompletionDisposition;
+}
+
+pub struct ReplayRequest {
+    pub header: OwnedBytes,
+    pub records: BoundedVec<OwnedBytes>,
+    pub limits: ReplayLimits,
+}
+
+pub struct ReplayLimits {
+    pub max_ticks: u32,
+    pub max_input_bytes: u64,
+    pub max_private_bytes: u64,
+    pub max_artifact_bytes: u64,
+}
+
+pub struct ReplayCompleted {
+    pub frontier: FrontierSummary,
+    pub ticks: BoundedVec<CorrectedTickOutput>,
+    pub sequence_digest: BlobDigest,
+}
+
+pub struct DivergenceArtifact {
+    pub format: ContractDigest,
+    pub genesis_digest: BlobDigest,
+    pub contract_digests: BoundedVec<ContractDigest>,
+    pub qualification: QualificationSummary,
+    pub earliest_tick: Tick,
+    pub input_prefix: OwnedBytes,
+    pub expected_root: CanonicalHash,
+    pub actual_root: CanonicalHash,
+    pub expected_outcome: CanonicalHash,
+    pub actual_outcome: CanonicalHash,
+    pub expected_participants: BoundedVec<ParticipantCommitmentFact>,
+    pub actual_participants: BoundedVec<ParticipantCommitmentFact>,
+    pub changed_keys: BoundedVec<CanonicalLogicalKey>,
+    pub byte_differences: BoundedVec<CanonicalByteDifference>,
+}
+
+pub struct CanonicalLogicalKey {
+    pub kind: u8,
+    pub key: [u8; 16],
+}
+
+pub struct CanonicalByteDifference {
+    pub key: CanonicalLogicalKey,
+    pub offset: u32,
+    pub expected: BoundedBytes64,
+    pub actual: BoundedBytes64,
+}
+
+pub struct ReplayFailure {
+    pub error: OperationError,
+    pub divergence: Option<DivergenceArtifact>,
+}
+```
+
+`ReplayStreamKey` is a consumer-selected fixed 32-byte key. The diagnostic
+records above are closed and not storage handles; unknown logical-key tags are
+rejected.
 
 `moria-replay-v1` is an appendable sequence:
 
@@ -402,9 +693,46 @@ tick record {
 ```
 
 Records are length-prefixed, checksummed, bounded, and committed only after the
-tick confirms. Presentation and timing are excluded. Replay feeds the same
-`submit_tick` path with a replay permit; no internal state mutation or expected-
-hash override exists.
+tick confirms. Presentation and timing are excluded. During private genesis,
+Moria first appends the
+header as sequence zero (`first_tick == last_tick == Tick(0)`,
+`record_count == 0`) and publishes tick zero only after that completion is
+durable; failure fails `GenesisReceipt` and publishes no world. Each later
+confirmed tick record is appended in sequence
+order through that registered sink. Moria reserves the immutable
+record bytes, one callback cell, and one in-flight record/byte permit before
+invocation. `ReplayAppendSink` has the same one-terminal, drop, cancellation,
+duplicate, digest, and generation rules as TECH-043. A sink result cannot
+change the already-confirmed canonical state. Each tick record remains pinned
+until the matching `(stream, sequence, digest)` success;
+at the in-memory log boundary later `reserve_tick` returns
+`PersistenceBackpressure` rather than overwrite it.
+`ReplaySink` is deliberately write-only from Moria's perspective. The
+consumer retrieves its own stored bytes through its own storage API and passes
+them back as bounded `OwnedBytes` in `ReplayRequest`; that round trip grants no
+access to Moria roots or buffers.
+
+Public replay is the dedicated `WorldBuilder::replay_records` operation, not
+ordinary live `submit_tick`. Admission consumes a private builder plus the
+owned header and record vector, verifies all count/byte limits against
+`ResourceBudgets.rollback`, reserves a private root/participant bundle and the
+worst-case result/artifact bytes, and returns `ReplayReceipt`. Rejection
+returns the unchanged builder and complete owned request in `ReplayRejected`.
+The header must describe the builder's world and frozen registries; records
+must be a contiguous sequence starting at tick one, individually within the
+canonical tick limits, with the expected root/outcome/participant digests
+encoded in each record.
+
+Replay decodes each sealed batch into the same canonical transition function,
+but only inside the private builder context. For every tick the exclusive
+private publication step calculates the candidate root, outcome digest,
+participant commitments/events, and expected-hash comparison before advancing
+the private replay frontier. It never calls live `submit_tick`, cannot omit or
+override an encoded expected hash, and emits no live observation or
+presentation work. On complete success one final `FrontierBundle` swap
+publishes the new world and `ReplayCompleted`; intermediate roots were never
+public. Cancellation, device loss, validation failure, or mismatch drains and
+drops all private state and publishes no world.
 
 Participant events are schema-bound opaque bytes in deterministic
 `(ParticipantId, local_sequence)` order. Replay compares them exactly and
@@ -413,12 +741,17 @@ replay frontier; Moria does not decode their behavior meaning, place them in
 the Moria-state observation ring, or deliver them to another participant
 during the same tick.
 
-At the first mismatch, replay stops before publishing the divergent candidate
-and writes `moria-divergence-v1` containing genesis/contract/fixture digests,
-backend qualification context, earliest tick, input prefix through that tick,
-expected/actual root, outcome and participant commitments, changed logical
-keys, and bounded canonical leaf/node byte comparisons. The artifact never
-calls a self-reported pass authoritative; an independent tool compares bytes.
+At the first mismatch, replay stops before advancing even the private replay
+frontier past the divergent tick and returns
+`ReplayFailure { error: ReplayDivergence, divergence: Some(...) }`. The
+`moria-divergence-v1` value contains the fields above, including the exact
+length-prefixed input prefix through the earliest tick. Admission rejects when
+that prefix plus the worst-case changed-key/difference evidence cannot fit
+`ReplayLimits.max_artifact_bytes` and
+`rollback.divergence_artifact_bytes`; it never truncates the prefix or reports
+a later tick. Non-divergence failures set `divergence: None`. The artifact
+never calls a self-reported pass authoritative; an independent tool compares
+bytes.
 
 ### TECH-048 — Rollback correction transaction
 
@@ -489,10 +822,12 @@ Implements: REQ-015, REQ-018, REQ-021, REQ-029, REQ-032
 
 The in-memory confirmed log retains at least the rollback window and at most
 `max_log_ticks` (default 256), `max_log_bytes` (default 256 MiB), and the newest
-durable checkpoint suffix. The consumer must attach a replay sink or checkpoint
-before bounds prevent safe continuation. At the boundary, `reserve_tick`
-returns `PersistenceBackpressure`; Moria never silently drops the only recovery
-record.
+durable checkpoint suffix. The configured replay sink exports exact immutable
+records under TECH-047. A record is releasable only after its exact sink append
+is durable; checkpoint coverage may release other recovery pins but never
+substitutes for the public replay export. At
+the boundary, `reserve_tick` returns `PersistenceBackpressure`; Moria never
+silently drops the only recovery or requested replay record.
 
 Checkpoint traversal defaults to 16 MiB mapped bytes and 64 MiB store writes
 in flight, with three staging slots shared by scar, participant, and replay
@@ -519,6 +854,9 @@ sink.
 Rollback capacity is tick- and byte-bounded. A tick whose worst-case COW state
 would exceed the canonical budget receives `NoAdvance(CanonicalBudget)`;
 runtime pressure does not evict the required 20 confirmed frontiers.
+Public replay request records, private roots/results, sink completion records,
+and divergence artifact bytes count against the dedicated TECH-017 rollback
+fields; no replay path borrows untracked checkpoint or terminal-receipt memory.
 
 ## Reclamation and dirty truth
 

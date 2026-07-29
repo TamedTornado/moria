@@ -31,6 +31,33 @@ pub struct MoriaConfig {
     pub qualification: QualificationPolicy,
 }
 
+pub struct CanonicalContract {
+    pub canonical_encoding: ContractDigest,
+    pub arithmetic: ContractDigest,
+    pub transition: ContractDigest,
+    pub collision: ContractDigest,
+    pub hash: ContractDigest,
+    pub persistence: ContractDigest,
+}
+
+pub struct RollbackConfig {
+    pub capacity_ticks: u32,
+    pub log_ticks: u32,
+    pub retain_outcome_bytes: bool,
+}
+
+pub struct PersistenceConfig {
+    pub default_checkpoint_store: CheckpointStoreId,
+    pub replay_sink: ReplaySinkId,
+}
+
+pub struct PresentationConfig {
+    pub enabled: bool,
+    pub show_stale: bool,
+    pub chunk_edge_cells: u16, // exactly 32 in v1
+    pub maximum_lod: u8,       // 0..=6
+}
+
 pub struct ResourceBudgets {
     pub identity: IdentityBudgets,
     pub canonical: CanonicalBudgets,
@@ -51,7 +78,10 @@ pub struct IdentityBudgets {
     pub participants_per_world: u32,         // default 64; max 1,024
     pub input_sources_per_world: u32,        // default 4,096; max 65,535
     pub base_sources_per_world: u32,         // default 256; max 1,024
+    pub base_authorities_per_world: u32,     // default 65,536; max 1,048,576
+    pub content_blob_stores_per_world: u32,  // default 4; max 16
     pub checkpoint_stores_per_world: u32,    // default 4; max 16
+    pub replay_sinks_per_world: u32,         // default 4; max 16
     pub rng_streams_per_participant: u32,    // default 32; max 256
     pub interests_per_world: u32,            // default 4,096; max 16,384
     pub operation_records_per_world: u32,    // default 16,384; max 65,536
@@ -68,7 +98,7 @@ pub struct CanonicalBudgets {
     pub correlation_bytes_per_tick: u64,     // default/max 320 KiB
     pub bricks_per_command: u32,             // default/max 64
     pub cells_per_command: u32,              // default/max 32,768
-    pub changed_bricks_per_tick: u32,        // default/max 16,384
+    pub changed_bricks_per_tick: u32,        // default 512; max 16,384
     pub scratch_bytes: u64,                  // default 256 MiB; max 1 GiB
 }
 
@@ -134,11 +164,21 @@ pub struct CheckpointBudgets {
 pub struct RollbackBudgets {
     pub retained_frontiers: u32,              // default 32; min 20; max 256
     pub retained_bytes: u64,                  // default 2 GiB; max 16 GiB
+    pub genesis_persistent_bytes: u64,        // default 256 MiB; max 2 GiB
+    pub frontier_metadata_bytes: u64,         // default 2 MiB; max 64 MiB
     pub log_ticks: u32,                       // default 256; max 65,536
     pub log_bytes: u64,                       // default 256 MiB; max 4 GiB
+    pub replay_sink_records_in_flight: u32,   // default 64; max 1,024
+    pub replay_sink_bytes_in_flight: u64,     // default 64 MiB; max 512 MiB
+    pub active_public_replays: u32,           // default 1; max 16
+    pub ticks_per_public_replay: u32,         // default 256; max 4,096
+    pub bytes_per_public_replay: u64,         // default 1 GiB; max 4 GiB
+    pub result_bytes_per_public_replay: u64,  // default 32 MiB; max 512 MiB
+    pub divergence_artifact_bytes: u64,       // default 32 MiB; max 256 MiB
     pub active_corrections: u32,              // exactly 1
     pub ticks_per_correction: u32,            // default 256; max 4,096
     pub bytes_per_correction: u64,            // default 1 GiB; max 4 GiB
+    pub result_bytes_per_correction: u64,     // default 32 MiB; max 512 MiB
     pub recovery_replay_ticks: u32,           // default 256; max 4,096
 }
 
@@ -164,6 +204,13 @@ pub struct RuntimeBudgets {
 }
 ```
 
+`RollbackConfig` defaults to `{ capacity_ticks: 32, log_ticks: 256,
+retain_outcome_bytes: true }` and must equal the corresponding rollback budget
+tick fields. Presentation defaults are enabled, stale display allowed, 32-cell
+chunks, and maximum LOD 6. The configured replay sink is mandatory, and its
+frozen registered descriptor
+must fit the replay-sink count/byte limits.
+
 `MoriaPlugin` installs one `MoriaClient` resource and feature plugins. A
 consumer constructs exactly one world through `WorldBuilder`; multiple worlds
 within one Bevy app are isolated by `WorldId`, queues, roots, and budgets.
@@ -172,12 +219,39 @@ within one Bevy app are isolated by `WorldId`, queues, roots, and budgets.
 impl WorldBuilder {
     pub fn register_material(&mut self, def: MaterialDefinition)
         -> Result<(), ConfigError>;
+    pub fn register_input_source(&mut self, def: InputSourceRegistration)
+        -> Result<(), ConfigError>;
     pub fn register_base_source(&mut self, source: Arc<dyn BaseContentSource>)
+        -> Result<(), ConfigError>;
+    pub fn register_base_authority(&mut self, def: BaseAuthorityRegistration)
+        -> Result<(), ConfigError>;
+    pub fn register_content_blob_store(&mut self, store: Arc<dyn ContentBlobStore>)
+        -> Result<(), ConfigError>;
+    pub fn register_checkpoint_store(&mut self, store: Arc<dyn CheckpointStore>)
+        -> Result<(), ConfigError>;
+    pub fn register_replay_sink(&mut self, sink: Arc<dyn ReplaySink>)
         -> Result<(), ConfigError>;
     pub fn register_volume(&mut self, def: GenesisVolume)
         -> Result<(), ConfigError>;
     pub fn register_participant(&mut self, adapter: ParticipantRegistration)
         -> Result<(), ConfigError>;
+}
+
+pub struct InputSourceRegistration {
+    pub id: InputSourceId,
+    pub schema: SchemaDigest,
+    pub max_inputs_per_tick: u32,
+    pub max_encoded_bytes_per_tick: u32,
+}
+
+pub struct BaseAuthorityRegistration {
+    pub id: BaseAuthorityId,
+    pub authority: BaseAuthority,
+}
+
+pub enum ParticipantRegistration {
+    Cpu(Arc<dyn CanonicalParticipant>),
+    Gpu(Arc<dyn BevyGpuParticipant>),
 }
 ```
 
@@ -189,10 +263,28 @@ publishes tick zero. Any error leaves no usable world or partial registry.
 There is no default content, material, participant strategy, RNG seed,
 qualification, or empty-world substitution.
 
+Every registered descriptor supplies its own stable ID; Moria never assigns a
+provider ID. Duplicate IDs within one registry return
+`ConfigErrorCode::DuplicateId` without replacing the original entry. The
+namespaces are distinct, but every reference is type checked: each genesis
+volume's `BaseAuthorityId` must resolve; every reconstructable authority's
+source and every bundled authority's content store must resolve; every
+canonical `InputHeader.source` must name an `InputSourceRegistration`; the
+configured default checkpoint store and replay sink must resolve; and
+every participant descriptor must match its registration kind. Freeze also
+checks provider descriptor IDs, contracts, per-provider bounds, and all
+aggregate budget sums. Missing, extra-kind, or contract-mismatched references
+fail before a callback or device allocation. After freeze no registry can be
+modified or replaced.
+`PersistenceConfig.default_checkpoint_store` is the ID used by the public
+request-construction helpers and must resolve, but every admitted checkpoint,
+restore, shutdown checkpoint, and recovery request carries and binds its exact
+store ID; failure never falls through to the default or another store.
+
 Pre-admission configuration rejection returns the unchanged private builder in
 `GenesisRejected`; after acceptance, `GenesisReceipt` reaches
 `Ready { tick: 0, root_hash }` or
-`Failed(ConfigError | ContentError | BackendError)` and then remains terminal.
+`Failed(OperationError)` and then remains terminal.
 
 The budget comments above are normative defaults and portable compiled
 maxima. `authoritative_gpu_bytes`, `presentation.resident_bytes`, and
@@ -200,6 +292,10 @@ maxima. `authoritative_gpu_bytes`, `presentation.resident_bytes`, and
 and the selected adapter's granted allocation limits. TECH-036 defines all
 cross-field validation; exceeding a compiled maximum or failing a cross-limit
 check rejects configuration before any consumer callback or GPU allocation.
+`ResourceBudgets::default()` is required to produce exactly these
+self-consistent values and passes TECH-036's 20-frontier inequality.
+`MoriaConfig` deliberately has no blanket `Default`: provider IDs, canonical
+contracts, and qualification evidence require explicit consumer authority.
 
 ### TECH-018 — Materials and volumes
 
@@ -212,6 +308,14 @@ pub struct MaterialDefinition {
     pub presentation: MaterialPresentation,
 }
 
+pub struct AssetHandleId(pub u64);
+
+pub struct MaterialPresentation {
+    pub surface: SurfaceStyle,
+    pub material_asset: AssetHandleId,
+    pub dressing_asset: Option<AssetHandleId>,
+}
+
 pub enum SurfaceStyle {
     SmoothDensity,
     CrispCell,
@@ -220,6 +324,11 @@ pub enum SurfaceStyle {
 pub enum OccupancyClass {
     SolidAbove { density_q8_8: i16 },
     Never,
+}
+
+pub enum VolumeKind {
+    Static,
+    Dynamic,
 }
 
 pub struct GenesisVolume {
@@ -262,6 +371,12 @@ pub struct Rejected<T> {
 pub struct RestoreRejected {
     pub builder: WorldBuilder,
     pub request: RestoreRequest,
+    pub reason: AdmissionError,
+}
+
+pub struct ReplayRejected {
+    pub builder: WorldBuilder,
+    pub request: ReplayRequest,
     pub reason: AdmissionError,
 }
 
@@ -337,6 +452,10 @@ impl WorldBuilder {
         self,
         request: RestoreRequest,
     ) -> Result<RestoreReceipt, RestoreRejected>;
+    pub fn replay_records(
+        self,
+        request: ReplayRequest,
+    ) -> Result<ReplayReceipt, ReplayRejected>;
 }
 
 impl ObservationSubscription {
@@ -346,6 +465,179 @@ impl ObservationSubscription {
     pub fn close(&mut self) -> ObservationCloseResult;
 }
 ```
+
+The facade's common ready/result records are:
+
+```rust
+pub struct FrontierSummary {
+    pub world: WorldId,
+    pub tick: Tick,
+    pub root_hash: CanonicalHash,
+    pub status: AuthorityStatus,
+}
+
+pub enum AuthorityStatus {
+    Qualified,
+    UnqualifiedCandidate,
+}
+
+pub struct GenesisReady {
+    pub frontier: FrontierSummary, // tick zero
+    pub next_tick: Tick,           // exactly one
+}
+
+pub struct TickReservation {
+    pub max_inputs: u32,
+    pub max_encoded_bytes: u64,
+    pub max_correlation_bytes: u64,
+}
+
+pub struct VolumeAffectedBounds {
+    pub volume: VolumeId,
+    pub local: LocalCellAabb,
+    pub world: WorldAabbQ,
+}
+
+pub struct AffectedBounds {
+    pub volumes: BoundedVec<VolumeAffectedBounds>,
+}
+
+pub enum InterestChange {
+    Upserted,
+    Withdrawn,
+}
+
+pub struct InterestCoverage {
+    pub volume: VolumeId,
+    pub requested: WorldAabbQ,
+    pub covered: WorldAabbQ,
+    pub complete: bool,
+}
+
+pub struct InterestApplied {
+    pub world: WorldId,
+    pub interest: InterestId,
+    pub change: InterestChange,
+    pub coverage: BoundedVec<InterestCoverage>,
+}
+
+pub struct QueryResult {
+    pub frontier: FrontierSummary,
+    pub revisions: BoundedVec<VolumeRevisionFact>,
+    pub inspected: BoundedVec<InspectedRange>,
+    pub missing: BoundedVec<MissingRange>,
+    pub freshness: QueryFreshnessResult,
+    pub data: QueryData,
+}
+
+pub struct VolumeRevisionFact {
+    pub volume: VolumeId,
+    pub revision: VolumeRevision,
+}
+
+pub struct InspectedRange {
+    pub volume: VolumeId,
+    pub local: LocalCellAabb,
+    pub world: WorldAabbQ,
+}
+
+pub struct MissingRange {
+    pub volume: VolumeId,
+    pub local: LocalCellAabb,
+    pub reason: AvailabilityCode,
+}
+
+pub enum QueryFreshnessResult {
+    Met,
+    Stale { unmet: BoundedVec<MinimumVolumeRevision> },
+}
+
+pub enum QueryData {
+    Samples(BoundedVec<MaterialFact>),
+    Region(BoundedVec<MaterialFact>),
+    Occupancy(BoundedVec<CollisionFact>),
+    Trace(BoundedVec<CollisionFact>),
+    Overlap(BoundedVec<CollisionFact>),
+    Sweep(BoundedVec<CollisionFact>),
+}
+
+pub struct MaterialFact {
+    pub volume: VolumeId,
+    pub local: LocalCellPoint,
+    pub cell: CellWire,
+}
+
+pub struct Recovered {
+    pub frontier: FrontierSummary,
+    pub old_generation: DeviceGeneration,
+    pub new_generation: DeviceGeneration,
+    pub replayed_ticks: u32,
+}
+
+pub struct DirtyRootSummary {
+    pub frontier: FrontierSummary,
+    pub dirty_scar_keys: u32,
+    pub dirty_metadata_keys: u32,
+}
+
+pub struct ShutdownReport {
+    pub last_confirmed: FrontierSummary,
+    pub last_durable: Option<DurableFrontier>,
+    pub abandoned_receipts: BoundedVec<ReceiptId>,
+    pub dirty_roots: BoundedVec<DirtyRootSummary>,
+    pub checkpoint: Option<CheckpointCommitted>,
+}
+
+pub struct TelemetryCounter {
+    pub key: TelemetryKey,
+    pub current: u64,
+    pub capacity: u64,
+    pub high_water: u64,
+}
+
+pub enum TelemetryKey {
+    Identity(BudgetMetric),
+    Canonical(BudgetMetric),
+    Content(BudgetMetric),
+    Query(BudgetMetric),
+    Observation(BudgetMetric),
+    Presentation(BudgetMetric),
+    Checkpoint(BudgetMetric),
+    Rollback(BudgetMetric),
+    Participant(BudgetMetric),
+    Runtime(BudgetMetric),
+}
+
+pub enum BudgetMetric {
+    Records,
+    Bytes,
+    InFlight,
+    Queued,
+    OldestAgeMicros,
+    CompletionMicros,
+}
+
+pub struct FailureCounter {
+    pub code: ErrorCode,
+    pub count: u64,
+}
+
+pub struct TelemetrySnapshot {
+    pub frontier: FrontierSummary,
+    pub durable: Option<DurableFrontier>,
+    pub device_generation: DeviceGeneration,
+    pub qualification: QualificationSummary,
+    pub counters: BoundedVec<TelemetryCounter>,
+    pub failures: BoundedVec<FailureCounter>,
+}
+```
+
+`QualificationSummary` is the closed record in TECH-040; telemetry contains no
+string or dynamic extension map. `CollisionFact` is the closed canonical wire record in
+TECH-052. All vectors above reserve their request/configuration maximum before
+admission; `QueryData` must match the admitted `QueryKind`, and every
+`InspectedRange`/`MissingRange` partitions only the requested scope. There is
+no generic material-result payload or backend-owned collection.
 
 Every accepted asynchronous method creates exactly one operation record and
 receipt ID. Every `Rejected<T>` returns the exact owned request unchanged;
@@ -374,20 +666,34 @@ closed records or enums defined in their owning `TECH` contract. `Arc`,
 signature may not introduce another named type without defining its ownership,
 bound, and owner contract in this document.
 
+```rust
+pub struct BoundedVec<T> { /* private owned allocation and fixed capacity */ }
+pub struct BoundedBytes { /* private owned allocation, admitted u32 capacity */ }
+pub struct BoundedBytes64(pub [u8; 64], pub u8);
+pub struct BoundedUtf8<const N: usize> { /* private validated bytes, length <= N */ }
+pub struct OwnedBytes { /* private immutable Arc<[u8]> plus admitted u64 length */ }
+```
+
+`BoundedVec::try_with_capacity`, `BoundedBytes::try_with_capacity`, and
+`OwnedBytes::try_from` fail before ownership transfer when their accepting
+operation cannot reserve the declared capacity. No public method grows them
+past that immutable capacity; decoding validates count, byte length, and
+trailing data before allocation.
+
 The mechanical public-type index is:
 
 | Names | Resolution and owner |
 | --- | --- |
-| `WorldId`, `MaterialId`, `VolumeId`, `ParticipantId`, `InputSourceId`, `RngStreamId`, `BaseContentSourceId`, `BaseAuthorityId`, `BaseRequestId`, `InterestId`, `CorrelationId`, `ObservationStreamId`, `ReceiptId`, `DeviceGeneration`, `Tick`, `VolumeRevision`, `CanonicalOrder` | fixed-width copy newtypes; TECH-005, TECH-021, TECH-025, TECH-037, and TECH-041 |
+| `WorldId`, `MaterialId`, `VolumeId`, `ParticipantId`, `InputSourceId`, `RngStreamId`, `BaseContentSourceId`, `BaseAuthorityId`, `ContentBlobStoreId`, `CheckpointStoreId`, `ReplaySinkId`, `ReplayStreamKey`, `BaseRequestId`, `InterestId`, `CorrelationId`, `ObservationStreamId`, `ReceiptId`, `DeviceGeneration`, `Tick`, `VolumeRevision`, `CanonicalOrder` | fixed-width copy newtypes; TECH-005, TECH-021, TECH-025, TECH-037, TECH-041, TECH-043, and TECH-047 |
 | `CanonicalHash`, `ContentDigest`, `ContractDigest`, `SchemaDigest`, `BlobDigest` | distinct 32-byte digest newtypes; TECH-008/009/041/043 |
 | `WorldPointQ`, `WorldVectorQ`, `WorldAabbQ`, `LocalCellPoint`, `LocalCellAabb`, `BrickCoord`, `SegmentQ`, `PlacementQ`, `QuatQ14`, `Q23_8`, `CellWire` | fixed-width canonical values; TECH-006/007/018/051 |
 | `MoriaClient`, `WorldBuilder`, every `*Permit`, `*Receipt`, `ObservationSubscription`, and every participant/root/artifact lease or state token | opaque generational handles; their owning operation contract defines clone/drop/pin behavior, and no handle exposes storage |
 | `BoundedVec<T>`, `BoundedBytes`, `BoundedBytes64`, `BoundedUtf8<N>`, `OwnedBytes` | owned allocations with immutable admission capacity; TECH-070 and the accepting resource contract |
 | `CanonicalContract`, `RollbackConfig`, `PersistenceConfig`, `PresentationConfig`, `QualificationPolicy`, `CandidateDiagnostics`, `TickReservation`, `BlobLimits`, `RestoreLimits`, every `*Descriptor`, and every `*Limits` | closed configuration/request records; TECH-017/019/029/036/040/041/043/046/054 |
 | `CanonicalInput` and its variant payloads, `QueryKind`, `QueryScope`, `CollisionShapeQ`, `VolumeSelector`, `VolumeKind`, participant strategy/failure policy, and all lifecycle/poll/start/persistence policy enums | closed tagged enums in TECH-018/020/022/023/025/028/029/030/041/051 |
-| `QueryResult`, `Observation`, `ObservedVolumeSummary`, `ObservedRegionSummary`, `TelemetrySnapshot`, `FrontierSummary`, and every receipt `Ready` payload | bounded owned result records containing only fields promised by TECH-020 through TECH-026, TECH-045/046/048, and TECH-070; their worst-case bytes are reserved before admission |
+| `QueryResult`, `Observation`, `ObservedVolumeSummary`, `ObservedRegionSummary`, `TelemetrySnapshot`, `FrontierSummary`, and every receipt `Ready` payload | the concrete bounded records in TECH-020/022/025/026/038/045-048/070; their worst-case bytes are reserved before admission |
 | `ConfigError`, `AdmissionError`, `ReserveError`, `PushError`, `BatchError`, `CanonicalFailure`, and every operation-specific `*Error`/`*Unavailable` | closed typed errors under TECH-027; each has stable code, scope, retryability, and committed-effect fields |
-| `BaseBrickCompletion`, participant completion/effect/event/state/snapshot sinks, and checkpoint store sinks | non-clone Moria-owned bounded completion tokens; TECH-016/029/036/041/043/045/054 |
+| `BaseBrickCompletion`, participant completion/effect/event/state/snapshot sinks, checkpoint/content-store sinks, and `ReplayAppendSink` | non-clone Moria-owned bounded completion tokens; TECH-016/029/036/041/043/045/047/054 |
 | Bevy/wgpu names in `moria::bevy::gpu_participant` | deliberately coupled borrowed adapter types, generation-scoped and never general-facade or durable types; TECH-003/031/054 |
 
 Capitalized words that are enum variants, generic parameters, standard-library
@@ -403,6 +709,9 @@ is a validation failure.
 Implements: REQ-005, REQ-011, REQ-017, REQ-027, REQ-033
 
 ```rust
+pub struct TickPermit { /* private unique reservation and owned inputs */ }
+pub struct SealedTickBatch { /* private immutable canonical bytes/sidecar */ }
+
 pub struct PushRejected {
     pub input: CanonicalInput,
     pub correlation: Option<CorrelationMetadata>,
@@ -464,13 +773,103 @@ pub struct InputHeader {
     pub expected_source_hash: Option<CanonicalHash>,
 }
 
+pub struct CreateVolume {
+    pub header: InputHeader,
+    pub requested_id: Option<VolumeId>,
+    pub kind: VolumeKind,
+    pub domain: LocalCellAabb,
+    pub pivot: LocalCellPoint,
+    pub placement: PlacementQ,
+    pub base: BaseAuthorityId,
+}
+
+pub struct RetireVolume {
+    pub header: InputHeader,
+    pub volume: VolumeId,
+}
+
+pub struct ActivateRegion {
+    pub header: InputHeader,
+    pub volume: VolumeId,
+    pub local_bricks: BrickAabb,
+    pub base_root: ContentDigest,
+    pub manifest_subtree: Option<ContentDigest>,
+    pub activity_class: u32,
+}
+
+pub struct DeactivateRegion {
+    pub header: InputHeader,
+    pub volume: VolumeId,
+    pub local_bricks: BrickAabb,
+    pub activity_class: u32,
+}
+
+pub struct SetPlacement {
+    pub header: InputHeader,
+    pub volume: VolumeId,
+    pub placement: PlacementQ,
+}
+
+pub struct Erase {
+    pub header: InputHeader,
+    pub volume: VolumeId,
+    pub target: MutationShapeQ,
+    pub mode: EraseMode,
+}
+
+pub struct Place {
+    pub header: InputHeader,
+    pub volume: VolumeId,
+    pub target: MutationShapeQ,
+    pub cell: CellWire,
+}
+
+pub struct LocalPointQ(pub [Q23_8; 3]);
+
+pub enum MutationShapeQ {
+    CellAabb(LocalCellAabb),
+    Sphere { center: LocalPointQ, radius: Q23_8 },
+    Stamp {
+        bounds: LocalCellAabb,
+        mask_bits: BoundedBytes,
+    },
+}
+
+pub enum EraseMode {
+    SetEmpty,
+    SubtractDensity { amount_q8_8: i16 },
+}
+
+pub struct PatchCell {
+    pub local: LocalCellPoint,
+    pub cell: CellWire,
+}
+
+pub struct Patch {
+    pub header: InputHeader,
+    pub volume: VolumeId,
+    pub cells: BoundedVec<PatchCell>,
+}
+
+pub struct ParticipantInput {
+    pub header: InputHeader,
+    pub participant: ParticipantId,
+    pub schema: SchemaDigest,
+    pub payload: BoundedBytes,
+}
+
 pub struct CorrelationMetadata {
     pub id: CorrelationId,       // consumer-selected 128-bit value
     pub payload: BoundedBytes64, // 0..=64 uninterpreted bytes
 }
 ```
 
-Every variant has a closed `u8` wire tag and explicit maximum encoded size.
+`BrickAabb` is a fixed six-`i32` half-open brick-coordinate record. Every
+variant has a closed `u8` wire tag and explicit maximum encoded size.
+`Stamp.mask_bits` has exactly `ceil(bounds.cell_count / 8)` bytes and uses the
+same x-major/y/z bit order as brick cells; unused high bits are zero.
+`SubtractDensity.amount_q8_8` must be positive and follows TECH-012's explicit
+empty saturation.
 Convenience helpers only construct these values; they cannot submit or mutate.
 No `Restore`, arbitrary callback, raw shader, raw buffer, or test mutation is a
 canonical input. Correlation is explicitly not part of `InputHeader` or
@@ -550,6 +949,52 @@ pub enum ReceiptState<T, E> {
     Cancelled(CancelledOperation),
 }
 
+pub enum OperationPhase {
+    Verifying,
+    Queued,
+    Applying,
+    WaitingForReadiness,
+    Pinning,
+    Loading,
+    LoadingOwnedRecords,
+    VerifyingHeader,
+    ExportingReplayHeader,
+    Reading,
+    Materializing,
+    Preparing,
+    Encoding,
+    Encoded,
+    Submitting,
+    Submitted,
+    GpuComplete,
+    Mapping,
+    Decoding,
+    StoringBlobs,
+    CommittingManifest,
+    RestoringPrivate,
+    ReplayingPrivate,
+    ComparingExpected,
+    Comparing,
+    Querying,
+    Rebuilding,
+    RestoringParticipants,
+    ValidatingFinal,
+    Publishing,
+    CreatingGeneration,
+    LoadingAnchor,
+    Replaying,
+    ClosingAdmission,
+    Draining,
+    FinalCheckpoint,
+    Releasing,
+}
+
+pub struct CancelledOperation {
+    pub receipt: ReceiptId,
+    pub last_phase: OperationPhase,
+    pub submitted_work_drained: bool,
+}
+
 pub enum CancelResult {
     CancelledBeforeSubmit,
     DeliverySuppressed,
@@ -566,6 +1011,7 @@ pub struct ObservationResnapshotReceipt { /* private operation handle */ }
 pub struct CheckpointReceipt { /* private operation handle */ }
 pub struct CorrectionReceipt { /* private operation handle */ }
 pub struct RestoreReceipt { /* private operation handle */ }
+pub struct ReplayReceipt { /* private private-world replay handle */ }
 pub struct RecoveryReceipt { /* private operation handle */ }
 pub struct ShutdownReceipt { /* private operation handle */ }
 
@@ -601,6 +1047,10 @@ impl RestoreReceipt {
     pub fn poll(&self) -> ReceiptState<RestoreReady, RestoreError>;
     pub fn cancel(&self) -> CancelResult;
 }
+impl ReplayReceipt {
+    pub fn poll(&self) -> ReceiptState<ReplayCompleted, ReplayFailure>;
+    pub fn cancel(&self) -> CancelResult;
+}
 impl RecoveryReceipt {
     pub fn poll(&self) -> ReceiptState<Recovered, RecoveryError>;
     pub fn cancel(&self) -> CancelResult;
@@ -612,7 +1062,7 @@ impl ShutdownReceipt {
 
 Each concrete receipt (`GenesisReceipt`, `TickReceipt`, `InterestReceipt`,
 `QueryReceipt`, `ObservationResnapshotReceipt`, `CheckpointReceipt`,
-`CorrectionReceipt`, `RestoreReceipt`, `RecoveryReceipt`, and
+`CorrectionReceipt`, `RestoreReceipt`, `ReplayReceipt`, `RecoveryReceipt`, and
 `ShutdownReceipt`) exposes `poll` specialized to its result/error types and
 `cancel` where the matrix below permits it. `Ready`, `Failed`, and `Cancelled`
 are terminal. An accepted operation pre-reserves one terminal-result record
@@ -648,7 +1098,7 @@ The complete asynchronous lifecycle policy is:
 
 | Family | Pending phases | Last cancellation point | Terminal result | Explicit retry | Device generation / shutdown |
 | --- | --- | --- | --- | --- | --- |
-| Genesis | `Verifying`, `Materializing`, `Submitting` | none after `publish_genesis` is accepted | `Ready(GenesisReady)` or `Failed(GenesisError)` | fix/retry the returned builder after rejection; construct a new builder after an accepted failure | loss fails construction; shutdown is unavailable before a world exists |
+| Genesis | `Verifying`, `Materializing`, `Submitting`, `ExportingReplayHeader` | none after `publish_genesis` is accepted | `Ready(GenesisReady)` only after replay header durability, or `Failed(GenesisError)` with no world | fix/retry the returned builder after rejection; construct a new builder after an accepted failure | loss or replay-sink failure fails construction; shutdown is unavailable before a world exists |
 | Tick | states shown above | never consumer-cancellable; shutdown may abandon before publication | `Ready(TickConfirmed)` or `Failed(FailedNoAdvance)` | submit a new batch for the still-next tick only after the prior attempt is terminal | old-generation work drains and cannot publish; shutdown reports abandonment |
 | Interest upsert/withdraw | `Queued`, `Applying` | before the control record is applied | `Ready(InterestApplied)` once replacement/withdrawal is installed; material readiness continues through observations | new explicit upsert/withdraw/retry | generation loss keeps the installed request but reports truth unavailable; shutdown cancels unapplied records |
 | Query | `Queued`, `WaitingForReadiness`, `Encoded`, `Submitted`, `Mapping`, `Decoding` | before encoding; later cancellation suppresses delivery | `Ready(QueryResult)`, `Failed(QueryUnavailable)`, or `Cancelled` | resubmit an owned new request; never automatic | old-generation result is `DeviceLost`; shutdown cancels unsubmitted and drains submitted work |
@@ -657,6 +1107,7 @@ The complete asynchronous lifecycle policy is:
 | Checkpoint | `Queued`, `Pinning`, `Reading`, `StoringBlobs`, `CommittingManifest` | before first GPU readback/store call; later cancellation stops new batches and drains submitted calls | `Ready(CheckpointCommitted)`, `Failed(CheckpointError)`, or `Cancelled` with no manifest | new explicit request against a retained frontier | device loss/store failure leaves no committed manifest; shutdown either completes the configured required request or reports it failed |
 | Correction | `Queued`, `RestoringPrivate`, `ReplayingPrivate`, `ValidatingFinal` | before private replay submission; later cancellation aborts and drains private state | `Ready(CorrectionCommitted)` or `Failed(CorrectionError)` with original live bundle unchanged | new complete correction request | old-generation private results cannot install; shutdown aborts without changing the frontier |
 | Restore | `Loading`, `Verifying`, `Rebuilding`, `RestoringParticipants`, `Publishing` | before device/store submission; later cancellation drains the private builder | `Ready(RestoreReady)` or `Failed(RestoreError)` with no world published | retry with the returned/new builder and request | generation loss fails private construction; shutdown has no published world to mutate |
+| Public replay | `LoadingOwnedRecords`, `VerifyingHeader`, `ReplayingPrivate`, `ComparingExpected`, `Publishing` | before first private submission; later cancellation drains the private builder and suppresses publication | `Ready(ReplayCompleted)` or `Failed(ReplayFailure)` with no world published; divergence includes the bounded artifact | new builder and complete owned replay request | old-generation results cannot install; no world exists for shutdown until final publication |
 | Recovery | `Queued`, `CreatingGeneration`, `LoadingAnchor`, `Replaying`, `Comparing` | before new-generation submission; later cancellation remains in `RecoveringParticipant` | `Ready(Recovered)` or `Failed(RecoveryError)` | one explicit new recovery request | only results from the requested new generation may reinstall the equal frontier; shutdown abandons recovery |
 | Shutdown | `ClosingAdmission`, `Draining`, `FinalCheckpoint`, `Releasing` | not cancellable | `Ready(ShutdownReport)` or `Failed(ShutdownError)` after all safe release work | none; world remains `Closed` | old-generation completions are lifetime acknowledgements only |
 
@@ -675,7 +1126,7 @@ interest/query/tick/checkpoint receipt before invoking a producer.
 Materialization cancellation before GPU encoding returns its permit; after
 submission it drains, with readiness reported by lifecycle observations or the
 waiting query. Participant jobs follow TECH-016/029 and terminate their owning
-genesis/tick/checkpoint/correction/restore/recovery receipt. Presentation work
+genesis/tick/checkpoint/correction/restore/replay/recovery receipt. Presentation work
 is admitted only for installed interest/current dirty revisions, coalesces
 before submission, drains/discards after withdrawal or staleness, and reports
 `Current`/`Failed` through TECH-056 observations rather than a second receipt.
@@ -690,6 +1141,13 @@ requires a new owning request or explicit lifecycle retry.
 Implements: REQ-004, REQ-009, REQ-016, REQ-018, REQ-031
 
 ```rust
+pub struct InterestId(pub u64);
+
+pub enum VolumeSelector {
+    One(VolumeId),
+    Listed(BoundedVec<VolumeId>),
+}
+
 pub struct InterestRequest {
     pub id: InterestId,
     pub world: WorldId,
@@ -853,6 +1311,9 @@ an unmet `Wait` condition returns `Unavailable(FrontierTooOld)` and
 Implements: REQ-005, REQ-012, REQ-017, REQ-021
 
 ```rust
+pub struct CorrelationId(pub [u8; 16]);
+pub struct ObservationStreamId(pub [u8; 16]);
+
 pub struct ObservationSubscriptionRequest {
     pub world: WorldId,
     pub volumes: BoundedVec<VolumeId>,
@@ -883,6 +1344,14 @@ pub struct ObservationSubscription { /* private stream/cursor handle */ }
 pub struct ObservationCursor {
     pub stream: ObservationStreamId,
     pub next_sequence: u64,
+}
+
+pub enum ObservationCursorError {
+    WrongStream,
+    BeforeLastTrustworthy,
+    BeyondTail,
+    NotProducedForSubscription,
+    Closed,
 }
 
 pub struct ObservationPollLimits {
@@ -923,6 +1392,104 @@ pub struct ObservationResnapshot {
 pub enum ObservationCloseResult {
     Closed,
     AlreadyClosed,
+}
+
+pub struct Observation {
+    pub sequence: u64,
+    pub frontier: Option<FrontierSummary>,
+    pub order: Option<CanonicalOrder>,
+    pub kind: ObservationKind,
+    pub volumes: BoundedVec<VolumeId>,
+    pub world_bounds: Option<WorldAabbQ>,
+    pub correlation: Option<CorrelationMetadata>,
+}
+
+pub enum ObservationKind {
+    CanonicalOutcome(CommandOutcome),
+    VolumeLifecycle(VolumeLifecycleFact),
+    MaterialRegionLifecycle(RegionLifecycleFact),
+    Presentation(PresentationFact),
+    Checkpoint(CheckpointObservation),
+    Correction(CorrectionObservation),
+    DeviceAndWorld(WorldLifecycleFact),
+}
+
+pub struct ObservedVolumeSummary {
+    pub volume: VolumeId,
+    pub revision: VolumeRevision,
+    pub kind: VolumeKind,
+    pub placement: PlacementQ,
+    pub retired: bool,
+}
+
+pub struct ObservedRegionSummary {
+    pub volume: VolumeId,
+    pub local: LocalCellAabb,
+    pub state: MaterialRegionState,
+    pub revision: VolumeRevision,
+}
+
+pub enum MaterialRegionState {
+    Cold,
+    Requested,
+    Materializing,
+    Ready,
+    Retiring,
+    Failed,
+}
+
+pub struct VolumeLifecycleFact {
+    pub volume: VolumeId,
+    pub revision: VolumeRevision,
+    pub change: VolumeLifecycleChange,
+}
+
+pub enum VolumeLifecycleChange {
+    Created,
+    Moved { old: PlacementQ, new: PlacementQ },
+    Retired,
+}
+
+pub struct RegionLifecycleFact {
+    pub volume: VolumeId,
+    pub local: LocalCellAabb,
+    pub state: MaterialRegionState,
+    pub revision: VolumeRevision,
+    pub failure: Option<ErrorCode>,
+}
+
+pub struct PresentationFact {
+    pub volume: VolumeId,
+    pub local: LocalCellAabb,
+    pub source_revision: VolumeRevision,
+    pub status: PresentationStatus,
+}
+
+pub enum PresentationStatus {
+    Absent,
+    Building,
+    Current,
+    Stale,
+    Failed,
+}
+
+pub struct CheckpointObservation {
+    pub key: CheckpointKey,
+    pub store: CheckpointStoreId,
+    pub durable: Option<DurableFrontier>,
+    pub failure: Option<ErrorCode>,
+}
+
+pub struct CorrectionObservation {
+    pub from: FrontierSummary,
+    pub to: Option<FrontierSummary>,
+    pub failure: Option<ErrorCode>,
+}
+
+pub struct WorldLifecycleFact {
+    pub state: WorldState,
+    pub generation: DeviceGeneration,
+    pub failure: Option<ErrorCode>,
 }
 ```
 
@@ -1041,30 +1608,244 @@ Implements: REQ-005, REQ-015, REQ-021
 Public failures retain actionable layers:
 
 ```rust
+pub enum ErrorCode {
+    InvalidConfig,
+    DuplicateId,
+    MissingId,
+    WrongProviderKind,
+    ContractMismatch,
+    UnsupportedVersion,
+    InvalidBounds,
+    InvalidEncoding,
+    InvalidOrientation,
+    InvalidCell,
+    WrongWorld,
+    BeforeNextTick,
+    AfterNextTick,
+    AlreadyPending,
+    WorldNotReady,
+    WorldClosed,
+    WorldFailed,
+    AlreadyShuttingDown,
+    DependencyNotReady,
+    QueueFull,
+    CapacityExceeded,
+    CanonicalBudget,
+    PersistenceBackpressure,
+    StaleRevision,
+    StaleHash,
+    ArithmeticOverflow,
+    SourceUnavailable,
+    SourceInvalid,
+    ProducerDropped,
+    StoreFailure,
+    ManifestNotFound,
+    UnsupportedAtomicCommit,
+    CorruptBlob,
+    LineageMismatch,
+    FrontierUnavailable,
+    FrontierTooOld,
+    ResultCapacityExceeded,
+    ObservationGap,
+    ParticipantFailure,
+    ParticipantDivergence,
+    ReplayDivergence,
+    BackendUnavailable,
+    UnqualifiedBackend,
+    DeviceLost,
+    MappingFailure,
+    DecodeFailure,
+    Cancelled,
+    Shutdown,
+    InternalInvariant,
+}
+
+pub enum FailureScope {
+    Configuration,
+    World(WorldId),
+    Tick { world: WorldId, tick: Tick },
+    Volume { world: WorldId, volume: VolumeId },
+    Operation(ReceiptId),
+    Provider(ProviderId),
+}
+
+pub enum ProviderId {
+    InputSource(InputSourceId),
+    BaseSource(BaseContentSourceId),
+    BaseAuthority(BaseAuthorityId),
+    ContentBlobStore(ContentBlobStoreId),
+    CheckpointStore(CheckpointStoreId),
+    ReplaySink(ReplaySinkId),
+    Participant(ParticipantId),
+}
+
+pub enum BudgetGroup {
+    Identity,
+    Canonical,
+    Content,
+    Query,
+    Observation,
+    Presentation,
+    Checkpoint,
+    Rollback,
+    Participant,
+    Runtime,
+}
+
+pub struct ResourceBudgetField {
+    pub group: BudgetGroup,
+    pub field_code: u16,
+}
+
+pub enum Retryability {
+    RetryNewRequest,
+    RetryAfterDependency,
+    RetryAfterRecovery,
+    Never,
+}
+
+pub enum CommittedEffect {
+    None,
+    Frontier(FrontierSummary),
+}
+
+pub struct OperationError {
+    pub code: ErrorCode,
+    pub scope: FailureScope,
+    pub retryability: Retryability,
+    pub committed: CommittedEffect,
+    pub diagnostic: BoundedUtf8<160>,
+}
+
+pub struct ConfigError {
+    pub code: ConfigErrorCode,
+    pub field: ConfigField,
+    pub diagnostic: BoundedUtf8<160>,
+}
+
+pub enum ConfigErrorCode {
+    DuplicateId,
+    MissingReference,
+    WrongProviderKind,
+    ContractMismatch,
+    InvalidValue,
+    CrossLimitViolation,
+    UnsupportedCapability,
+    UnqualifiedBackend,
+    ArithmeticOverflow,
+}
+
+pub enum ConfigField {
+    Canonical,
+    Budgets(ResourceBudgetField),
+    Rollback,
+    Persistence,
+    Presentation,
+    Qualification,
+    Material,
+    InputSource,
+    BaseSource,
+    BaseAuthority,
+    ContentBlobStore,
+    CheckpointStore,
+    ReplaySink,
+    Volume,
+    Participant,
+}
+
+pub struct AdmissionError {
+    pub code: AdmissionCode,
+    pub retryability: Retryability,
+}
+
+pub enum AdmissionCode {
+    WrongWorld,
+    WrongState,
+    BeforeNextTick,
+    AfterNextTick,
+    AlreadyPending,
+    DependencyNotReady,
+    Full,
+    Closed,
+    InvalidRequest,
+    StaleGeneration,
+    PersistenceBackpressure,
+}
+
+pub struct ReserveError {
+    pub code: AdmissionCode,
+    pub supported: TickReservation,
+}
+
+pub enum PushError {
+    LimitExceeded,
+    DuplicateSourceSequence,
+    UnregisteredSource,
+    InvalidInput,
+}
+
+pub enum BatchError {
+    Empty,
+    CountMismatch,
+    DuplicateCanonicalKey,
+    EncodingFailure,
+    ReservationMismatch,
+}
+
+pub enum CanonicalFailure {
+    MissingIdentity,
+    WrongVolumeKind,
+    StaleRevision,
+    StaleSourceHash,
+    InvalidBounds,
+    InvalidCell,
+    ArithmeticOverflow,
+    LogicalCapacity,
+    DependencyUnavailable,
+    ParticipantEffectInvalid,
+    ParticipantFailed,
+    InjectedCandidateFailure,
+}
+
+pub enum AvailabilityCode {
+    Cold,
+    Materializing,
+    Failed,
+    FrontierTooOld,
+    DeviceLost,
+    CapacityExceeded,
+}
+
 pub enum MoriaError {
     Config(ConfigError),
     Admission(AdmissionError),
-    Content(ContentError),
-    Canonical(CanonicalFailure),
-    Participant(ParticipantError),
-    Capacity(CapacityError),
-    Backend(BackendError),
-    DeviceLost(DeviceGeneration),
-    Mapping(MapError),
-    Decode(DecodeError),
-    Persistence(PersistenceError),
-    Replay(ReplayError),
-    Qualification(QualificationError),
-    Shutdown(ShutdownError),
+    Operation(OperationError),
 }
+
+pub type GenesisError = OperationError;
+pub type TickOperationError = OperationError;
+pub type InterestError = OperationError;
+pub type QueryUnavailable = OperationError;
+pub type ObservationSnapshotError = OperationError;
+pub type CheckpointError = OperationError;
+pub type CorrectionError = OperationError;
+pub type RestoreError = OperationError;
+pub type ParticipantError = OperationError;
+pub type RecoveryError = OperationError;
+pub type ShutdownError = OperationError;
+pub type TelemetryError = OperationError;
 ```
 
-Each variant exposes `scope()`, `retryability()`,
-`committed_effect() -> None | Some(FrontierSummary)`, and a stable machine
-code. Internal errors and uncaptured GPU validation errors never panic a
-consumer process; they fail the affected candidate/world and preserve the last
-trustworthy frontier. Decode, corruption, unsupported version, lineage
-mismatch, device loss, and unqualified backend remain distinct.
+`ResourceBudgetField.field_code` is the stable closed ordinal of the named
+TECH-017 field within its `BudgetGroup`; decoding rejects any ordinal not
+present in that version. It does not accept a string extension. Operation
+aliases intentionally use one closed shape so every
+receipt exposes the same scope/retry/committed-effect contract while preserving
+the stable `ErrorCode`. Internal errors and uncaptured GPU validation errors
+never panic a consumer process; they fail the affected candidate/world and
+preserve the last trustworthy frontier. Decode, corruption, unsupported
+version, lineage mismatch, device loss, and unqualified backend remain
+distinct.
 
 Canonical failures have stable wire tags. Environmental failures do not enter
 canonical hashes and cannot turn into a timing-dependent canonical outcome.
@@ -1082,6 +1863,17 @@ pub struct ShutdownRequest {
 pub enum ShutdownPersistence {
     RequireCheckpoint(CheckpointRequest),
     ReportDirtyWithoutCheckpoint,
+}
+
+pub enum WorldState {
+    Configuring,
+    VerifyingGenesis,
+    Ready,
+    Replaying,
+    RecoveringParticipant,
+    Failed,
+    ShuttingDown,
+    Closed,
 }
 ```
 
@@ -1151,6 +1943,119 @@ pub trait CanonicalParticipant: Send + Sync + 'static {
         sink: ParticipantSnapshotSink,
     );
 }
+
+pub struct ParticipantGenesisRequest {
+    pub world: WorldId,
+    pub genesis_digest: CanonicalHash,
+}
+pub struct ParticipantTickRequest {
+    pub world: WorldId,
+    pub tick: Tick,
+    pub source_root: CanonicalHash,
+    pub input: BoundedBytes,
+    pub collider: ColliderArtifactLease,
+}
+pub struct ParticipantSnapshotRestoreRequest {
+    pub world: WorldId,
+    pub frontier: FrontierSummary,
+    pub expected_commitment: CanonicalHash,
+}
+pub struct ParticipantReconstructRequest {
+    pub world: WorldId,
+    pub start: FrontierSummary,
+    pub end_tick: Tick,
+    pub expected_commitment: CanonicalHash,
+}
+pub struct ParticipantSnapshotExportRequest {
+    pub world: WorldId,
+    pub frontier: FrontierSummary,
+    pub max_bytes: u64,
+}
+
+pub struct ParticipantStateLease { /* private immutable token lease */ }
+pub struct ParticipantReplayLease { /* private bounded exact record lease */ }
+pub struct ColliderArtifactLease { /* private source-hash-bound artifact lease */ }
+pub struct PreparedParticipantState {
+    pub opaque: Arc<dyn Any + Send + Sync>,
+    pub commitment: CanonicalHash,
+    pub rng_state_digests: BoundedVec<CanonicalHash>,
+}
+pub struct ParticipantStateSink { /* private one-result completion */ }
+pub struct ParticipantCompletionSink { /* private state/effect/event completion */ }
+pub struct ParticipantSnapshotSink { /* private sequential byte completion */ }
+
+pub enum ParticipantCompletionDisposition {
+    Accepted,
+    AlreadyCompleted,
+    Cancelled,
+    LateGeneration,
+}
+
+impl ParticipantStateSink {
+    pub fn complete(
+        self,
+        state: PreparedParticipantState,
+    ) -> ParticipantCompletionDisposition;
+    pub fn fail(self, error: ParticipantError) -> ParticipantCompletionDisposition;
+}
+impl ParticipantCompletionSink {
+    pub fn push_effect(&mut self, effect: ParticipantEffect)
+        -> Result<(), ParticipantOutputError>;
+    pub fn push_event(&mut self, event: ParticipantEvent)
+        -> Result<(), ParticipantOutputError>;
+    pub fn complete(
+        self,
+        state: PreparedParticipantState,
+    ) -> ParticipantCompletionDisposition;
+    pub fn fail(self, error: ParticipantError) -> ParticipantCompletionDisposition;
+}
+impl ParticipantSnapshotSink {
+    pub fn write(&mut self, bytes: &[u8]) -> Result<(), ParticipantOutputError>;
+    pub fn complete(self, digest: BlobDigest) -> ParticipantCompletionDisposition;
+    pub fn fail(self, error: ParticipantError) -> ParticipantCompletionDisposition;
+}
+
+pub struct ParticipantEffect {
+    pub local_sequence: u32,
+    pub command: ParticipantCommand,
+}
+pub enum ParticipantCommand {
+    Erase {
+        volume: VolumeId,
+        target: MutationShapeQ,
+        mode: EraseMode,
+        expected_revision: Option<VolumeRevision>,
+        expected_source_hash: Option<CanonicalHash>,
+    },
+    Place {
+        volume: VolumeId,
+        target: MutationShapeQ,
+        cell: CellWire,
+        expected_revision: Option<VolumeRevision>,
+        expected_source_hash: Option<CanonicalHash>,
+    },
+    Patch {
+        volume: VolumeId,
+        cells: BoundedVec<PatchCell>,
+        expected_revision: Option<VolumeRevision>,
+        expected_source_hash: Option<CanonicalHash>,
+    },
+    SetPlacement {
+        volume: VolumeId,
+        placement: PlacementQ,
+        expected_revision: Option<VolumeRevision>,
+        expected_source_hash: Option<CanonicalHash>,
+    },
+}
+pub enum ParticipantOutputError {
+    CountExceeded,
+    BytesExceeded,
+    DuplicateSequence,
+    WrongSchema,
+    WrongSource,
+    AlreadyTerminal,
+    Cancelled,
+}
 ```
 
 The callback form avoids imposing Tokio or a `Send` future. Calls are
@@ -1176,6 +2081,11 @@ pub struct ParticipantDescriptor {
     pub rng: BoundedVec<ParticipantRngContract>,
     pub limits: ParticipantLimits,
     pub failure: ParticipantFailurePolicy,
+}
+
+pub enum ParticipantRollbackStrategy {
+    PerTickSnapshot { max_bytes: u64 },
+    ReconstructibleFromCanonicalStateAndLog { max_replay_ticks: u32 },
 }
 
 pub struct ParticipantRngContract {

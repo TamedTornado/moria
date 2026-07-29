@@ -664,3 +664,298 @@ The prior approval predates this human-requested completeness revision. A
 rereview should state **GDD coverage** and **implementation completeness**
 separately as required by `TECH-069`; neither conclusion is represented here
 as a human decision or inferred from the other.
+
+## Auditor Turn — 2026-07-29T17:22:40Z
+
+Mode: continue
+
+Responding to: consumer-contract completeness revision (the prior coder turn
+has no ISO-8601 timestamp)
+
+### Prior Findings Status
+
+All findings resolved by the approved auditor turn at
+`2026-07-29T16:31:25Z` remain resolved. The participant-token transaction,
+snapshot and replay-blob durability, render-to-main publication bridge,
+collision arithmetic/fact frame, query/correlation behavior, candidate
+diagnostic, RNG contract, and participant failure policy were not regressed.
+
+The eight items in the latest human-requested completeness revision have the
+following status:
+
+1. **Complete public facade — partially_resolved.** `TECH-070` now supplies
+   callable interest, query, observation, checkpoint, correction, restore,
+   recovery, telemetry, and shutdown methods (`interfaces.md:247-347`).
+   However, the construction registries, concrete result/error shapes, and
+   public replay/divergence route remain incomplete; see New Findings 1, 2,
+   and 4.
+2. **Complete `ResourceBudgets` — partially_resolved.** `TECH-017` defines a
+   broad closed field schema and `TECH-036` supplies overload and cross-limit
+   rules. The normative default values cannot pass their own rollback
+   worst-case check; see New Finding 5.
+3. **Base-content callback ownership — resolved.** `TECH-041` reserves the
+   2,048-byte sink and lifetime record before invocation, makes the completion
+   token non-clone, defines sequential exact writes and terminal cardinality,
+   and covers cancellation, drop, panic, duplicate, late-generation, digest,
+   and release behavior (`content-persistence.md:40-132`).
+4. **Observation semantics — resolved.** `TECH-025` selects finite admitted
+   volume membership, kind/spatial/world filtering, append-time immutable
+   facts, honest count/byte gaps, bounded resnapshot, resume validation,
+   close/drop, and shutdown behavior (`interfaces.md:851-1016`).
+5. **Asynchronous lifecycle closure — partially_resolved.** `TECH-021` gives a
+   useful admission/cancellation/retry/generation/shutdown matrix for its named
+   families (`interfaces.md:535-684`), but a required replay operation is not
+   in the matrix and several receipt results/errors are still undefined named
+   types. See New Findings 2 and 4.
+6. **Participant simplification — resolved.** `TECH-011`, `TECH-016`,
+   `TECH-029`, and `TECH-054` consistently reject same-tick dependencies and
+   retain a one-phase source-state/artifact to bounded effects/events/token
+   model, with ordinary phase-4 conflict behavior and no DAG, handoff, or
+   prior-feedback ABI.
+7. **Performance-policy replacement — resolved.** `TECH-068` explicitly
+   supersedes `P1`–`P10`, preserves universal correctness gates, retains only
+   `TECH-067`'s named 20-tick tier, and reports all requested paths through
+   hardware-contextual receipts (`validation.md:351-399`).
+8. **Normative snippet cleanup — partially_resolved.** The duplicate
+   `MinimumVolumeRevision.revision` field is gone, and the snippets have no
+   duplicate struct fields. The claimed public-type closure is nevertheless
+   false for material result, error, configuration, registry, and persistence
+   callback types; see New Findings 1 through 3.
+
+### New Findings
+
+1. **The construction facade cannot register all identities and providers that
+   genesis and later calls require.** `WorldBuilder` exposes only material,
+   base-source, volume, and participant registration
+   (`interfaces.md:171-181`). Yet a `GenesisVolume` refers to a
+   `BaseAuthorityId` (`interfaces.md:225-232`), `BaseAuthority` may refer to a
+   `ContentBlobStoreId` (`content-persistence.md:15-31`), canonical inputs
+   require registered `InputSourceId`s, and the budgets explicitly count input
+   sources and checkpoint stores (`interfaces.md:47-61`). There is no callable
+   registration for a base-authority descriptor, bundled-content store, input
+   source, checkpoint store, or replay sink, and the undefined
+   `PersistenceConfig` does not establish one. Consequently an external
+   consumer cannot construct several states that the TDD and `REQ-008` require,
+   and a `CheckpointRequest` does not select among the promised per-world
+   stores. Define the exact bounded registration/configuration shapes, stable
+   ID ownership, duplicate behavior, store selection, and builder-freeze
+   validation, then include each in `TECH-070`'s public-type/facade closure
+   tests.
+
+2. **`TECH-070` still uses unresolved result, error, and configuration
+   placeholders instead of the normative results requested by the human.**
+   The receipt signatures name `GenesisReady`, `InterestApplied`,
+   `QueryResult`, `CheckpointCommitted`, `RestoreReady`, `Recovered`,
+   `ShutdownReport`, and their operation-specific error types
+   (`interfaces.md:561-610`), but the TDD does not define their closed Rust
+   records/enums. The type-index assertion that every ready payload is a
+   bounded owned record containing fields “promised” elsewhere
+   (`interfaces.md:377-390`) is not a definition. This is observable: for
+   example `TECH-022` promises exact covered bounds for partial interest, but
+   there is no `InterestApplied` shape that can carry them; query prose does
+   not define the sample/region/hit result variants; and shutdown prose does
+   not define its bounded abandoned-receipt and dirty-root fields. Likewise
+   `CanonicalContract`, `RollbackConfig`, `PersistenceConfig`,
+   `PresentationConfig`, `TickReservation`, and `ParticipantRegistration` are
+   named as closed public inputs without field or variant definitions. Replace
+   the index-level placeholders with concrete bounded records/enums, including
+   ownership and stable error variants, so the external-style compile test can
+   validate semantics rather than merely accept opaque names.
+
+3. **The checkpoint store cannot load a manifest, and its completion tokens
+   have no callable completion API.** The normative `CheckpointStore` trait can
+   `put_blob`, `get_blob` by `BlobDigest`, and `commit_manifest` by
+   `CheckpointKey` (`content-persistence.md:167-177`). Durable restore begins by
+   loading the manifest from a consumer-supplied `CheckpointKey`
+   (`content-persistence.md:334-358`), but no method maps that key to manifest
+   bytes; a caller cannot know a manifest blob digest before loading the
+   manifest. In addition, `StoreSink`, `LoadSink`, and `CommitSink` are only
+   described as following the base-completion discipline
+   (`content-persistence.md:184-194`); no `write`, success, failure, drop, or
+   disposition signatures make the trait implementable. Add a bounded
+   key-based manifest load operation (with its atomic visibility semantics),
+   exact sink method shapes and error/disposition types, and their
+   cancellation/generation lifecycle. Connect the selected registered store to
+   checkpoint, shutdown checkpoint, restore, and recovery requests.
+
+4. **The approved public replay/divergence capability has no callable or
+   internally coherent path.** `TECH-070` declares its method list to be the
+   complete v1 facade but contains no replay-record export/sink, replay request,
+   replay receipt, or divergence-artifact result (`interfaces.md:247-347`).
+   `TECH-049` nevertheless requires the consumer to attach a replay sink
+   (`content-persistence.md:490-517`), and `TECH-047` says replay uses
+   `submit_tick` with an otherwise undefined “replay permit”
+   (`content-persistence.md:390-407`). More seriously, it says a hash mismatch
+   stops before publishing the divergent candidate
+   (`content-persistence.md:416-421`), while the ordinary `submit_tick` request
+   carries no expected hash that the exclusive pre-publication step could
+   compare. `REQ-032`, D-006, and completion criterion 11 require replay and
+   earliest-divergence evidence as public behavior, not a private qualification
+   routine. Select a bounded public design: either a dedicated replay
+   request/source/sink/receipt family or an explicitly defined correction-like
+   private replay operation. Define record export retention/backpressure,
+   expected-hash admission and comparison before publication, cancellation,
+   divergence-artifact ownership/bounds, and lifecycle/validation rows.
+
+5. **The normative default budgets fail `TECH-036`'s own required genesis
+   inequality.** Defaults allow 16,384 changed bricks per tick with a 2 GiB
+   rollback-retained budget and a 2 GiB authoritative GPU budget
+   (`interfaces.md:64-85,134-143`). A dense changed brick costs 2,048 bytes and
+   each independent scar path can copy 26 1,024-byte radix nodes
+   (`architecture.md:53-57,230-239`; `gpu-runtime.md:112-120`). The explicitly
+   required 20-frontier worst case is therefore up to
+   `20 * 16,384 * (2,048 + 26 * 1,024) = 9,395,240,960` bytes (8.75 GiB) before
+   volume/world metadata, participant state, and root tables. Distributing one
+   changed brick across many of the default 65,536 volumes makes the paths
+   independent, so common-prefix sharing does not rescue the declared worst
+   case. `TECH-036` requires that exact worst case to fit both budgets before
+   genesis (`gpu-runtime.md:271-290`), making the advertised defaults
+   self-rejecting. Choose mutually consistent defaults/limits or a tighter
+   proven allocation bound, and add an explicit test that the complete default
+   configuration reaches genesis on a qualifying baseline adapter.
+
+The mechanical provenance audit passes: the normative set has 70 unique
+`TECH-001` through `TECH-070` headings, exactly one `Implements:` line per
+contract, 351 unique requirement/contract pairs, all 43 approved requirements,
+no `REQ-042`, and exact pair parity with `traceability.md`. `git diff --check`
+passes and the worktree was clean before this required ledger append.
+
+### Questions For Coder
+
+1. Will public replay be a dedicated private-world replay receipt, or will
+   `CorrectionRequest` be extended into the one replay/divergence operation?
+   Either is viable, but ordinary live `submit_tick` cannot satisfy the stated
+   pre-publication mismatch rule.
+2. Is `CheckpointKey` intended to be a store-visible manifest locator? If so,
+   please add the missing key-based manifest read and identify exactly how a
+   world selects the registered store for checkpoint, restore, shutdown, and
+   recovery.
+
+### Answers To Coder
+
+No coder questions were pending.
+
+### Notes To Coder
+
+The GDD traceability-coverage conclusion passes separately: every approved
+requirement has semantically relevant technical representation and the
+normative/link index is mechanically consistent. Implementation completeness
+does not pass because the named consumer operations above cannot yet be
+implemented or exercised through the claimed complete public contract. The
+resolved compact one-package layout, one-phase participant model, and
+correctness-first performance policy should be preserved while closing these
+ordinary engineering gaps.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-29T17:48:26Z
+
+Mode: continue
+
+Responding to: 2026-07-29T17:22:40Z
+
+### Responses To Findings
+
+1. Addressed. `TECH-017` now exposes bounded registration for input sources,
+   base authorities, bundled-content stores, checkpoint stores, replay sinks,
+   and CPU/GPU participants in addition to the existing material, base-source,
+   and volume calls. Provider descriptors own stable typed IDs; duplicates do
+   not replace prior entries. Builder freeze validates every cross-reference,
+   provider contract, per-provider bound, configured default checkpoint store,
+   and mandatory replay sink before any callback or GPU allocation.
+   `CheckpointRequest`, `RestoreRequest`, and `RecoveryRequest` carry exact
+   `CheckpointStoreId`s, and shutdown already carries the exact checkpoint
+   request.
+2. Addressed. `TECH-017`, `TECH-018`, `TECH-020` through `TECH-029`, and
+   `TECH-070` now define concrete closed configuration, registration, request,
+   result, receipt, and error shapes. This includes `CanonicalContract`,
+   `RollbackConfig`, `PersistenceConfig`, `PresentationConfig`,
+   `TickReservation`, `ParticipantRegistration`, `GenesisReady`,
+   `InterestApplied` with exact coverage, the complete query result variants,
+   observation records/summaries, `CheckpointCommitted`, `RestoreReady`,
+   `Recovered`, `ShutdownReport` with bounded abandoned/dirty fields, and one
+   closed operation-error taxonomy. Fixed-width IDs, geometric values, bounded
+   owners, canonical input payloads, participant callback values, and the
+   coupled GPU participant names also have normative definitions rather than
+   index-only promises.
+3. Addressed. `TECH-043::CheckpointStore` now has
+   `load_manifest(CheckpointKey, BlobLimits, ManifestLoadSink)`, where
+   `CheckpointKey` is the store-visible locator rather than a blob digest.
+   `StoreSink`, `LoadSink`, `ManifestLoadSink`, and `CommitSink` have exact
+   sequential write/success/failure methods, closed error/disposition types,
+   pre-reserved Moria-owned buffers, identity/length verification, and
+   drop/cancel/duplicate/late-generation behavior. Manifest commit/load
+   provides atomic whole-value visibility. Checkpoint, restore, shutdown, and
+   recovery never fall through from the request's selected store.
+4. Addressed. `TECH-047` now selects a dedicated public private-world replay
+   family. A mandatory registered `ReplaySink` durably exports the genesis
+   header and every confirmed record under bounded in-flight count/byte
+   permits; log eviction waits for exact append completion and backpressures
+   ticks instead of dropping records. `WorldBuilder::replay_records` consumes
+   a bounded owned header/record sequence, reserves private roots,
+   participants, results, and worst-case artifact bytes, and returns a
+   pollable/cancellable `ReplayReceipt`. Expected root, outcome, participant,
+   and event values are encoded in every record and compared before each
+   private advance. Only complete success publishes the final world; earliest
+   mismatch returns the bounded exact-prefix `DivergenceArtifact` and
+   publishes nothing. `TECH-021`, `TECH-049`, and validation now include this
+   lifecycle and pressure contract.
+5. Addressed. The normative default for
+   `canonical.changed_bricks_per_tick` is now 512 while retaining 16,384 as a
+   portable configurable maximum. `TECH-036` gives the checked conservative
+   no-sharing equation with explicit 256 MiB genesis and 2 MiB per-frontier
+   metadata reserves. At all defaults, including the aggregate 64 MiB
+   participant frontier allowance, the 20-frontier bound is exactly
+   1,967,128,576 bytes and fits both 2 GiB byte budgets. Larger changed-brick,
+   participant, or registry settings require correspondingly larger budgets.
+   `TECH-060` adds a baseline default-genesis/20-frontier smoke fixture and a
+   companion rejection for 16,384 changed bricks under unchanged 2 GiB
+   budgets.
+
+### Answers To Auditor
+
+1. Public replay is a dedicated private-world `ReplayReceipt`, not an
+   extension of live `submit_tick` or `CorrectionRequest`. It uses the same
+   transition function in a private builder but compares each encoded expected
+   value before advancing and publishes only the verified final bundle.
+2. Yes. `CheckpointKey` is the store-visible atomic manifest locator.
+   `CheckpointRequest`, `RestoreRequest`, and `RecoveryRequest` bind the exact
+   registered store ID plus key; `ShutdownPersistence::RequireCheckpoint`
+   embeds the same exact request. The configured default is used only by
+   request-construction helpers and is never a failure fallback.
+
+### TDD Changes Made
+
+- Revised `architecture.md` with concrete stable ID, digest, cell, coordinate,
+  placement, and geometry wire/value types.
+- Revised `interfaces.md` with complete configuration/provider registries,
+  result/error shapes, canonical input values, replay receipt/lifecycle,
+  participant callback shapes, and corrected resource defaults.
+- Revised `content-persistence.md` with bundled-store registration,
+  key-addressed manifest loading, complete store completion tokens, exact
+  store selection, checkpoint/restore results, mandatory replay export, public
+  private-world replay, and bounded divergence artifacts.
+- Revised `gpu-runtime.md` with store-bound recovery, replay resource
+  accounting, a conservative 20-frontier allocation equation, and closed
+  qualification types.
+- Revised `collision-presentation.md` with concrete collision facts and named
+  GPU participant adapter values.
+- Revised `validation.md` with registry/store/sink tests, complete replay and
+  divergence scenarios, exact-store isolation, and default-budget viability.
+- Updated `overview.md` ownership/document-map language without changing the
+  one-package architecture or scope boundary.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+No stable contract ID or `Implements:` link changed. Mechanical checks find 70
+unique `TECH-001` through `TECH-070` contracts, exactly one `Implements:` line
+per contract, all 43 approved requirements covered, no `REQ-042`, and exact
+351-pair parity with `traceability.md`. The compact one-package layout,
+one-phase participant model, staged frontier publication, and
+correctness-first performance policy are preserved. `git diff --check` passes.

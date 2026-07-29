@@ -29,6 +29,30 @@ to an absent or retired ID are typed validation failures. Physical node,
 buffer, slot, entity, task, and submission IDs never appear in canonical
 encoding, persistence, replay, observations, or the public identity types.
 
+```rust
+pub struct WorldId(pub [u8; 16]);
+pub struct MaterialId(pub u16);
+pub struct VolumeId(pub u64);
+pub struct ParticipantId(pub u32);
+pub struct InputSourceId(pub u32);
+pub struct RngStreamId(pub u32);
+pub struct Tick(pub u64);
+pub struct VolumeRevision(pub u64);
+pub struct CanonicalOrder(pub u32);
+pub struct DeviceGeneration(pub u64);
+pub struct ReceiptId(pub u64);
+
+pub struct CanonicalHash(pub [u8; 32]);
+pub struct ContentDigest(pub [u8; 32]);
+pub struct ContractDigest(pub [u8; 32]);
+pub struct SchemaDigest(pub [u8; 32]);
+pub struct BlobDigest(pub [u8; 32]);
+pub struct EvidenceDigest(pub [u8; 32]);
+```
+
+Public constructors validate the nonzero/range rules above. Digest types are
+not implicitly interchangeable even though their wire widths match.
+
 ### TECH-006 — Material cells, bricks, and logical domains
 
 Implements: REQ-001, REQ-003, REQ-004, REQ-020, REQ-028
@@ -61,6 +85,26 @@ A volume domain is a nonempty, half-open local-cell AABB whose coordinates are
 of the declared placement pivot. Large worlds use multiple sparse volumes;
 their theoretical cell count is not a residency promise. Bounds, not an up
 axis, define the volume.
+
+```rust
+pub struct CellWire {
+    pub material_id: u16,
+    pub density_q8_8: i16,
+}
+
+pub struct LocalCellPoint(pub [i32; 3]);
+pub struct LocalCellAabb {
+    pub min: LocalCellPoint,
+    pub max: LocalCellPoint,
+}
+pub struct BrickCoord(pub [i32; 3]);
+pub struct BrickAabb {
+    pub min: BrickCoord,
+    pub max: BrickCoord,
+}
+```
+
+Both AABBs are half-open and require `min < max` on every axis.
 
 ### TECH-007 — Canonical fixed-point arithmetic and placement
 
@@ -156,6 +200,28 @@ rounding, less than one cell. Retained generated proofs cover the unit-shell
 postcondition, rational orthogonality, transpose inverse, composition closure,
 and this displacement bound. Float transforms are one-way derived
 presentation values and are never accepted back as canonical placement.
+
+```rust
+pub struct Q23_8(pub i32);
+pub struct WorldPointQ(pub [Q23_8; 3]);
+pub struct WorldVectorQ(pub [Q23_8; 3]);
+pub struct WorldAabbQ {
+    pub min: WorldPointQ,
+    pub max: WorldPointQ,
+}
+pub struct SegmentQ {
+    pub start: WorldPointQ,
+    pub end: WorldPointQ,
+}
+pub struct QuatQ14(pub [i16; 4]); // x, y, z, w
+pub struct PlacementQ {
+    pub translation: WorldPointQ,
+    pub orientation: QuatQ14,
+}
+```
+
+`WorldAabbQ` is half-open. Each constructor applies the arithmetic and
+orientation validation above rather than accepting raw unchecked fields.
 
 ## Canonical bytes and commitments
 

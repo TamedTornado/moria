@@ -81,7 +81,11 @@ snapshot blobs plus reconstructible participants' required replay-record blobs
 into that checkpoint storage. Moria also owns admitted copies of input,
 material truth,
 physical GPU allocation, revision publication, canonical outcomes, and derived
-work. A successful queue operation means admission only. Authority changes
+work. Consumer-registered checkpoint stores, bundled-content stores, and the
+replay sink are selected by stable IDs and receive only bounded
+owned values/completion tokens. Public replay consumes owned records in a
+private builder and can publish only its fully verified final frontier. A
+successful queue operation means admission only. Authority changes
 only when a receipt reaches `Confirmed`.
 
 The CPU may retain bounded configuration, stable identities, receipt state,
@@ -158,7 +162,7 @@ contract.
 - [architecture.md](architecture.md): ownership, canonical state, sparse
   representation, transition, hashing, and rollback roots.
 - [interfaces.md](interfaces.md): public Rust facade, inputs, receipts,
-  complete callable surface, resource-budget schema, inputs, receipts,
+  complete callable surface, resource-budget schema,
   queries, participants, observations, errors, and state machines.
 - [gpu-runtime.md](gpu-runtime.md): Bevy/wgpu integration, WGSL ABI,
   scheduling, pools, bounds, device loss, and portability.

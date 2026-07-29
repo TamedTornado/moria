@@ -204,14 +204,14 @@ The fields bound these retained resources:
 
 | Group | What it bounds | Overload behavior |
 | --- | --- | --- |
-| `identity` | world/material/volume/participant/source/RNG identities; live operation, terminal-receipt, root-pin, and artifact-lease records and retained result bytes | reject the registration/admission; held receipt/root/artifact leases apply backpressure rather than grow |
+| `identity` | world/material/volume/participant/input/base-authority/content-store/checkpoint-store/replay-sink/RNG identities; live operation, terminal-receipt, root-pin, and artifact-lease records and retained result bytes | reject the registration/admission; held receipt/root/artifact leases apply backpressure rather than grow |
 | `canonical` | sole pending tick, input/correlation bytes, command target size, changed bricks, and all candidate scan/sort/output scratch | return owned batch before admission, command failure, or tick `NoAdvance(CanonicalBudget)` as appropriate |
 | `content` | base request queue, invoked callback sinks and bytes, one materialization job, resident dense/uniform/radix/directory records, and authoritative GPU pages | delay/reject materialization or retire eligible cache; never evict a pin/scar/frontier |
 | `query` | queued/in-flight queries, inspected bricks, revision list, result records/bytes, staging slots, and aggregate readback bytes | reject and return request, wait only when request selected `Wait`, or finish capacity failure; never truncate `Complete` |
 | `observation` | shared ring records plus payload bytes, subscription records and finite volume lists, poll output, and resnapshot summaries/query payload | reject subscription/resnapshot or emit explicit ring gap |
 | `presentation` | dirty queue, resident chunks/bytes, in-flight jobs, vertex/index/output bytes, and dressing records | coalesce, retire, keep stale, reject, or fail the derived chunk |
 | `checkpoint` | queued/active checkpoints, map/store staging slots and bytes, blob size, manifest node/blob/count bytes, and total checkpoint output | reject/queue, cancel before submission, or fail without a manifest |
-| `rollback` | retained roots/bytes, in-memory log, one correction, private replay ticks/bytes, and recovery replay depth | reject genesis, tick, correction, or recovery; never evict a reachable or required-20 frontier |
+| `rollback` | retained roots/bytes, explicit genesis/frontier metadata reserves, in-memory log, replay-sink in-flight records/bytes, public private-world replay and divergence artifacts, one correction, private replay ticks/bytes, and recovery replay depth | reject genesis, tick, replay, correction, or recovery; never evict a reachable or required-20 frontier |
 | `participant` | concurrent callback/GPU operations, input, fixed effect/event sinks, state/snapshot tokens, collider artifacts, and checkpoint snapshot bytes | reject descriptor/genesis or cause `NoAdvance`/operation failure; never resize a callback output |
 | `runtime` | interest control records, all consumer callback completion cells/bytes, and render-to-main bridge cells | reject before callback/extraction or apply the owning operation's explicit backpressure |
 
@@ -227,8 +227,9 @@ first violation:
    `runtime.render_completion_cells == 32`.
 2. `IdentityBudgets.operation_records_per_world` is at least the sum of the
    configured pending tick, base request queue, interest control queue, query
-   queue, checkpoint queue, active correction, one recovery, presentation
-   dirty queue, participant operations, and observation subscriptions.
+   queue, checkpoint queue, public replay attempts, active correction, one
+   recovery, replay-sink callbacks, presentation dirty queue, participant
+   operations, and observation subscriptions.
    Terminal receipts and their bytes are separate reserved pools; every
    accepted result-producing operation must reserve both before admission.
 3. `content.base_completion_bytes_in_flight >=
@@ -239,7 +240,10 @@ first violation:
    registered base, CPU-participant state/effect/event/snapshot, store-load, or
    store-completion result. The scheduler may reserve fewer simultaneous
    callbacks than their queue counts, but it may never invoke consumer code
-   first and seek capacity afterward.
+   first and seek capacity afterward. Registered content/checkpoint store and
+   replay-sink descriptor maxima must be no greater than their corresponding
+   blob/manifest/record and callback fields; provider counts must fit the
+   identity registry fields.
 4. The render bridge inequality is
    `1 canonical + query.in_flight_requests +
    checkpoint.staging_slots + presentation.in_flight_jobs + 2 control
@@ -270,12 +274,46 @@ first violation:
    throttled by aggregate byte limits.
 9. `rollback.retained_frontiers` equals
    `RollbackConfig.capacity_ticks`, is at least 20, and is no greater than
-   `rollback.log_ticks`. The checked genesis worst case
-   (genesis root + 20 times maximum COW brick/node/metadata delta + 20 times
-   the sum of registered participant state/snapshot maxima + root tables)
-   must fit `rollback.retained_bytes` and authoritative GPU pages.
+   `rollback.log_ticks`. The checked genesis worst case is the following
+   conservative allocation bound, with every product and sum evaluated in
+   `u128`:
+
+   ```text
+   cow_brick_bytes = changed_bricks_per_tick * (2,048 + 26 * 1,024)
+   changed_volume_bytes = canonical.inputs_per_tick * 256
+   one_frontier_bytes =
+       cow_brick_bytes
+       + changed_volume_bytes
+       + rollback.frontier_metadata_bytes
+       + participant.state_and_snapshot_bytes_per_frontier
+   required_20_bytes =
+       rollback.genesis_persistent_bytes + 20 * one_frontier_bytes
+   ```
+
+   `rollback.genesis_persistent_bytes` must cover the complete material,
+   provider, volume, directory/root-table, allocator, and genesis participant
+   records at the configured identity capacities; it is a reservation, not an
+   estimate. `frontier_metadata_bytes` covers world-registry paths, input/
+   outcome/root headers, and revision tables not already included in the
+   per-brick/per-volume terms. The implementation may prove a lower
+   registration-specific value for either explicit reserve, but it may not
+   assume scar-path sharing: the formula deliberately permits every changed
+   brick to lie in a different volume. `required_20_bytes` must fit both
+   `rollback.retained_bytes` and `content.authoritative_gpu_bytes`.
+
+   With all normative defaults, the exact upper bound is
+   `256 MiB + 20 * (512 * 28,672 + 4,096 * 256 + 2 MiB + 64 MiB)
+   = 1,967,128,576 bytes`, below both 2 GiB defaults. A larger
+   `changed_bricks_per_tick`, participant aggregate, or registry must be
+   paired with larger checked byte budgets; the 16,384 portable count maximum
+   is not a viable default under 2 GiB.
    `recovery_replay_ticks <= log_ticks`; correction ticks/bytes must fit the
-   log and private-root pools.
+   log and private-root pools. Replay-sink in-flight counts/bytes, public
+   replay ticks/input/private bytes, correction/replay result bytes, and
+   divergence bytes must fit their dedicated fields. Each result/artifact
+   maximum plus fixed receipt metadata must fit
+   `identity.terminal_receipt_bytes_per_world`; concurrent admissions reserve
+   against that aggregate rather than grow it.
 10. For registrations sorted by `ParticipantId`, the sums of descriptor
     input, effects, events, event bytes, state/snapshot, and artifact claims
     fit the corresponding participant fields and canonical scratch. Every
@@ -342,6 +380,7 @@ Implements: REQ-001, REQ-005, REQ-014, REQ-015, REQ-021
 pub struct RecoveryRequest {
     pub world: WorldId,
     pub expected_frontier: FrontierSummary,
+    pub store: CheckpointStoreId,
     pub checkpoint: CheckpointKey,
     pub max_replay_ticks: u32,
     pub max_replay_bytes: u64,
@@ -381,7 +420,8 @@ Moria never fabricates empty matter or publishes a different state as
 recovery.
 
 Admission verifies that the expected frontier is still the last trustworthy
-frontier, the checkpoint key is a compatible visible recovery anchor, and
+frontier, the `(store, checkpoint)` pair is a compatible visible recovery
+anchor in the world's frozen checkpoint-store registry, and
 request limits fit `ResourceBudgets.rollback`; rejection returns the complete
 request. Acceptance reserves one private bundle, replay/log bytes, participant
 state, one canonical GPU/bridge cell, and terminal receipt storage before
@@ -389,7 +429,9 @@ creating the new generation.
 
 Device loss during checkpoint readback leaves the manifest uncommitted and the
 root pinned until failure cleanup. Device-bound objects are never retained
-across generations.
+across generations. Recovery calls that exact store's `load_manifest`; neither
+the configured default nor another store is tried after failure. The
+durable-frontier record and manifest must both name the same store ID and key.
 
 ## Portability and qualification
 
@@ -420,6 +462,36 @@ standalone second-device operation are excluded current targets.
 
 Implements: REQ-008, REQ-021, REQ-023, REQ-026, REQ-039
 
+`QualificationPolicy` and its result summary are closed:
+
+```rust
+pub enum QualificationPolicy {
+    RequireQualified(EvidenceDigest),
+    Candidate { diagnostics: CandidateDiagnostics },
+}
+
+pub struct CandidateDiagnostics {
+    pub fault_once: Option<CandidateFaultOnce>,
+}
+
+pub struct CandidateFaultOnce {
+    pub tick: Tick,
+    pub command_order: CanonicalOrder,
+    pub stage: CandidateFaultStage,
+}
+
+pub enum CandidateFaultStage {
+    AfterBrickConstructionBeforePublication,
+}
+
+pub struct QualificationSummary {
+    pub status: AuthorityStatus,
+    pub evidence: Option<EvidenceDigest>,
+    pub tuple_digest: ContractDigest,
+}
+```
+
+`EvidenceDigest` is a distinct 32-byte digest newtype.
 `QualificationPolicy` has two modes:
 
 - `RequireQualified(EvidenceDigest)`: genesis succeeds only when the
