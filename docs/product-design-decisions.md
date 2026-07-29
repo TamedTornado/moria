@@ -8,7 +8,7 @@ review history rather than replacing design substance.
 
 ## Resolved decisions
 
-### D1. Multi-target matter mutation completion
+### D-001. Multi-target matter mutation completion
 
 **Status:** Resolved by human product-design review.
 

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "base_revision": "9ada24ac2c5bab387353588f7c021a5607e0d645",
+  "provenance_note": "Retrofitted after human approval because the planning run omitted the established provenance IDs. Statements and decisions are copied from the approved artifacts without changing their meaning.",
+  "sources": [
+    {
+      "id": "S-001",
+      "path": "docs/vision.md",
+      "sha256": "e428e03d6e6fa658b6ca43a17a867a175723dc492da41a94be8002b9e2382bb9",
+      "referenced_paths": []
+    },
+    {
+      "id": "S-002",
+      "path": "docs/product-vision.md",
+      "sha256": "32f4df4c7ba78ef8248d003c6f2d4a60d0f278452953dc21205775dacdd141f0",
+      "referenced_paths": [
+        "docs/vision.md"
+      ]
+    },
+    {
+      "id": "S-003",
+      "path": "docs/product-design-decisions.md",
+      "sha256": "8041ad81acf24b05e879a2dd43c2db0cb535b84f41a605614cb9af996e5c1b6d",
+      "referenced_paths": [
+        "docs/design-document.md"
+      ]
+    }
+  ],
+  "missing_references": []
+}

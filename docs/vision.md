@@ -2,19 +2,27 @@
 
 ## What we are building now
 
+**Authority claim: C-001.**
+
 **Moria** is a reusable voxel-world substrate: a Rust and Bevy library (or small family of crates) that downstream games and tools install and drive through a public consumer contract. It is engine-shaped world infrastructure, not a playable game product.
+
+**Authority claim: C-002.**
 
 It is not limited to a Minecraft-style cube aesthetic or a single overworld content palette. The material contracts target continuous three-dimensional volumes—natural landscapes, underground geology, and constructed interiors among them—and those volumes are not only static scenery. **Substrate contracts are volume-general:** they must not assume gravity-aligned planetary terrain as the only kind of world. Delivering or specifically validating freeform ship and station hulls is **not** current scope; those remain future-consumer examples that the contracts should remain able to support.
 
 ## Purpose
 
+**Authority claims: C-003, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-015, C-016.**
+
 Voxel worlds only work when several hard systems agree as explicit contracts: sparse material truth, bounded inspection, mutation admission, streaming lifecycle, collision against matter rather than presentation, persistence of world matter plus edits, GPU-resident representation of that matter, measurable presentation derived from truth, and **generic seams so external behavior can plug in** without privileged access to voxel storage. Moria exists so material worlds can be consumed without each game rebuilding those contracts, and without hiding them behind a single privileged demo.
 
 The product’s claim is infrastructural: a consumer can obtain a continuous three-dimensional material world (including movable voxel volumes), inspect and mutate it only through supported interfaces, keep authoritative matter GPU-resident for scale and gameplay-enabling work, and trust that what they see and collide with is a view of the same authoritative matter. External plug-ins may implement physics, damage, or other behavior by observing that truth and requesting admitted changes, but the substrate does not prescribe their concepts, state, rules, or outcomes.
 
-**World generation is not part of the substrate identity.** How a game fills or seeds sparse material volumes is a consumer- or game-dependent algorithm that runs *on top of* the substrate. The substrate provides storage, query, mutation, streaming, collision-truth seams, generic behavior-extension seams, persistence seams, and presentation derivation for material truth—not a baked-in procedural generator, physics engine, or damage system.
+**Authority claim: C-012. World generation is not part of the substrate identity.** How a game fills or seeds sparse material volumes is a consumer- or game-dependent algorithm that runs *on top of* the substrate. The substrate provides storage, query, mutation, streaming, collision-truth seams, generic behavior-extension seams, persistence seams, and presentation derivation for material truth—not a baked-in procedural generator, physics engine, or damage system.
 
 ## Product boundary
+
+**Authority claims: C-001, C-002, C-003, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-013, C-014, C-015, C-016.**
 
 **This product owns** the reusable substrate and its public facade:
 
@@ -32,11 +40,11 @@ The product’s claim is infrastructural: a consumer can obtain a continuous thr
 - Seams a consumer can use to inject or drive world content (including generation algorithms), without embedding any particular generator as substrate law.
 - **Volume-general contracts** that do not encode planetary heightmap assumptions or gravity-aligned terrain as the only legal world shape.
 
-**Adjacent, not the product identity** are curation, benchmark, and visual-validation executables (`moria-curate`, `moria-bench`, `moria-demo` and similar). They may exist to curate content parameters, exercise contracts, capture evidence, and visually validate the substrate, but they must consume the same public interfaces available to an external game. Controllers, characters, cameras, authored demo routes, presentation polish, acceptance scenarios, and **game-specific generation algorithms** belong to those consumers—not to substrate identity. A walkable-world harness is a **permitted adjacent artifact**, not a mandatory definition of “done” for Moria. In-repo generation used only to exercise or demonstrate contracts remains a harness concern, not a claim that generation is substrate product.
+**Authority claim: C-013. Adjacent, not the product identity** are curation, benchmark, and visual-validation executables (`moria-curate`, `moria-bench`, `moria-demo` and similar). They may exist to curate content parameters, exercise contracts, capture evidence, and visually validate the substrate, but they must consume the same public interfaces available to an external game. Controllers, characters, cameras, authored demo routes, presentation polish, acceptance scenarios, and **game-specific generation algorithms** belong to those consumers—not to substrate identity. A walkable-world harness is a **permitted adjacent artifact**, not a mandatory definition of “done” for Moria. In-repo generation used only to exercise or demonstrate contracts remains a harness concern, not a claim that generation is substrate product.
 
 **Also adjacent (100% adjacent): behavior systems such as physics and damage.** A hand-rolled or third-party system may integrate through the substrate’s generic extension seams, but Moria does not ship or own its behavioral vocabulary, state model, or rules. Gravity, force, contact response, health, resistance, damage types, fracture, crumbling, and similar behavior remain plug-in / consumer concerns. An optional proof may demonstrate that a plug-in can observe truth and submit admitted changes; it does not make any particular behavior model a substrate deliverable.
 
-**Downstream, not this repository** are actual games and game layers: player control, characters, skeletal animation, game-specific presentation, combat rules, AI behavior, economy, building policy, the System / LLM layer, spells, gas pricing, and other gameplay rules—including **which procedural or authored generation pipeline** a game uses and **which physics engine** it chooses. Freeform ship and station games (and their design/combat fiction) remain **future-consumer examples**, not current delivery or validation targets. Compatibility seams may be designed where substrate requirements demand them; those layers are not implemented here.
+**Authority claim: C-014. Downstream, not this repository** are actual games and game layers: player control, characters, skeletal animation, game-specific presentation, combat rules, AI behavior, economy, building policy, the System / LLM layer, spells, gas pricing, and other gameplay rules—including **which procedural or authored generation pipeline** a game uses and **which physics engine** it chooses. Freeform ship and station games (and their design/combat fiction) remain **future-consumer examples**, not current delivery or validation targets. Compatibility seams may be designed where substrate requirements demand them; those layers are not implemented here.
 
 ## Product-level outcomes
 
@@ -108,13 +116,13 @@ The “walkable world” seed describes a third-person proof shape (curated regi
 
 | Question | Decision |
 | --- | --- |
-| **Q1.** Is a walkable-world visual validation harness mandatory current delivery or only a permitted adjacent artifact? | **Adjacent artifact.** It may exist for validation; it does not define product identity or “done.” Moria is not limited to a Minecraft-style world. |
-| **Q2.** Are natural-looking terrain, everywhere mutation, and first-class deep Z binding current outcomes? | **Everywhere mutation and first-class deep Z are binding.** Deep Z means genuine volumetric depth, not heightmap terrain. Natural-looking presentation **depends on the consumer’s world**—required as coherent material presentation for that domain, not as a single natural-overworld mandate. |
-| **Q3.** Is GPU-resident / asynchronous-GPU-capable architecture binding current direction? | **Yes.** GPU residency is an important product feature: it enables many gameplay capabilities and is a core distinction between Moria and CPU-driven voxel engines. Specific simulations remain milestone-selected. |
-| **Q4.** Multi-world freeform volumes: does current product identity include ship/station material volumes on the same contracts as natural geology? | **Contracts are volume-general** (must not assume gravity-aligned planetary terrain only). **Delivering or specifically validating ships and stations is not current scope**; they remain future-consumer examples. |
-| **Q5.** Must the substrate support dynamic voxel volumes—not only static world geometry? | **Yes.** The substrate supports material volumes that move and can be mutated under the same truth contracts as static matter. Physics, damage, and other behavior that causes those changes remains external. |
-| **Q6.** Is deterministic / procedural world generation part of the substrate product? | **No.** Generation is an algorithm that runs on top of the substrate and is game-dependent; it must not be baked into substrate identity. |
-| **Q7.** Are physics or damage behavior in product scope? | **Generic extension seams yes; behavior policy no.** External systems observe authoritative matter and request admitted changes. They own gravity, force, contact response, health, resistance, damage, fracture, and all related state and rules. Collision/occupancy **truth** against voxel matter remains a substrate concern so plug-ins and consumers share one material world. A proof plug-in is optional; no particular engine or behavior vocabulary is required. |
+| **AD-001 / Q1.** Is a walkable-world visual validation harness mandatory current delivery or only a permitted adjacent artifact? | **Adjacent artifact.** It may exist for validation; it does not define product identity or “done.” Moria is not limited to a Minecraft-style world. |
+| **AD-002 / Q2.** Are natural-looking terrain, everywhere mutation, and first-class deep Z binding current outcomes? | **Everywhere mutation and first-class deep Z are binding.** Deep Z means genuine volumetric depth, not heightmap terrain. Natural-looking presentation **depends on the consumer’s world**—required as coherent material presentation for that domain, not as a single natural-overworld mandate. |
+| **AD-003 / Q3.** Is GPU-resident / asynchronous-GPU-capable architecture binding current direction? | **Yes.** GPU residency is an important product feature: it enables many gameplay capabilities and is a core distinction between Moria and CPU-driven voxel engines. Specific simulations remain milestone-selected. |
+| **AD-004 / Q4.** Multi-world freeform volumes: does current product identity include ship/station material volumes on the same contracts as natural geology? | **Contracts are volume-general** (must not assume gravity-aligned planetary terrain only). **Delivering or specifically validating ships and stations is not current scope**; they remain future-consumer examples. |
+| **AD-005 / Q5.** Must the substrate support dynamic voxel volumes—not only static world geometry? | **Yes.** The substrate supports material volumes that move and can be mutated under the same truth contracts as static matter. Physics, damage, and other behavior that causes those changes remains external. |
+| **AD-006 / Q6.** Is deterministic / procedural world generation part of the substrate product? | **No.** Generation is an algorithm that runs on top of the substrate and is game-dependent; it must not be baked into substrate identity. |
+| **AD-007 / Q7.** Are physics or damage behavior in product scope? | **Generic extension seams yes; behavior policy no.** External systems observe authoritative matter and request admitted changes. They own gravity, force, contact response, health, resistance, damage, fracture, and all related state and rules. Collision/occupancy **truth** against voxel matter remains a substrate concern so plug-ins and consumers share one material world. A proof plug-in is optional; no particular engine or behavior vocabulary is required. |
 
 ## Open questions (identity)
 

@@ -4,7 +4,9 @@ These are engineering decisions made under the approved product design. They
 are not human product decisions and may be revised by a later TDD with
 equivalent public semantics and new evidence.
 
-## T1. One package with a Bevy adapter module
+## T1 / TECH-001. One package with a Bevy adapter module
+
+**Implements: REQ-002, REQ-008.**
 
 **Decision.** Start with one `moria` library package. The facade and Bevy
 adapter are modules in that package; examples are ordinary consumers.
@@ -16,7 +18,9 @@ compile or packaging boundary.
 **Revisit when.** A standalone compute library, tool binary, or separately
 versioned adapter becomes an actual deliverable.
 
-## T2. Fixed 8³ bricks and compact scalar samples
+## T2 / TECH-002. Fixed 8³ bricks and compact scalar samples
+
+**Implements: REQ-001, REQ-003, REQ-004, REQ-018.**
 
 **Decision.** V1 uses 8×8×8 bricks and a four-byte material sample.
 
@@ -28,7 +32,9 @@ truth.
 **Rejected.** A dense world, camera-only clipmap, and hardware sparse textures
 all weaken volume-general bounded residency or portable compute support.
 
-## T3. GPU hash pages with MVCC revision chains
+## T3 / TECH-003. GPU hash pages with MVCC revision chains
+
+**Implements: REQ-001, REQ-004, REQ-005, REQ-017, REQ-018.**
 
 **Decision.** A bounded open-addressed hash table maps logical brick keys to a
 version chain. Each new page version is tagged with its proposed volume
@@ -42,7 +48,9 @@ readers finish without global copies.
 buffering the entire page table makes mutation cost scale with resident world
 size. A camera clipmap privileges presentation interest.
 
-## T4. One revision stream per volume
+## T4 / TECH-004. One revision stream per volume
+
+**Implements: REQ-003, REQ-017.**
 
 **Decision.** Matter, placement, creation readiness, and retirement facts use a
 single monotonic revision stream per volume. A world observation sequence
@@ -51,7 +59,9 @@ orders delivery but is not a cross-volume truth revision.
 **Reason.** Queries can report the exact revisions observed without promising
 unsupported atomicity between independent volumes.
 
-## T5. Runtime-neutral receipts with Bevy-driven progress
+## T5 / TECH-005. Runtime-neutral receipts with Bevy-driven progress
+
+**Implements: REQ-005, REQ-012, REQ-015, REQ-021.**
 
 **Decision.** Facade handles are `Send + Sync`; accepted work returns a typed,
 `Send` receipt that implements `Future` and also supports nonblocking polling.
@@ -61,7 +71,9 @@ part of the public contract.
 **Reason.** Games may use Tokio, another executor, or Bevy tasks. Moria must not
 force one or confuse queue admission with completion.
 
-## T6. Content source executes on bounded workers
+## T6 / TECH-006. Content source executes on bounded workers
+
+**Implements: REQ-005, REQ-008, REQ-021.**
 
 **Decision.** Base content is a synchronous, batch-oriented `Send + Sync`
 callback executed by Moria's bounded worker pool.
@@ -69,7 +81,9 @@ callback executed by Moria's bounded worker pool.
 **Reason.** Authored I/O and consumer generation stay outside render schedules,
 while a synchronous callback avoids imposing a consumer async runtime.
 
-## T7. GPU behavior uses copied packets and candidate effects
+## T7 / TECH-007. GPU behavior uses copied packets and candidate effects
+
+**Implements: REQ-006, REQ-011, REQ-019.**
 
 **Decision.** Asynchronous GPU extensions receive bounded, Moria-produced
 inspection packets in extension-owned buffers and write fixed-schema candidate
@@ -86,7 +100,9 @@ invalidate ownership, bounds, atomicity, and recovery contracts.
 behavior-engine seam. T7 remains the asynchronous WGSL inspection/effect job
 decision.
 
-## T8. Sparse full-brick scars
+## T8 / TECH-008. Sparse full-brick scars
+
+**Implements: REQ-014.**
 
 **Decision.** A scar stores the complete committed 8³ sample payload for every
 brick changed relative to the registered base, plus persistent volume identity
@@ -96,7 +112,9 @@ and placement. Optional compaction may remove a scar proven byte-equal to base.
 without serializing untouched matter. Cell-level compression can be added
 inside a versioned chunk codec after measurement.
 
-## T9. Dual contouring for presentation; cell occupancy for collision
+## T9 / TECH-009. Dual contouring for presentation; cell occupancy for collision
+
+**Implements: REQ-001, REQ-010, REQ-013, REQ-019.**
 
 **Decision.** GPU dual contouring derives per-brick surfaces. Material
 presentation class selects smooth or feature-preserving constraints.
@@ -106,7 +124,9 @@ Collision tests occupied cells and coverage, independent of the mesh.
 surfaces, while separating collision preserves truth when meshing is stale or
 failed.
 
-## T10. Native renderer integration only
+## T10 / TECH-010. Native renderer integration only
+
+**Implements: REQ-013, REQ-020.**
 
 **Decision.** V1 qualifies Vulkan, Metal, and DX12 by capabilities, not backend
 name. WebGPU, WebGL/GLES, and standalone-device constructors are absent.
@@ -115,7 +135,9 @@ name. WebGPU, WebGL/GLES, and standalone-device constructors are absent.
 the renderer device in the supported path. Unsupported targets fail clearly
 instead of receiving weaker semantics.
 
-## T11. Reserve the complete GPU-extension effect batch
+## T11 / TECH-011. Reserve the complete GPU-extension effect batch
+
+**Implements: REQ-005, REQ-006, REQ-011, REQ-018.**
 
 **Decision.** An asynchronous extension request reserves its worst-case child
 command records, aggregate payload bytes, and receipt slots before shader
@@ -129,7 +151,9 @@ queue or pressure-dependent partial admission.
 **Rejected.** One candidate per extension request needlessly multiplies packet
 capture/dispatch overhead and weakens the intended GPU-oriented handoff shape.
 
-## T12. Whole-world checkpoints in v1
+## T12 / TECH-012. Whole-world checkpoints in v1
+
+**Implements: REQ-014.**
 
 **Decision.** `CheckpointScope` has only `WholeWorld`; restore requires exact
 live-volume membership and permits extra current material registrations only
@@ -139,7 +163,9 @@ when no saved sample refers to them.
 tombstone, placement, and dirty-frontier semantics. Partial-volume imports need
 namespace/conflict policy that the approved contract does not require.
 
-## T13. Collision kernel below public query orchestration
+## T13 / TECH-013. Collision kernel below public query orchestration
+
+**Implements: REQ-010, REQ-019.**
 
 **Decision.** `collision` is a private lower-level fact kernel over storage.
 `query` owns public descriptors, partial/readiness policy, result codecs, and
@@ -148,7 +174,9 @@ contact results.
 **Reason.** This gives one acyclic direction and keeps collision truth reusable
 without coupling storage traversal to receipt or public result policy.
 
-## T14. Separate live-volume and lifetime-key capacities
+## T14 / TECH-014. Separate live-volume and lifetime-key capacities
+
+**Implements: REQ-003, REQ-018, REQ-021.**
 
 **Decision.** `live_volumes` bounds concurrent directory entries, while
 `volume_records` bounds every stable key accepted for the world's lifetime.
@@ -158,7 +186,9 @@ Retirement frees only the live slot and preserves one bounded tombstone record.
 restore ambiguous. A separate lifetime bound keeps key history and manifests
 finite without preventing ordinary live-slot reuse.
 
-## T15. Builder-time dressing registry
+## T15 / TECH-015. Builder-time dressing registry
+
+**Implements: REQ-013, REQ-020.**
 
 **Decision.** Surface inputs are embedded in `MaterialDefinition`; derived
 dressing is registered separately on `MoriaBuilder` with a stable style key,
@@ -168,7 +198,9 @@ exact material-key filter, bounded descriptor, and Bevy asset handles.
 instance pool. A callable registry removes unresolved style IDs while keeping
 dressing presentation-only and outside persistence authority.
 
-## T16. Closed GPU extension ABI v1
+## T16 / TECH-016. Closed GPU extension ABI v1
+
+**Implements: REQ-006.**
 
 **Decision.** Asynchronous GPU extensions use fixed 32-bit
 packet/snapshot/inspection, opaque-state, diagnostic, candidate, and patch-run
@@ -180,7 +212,9 @@ layout validation. A fixed bounded ABI preserves GPU-to-GPU inspection and
 state while allowing Moria to validate and translate effects into ordinary
 commands without exposing storage.
 
-## T17. Collision work is separately authorized; partial never truncates hits
+## T17 / TECH-017. Collision work is separately authorized; partial never truncates hits
+
+**Implements: REQ-010, REQ-019, REQ-021.**
 
 **Decision.** Every non-point collision query carries explicit candidate-brick
 and candidate-cell limits within fixed v1 maxima. Partial coverage may omit
@@ -191,7 +225,9 @@ unavailable regions only; exceeding the hit cap always fails with
 and a coverage mask cannot truthfully describe omitted contacts inside a brick
 reported as inspected.
 
-## T18. Preparation is the cancellation point of no return
+## T18 / TECH-018. Preparation is the cancellation point of no return
+
+**Implements: REQ-005, REQ-021.**
 
 **Decision.** Explicit cancellation and shutdown cancellation win only while an
 operation is queued or waiting for matter. The atomic transition to
@@ -202,7 +238,9 @@ operation is queued or waiting for matter. The atomic transition to
 would otherwise require a second ambiguous cancellation protocol. One atomic
 state race gives every operation family and shutdown the same testable rule.
 
-## T19. Long-lived world filters snapshot membership
+## T19 / TECH-019. Long-lived world filters snapshot membership
+
+**Implements: REQ-009, REQ-012, REQ-016.**
 
 **Decision.** An accepted `All` interest or subscription pins the then-live
 volume IDs. Interest additionally pins exact local bricks at captured
@@ -213,7 +251,9 @@ Create/retire/move never expands membership. Update or resubscribe refreshes it.
 and would make `All` pressure failure part of every lease. Exposing the
 resolved set makes the bounded snapshot semantics explicit.
 
-## T20. Retained variable payloads have aggregate pools
+## T20 / TECH-020. Retained variable payloads have aggregate pools
+
+**Implements: REQ-018.**
 
 **Decision.** Material metadata and observation payload bytes have independent
 aggregate limits. Content callbacks have a concrete bricks-per-request limit,
@@ -223,7 +263,9 @@ ordinary dirty records.
 **Reason.** Per-record/count limits alone do not bound retained bytes or protect
 eventual presentation progress when several legal producers are active.
 
-## T21. Content callback bytes are admitted before consumer invocation
+## T21 / TECH-021. Content callback bytes are admitted before consumer invocation
+
+**Implements: REQ-005, REQ-018, REQ-021.**
 
 **Decision.** One content batch starts only after Moria atomically acquires a
 callback slot and its exact worst-case response-byte permit. The batch is not
@@ -234,7 +276,9 @@ validation, install or failure cleanup, and drop.
 **Reason.** Callback count and bytes must be acquired as one unit to bound
 simultaneous work and avoid count/byte hold-and-wait deadlocks.
 
-## T22. Observation filters retain append-time geometry
+## T22 / TECH-022. Observation filters retain append-time geometry
+
+**Implements: REQ-012, REQ-017.**
 
 **Decision.** Every ring fact carries a fixed, charged private envelope with
 its revision-time local/world extents; move facts retain both old and new world
@@ -246,7 +290,9 @@ revision.
 directory-version reclamation, and an overwritten retirement fact must not
 turn a pinned member into ambiguous absence.
 
-## T23. Content callbacks fill Moria-owned exact sinks
+## T23 / TECH-023. Content callbacks fill Moria-owned exact sinks
+
+**Implements: REQ-008, REQ-018, REQ-021.**
 
 **Decision.** A content callback receives an opaque exact-length output sink
 already owned and byte-reserved by Moria. Homogeneous writes copy one sample;
@@ -259,7 +305,9 @@ validation. A permit-backed sink makes ownership crossing bounded by
 construction and leaves invalid count/content as ordinary poisoned-batch
 failure.
 
-## T24. Volume names are canonical bounded directory data
+## T24 / TECH-024. Volume names are canonical bounded directory data
+
+**Implements: REQ-003, REQ-008.**
 
 **Decision.** Startup and runtime volume definitions accept 1..=96 UTF-8 name
 bytes and retain an exact boxed copy in live records and tombstones.
@@ -267,7 +315,9 @@ bytes and retain an exact boxed copy in live records and tombstones.
 **Reason.** Volume records outlive command permits and are persisted. A count
 bound alone cannot bound unconstrained `String` capacity or name length.
 
-## T25. GPU observation deltas are nonadvancing status-bearing reads
+## T25 / TECH-025. GPU observation deltas are nonadvancing status-bearing reads
+
+**Implements: REQ-012, REQ-021.**
 
 **Decision.** GPU delta inspection uses a caller-supplied cursor over one
 subscriber's accepted filter without mutating its CPU cursor. The packet and
@@ -283,7 +333,9 @@ the observation contract. Mandatory nonzero frontier fields also cannot encode
 a newly started world. Independent cursors and a closed frontier avoid both
 ambiguities without inventing a startup fact.
 
-## T26. Content descriptors are borrowed and errors are fixed inline
+## T26 / TECH-026. Content descriptors are borrowed and errors are fixed inline
+
+**Implements: REQ-008, REQ-021.**
 
 **Decision.** `BaseContentSource::descriptor()` returns an immutable borrow
 tied to the source rather than an owned descriptor. `load_bricks` may return
@@ -296,7 +348,9 @@ by the same port. Borrowed identity and a fixed error record make the ownership
 boundary structural, including invalid and adversarial source behavior, while
 leaving consumer-internal allocation outside Moria accounting.
 
-## T27. Scheduled stable-view behavior coordination is the primary engine seam
+## T27 / TECH-027. Scheduled stable-view behavior coordination is the primary engine seam
+
+**Implements: REQ-006.**
 
 **Decision.** A consumer-triggered substrate tick pins one committed view,
 runs builder-registered CPU/GPU adapters in a validated dependency order,
@@ -327,7 +381,9 @@ behavior phases.
 
 ---
 
-## T28. Scheduled adapters use isolated exports, restricted GPU handles, and bounded transport
+## T28 / TECH-028. Scheduled adapters use isolated exports, restricted GPU handles, and bounded transport
+
+**Implements: REQ-006, REQ-018, REQ-021.**
 
 **Decision.** Each participant receives a filtered `S_i` from one pinned
 frontier, including cell size and finite local domain. GPU adapters create and
@@ -357,7 +413,9 @@ post-publication notification panic as a no-publication abort.
 
 ---
 
-## T29. Scheduled wire integers, terminal feedback, and factory bytes are closed
+## T29 / TECH-029. Scheduled wire integers, terminal feedback, and factory bytes are closed
+
+**Implements: REQ-006, REQ-021.**
 
 **Decision.** Scheduled ABI v1 represents every logical 64-bit value as an
 explicit low/high `u32` pair. Next-tick GPU feedback losslessly encodes the
@@ -386,7 +444,9 @@ aggregate admission policy.
 
 ---
 
-## T30. Scheduled feedback omits snapshots and distinguishes participant publication
+## T30 / TECH-030. Scheduled feedback omits snapshots and distinguishes participant publication
+
+**Implements: REQ-006, REQ-012, REQ-021.**
 
 **Decision.** Scheduled ABI v1 keeps its fixed feedback formula and does not
 repeat the prior snapshot revision vector. Proposal outcome records retain
@@ -484,7 +544,9 @@ contract without adding product behavior.
 
 ---
 
-## T31. Scheduled ticks own bounded participant-addressed consumer ingress
+## T31 / TECH-031. Scheduled ticks own bounded participant-addressed consumer ingress
+
+**Implements: REQ-006.**
 
 **Decision.** Each behavior descriptor declares `None | Optional | Required`
 opaque current input and a maximum of at most 1 MiB. One tick request may
@@ -509,7 +571,9 @@ GPU visibility, and failure within the existing tick admission boundary.
 **Rejected.** Unbounded request blobs, a fake source adapter, undocumented
 global state, raw GPU upload handles, and input readback on the authority path.
 
-## T32. Scheduled v1 has controlled GPU adaptation, no create/split, and synchronous CPU execution
+## T32 / TECH-032. Scheduled v1 has controlled GPU adaptation, no create/split, and synchronous CPU execution
+
+**Implements: REQ-006, REQ-019.**
 
 **Decision.** The GPU trait is for a purpose-built or substantially adapted,
 Moria-conforming adapter using only the restricted factory, fixed six-binding
@@ -533,7 +597,9 @@ creating a staging-copy destination without `COPY_DST`.
 
 ---
 
-## T33. Scheduled GPU input preflight precedes all consumer code
+## T33 / TECH-033. Scheduled GPU input preflight precedes all consumer code
+
+**Implements: REQ-006, REQ-018, REQ-021.**
 
 **Decision.** After the captured command frontier drains, a behavior tick
 atomically enters `Preparing` by uploading and confirming every GPU
@@ -775,7 +841,9 @@ choices are specified engineering mechanisms and validation obligations.
 
 ---
 
-## T34. Source-bound component extraction uses one directory-epoch gate
+## T34 / TECH-034. Source-bound component extraction uses one directory-epoch gate
+
+**Implements: REQ-006, REQ-011, REQ-017, REQ-019.**
 
 **Decision.** Scheduled ABI v2 pre-reserves every possible child identity,
 directory/lifetime entry, transfer/page/brick/scar/provenance record, proposal,
@@ -806,7 +874,9 @@ source cells into both parent and child, publishing directory entries
 individually, implicit deletion of unassigned cells, and GPU transport of
 `BaseContentSource`.
 
-## T35. Persistent multi-fidelity adapters use opaque CPU regions and a placement stream
+## T35 / TECH-035. Persistent multi-fidelity adapters use opaque CPU regions and a placement stream
+
+**Implements: REQ-006, REQ-009, REQ-019.**
 
 **Decision.** The CPU supplies region definitions through ordinary opaque
 participant input. One GPU adapter owns one persistent body table across all
@@ -834,7 +904,9 @@ regions, one adapter per bubble, duplicate body records in overlaps, silent
 stale placement, an unproven per-object host command loop, and raw indirect
 dispatch buffers.
 
-## T36. Adapter egress is bounded opaque transport independent of publication
+## T36 / TECH-036. Adapter egress is bounded opaque transport independent of publication
+
+**Implements: REQ-006, REQ-012, REQ-021.**
 
 **Decision.** A GPU adapter may declare zero egress or one fixed-stride schema
 and exact record/byte maximum. Moria initializes a dedicated egress subrange in
@@ -901,7 +973,9 @@ None.
 The review calls for engineering simplification and does not require a new
 human product or authority decision.
 
-## T37. Adapter capabilities reuse existing substrate machinery
+## T37 / TECH-037. Adapter capabilities reuse existing substrate machinery
+
+**Implements: REQ-006, REQ-007, REQ-018.**
 
 **Decision.** Component extraction, bulk placement, and opaque egress are
 extensions of one scheduled tick.
@@ -922,7 +996,9 @@ pre-reservation, atomic publication, coarse-outside-region proof, or egress
 failure honesty; retaining duplicate normative descriptions; and promoting
 proof-only region or simulation concepts into Moria.
 
-## T38. Directory allocator closure is an operational and durable capability state
+## T38 / TECH-038. Directory allocator closure is an operational and durable capability state
+
+**Implements: REQ-003, REQ-015, REQ-018, REQ-021.**
 
 **Decision.** Directory-epoch allocation starts at one, never wraps or reuses,
 and closes permanently after consuming `u64::MAX` or failing a checked

@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "source_manifest_sha256": "f40e5d822db68ef4edd5234509d68fe3c3ba0da4836685e406e9d28baec18c8a",
+  "provenance_note": "Retrofitted from already approved planning artifacts after the run omitted the established provenance IDs. This ledger records existing authority; it does not add or reinterpret scope.",
+  "product_target": "A reusable Rust and Bevy voxel-world substrate, not a playable game.",
+  "documents": [
+    {
+      "source_id": "S-001",
+      "role": "binding_target"
+    },
+    {
+      "source_id": "S-002",
+      "role": "approved_product_vision"
+    },
+    {
+      "source_id": "S-003",
+      "role": "human_product_design_decisions"
+    }
+  ],
+  "claims": [
+    {
+      "id": "C-001",
+      "source_id": "S-001",
+      "statement": "Moria is reusable Rust and Bevy voxel-world substrate infrastructure, not a playable game.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-002",
+      "source_id": "S-001",
+      "statement": "Contracts are volume-general; ships and stations are future-consumer examples, not current delivery targets.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-003",
+      "source_id": "S-001",
+      "statement": "Consumers inspect and mutate authoritative matter only through supported public contracts.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-004",
+      "source_id": "S-001",
+      "statement": "Sparse cost follows interest and change rather than total theoretical world volume.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-005",
+      "source_id": "S-001",
+      "statement": "Every exposed material cell is mutable through admitted changes.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-006",
+      "source_id": "S-001",
+      "statement": "Deep Z is genuine volumetric material depth rather than heightmap presentation.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-007",
+      "source_id": "S-001",
+      "statement": "Dynamic material volumes move and mutate under the same truth contracts as static matter.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-008",
+      "source_id": "S-001",
+      "statement": "External behavior systems integrate through generic seams while owning their concepts, state, rules, and outcomes.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-009",
+      "source_id": "S-001",
+      "statement": "Persistence retains material truth and edit scars without requiring full untouched-volume dumps.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-010",
+      "source_id": "S-001",
+      "statement": "Authoritative matter remains GPU-resident behind an asynchronous-capable command and query boundary.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-011",
+      "source_id": "S-001",
+      "statement": "Presentation is derived from authoritative matter and depends on the consumer's world domain.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-012",
+      "source_id": "S-001",
+      "statement": "World generation is consumer-owned and is not part of substrate product identity.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-013",
+      "source_id": "S-001",
+      "statement": "Curation, benchmark, and visual-validation harnesses are adjacent consumers using the public interface.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-014",
+      "source_id": "S-001",
+      "statement": "Characters, controls, combat, AI, economy, game-specific presentation, and other game layers are downstream.",
+      "disposition": "excluded"
+    },
+    {
+      "id": "C-015",
+      "source_id": "S-001",
+      "statement": "Correctness and substrate quality must be measurable before continuous optimization.",
+      "disposition": "binding"
+    },
+    {
+      "id": "C-016",
+      "source_id": "S-001",
+      "statement": "Collision and occupancy truth are evaluated against authoritative voxel matter, not disposable presentation.",
+      "disposition": "binding"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "AD-001",
+      "question": "Is a walkable-world visual validation harness mandatory current delivery?",
+      "selected": "Adjacent artifact only.",
+      "status": "resolved",
+      "resolution_source": "docs/vision.md"
+    },
+    {
+      "id": "AD-002",
+      "question": "Are natural-looking terrain, everywhere mutation, and first-class deep Z binding outcomes?",
+      "selected": "Everywhere mutation and first-class deep Z are binding; presentation is domain-dependent.",
+      "status": "resolved",
+      "resolution_source": "docs/vision.md"
+    },
+    {
+      "id": "AD-003",
+      "question": "Is GPU-resident and asynchronous-GPU-capable architecture binding?",
+      "selected": "Yes.",
+      "status": "resolved",
+      "resolution_source": "docs/vision.md"
+    },
+    {
+      "id": "AD-004",
+      "question": "Are ships and stations current delivery scope?",
+      "selected": "No; contracts remain volume-general.",
+      "status": "resolved",
+      "resolution_source": "docs/vision.md"
+    },
+    {
+      "id": "AD-005",
+      "question": "Must the substrate support dynamic voxel volumes?",
+      "selected": "Yes.",
+      "status": "resolved",
+      "resolution_source": "docs/vision.md"
+    },
+    {
+      "id": "AD-006",
+      "question": "Is deterministic or procedural world generation part of substrate product identity?",
+      "selected": "No.",
+      "status": "resolved",
+      "resolution_source": "docs/vision.md"
+    },
+    {
+      "id": "AD-007",
+      "question": "Are physics or damage behavior in product scope?",
+      "selected": "Generic extension seams are in scope; behavior policy is not.",
+      "status": "resolved",
+      "resolution_source": "docs/vision.md"
+    },
+    {
+      "id": "D-001",
+      "question": "May one bounded multi-target matter mutation report partial application?",
+      "selected": "No; it commits atomically at one revision or has no committed effect.",
+      "status": "resolved",
+      "resolution_source": "docs/product-design-decisions.md"
+    }
+  ],
+  "unresolved_decision_ids": [],
+  "deferred_design_questions": []
+}

@@ -15,6 +15,8 @@ appear as product requirement.
 
 ## 1. Product identity
 
+**Authority: C-001, C-002, C-012, C-014, AD-001, AD-004, AD-006.**
+
 **Moria** is a reusable **voxel-world substrate**: engine-shaped world
 infrastructure that downstream games and tools install and drive through a
 public consumer contract.
@@ -45,6 +47,8 @@ It is **not**:
 ---
 
 ## 2. Purpose
+
+**Authority: C-003, C-008, C-010, C-012, C-016, AD-003, AD-007.**
 
 Voxel worlds only work when several hard systems agree as **explicit, shareable
 contracts**: sparse material truth, bounded inspection, mutation admission,
@@ -79,6 +83,8 @@ behavior vocabulary.
 
 ### Primary consumers
 
+**Authority: C-001, C-013.**
+
 - **Game and tool authors** who need continuous material volumes with honest
   mutation, inspection, collision truth, streaming, and persistence, without
   rebuilding world infrastructure for each title.
@@ -88,6 +94,8 @@ behavior vocabulary.
   or “done.”
 
 ### Needs the product must meet
+
+**Authority: C-003, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-013, C-014, C-015, C-016, AD-002, AD-003, AD-005, AD-007.**
 
 | Consumer need | What success means |
 | --- | --- |
@@ -109,6 +117,8 @@ behavior vocabulary.
 ## 4. Product boundary
 
 ### This product owns
+
+**Authority: C-003, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-013, C-015, C-016, AD-002, AD-003, AD-005, AD-007.**
 
 The reusable substrate and its public facade:
 
@@ -147,6 +157,8 @@ The reusable substrate and its public facade:
 
 ### Adjacent (not product identity)
 
+**Authority: C-008, C-012, C-013, AD-001, AD-006, AD-007.**
+
 - **Curation, benchmark, and visual-validation executables** and similar
   harnesses. They may curate parameters, exercise contracts, capture evidence,
   and visually validate the substrate, but only through the same public
@@ -169,6 +181,8 @@ The reusable substrate and its public facade:
 
 ### Downstream (not this product)
 
+**Authority: C-002, C-014, AD-004.**
+
 Actual games and game layers, including but not limited to: player control,
 characters, skeletal animation, game-specific presentation, combat rules, AI
 behavior, economy, building policy, the System / LLM layer, spells, gas
@@ -190,6 +204,8 @@ implementation plan.
 
 ### 5.1 Truth vs view
 
+**Authority: C-003, C-011, C-016.**
+
 Occupancy, queries, collision truth, and persistence run against voxel matter.
 Meshes, surface dressing, and debug geometry are **derived and disposable**.
 External behavior systems also consume material truth through public seams
@@ -197,6 +213,8 @@ rather than a private mesh world. Derived geometry is never
 serialized as world authority.
 
 ### 5.2 Contracted consumption
+
+**Authority: C-003, C-010, C-013.**
 
 External consumers install the facade, inspect through public reads, mutate
 through admitted edits, and never require privileged internal paths. Adjacent
@@ -206,6 +224,8 @@ or synchronous ownership of internal storage.
 
 ### 5.3 Sparse scale
 
+**Authority: C-004.**
+
 Large regions remain tractable: untouched homogeneous volume stays cheap; only
 the interesting shell (surfaces, voids, structures, player scars) and active
 edits pay detailed cost. Streaming and lifecycle keep residency bounded without
@@ -213,12 +233,16 @@ requiring full raw-voxel presence for an entire region.
 
 ### 5.4 Mutable everywhere
 
+**Authority: C-005, AD-002.**
+
 Any material cell the contract exposes can be destroyed or placed. Cut faces
 and scars remain honest matter; presentation rebuilds from truth. Mutation is a
 first-class product proof—not optional scenery decoration sitting outside the
 material world.
 
 ### 5.5 Deep Z is first-class
+
+**Authority: C-006, AD-002, AD-004.**
 
 Volume along the full depth axis is real content—genuine volumetric depth, not
 a heightmap floor with painted underground. Caves, strata, ore, aquifers as
@@ -229,6 +253,8 @@ required current deliverable shape.
 
 ### 5.6 Dynamic voxel volumes
 
+**Authority: C-007, AD-005.**
+
 The world is not static geometry alone. The substrate must support material
 volumes that move and can be mutated, so games can represent moving matter
 under the same truth contracts rather than as overlays disconnected from the
@@ -236,6 +262,8 @@ world. Physics, damage, and other rules that cause those changes remain
 external behavior.
 
 ### 5.7 Behavior-extension seams, not behavior policy
+
+**Authority: C-008, C-016, AD-007.**
 
 External systems can observe authoritative matter and submit admitted changes
 through stable public seams. The substrate does not define physics or damage
@@ -246,12 +274,16 @@ a substrate concern so plug-ins and consumers share one material world.
 
 ### 5.8 Cheap scars over full dumps
 
+**Authority: C-009, C-012.**
+
 Persistence keeps material edits and related scars tractable—not a dump of
 every cell. A consumer may choose a reproducible generation function as its
 base-world strategy; that choice is game-dependent and is not a substrate
 deliverable.
 
 ### 5.9 GPU-resident architecture
+
+**Authority: C-010, AD-003.**
 
 Sparse representation and a command/query boundary keep world matter
 GPU-resident and support asynchronous GPU work. This is a product distinction
@@ -262,6 +294,8 @@ the async-capable boundary do not.
 
 ### 5.10 Measurable substrate quality
 
+**Authority: C-013, C-015.**
+
 Benchmarks and harnesses can evidence mutation response, streaming, GPU memory
 behavior, collision-truth honesty, behavior-extension readiness when exercised,
 and related contracts without redefining the product as a game. Harness-side
@@ -269,6 +303,8 @@ generation or a proof behavior plug-in used for tests or demos does not make
 generation, physics, or damage behavior a substrate requirement.
 
 ### 5.11 World-dependent presentation
+
+**Authority: C-002, C-011, AD-002, AD-004.**
 
 How a world “looks natural” depends on the consumer’s world—landscape geology,
 fortress masonry, and other material styles. The substrate must support fully
@@ -280,6 +316,8 @@ validation targets.
 ---
 
 ## 6. Capabilities (product altitude)
+
+**Authority: C-003, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-013, C-014, C-015, C-016, AD-002, AD-003, AD-004, AD-005, AD-006, AD-007.**
 
 What the product enables and guarantees, without choosing algorithms, layouts,
 crate splits, or milestones.
@@ -320,6 +358,8 @@ implementation checklists):
 
 ### Binding product constraints
 
+**Authority: C-001, C-002, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-013, C-014, AD-001, AD-002, AD-003, AD-004, AD-005, AD-006, AD-007.**
+
 - **Substrate first.** Moria is world infrastructure consumed as a Rust / Bevy
   crate ecosystem, not a finished visual game engine claimed before feasibility
   and visual-acceptance gates are met.
@@ -346,6 +386,8 @@ implementation checklists):
 
 ### Invariants (must remain true)
 
+**Authority: C-003, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-016.**
+
 1. **Matter is authority; views are disposable.** Presentation, dressing, and
    debug geometry never become truth.
 2. **One consumer contract.** Harness and external game use the same public
@@ -370,6 +412,8 @@ implementation checklists):
 ---
 
 ## 8. Validation principles
+
+**Authority: C-003, C-004, C-005, C-006, C-010, C-013, C-015, C-016, AD-001, AD-002, AD-003, AD-007.**
 
 How the product proves itself—without turning harness content into product
 requirements.
@@ -410,6 +454,8 @@ requirements.
 ---
 
 ## 9. Non-goals
+
+**Authority: C-001, C-002, C-012, C-013, C-014, AD-001, AD-004, AD-006, AD-007.**
 
 Explicitly out of product scope:
 
@@ -452,6 +498,8 @@ Explicitly out of product scope:
 
 ## 10. Future consumers (context only)
 
+**Authority: C-002, C-013, C-014, AD-001, AD-004.**
+
 Reference material describes possible later products that motivate reusable
 material-world capabilities. Their gameplay, characters, assets, content
 palettes, and presentation are **not** current Moria scope. They illustrate
@@ -489,13 +537,13 @@ an explicit new human decision.
 
 | Topic | Decision |
 | --- | --- |
-| Walkable-world visual validation harness | **Adjacent artifact.** May exist for validation; does not define product identity or “done.” Moria is not limited to a Minecraft-style world. |
-| Natural-looking terrain, everywhere mutation, first-class deep Z | **Everywhere mutation and first-class deep Z are binding.** Deep Z means genuine volumetric depth, not heightmap terrain. Natural-looking presentation **depends on the consumer’s world**—coherent material presentation for that domain, not a single natural-overworld mandate. |
-| GPU-resident / asynchronous-GPU-capable architecture | **Yes, binding.** GPU residency is an important product feature: it enables many gameplay capabilities and is a core distinction between Moria and CPU-driven voxel engines. Specific simulations remain design-selected later. |
-| Multi-world freeform volumes (ships / stations) | **Contracts are volume-general** (must not assume gravity-aligned planetary terrain only). **Delivering or specifically validating ships and stations is not current scope**; they remain future-consumer examples. |
-| Dynamic voxel volumes | **Yes.** The substrate supports material volumes that move and can be mutated under the same truth contracts as static matter. Physics, damage, and other behavior that causes those changes remains external. |
-| Deterministic / procedural world generation | **No.** Generation is an algorithm that runs on top of the substrate and is game-dependent; it must not be baked into substrate identity. |
-| Physics and damage behavior | **Generic extension seams yes; behavior policy no.** External systems observe authoritative matter and request admitted changes. They own gravity, force, contact response, health, resistance, damage, fracture, and all related state and rules. Collision/occupancy **truth** against voxel matter remains a substrate concern so plug-ins and consumers share one material world. A proof plug-in is optional; no particular engine or behavior vocabulary is required. |
+| AD-001 — Walkable-world visual validation harness | **Adjacent artifact.** May exist for validation; does not define product identity or “done.” Moria is not limited to a Minecraft-style world. |
+| AD-002 — Natural-looking terrain, everywhere mutation, first-class deep Z | **Everywhere mutation and first-class deep Z are binding.** Deep Z means genuine volumetric depth, not heightmap terrain. Natural-looking presentation **depends on the consumer’s world**—coherent material presentation for that domain, not a single natural-overworld mandate. |
+| AD-003 — GPU-resident / asynchronous-GPU-capable architecture | **Yes, binding.** GPU residency is an important product feature: it enables many gameplay capabilities and is a core distinction between Moria and CPU-driven voxel engines. Specific simulations remain design-selected later. |
+| AD-004 — Multi-world freeform volumes (ships / stations) | **Contracts are volume-general** (must not assume gravity-aligned planetary terrain only). **Delivering or specifically validating ships and stations is not current scope**; they remain future-consumer examples. |
+| AD-005 — Dynamic voxel volumes | **Yes.** The substrate supports material volumes that move and can be mutated under the same truth contracts as static matter. Physics, damage, and other behavior that causes those changes remains external. |
+| AD-006 — Deterministic / procedural world generation | **No.** Generation is an algorithm that runs on top of the substrate and is game-dependent; it must not be baked into substrate identity. |
+| AD-007 — Physics and damage behavior | **Generic extension seams yes; behavior policy no.** External systems observe authoritative matter and request admitted changes. They own gravity, force, contact response, health, resistance, damage, fracture, and all related state and rules. Collision/occupancy **truth** against voxel matter remains a substrate concern so plug-ins and consumers share one material world. A proof plug-in is optional; no particular engine or behavior vocabulary is required. |
 
 Older planning language that still titles the effort as “Product One — The
 Walkable World” is superseded on identity by this product vision. Engineering

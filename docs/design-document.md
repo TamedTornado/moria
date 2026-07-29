@@ -33,6 +33,8 @@ make those behavior engines or their policies part of Moria.
 
 ### 2.1 Matter is authority
 
+**Requirement: REQ-001. Authority: C-003, C-016.**
+
 A material volume is the source of truth. Surface meshes, dressing, collision
 debug shapes, slice views, and other visualizations are disposable projections
 of a known matter revision. They may be rebuilt or absent without changing
@@ -43,6 +45,8 @@ saves derived presentation as truth. A visual result that cannot survive an
 edit and honest rebuild does not satisfy the product.
 
 ### 2.2 One contract for every consumer
+
+**Requirement: REQ-002. Authority: C-003, C-013.**
 
 An external game, editor, benchmark, and in-repository demo all:
 
@@ -58,6 +62,8 @@ private CPU mirror, or treat a generated mesh as the world.
 
 ### 2.3 Volume, not terrain
 
+**Requirement: REQ-003. Authority: C-002, C-006, C-007, AD-004, AD-005.**
+
 The basic addressable object is a material volume, not a heightmap or a
 gravity-aligned landscape. A volume has stable identity, its own local
 three-dimensional address space, an extent or addressable domain, and a
@@ -70,6 +76,8 @@ interpretations.
 
 ### 2.4 Sparse cost follows interest and change
 
+**Requirement: REQ-004. Authority: C-004.**
+
 Empty space and untouched homogeneous matter remain cheap. Detailed cost is
 paid for materially interesting boundaries, voids, registered assemblies, and
 scars, and only while consumer interest or unfinished work requires them.
@@ -78,6 +86,8 @@ The product makes this behavior observable through lifecycle and telemetry. It
 does not promise an unbounded world with hidden unbounded residency.
 
 ### 2.5 Asynchrony is explicit
+
+**Requirement: REQ-005. Authority: C-010, AD-003.**
 
 Submitting work is distinct from completing work. A consumer never has to
 assume that a GPU operation completed synchronously or that a readback is
@@ -94,6 +104,8 @@ the same public contract regardless of where the participating work runs.
 
 ### 2.6 Behavior remains external
 
+**Requirement: REQ-006. Authority: C-008, AD-007.**
+
 External systems may observe matter and lifecycle, perform any computation they
 own, and request admitted changes. Moria does not interpret those changes as
 gravity, force, fracture, damage, health, growth, fire, fluid flow, or another
@@ -101,6 +113,8 @@ behavior vocabulary. The substrate supplies truth and controlled effects, not
 the rule that decides an effect should occur.
 
 ### 2.7 Correct first, then optimize continuously
+
+**Requirement: REQ-007. Authority: C-015.**
 
 Correct material truth, atomic mutation, honest readiness, and explicit failure
 come before performance claims. Optimization may change where or how work runs,
@@ -210,6 +224,8 @@ instructions to an external behavior system.
 
 ### 4.1 Configure
 
+**Requirement: REQ-008. Authority: C-001, C-003.**
+
 Before a world becomes usable, the consumer:
 
 1. installs the Moria facade in its Bevy application or tool;
@@ -226,6 +242,8 @@ does not substitute a default overworld, hidden generator, or all-empty world.
 
 ### 4.2 Declare interest
 
+**Requirement: REQ-009. Authority: C-004.**
+
 The consumer declares bounded regions and the capabilities needed there.
 Moria acknowledges the request, begins or prioritizes materialization, and
 reports lifecycle changes. Readiness may arrive later and may differ between
@@ -237,6 +255,8 @@ safe; it does not immediately invalidate already issued results or discard
 unsaved scars.
 
 ### 4.3 Inspect
+
+**Requirement: REQ-010. Authority: C-003, C-016.**
 
 The consumer submits a bounded query against a stated world or volume scope.
 The result identifies:
@@ -265,6 +285,8 @@ technical design, but they must cover these intents without routing through a
 render mesh.
 
 ### 4.4 Mutate matter
+
+**Requirement: REQ-011. Authority: C-005, AD-002.**
 
 All edits enter through public commands. The core design includes:
 
@@ -309,6 +331,8 @@ silently retry a command whose meaning may have changed.
 
 ### 4.5 Observe and react
 
+**Requirement: REQ-012. Authority: C-003.**
+
 Consumers and external behavior plug-ins can subscribe to bounded observations
 for:
 
@@ -334,6 +358,8 @@ revisions, observations, and errors. A faster path may not bypass validation,
 make pending work appear committed, or introduce a second copy of world truth.
 
 ### 4.6 Present
+
+**Requirement: REQ-013. Authority: C-011.**
 
 Moria derives visible surfaces and optional dressing from committed matter.
 Presentation supports both coherent organic volumes and crisp constructed
@@ -372,6 +398,8 @@ prop that claims occupancy.
 
 ### 4.7 Persist and restore
 
+**Requirement: REQ-014. Authority: C-009.**
+
 The consumer requests a checkpoint at known committed revisions. A successful
 checkpoint records substrate-owned scars and reconstruction state without
 serializing derived geometry or requiring a raw dump of untouched homogeneous
@@ -400,6 +428,8 @@ external behavior state require explicit consumer action. Moria does not guess.
 
 ### 4.8 Shut down
 
+**Requirement: REQ-015. Authority: C-003.**
+
 Shutdown stops new admissions, allows the consumer to observe or cancel
 outstanding noncommitted work according to the public contract, and reports
 whether required persistence completed. Dirty material is not silently
@@ -408,6 +438,8 @@ discarded because a region became cold or the application began shutdown.
 ## 5. Lifecycle and consistency
 
 ### 5.1 Material-region lifecycle
+
+**Requirement: REQ-016. Authority: C-004.**
 
 For a bounded region of a volume, authoritative matter moves through these
 consumer-visible states:
@@ -431,6 +463,8 @@ truth when authoritative matter is unavailable.
 
 ### 5.2 Revision rules
 
+**Requirement: REQ-017. Authority: C-003, C-005.**
+
 - Queries describe committed revisions only.
 - A mutation completion identifies the one revision at which all effects of
   that command commit atomically.
@@ -447,6 +481,8 @@ These rules let a consumer build responsive experiences without treating
 asynchronous completion as nondeterministic truth.
 
 ### 5.3 Residency and resource pressure
+
+**Requirement: REQ-018. Authority: C-004, C-010.**
 
 Consumers express bounded interest, priority, and needed capability; Moria
 decides how to meet them within configured resource budgets. Under pressure it
@@ -465,6 +501,8 @@ authoritative residency, derived-view cost, queue pressure, and failed work
 without exposing internal storage.
 
 ## 6. Collision and dynamic-volume behavior
+
+**Requirement: REQ-019. Authority: C-007, C-016, AD-005.**
 
 Moria owns collision and occupancy **truth**, not motion policy.
 
@@ -491,6 +529,8 @@ completion rather than a hidden privileged order.
 
 ## 7. Content and presentation boundaries
 
+**Requirement: REQ-020. Authority: C-011, C-012, C-013.**
+
 Moria supports consumer-owned content without owning a content recipe.
 
 The content seam must allow a consumer to provide:
@@ -515,6 +555,8 @@ biome, river, climate, vegetation, ruin-placement, or deterministic seed
 algorithm.
 
 ## 8. Failure behavior
+
+**Requirement: REQ-021. Authority: C-003, C-015.**
 
 Failures are part of the public experience and must preserve truth.
 
@@ -542,6 +584,8 @@ the same condition.
 
 ## 9. Telemetry and diagnostics
 
+**Requirement: REQ-022. Authority: C-015.**
+
 Public telemetry makes scale and honesty reviewable without becoming a storage
 escape hatch. It covers:
 
@@ -567,6 +611,8 @@ different systems can be compared without turning one machine's target into a
 universal product requirement.
 
 ## 10. Validation experience
+
+**Requirement: REQ-023. Authority: C-013, C-015.**
 
 Moria is ready for review when it can prove its contracts through ordinary
 consumers. The validation suite is scenario-based and fail-closed: missing
@@ -666,6 +712,8 @@ declare the substrate itself complete.
 
 ## 11. Scope reconciliation
 
+**Requirement: REQ-024. Authority: C-012, C-014, AD-001, AD-004, AD-006, AD-007.**
+
 The subordinate design sources contain useful ideas at mixed levels of
 authority. This design resolves them as follows.
 
@@ -746,6 +794,8 @@ quality, and mutation latency. No technical selection may add a privileged
 consumer path or elevate a game-specific behavior into substrate policy.
 
 ## 12. Resolved human design decisions
+
+**Requirement: REQ-025. Authority: C-005, D-001.**
 
 **Multi-target mutation completion is atomic.** One bounded matter-mutation
 command commits all targeted cells together at one revision or commits none of
