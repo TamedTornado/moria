@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_manifest_sha256": "f40e5d822db68ef4edd5234509d68fe3c3ba0da4836685e406e9d28baec18c8a",
+  "integrity_binding": "Sealed by docs/planning/authority/source-manifest.json schema version 2.",
   "provenance_note": "Retrofitted from already approved planning artifacts after the run omitted the established provenance IDs. This ledger records existing authority; it does not add or reinterpret scope.",
   "product_target": "A reusable Rust and Bevy voxel-world substrate, not a playable game.",
   "documents": [
