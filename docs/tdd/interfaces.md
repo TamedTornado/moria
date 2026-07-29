@@ -1296,7 +1296,7 @@ The complete asynchronous lifecycle policy is:
 | Observation subscription | no background receipt; `poll` reads the shared ring | `close`/drop at any time | `Items`, `Gap`, or `Closed` from `poll` | resnapshot/resume explicitly after `Gap` | generation loss is itself recorded when possible; shutdown makes the final poll `Closed` after retained items/gap |
 | Observation resnapshot | `Queued`, `Pinning`, `Querying`, `Encoding` | before root/query encoding | `Ready(ObservationResnapshot)` or `Failed(ObservationSnapshotError)` | new bounded request, including after an immediate resume gap | old generation fails; shutdown cancellation follows query rules |
 | Checkpoint | `Queued`, `Pinning`, `Reading`, `StoringBlobs`, `CommittingManifest` | before first GPU readback/store call; later cancellation stops new batches and drains submitted calls | `Ready(CheckpointCommitted)`, `Failed(CheckpointError)`, or `Cancelled` with no manifest | new explicit request against a retained frontier | device loss/store failure leaves no committed manifest; shutdown either completes the configured required request or reports it failed |
-| Correction | `Queued`, `RestoringPrivate`, `ReplayingPrivate`, `ValidatingFinal`, `ExportingCorrectionBranch`, `Publishing` | cancellation before the correction-branch sink invocation aborts and drains private state; after invocation it is `NotCancellable` because durable success mandates publication | `Ready(CorrectionCommitted)` only after the one branch append is durable and the corrected bundle/log swap completes; ordinary failure leaves the original frontier/log active, while branch-append failure also applies TECH-047's terminal-world provider policy | new complete correction request while the world remains `Ready` | old-generation private results cannot reach branch export; shutdown aborts before invocation, but after invocation it drains to durable publication or terminal provider failure |
+| Correction | `Queued`, `RestoringPrivate`, `ReplayingPrivate`, `ValidatingFinal`, `ExportingCorrectionBranch`, `Publishing` | cancellation before the correction-branch sink invocation aborts and drains private state; after invocation it is `NotCancellable` because durable success mandates publication | `Ready(CorrectionCommitted)` only after the one branch append is durable and the corrected bundle/log swap completes; every `Failed(CorrectionError)` reports the unchanged `original_frontier` and `CommittedEffect::None`; branch-append failure additionally applies TECH-047's terminal-world provider policy | new complete correction request while the world remains `Ready` | old-generation private results cannot reach branch export; shutdown aborts before invocation, but after invocation it drains to durable publication or terminal provider failure |
 | Restore | `Loading`, `Verifying`, `Rebuilding`, `RestoringParticipants`, `ExportingReplayHeader`, `Publishing` | before device/store submission; after either device/store submission or replay-header invocation, cancellation drains the private builder and suppresses publication | `Ready(RestoreReady)` only after the checkpoint-anchored sequence-zero replay header is durable, or `Failed(RestoreError)` with no world published | retry with a new builder/request and a different stream after an invoked header; a pre-invocation failure releases its reservation | generation loss or replay-sink failure fails private construction; no world exists for shutdown |
 | Public replay | `LoadingOwnedRecords`, `VerifyingHeader`, `ReplayingPrivate`, `ComparingExpected`, `ExportingReplayHeader`, `ExportingReplayPrefix`, `Publishing` | before first private submission; later cancellation drains the private builder, any invoked sink calls, and suppresses publication | `Ready(ReplayCompleted)` only after the verified source header/records have been copied durably to the selected fresh live stream, or `Failed(ReplayFailure)` with no world published; divergence includes the bounded artifact | new builder/owned replay request and a different stream after any sink invocation | old-generation results cannot install; sink failure fails construction; no world exists for shutdown until final publication |
 | Recovery | `Queued`, `CreatingGeneration`, `LoadingAnchor`, `Replaying`, `Comparing` | before new-generation submission; later cancellation remains in `RecoveringParticipant` | `Ready(Recovered)` or `Failed(RecoveryError)` | one explicit new recovery request | only results from the requested new generation may reinstall the equal frontier; shutdown abandons recovery |
@@ -1737,10 +1737,19 @@ pub struct CorrectionObservation {
 pub struct WorldLifecycleFact {
     pub state: WorldState,
     pub generation: DeviceGeneration,
+    pub frontier: FrontierSummary,
     pub failure: Option<OperationError>,
     pub replay_export_failure: Option<ReplayExportFailure>,
 }
 ```
+
+`WorldLifecycleFact.frontier` is the live, last trustworthy frontier at the
+instant the fact is appended; it is never a candidate that failed before
+publication. Consequently a correction-branch append failure reports the
+original frontier here, while an ordinary post-confirmation tick append
+failure reports that already-confirmed tick frontier. When `failure` is
+present, its `CommittedEffect` describes the failed causal operation rather
+than duplicating this snapshot field.
 
 `CorrelationId` has infallible `from_bytes`, `as_bytes`, and `to_bytes`
 methods; all bit patterns are consumer-valid. `ObservationStreamId` is
@@ -1972,6 +1981,12 @@ pub struct OperationError {
     pub diagnostic: BoundedUtf8<160>,
 }
 
+pub struct CorrectionError {
+    pub original_frontier: FrontierSummary,
+    pub error: OperationError,
+    pub replay_export_failure: Option<ReplayExportFailure>,
+}
+
 pub enum TickNoAdvanceCause {
     Canonical(CanonicalFailure),
     Participant {
@@ -2071,6 +2086,10 @@ pub enum AdmissionContext {
         required: QueryCapacity,
         supported: QueryCapacity,
     },
+    CorrectionExpectedHashCount {
+        replacement_batches: u32,
+        expected_hashes: u32,
+    },
     BudgetCapacity {
         field: ResourceBudgetField,
         required: u64,
@@ -2094,6 +2113,7 @@ pub enum AdmissionCode {
     InvalidBatch,
     InterestTooLarge,
     ResultCapacityExceeded,
+    CorrectionHashCountMismatch,
     StaleGeneration,
     PersistenceBackpressure,
 }
@@ -2166,7 +2186,6 @@ pub type GenesisError = OperationError;
 pub type InterestError = OperationError;
 pub type ObservationSnapshotError = OperationError;
 pub type CheckpointError = OperationError;
-pub type CorrectionError = OperationError;
 pub type RestoreError = OperationError;
 pub type ParticipantError = OperationError;
 pub type RecoveryError = OperationError;
@@ -2178,17 +2197,20 @@ TECH-017 field within its `BudgetGroup`; decoding rejects any ordinal not
 present in that version. It does not accept a string extension. Operation
 aliases intentionally use one closed shape so every applicable receipt exposes
 the same scope/retry/committed-effect contract while preserving the stable
-`ErrorCode`. `FailedNoAdvance`, `TelemetryError`, and `QueryUnavailable` are
-the deliberate specialized shapes because tick-global failure must retain the
-attempted tick and structured cause, synchronous telemetry has no operation
-receipt, and REQ-010/REQ-021 require exact unavailable ranges and supported
-result bounds:
-its `Availability.error` supplies the same scope/retry/committed fields, and
+`ErrorCode`. `FailedNoAdvance`, `CorrectionError`, `TelemetryError`, and
+`QueryUnavailable` are the deliberate specialized shapes: tick-global failure
+must retain the attempted tick and structured cause; correction failure must
+retain the original still-live frontier and optional prepublication
+branch-export failure; synchronous telemetry has no operation receipt; and
+REQ-010/REQ-021 require exact unavailable ranges and supported result bounds.
+`QueryUnavailable::Availability.error` supplies the same
+scope/retry/committed fields, and
 its capacity variant is a terminal no-frontier-change outcome with
 `RetryNewRequest`. `AdmissionContext` must match its code: tick context is
 mandatory only for `BeforeNextTick`/`AfterNextTick`, batch context only for
 `InvalidBatch`, interest/query capacity context only for their corresponding
-codes, and `BudgetCapacity` is required for
+codes, `CorrectionExpectedHashCount` is mandatory only for
+`CorrectionHashCountMismatch`, and `BudgetCapacity` is required for
 `RetiredReplayStreamCapacity`; every other code requires `None`. A mismatched
 code/context pair is an internal construction error and is never emitted.
 Every `FailedNoAdvance` has
@@ -2201,6 +2223,22 @@ generation. `cause` and `error.code` must describe the same stable class.
 `RetryAfterDependency/Recovery` as applicable; a failure that transitions the
 world to `Failed` uses `Never`. No tick-global failure is represented only by
 a diagnostic string.
+
+Every `CorrectionError` has
+`error.committed == CommittedEffect::None` and
+`original_frontier` byte-equal to the live frontier that remained installed.
+`replay_export_failure` is `Some` only when the one correction-branch append
+failed after invocation; in that case `error.code == StoreFailure`,
+`error.scope == Provider(ReplaySink(replay_export_failure.sink))`,
+`error.retryability == Never`, and the world transitions to `Failed`.
+Pre-invocation validation, participant, resource, cancellation, and
+divergence failures carry `None` and leave the world in the state selected by
+their ordinary failure policy. This is distinct from an ordinary tick's
+post-confirmation replay append failure: that lifecycle error carries
+`CommittedEffect::Frontier(the_confirmed_tick_frontier)` because the causal
+tick already published. `CommittedEffect::None` never means that the world has
+no prior frontier; `WorldLifecycleFact.frontier` and, for corrections,
+`CorrectionError.original_frontier` report that already-existing state.
 
 `TelemetryError::WorldUnknown` and `WorldClosed` are nonretryable and have no
 committed effect; the latter optionally reports the last already-copied

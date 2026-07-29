@@ -437,13 +437,40 @@ active log, physical stream position, observations, and presentation dirty set
 remain installed until matching durability. Cancellation before invocation
 aborts; cancellation afterward is `NotCancellable`. Sink failure leaves those
 old values installed, reports the exact branch `ReplayExportFailure`, and
-terminally closes the world. Matching durability performs one publication:
-the active in-memory suffix and retained-frontier suffix contain only corrected
-records/roots, the physical prefix digest advances by exactly one sequence,
-and the active-history digest drops the superseded records. Existing readers
-of the old suffix remain valid until their pins drain. A companion holds the
-last ordinary tick append pending and proves correction admission returns
-`PersistenceBackpressure` before participant or branch work.
+terminally closes the world. The external-style consumer pattern-matches
+`CorrectionReceipt::poll` as
+`Failed(CorrectionError { original_frontier, error: OperationError {
+code: StoreFailure, committed: None, .. },
+replay_export_failure: Some(...) })`, the paired
+`CorrectionObservation { from: original_frontier, to: None, replay: None,
+failure: Some(StoreFailure) }`, and the paired
+`WorldLifecycleFact { state: Failed, frontier: original_frontier,
+failure: Some(OperationError { committed: None, .. }),
+replay_export_failure: Some(...) }`. All three frontier bytes equal a public
+query of the last readable frontier. The same fixture separately fails an
+ordinary tick append and proves its lifecycle error instead carries
+`CommittedEffect::Frontier(the_confirmed_tick_frontier)` while the already
+`Ready(TickConfirmed)` receipt remains unchanged. Matching branch durability
+performs one publication: the active in-memory suffix and retained-frontier
+suffix contain only corrected records/roots, the physical prefix digest
+advances by exactly one sequence, and the active-history digest drops the
+superseded records. Existing readers of the old suffix remain valid until
+their pins drain. A companion holds the last ordinary tick append pending and
+proves correction admission returns `PersistenceBackpressure` before
+participant or branch work.
+
+Correction expected-hash fixtures construct a four-batch contiguous
+replacement. An empty `expected_hashes` vector is admitted and performs no
+consumer-supplied root comparison. Four hashes map in vector order to
+`target + 1` through `target + 4`; exact values succeed, and poisoning any one
+fails before private advance past that tick with `ReplayDivergence`,
+`CommittedEffect::None`, no branch sink invocation, and the original frontier
+still live. Nonempty vectors of lengths one, three, and five are rejected
+before pins, participant callbacks, or sink work as
+`CorrectionHashCountMismatch` with exact
+`CorrectionExpectedHashCount { replacement_batches: 4, expected_hashes }`.
+Each rejection returns the complete `CorrectionRequest`, including all four
+sealed batches and every supplied hash, byte-for-byte unchanged.
 
 The reconstructible participant checkpoint persists several
 `moria-checkpoint-replay-v1` chunks, terminates the process fixture, discards

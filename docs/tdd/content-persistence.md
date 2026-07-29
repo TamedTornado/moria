@@ -879,20 +879,31 @@ wrong identity/digest, or an invalid first terminal completion occurs after a
 tick is confirmed, or while a correction branch is awaiting its required
 prepublication durability, Moria closes further tick admission and moves the
 world from `Ready` to `Failed`. A duplicate call observed after an already
-accepted success is only `AlreadyCompleted` and does not fail the world. An
-already-returned `TickConfirmed` remains valid; a failed correction branch
-leaves the original frontier and active-history projection installed;
-the failure is reported as `OperationError { code: StoreFailure,
+accepted success is only `AlreadyCompleted` and does not fail the world. The
+exact undurable record and every earlier required record remain pinned until
+shutdown releases the world; a checkpoint does not relabel the failed replay
+append as durable. There is no facade method that retries, skips, changes the
+stream, or attaches another sink to that published world.
+
+Committed-effect reporting distinguishes the two append sites. For an
+ordinary tick record, the tick was already published before its export began:
+its already-returned `TickConfirmed` remains valid, and the one
+`WorldLifecycleFact.failure` is
+`OperationError { code: StoreFailure,
 scope: Provider(ReplaySink(id)), retryability: Never,
-committed: Frontier(the_last_trustworthy_frontier), ... }` in one
-`WorldLifecycleFact`, a
+committed: Frontier(the_confirmed_tick_frontier), ... }`. For a
+`CorrectionBranch`, no correction frontier has published: the original
+frontier and active-history projection remain installed, and TECH-048 requires
+both `CorrectionError.error` and the matching
+`WorldLifecycleFact.failure` to carry
+`OperationError { code: StoreFailure,
+scope: Provider(ReplaySink(id)), retryability: Never,
+committed: None, ... }`. In both cases `WorldLifecycleFact.frontier` is the
+same last readable trustworthy frontier, and the fact also carries the exact
+`ReplayExportFailure`. A
 `FailureCounter { code: ErrorCode::StoreFailure, count: ... }` telemetry
-bucket, and
-the replay-sink pinned-record/byte/oldest-age counters. The exact undurable
-record and every earlier required record remain pinned until shutdown releases
-the world; a checkpoint does not relabel the failed replay append as durable.
-There is no facade method that retries, skips, changes the stream, or attaches
-another sink to that published world.
+bucket and the replay-sink pinned-record/byte/oldest-age counters record the
+failure.
 
 Replay append has no consumer cancellation point. Shutdown stops invoking
 later appends, waits for or closes the one already-invoked completion cell
@@ -1018,6 +1029,7 @@ pub struct CorrectionRequest {
     pub world: WorldId,
     pub target: FrontierSummary,
     pub replacement_batches: BoundedVec<SealedTickBatch>,
+    /// Empty, or exactly one expected post-tick root per replacement batch.
     pub expected_hashes: BoundedVec<CanonicalHash>,
     pub max_private_bytes: u64,
 }
@@ -1045,10 +1057,35 @@ present; shortening, extending, or submitting an empty correction is
 through the current frontier with no append in flight; otherwise admission
 returns `PersistenceBackpressure` and invokes no participant or sink. This
 gives the branch one unambiguous next physical sequence and a fully durable
-superseded suffix. Admission reserves replay bytes, output roots, participant
-resources, and pins the original live and target roots before starting. It
-also computes the worst-case single encoded branch length and rejects before
-private work unless the actual replacement count/bytes can fit
+superseded suffix.
+
+`expected_hashes` has exactly two legal cardinalities. Length zero disables
+the optional consumer-supplied comparison. Otherwise its length must equal
+`replacement_batches.len()`. Any nonzero short or excess vector is rejected
+before pins, permits, private participant work, or sink invocation with
+`AdmissionCode::CorrectionHashCountMismatch` and
+`AdmissionContext::CorrectionExpectedHashCount { replacement_batches,
+expected_hashes }` plus `Retryability::RetryNewRequest`;
+`Rejected<CorrectionRequest>` returns both bounded vectors and every sealed
+batch unchanged. Counts are exact `u32` values already bounded by
+`rollback.ticks_per_correction`, so conversion or count overflow is also an
+admission rejection rather than truncation. For a nonempty vector,
+index `i` maps to `replacement_batches[i]` and to checked tick
+`target.tick + 1 + i` in the same contiguous order. `expected_hashes[i]` is
+compared byte-for-byte with that tick candidate's
+`FrontierSummary.root_hash` before the private frontier advances. A mismatch
+fails the accepted `CorrectionReceipt` with
+`CorrectionError { original_frontier, error: OperationError {
+code: ReplayDivergence, scope: Operation(receipt_id),
+retryability: RetryNewRequest, committed: None, ... },
+replay_export_failure: None }`; no branch is encoded or exported. An empty
+vector disables only this optional comparison and never disables intrinsic
+transition, participant-commitment, or branch-validation checks.
+
+After those structural checks, admission reserves replay bytes, output roots,
+participant resources, and pins the original live and target roots before
+starting. It also computes the worst-case single encoded branch length and
+rejects before private work unless the actual replacement count/bytes can fit
 `rollback.ticks_per_correction`, `rollback.bytes_per_correction`,
 `rollback.log_ticks`, `rollback.log_bytes`,
 `rollback.replay_sink_bytes_in_flight`, and the configured
@@ -1062,11 +1099,10 @@ participant tokens. Snapshot adapters return new staged tokens from the pinned
 target snapshot; reconstructible adapters return new staged tokens after
 replaying the bounded prefix. Each replacement tick consumes only the prior
 private token and returns the next one through the ordinary transition.
-Intermediate roots and participant tokens remain private and do not emit consumer
-observations or presentation work. Expected hashes, when supplied, are checked
-at each tick. Before any durable export, failure or cancellation discards
-private roots and keeps the original live frontier, rollback deque, active
-log, and replay stream position unchanged.
+Intermediate roots and participant tokens remain private and do not emit
+consumer observations or presentation work. Before any durable export,
+failure or cancellation discards private roots and keeps the original live
+frontier, rollback deque, active log, and replay stream position unchanged.
 
 After every replacement tick validates, Moria encodes one bounded
 `moria-replay-v1` correction-branch record. Its embedded frames are the exact
@@ -1131,9 +1167,22 @@ queues until their last submission completes; no participant restore-back call
 is needed or permitted. Target outside the window, missing state,
 resource bound, participant failure, content mismatch, or divergence before
 branch invocation is terminal for that correction and never advances the
-world. A branch append failure also leaves the original bundle/log installed
-but applies TECH-047's terminal provider-failure policy, retains the exact
-undurable `ReplayExportFailure`, and closes new authority admission; there is
+world. Every such receipt failure is
+`CorrectionError { original_frontier, error, replay_export_failure: None }`
+with `error.committed == CommittedEffect::None`; retryability follows the
+underlying failure and participant policy. A branch append failure also leaves
+the original bundle/log installed but applies TECH-047's terminal
+provider-failure policy. Its receipt error is
+`CorrectionError { original_frontier, error: OperationError {
+code: StoreFailure, scope: Provider(ReplaySink(id)), retryability: Never,
+committed: None, ... }, replay_export_failure: Some(the_exact_failure) }`.
+Moria appends one `CorrectionObservation { from: original_frontier, to: None,
+replay: None, failure: Some(StoreFailure) }` and one
+`WorldLifecycleFact { state: Failed, frontier: original_frontier,
+failure: Some(the_same_operation_error),
+replay_export_failure: Some(the_exact_failure), ... }`; the last readable
+frontier remains byte-identical to all three records. It retains the exact
+undurable `ReplayExportFailure` and closes new authority admission; there is
 no redrive or alternate sink. Because a successful append mandates the one
 host publication transaction, no reachable state has a durable correction
 branch while continuing to expose the superseded live frontier.

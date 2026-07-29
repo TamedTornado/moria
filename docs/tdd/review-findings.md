@@ -1960,3 +1960,146 @@ configured correction, log, sink-record, or in-flight byte bounds. No stable
 `TECH` ID or `Implements:` link changed. Mechanical checks still find 70
 unique `TECH-001` through `TECH-070` contracts with one heading each;
 `git diff --check` passes.
+
+## Auditor Turn — 2026-07-29T19:52:46Z
+
+Mode: continue
+
+Responding to: 2026-07-29T19:45:24Z
+
+### Prior Findings Status
+
+1. **Rollback correction replay-log and durable-stream branch contract —
+   resolved.** `TECH-047` now defines an atomic physical
+   `CorrectionBranch`, its exact fold into one active semantic history, the
+   physical-prefix and active-history digest domains, and cold public replay
+   behavior (`content-persistence.md:774-833,921-987`). `TECH-048` admits a
+   complete bounded suffix only while the existing stream is durable and
+   idle, waits for branch durability, then coordinates the corrected
+   frontier, rollback deque, active log, stream position, receipt, and
+   observation in one publication (`content-persistence.md:1039-1117`).
+   Checkpoint extraction retains exact corrected subrecords and their physical
+   locators (`content-persistence.md:394-409,486-531`), and validation now
+   covers pending/failing branch export, cold replay, and post-correction
+   checkpoint restore (`validation.md:433-489`).
+2. **Genesis frontier propagation through collision and participant wires —
+   resolved.** `CollisionFact` and collider artifacts now carry the closed
+   source frontier and explicitly distinguish Genesis from confirmed tick zero
+   (`collision-presentation.md:165-225`). Participant tokens and CPU tick
+   requests bind source and destination positions
+   (`architecture.md:548-556`; `interfaces.md:2324-2331,2501-2511`). The
+   224-byte GPU ABI specifies exact position tags, offsets, zero rules, and a
+   validity row for every operation (`collision-presentation.md:385-422`),
+   with byte-level Genesis/confirmed-zero fixtures in
+   `validation.md:107-122`.
+
+### New Findings
+
+1. **Correction-branch append failure has contradictory committed-effect
+   semantics.** `TECH-048` says this failure leaves the original bundle and
+   active log installed and never advances the correction
+   (`content-persistence.md:1127-1136`); the lifecycle matrix likewise says
+   only `Ready(CorrectionCommitted)` publishes a corrected frontier
+   (`interfaces.md:1299`), and the common rule says only successful
+   correction publication can change authority (`interfaces.md:1305-1311`).
+   But the shared `TECH-047` provider-failure record used for both an ordinary
+   post-confirmation tick append and a prepublication correction branch sets
+   `OperationError.committed` to
+   `Frontier(the_last_trustworthy_frontier)`
+   (`content-persistence.md:875-888`). Because `CorrectionError` is exactly
+   `OperationError` (`interfaces.md:2165-2173`), a failed correction receipt
+   can therefore report a committed frontier even though its own operation
+   committed none. Separate the two cases: define the exact
+   `CorrectionReceipt` error and `WorldLifecycleFact.failure` values for branch
+   failure, with `CommittedEffect::None` on the correction operation (or
+   otherwise revise the closed committed-effect semantics coherently), while
+   preserving the already-confirmed tick case. Add external pattern-match
+   assertions that the receipt, correction observation, lifecycle fact, and
+   last readable frontier all agree.
+2. **`CorrectionRequest.expected_hashes` has no closed cardinality or index
+   contract.** The public request exposes independent bounded
+   `replacement_batches` and `expected_hashes` vectors
+   (`content-persistence.md:1016-1023`), but the only rule is “when supplied,
+   [they] are checked at each tick” (`content-persistence.md:1060-1067`).
+   This does not decide whether an empty vector disables comparison, whether a
+   partial vector is legal, or which hash corresponds to which replacement
+   tick; nor does it name the rejection outcome for a mismatched count. Define
+   one exact rule—most simply, empty or exactly one hash per replacement batch
+   in the same contiguous tick order—plus checked admission, ownership return,
+   and fixtures for empty, exact, short, and excess vectors. This closes the
+   callable correction API required by `REQ-035` without adding behavior.
+
+### Questions For Coder
+
+None. Both findings are ordinary public-contract closure within the selected
+correction design.
+
+### Answers To Coder
+
+No coder questions were pending. I verified both claimed corrections against
+the committed TDD; both prior findings are resolved as recorded above.
+
+### Notes To Coder
+
+Preserve the append-only physical branch with its active semantic projection,
+checkpoint subrecord locators, durability-before-publication rule, and the
+closed Genesis/confirmed frontier encodings. The mechanical provenance audit
+passes independently: 70 unique `TECH-001`–`TECH-070` contracts, one
+`Implements:` line per contract, 351 unique contract/requirement pairs, all 43
+approved requirements, no `REQ-042`, and exact parity with
+`traceability.md`. `git diff --check` passed and the worktree was clean before
+this required ledger append.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-29T20:02:25Z
+
+Mode: continue
+
+Responding to: 2026-07-29T19:52:46Z
+
+### Responses To Findings
+
+1. Addressed. `TECH-047` now distinguishes an already-confirmed tick append
+   failure from a prepublication correction-branch append failure.
+   `TECH-048` and `TECH-027` define a closed `CorrectionError` containing the
+   unchanged original frontier, an `OperationError` whose committed effect is
+   always `None`, and the exact optional `ReplayExportFailure`. Branch failure
+   emits a matching correction observation and world-lifecycle fact, while
+   `WorldLifecycleFact.frontier` explicitly records the last readable
+   trustworthy frontier. The ordinary tick case retains
+   `CommittedEffect::Frontier(the_confirmed_tick_frontier)`.
+2. Addressed. `CorrectionRequest.expected_hashes` is now legal only when empty
+   or exactly equal in length to `replacement_batches`. Empty disables the
+   optional comparison; otherwise index `i` maps to replacement batch `i` and
+   contiguous tick `target + 1 + i`, and compares against that candidate
+   frontier's root hash before private advance. Nonempty short or excess
+   vectors return the unchanged owned request with the typed
+   `CorrectionHashCountMismatch` and exact batch/hash counts before any pin,
+   permit, participant callback, or sink invocation.
+
+### TDD Changes Made
+
+- Revised `content-persistence.md` with operation-relative committed-effect
+  semantics, exact correction failure records, hash cardinality/index
+  mapping, mismatch behavior, and lossless rejection ownership.
+- Revised `interfaces.md` with the specialized `CorrectionError`,
+  `WorldLifecycleFact.frontier`, and closed correction hash-count admission
+  code/context.
+- Revised `validation.md` with external pattern matches across correction
+  receipt/observation/lifecycle/readable frontier, the distinct ordinary-tick
+  export failure, and empty/exact/short/excess expected-hash fixtures.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The append-only physical correction branch, active-history fold,
+durability-before-publication rule, and Genesis/confirmed encodings are
+unchanged. No stable `TECH` ID or `Implements:` link changed. Mechanical checks
+find 70 unique contracts, one `Implements:` line each, and exact 351-pair
+parity with `traceability.md`; `git diff --check` passes.
