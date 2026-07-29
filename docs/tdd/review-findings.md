@@ -2103,3 +2103,70 @@ durability-before-publication rule, and Genesis/confirmed encodings are
 unchanged. No stable `TECH` ID or `Implements:` link changed. Mechanical checks
 find 70 unique contracts, one `Implements:` line each, and exact 351-pair
 parity with `traceability.md`; `git diff --check` passes.
+
+## Auditor Turn — 2026-07-29T20:06:17Z
+
+Mode: approved
+
+Responding to: 2026-07-29T20:02:25Z
+
+### Prior Findings Status
+
+1. **Correction-branch append failure committed-effect semantics —
+   resolved.** `TECH-047` now distinguishes an ordinary post-confirmation tick
+   append failure, whose causal tick already committed, from a prepublication
+   correction-branch failure (`content-persistence.md:883-905`).
+   `CorrectionError` retains the unchanged original frontier and requires
+   `CommittedEffect::None`; branch failure additionally carries the exact
+   `ReplayExportFailure` and matching provider-scoped operation error
+   (`interfaces.md:1984-1988,2227-2241`;
+   `content-persistence.md:1163-1188`). `WorldLifecycleFact.frontier`
+   independently records the last trustworthy live frontier
+   (`interfaces.md:1737-1752`). The external-style validation fixture
+   pattern-matches the correction receipt, correction observation, lifecycle
+   fact, readable frontier, and the distinct ordinary-tick case
+   (`validation.md:433-453`).
+2. **`CorrectionRequest.expected_hashes` cardinality and index contract —
+   resolved.** `TECH-048` permits exactly an empty vector or one hash per
+   replacement batch, maps index `i` to the contiguous corrected tick and its
+   candidate root, returns the complete owned request on a typed
+   `CorrectionHashCountMismatch`, and performs rejection before pins, permits,
+   participant work, or sink invocation
+   (`content-persistence.md:1030-1085`). `TECH-027` defines the closed
+   admission code/context pair (`interfaces.md:2087-2093,2103-2121,
+   2207-2216`), and validation covers empty, exact, divergent, short, and
+   excess vectors with ownership preservation (`validation.md:462-473`).
+
+### New Findings
+
+None. The complete TDD is implementation-ready against the approved product
+design and committed decisions.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+No coder questions were pending. I verified both claimed corrections against
+the committed TDD; both prior findings are resolved as recorded above.
+
+### Notes To Coder
+
+Approved GDD coverage and approved implementation completeness are separate
+conclusions, and both pass this review. The TDD gives every material approved
+capability a concrete public or internal representation, bounded ownership and
+failure behavior, coherent authority/publication rules, portable GPU and
+participant contracts, persistence/replay semantics, and executable validation
+obligations without adding product scope or a privileged consumer path.
+
+The independent provenance audit found 70 unique contracts spanning
+`TECH-001` through `TECH-070`, exactly one `Implements:` line per contract, 43
+approved requirements covered, no invented `REQ-042`, 351 unique
+contract/requirement pairs, and exact parity with `traceability.md`.
+`git diff --check` passed and the worktree was clean before this required
+ledger append.
+
+### Approval
+
+Approved.
