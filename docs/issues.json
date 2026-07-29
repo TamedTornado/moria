@@ -925,15 +925,15 @@
   },
   {
     "id": "M-078",
-    "title": "[config] Validate adapter substrate resource configuration",
+    "title": "[config] Validate component-extraction and placement resources",
     "labels": ["config", "auto"],
-    "depends_on": ["M-005", "M-042", "M-043", "M-044", "M-046"],
+    "depends_on": ["M-005", "M-042", "M-043", "M-044"],
     "provenance": {
-      "technical_contracts": ["TECH-034", "TECH-035", "TECH-036", "TECH-037"],
-      "design_requirements": ["REQ-006", "REQ-007", "REQ-009", "REQ-011", "REQ-012", "REQ-017", "REQ-018", "REQ-019", "REQ-021"],
+      "technical_contracts": ["TECH-034", "TECH-035", "TECH-037"],
+      "design_requirements": ["REQ-006", "REQ-007", "REQ-009", "REQ-011", "REQ-017", "REQ-018", "REQ-019"],
       "authority": ["AD-002", "AD-005", "AD-007", "C-003", "C-004", "C-005", "C-007", "C-008", "C-010", "C-015", "C-016"]
     },
-    "body": "**Category:** config\n**Automation:** auto\n**Depends on:** M-005, M-042, M-043, M-044, M-046\n**Produces:** `src/config/adapter_substrate.rs`, `tests/contract/configuration_adapter_substrate.rs`\n\n## Description\n\nImplement placement-stream, component-extraction, directory-root, child identity/page/scar/provenance, and opaque-egress cross-limit validation for `TECH-034`, `TECH-035`, `TECH-036`, and `TECH-037` under `REQ-006`, `REQ-007`, `REQ-009`, `REQ-011`, `REQ-012`, `REQ-017`, `REQ-018`, `REQ-019`, and `REQ-021`.\n\n## Inputs\n\n- `TECH-034`, `TECH-035`, `TECH-036`, `TECH-037`; `REQ-006`, `REQ-007`, `REQ-009`, `REQ-011`, `REQ-012`, `REQ-017`, `REQ-018`, `REQ-019`, `REQ-021`\n- `docs/tdd/public-api.md` adapter delta limit relationships\n- Exact record sizes and worst-case reservations from M-042/M-043/M-044/M-046\n\n## Acceptance Criteria\n\n- [ ] One placement stream per enabled GPU descriptor charges one update aggregate and one root transaction, never proposal-count multiplication\n- [ ] Extraction checked products/sums fit every child/live/lifetime/page/brick/scar/directory/provenance/observation/result pool and one root per proposal\n- [ ] Egress stride*records equals bytes and independent device/staging/host/map/receipt pools fit every enabled lane and shared binding-1 range\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+    "body": "**Category:** config\n**Automation:** auto\n**Depends on:** M-005, M-042, M-043, M-044\n**Produces:** `src/config/adapter_substrate.rs`, `tests/contract/configuration_adapter_substrate.rs`\n\n## Description\n\nImplement placement-stream, component-extraction, directory-root, and child identity/page/scar/provenance cross-limit validation for `TECH-034`, `TECH-035`, and `TECH-037` under `REQ-006`, `REQ-007`, `REQ-009`, `REQ-011`, `REQ-017`, `REQ-018`, and `REQ-019`.\n\n## Inputs\n\n- `TECH-034`, `TECH-035`, `TECH-037`; `REQ-006`, `REQ-007`, `REQ-009`, `REQ-011`, `REQ-017`, `REQ-018`, `REQ-019`\n- `docs/tdd/public-api.md` placement and component-extraction limit relationships\n- Exact record sizes and worst-case reservations from M-042/M-043/M-044\n\n## Acceptance Criteria\n\n- [ ] One placement stream per enabled GPU descriptor charges one update aggregate and one root transaction, never proposal-count multiplication\n- [ ] Extraction checked products/sums fit every child/live/lifetime/page/brick/scar/directory/provenance/observation/result pool and one root per proposal\n- [ ] Registration and effective-config validation reject every insufficient root/publication pool before adapter execution and report the exact limiting resource\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   },
   {
     "id": "M-079",
@@ -958,5 +958,17 @@
       "authority": ["C-004", "C-009", "C-010"]
     },
     "body": "**Category:** config\n**Automation:** auto\n**Depends on:** M-005, M-024, M-025, M-026, M-058\n**Produces:** `src/config/persistence.rs`, `tests/contract/configuration_persistence.rs`\n\n## Description\n\nImplement persistence capability/store requirements and checkpoint request/staging/scar/manifest/chunk cross-limit validation for `TECH-008`, `TECH-012`, and `TECH-020` under `REQ-014` and `REQ-018`.\n\n## Inputs\n\n- `TECH-008`, `TECH-012`, `TECH-020`; `REQ-014`, `REQ-018`\n- `docs/tdd/public-api.md` persistence capability and resource relationships\n- Exact manifest/scar/store/checkpoint sizes from dependency issues\n\n## Acceptance Criteria\n\n- [ ] Persistence requires an explicit store, nonzero bounded workers/requests/staging/scar capacity, and rejects store/restore configuration when disabled\n- [ ] Staging covers the maximum decode/readback chunk, dirty scar capacity covers one maximum command, and manifest/count limits cover complete live-plus-tombstone membership\n- [ ] All failures aggregate deterministically without changing the selected whole-world scope or durability semantics\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-081",
+    "title": "[config] Validate opaque egress resource configuration",
+    "labels": ["config", "auto"],
+    "depends_on": ["M-005", "M-046", "M-078"],
+    "provenance": {
+      "technical_contracts": ["TECH-036", "TECH-037"],
+      "design_requirements": ["REQ-006", "REQ-007", "REQ-012", "REQ-018", "REQ-021"],
+      "authority": ["AD-007", "C-003", "C-004", "C-008", "C-010", "C-015"]
+    },
+    "body": "**Category:** config\n**Automation:** auto\n**Depends on:** M-005, M-046, M-078\n**Produces:** `src/config/adapter_egress.rs`, `tests/contract/configuration_adapter_egress.rs`\n\n## Description\n\nImplement the independent opaque GPU-to-CPU egress record, byte, map, receipt, and shared binding-range cross-limit validation for `TECH-036` and `TECH-037` under `REQ-006`, `REQ-007`, `REQ-012`, `REQ-018`, and `REQ-021`.\n\n## Inputs\n\n- `TECH-036`, `TECH-037`; `REQ-006`, `REQ-007`, `REQ-012`, `REQ-018`, `REQ-021`\n- `docs/tdd/public-api.md` opaque egress limit relationships\n- Exact egress header, payload, staging, host-retention, and receipt lifetimes from M-046\n- Proposal and child-reservation binding ranges validated by M-078\n\n## Acceptance Criteria\n\n- [ ] Disabled egress requires all egress fields to be zero; enabled egress requires four-byte stride alignment and an exact checked `record_stride * maximum_records == maximum_bytes` product\n- [ ] Aggregate device, staging, host, map, and retained-receipt capacities independently fit every enabled lane, and each combined binding-1 range fits the effective adapter binding limit\n- [ ] One-record, one-byte, map, and retained-receipt shortfalls reject before adapter execution without borrowing capacity from handoff, generic staging, proposal, or component-extraction pools\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   }
 ]
