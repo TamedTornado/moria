@@ -85,8 +85,13 @@ exactly one envelope for the sole pending canonical attempt, revalidates world,
 attempt nonce, source frontier, device generation, mapped diagnostic counts,
 participant products, and root hash, then performs TECH-013 step 12 as one
 `Arc<FrontierBundle>` swap. That same critical section updates receipt state,
-rollback deque, replay log, participant commitments/tokens, revision metadata,
-and canonical observations before any later main-world system can read them.
+rollback deque, the active semantic replay-log projection and durable stream
+position, participant commitments/tokens, revision metadata, and canonical
+observations before any later main-world system can read them. For correction,
+TECH-048 supplies a previously durable branch completion in the candidate
+envelope; the critical section splices the rollback/log suffix and publishes
+the corrected bundle together. It never exposes a corrected bundle with the
+superseded semantic log.
 Noncanonical job completions are finalized only afterward.
 
 Duplicate envelopes are an invariant failure and terminally fail the

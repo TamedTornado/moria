@@ -35,7 +35,7 @@ Required deterministic tests include:
 - hash sensitivity for matter, placement, IDs/allocator, simulation domain,
   participant/RNG commitment, and insensitivity to derived cache mutations;
 - collision properties: no fact targets empty matter, all returned facts carry
-  the source revision, and CPU/GPU parity for every
+  the source frontier and revision, and CPU/GPU parity for every
   `moria-collision-v1` formula. Golden edge fixtures cover closed-low/open-high
   points, face/edge/corner touches, inside witnesses, zero radius/extent/
   capsule/sweep, transform round trips, quaternion half-step rounding,
@@ -113,7 +113,13 @@ batch zero, observes
 `FrontierPosition::Confirmed(Tick::from_raw(0))`,
 and proves that only tick one is next. Wrong `BeforeNextTick`/`AfterNextTick`
 classifications are checked on both sides of the genesis boundary. Canonical
-encoding/hash fixtures distinguish `Genesis` from `Confirmed(Tick(0))`.
+encoding/hash fixtures distinguish `Genesis` from `Confirmed(Tick(0))`. The
+fixture also queries collision truth at Genesis and after confirmed tick zero,
+asserting byte-distinct `CollisionFact.source_frontier` and TECH-053 artifact
+headers. Its CPU and GPU participants inspect genesis token metadata and the
+224-byte `moria-participant-io-v1` position fields, then inspect tick-zero
+source/destination metadata; no case may encode Genesis as confirmed zero or
+as an unlabeled zero tick.
 
 Observation fixtures move and retire a volume, reclaim the old directory
 version, then poll an older retained record through volume/kind/spatial
@@ -162,7 +168,9 @@ Its CPU participant downcasts its own state lease, iterates exact replay
 record views, decodes a TECH-053 collider view, and exercises wrong-type,
 capacity, cancellation, and dropped-lease cases. Its GPU participant creates
 pipelines from `io_bind_group_layout`, binds every primary wrapper, inspects
-all ranges/capacities/metadata, writes status/effect/event/state/snapshot
+all ranges/capacities/metadata—including every operation row's optional
+source/destination frontier and attempted tick—writes
+status/effect/event/state/snapshot
 records, and proves mixed attempts and bad ranges are rejected at Moria
 wrapper construction, while an incompatible pipeline selected before or after
 infallible `bind_io` is captured by the balanced post-encoding wgpu validation
@@ -422,6 +430,21 @@ participant fail after several private ticks, then prove the original live
 participant tokens/commitments and substrate root are unchanged and every
 staged token is reclaimed after its last GPU use.
 
+A correction-branch fixture confirms an original suffix whose inputs and
+hashes differ from a replacement suffix, then holds the one
+`CorrectionBranch` append pending. It proves the old frontier, rollback deque,
+active log, physical stream position, observations, and presentation dirty set
+remain installed until matching durability. Cancellation before invocation
+aborts; cancellation afterward is `NotCancellable`. Sink failure leaves those
+old values installed, reports the exact branch `ReplayExportFailure`, and
+terminally closes the world. Matching durability performs one publication:
+the active in-memory suffix and retained-frontier suffix contain only corrected
+records/roots, the physical prefix digest advances by exactly one sequence,
+and the active-history digest drops the superseded records. Existing readers
+of the old suffix remain valid until their pins drain. A companion holds the
+last ordinary tick append pending and proves correction admission returns
+`PersistenceBackpressure` before participant or branch work.
+
 The reconstructible participant checkpoint persists several
 `moria-checkpoint-replay-v1` chunks, terminates the process fixture, discards
 all in-memory log state, and restores using only manifest-referenced
@@ -453,6 +476,17 @@ Golden cases independently recompute
 `(sequence, record_digest)` tuple after the header, after every copied record,
 and after the first new tick. `ReplayCompleted` exposes no second ambiguous
 sequence digest.
+
+The cold-replay fixture includes at least one correction branch. It supplies
+the complete physical stream, proves the superseded suffix is processed only
+as branch-verification evidence, and reproduces only the corrected outcomes,
+participant/RNG commitments, events, roots, and final hash. Removing,
+reordering, or poisoning the branch or either active-history digest fails at
+the branch sequence. A checkpoint taken after the same correction stores only
+the active corrected tick frames (including frames extracted from the branch
+record); after process teardown, checkpoint restore reconstructs both
+participant strategies and the corrected live root. Supplying the superseded
+pre-branch frames instead must fail commitment/root verification.
 
 Poisoning each canonical influence category changes its appropriate leaf/root
 at the first affected tick. Poisoning mesh/cache/telemetry does not.

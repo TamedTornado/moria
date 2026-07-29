@@ -1133,6 +1133,7 @@ pub enum OperationPhase {
     VerifyingHeader,
     ExportingReplayHeader,
     ExportingReplayPrefix,
+    ExportingCorrectionBranch,
     Reading,
     Materializing,
     Preparing,
@@ -1259,11 +1260,14 @@ Reserved -> Admitted -> Preparing -> Encoded -> Submitted
 
 `Confirmed` means the live root, revisions, outcome record, participant
 commitments, rollback frontier, replay entry, and root hash were coordinated.
-It does not mean the later asynchronous `ReplaySink` append is durable.
-`Submitted` does not. TECH-047 defines the terminal-world policy when that
-post-confirmation append fails: the already-terminal tick receipt remains
-`Ready`, the committed frontier remains trustworthy, and a world-lifecycle
-observation plus telemetry reports the persistence failure.
+For an ordinary tick it does not mean the later asynchronous `ReplaySink`
+append is durable. `Submitted` does not. TECH-047 defines the terminal-world
+policy when that post-confirmation append fails: the already-terminal tick
+receipt remains `Ready`, the committed frontier remains trustworthy, and a
+world-lifecycle observation plus telemetry reports the persistence failure.
+A correction is different: its replacement suffix is one
+`CorrectionBranch` append, and `CorrectionReceipt` cannot become `Ready` or
+publish its corrected frontier until that append is durable.
 
 An admitted canonical tick cannot be consumer-cancelled. Before submission,
 shutdown may explicitly abandon the whole unconfirmed tick and complete it as
@@ -1275,7 +1279,10 @@ before encoding. After submission, cancellation suppresses delivery but does
 not return resource permits until GPU/map completion. Correction, restore, and
 recovery return `AbortRequested` after private submission: they suppress the
 publication step, drain private resources, and retain/no-publish the live/world
-state specified below. Checkpoint `AbortRequested` stops new batches and
+state specified below. Correction has the narrower final cutoff in its matrix
+row: after its branch append is invoked it returns `NotCancellable` and must
+drain to durable publication or terminal provider failure. Checkpoint
+`AbortRequested` stops new batches and
 prevents manifest commit while submitted store/GPU calls drain.
 
 The complete asynchronous lifecycle policy is:
@@ -1289,7 +1296,7 @@ The complete asynchronous lifecycle policy is:
 | Observation subscription | no background receipt; `poll` reads the shared ring | `close`/drop at any time | `Items`, `Gap`, or `Closed` from `poll` | resnapshot/resume explicitly after `Gap` | generation loss is itself recorded when possible; shutdown makes the final poll `Closed` after retained items/gap |
 | Observation resnapshot | `Queued`, `Pinning`, `Querying`, `Encoding` | before root/query encoding | `Ready(ObservationResnapshot)` or `Failed(ObservationSnapshotError)` | new bounded request, including after an immediate resume gap | old generation fails; shutdown cancellation follows query rules |
 | Checkpoint | `Queued`, `Pinning`, `Reading`, `StoringBlobs`, `CommittingManifest` | before first GPU readback/store call; later cancellation stops new batches and drains submitted calls | `Ready(CheckpointCommitted)`, `Failed(CheckpointError)`, or `Cancelled` with no manifest | new explicit request against a retained frontier | device loss/store failure leaves no committed manifest; shutdown either completes the configured required request or reports it failed |
-| Correction | `Queued`, `RestoringPrivate`, `ReplayingPrivate`, `ValidatingFinal` | before private replay submission; later cancellation aborts and drains private state | `Ready(CorrectionCommitted)` or `Failed(CorrectionError)` with original live bundle unchanged | new complete correction request | old-generation private results cannot install; shutdown aborts without changing the frontier |
+| Correction | `Queued`, `RestoringPrivate`, `ReplayingPrivate`, `ValidatingFinal`, `ExportingCorrectionBranch`, `Publishing` | cancellation before the correction-branch sink invocation aborts and drains private state; after invocation it is `NotCancellable` because durable success mandates publication | `Ready(CorrectionCommitted)` only after the one branch append is durable and the corrected bundle/log swap completes; ordinary failure leaves the original frontier/log active, while branch-append failure also applies TECH-047's terminal-world provider policy | new complete correction request while the world remains `Ready` | old-generation private results cannot reach branch export; shutdown aborts before invocation, but after invocation it drains to durable publication or terminal provider failure |
 | Restore | `Loading`, `Verifying`, `Rebuilding`, `RestoringParticipants`, `ExportingReplayHeader`, `Publishing` | before device/store submission; after either device/store submission or replay-header invocation, cancellation drains the private builder and suppresses publication | `Ready(RestoreReady)` only after the checkpoint-anchored sequence-zero replay header is durable, or `Failed(RestoreError)` with no world published | retry with a new builder/request and a different stream after an invoked header; a pre-invocation failure releases its reservation | generation loss or replay-sink failure fails private construction; no world exists for shutdown |
 | Public replay | `LoadingOwnedRecords`, `VerifyingHeader`, `ReplayingPrivate`, `ComparingExpected`, `ExportingReplayHeader`, `ExportingReplayPrefix`, `Publishing` | before first private submission; later cancellation drains the private builder, any invoked sink calls, and suppresses publication | `Ready(ReplayCompleted)` only after the verified source header/records have been copied durably to the selected fresh live stream, or `Failed(ReplayFailure)` with no world published; divergence includes the bounded artifact | new builder/owned replay request and a different stream after any sink invocation | old-generation results cannot install; sink failure fails construction; no world exists for shutdown until final publication |
 | Recovery | `Queued`, `CreatingGeneration`, `LoadingAnchor`, `Replaying`, `Comparing` | before new-generation submission; later cancellation remains in `RecoveringParticipant` | `Ready(Recovered)` or `Failed(RecoveryError)` | one explicit new recovery request | only results from the requested new generation may reinstall the equal frontier; shutdown abandons recovery |
@@ -1508,7 +1515,8 @@ typed terminal `QueryUnavailable`, rather than partial data.
 `QueryReadinessReason` identifies the exact cold/materializing ranges,
 unmet revision floors, or bounded resource pressure. `ExplicitPartial`
 returns exact inspected bounds plus missing subranges and never describes
-them as empty. Every ready result carries tick, world root hash, sorted
+them as empty. Every ready result carries the closed frontier position, world
+root hash, sorted
 per-volume revisions, exact inspected bounds, completeness, and source
 commitment.
 
@@ -1722,6 +1730,7 @@ pub struct CheckpointObservation {
 pub struct CorrectionObservation {
     pub from: FrontierSummary,
     pub to: Option<FrontierSummary>,
+    pub replay: Option<ReplayStreamPosition>,
     pub failure: Option<ErrorCode>,
 }
 
@@ -2315,6 +2324,7 @@ pub struct ParticipantGenesisRequest {
 pub struct ParticipantTickRequest {
     pub world: WorldId,
     pub tick: Tick,
+    pub source_frontier: FrontierPosition,
     pub source_root: CanonicalHash,
     pub input: BoundedBytes,
     pub collider: ColliderArtifactLease,
@@ -2354,7 +2364,7 @@ pub struct ParticipantReplayRecordView<'a> {
 }
 pub struct ColliderArtifactView<'a> {
     pub contract: ContractDigest,
-    pub tick: Tick,
+    pub source_frontier: FrontierPosition,
     pub source_root: CanonicalHash,
     pub request_digest: CanonicalHash,
     pub artifact_hash: CanonicalHash,
@@ -2488,6 +2498,18 @@ token is abort. The descriptor fixes contract/input versions, strategy,
 maximum input/effect/snapshot/artifact/state-token bytes, canonical RNG
 contracts, and failure policy at genesis.
 
+`prepare_genesis` must return a token whose `ParticipantTokenMetadata.frontier`
+is exactly the constructed world's `FrontierPosition::Genesis`.
+`prepare_tick` receives both the attempted `tick` and its distinct
+`source_frontier`; admission requires
+`source_frontier.next_tick() == Some(tick)`, the source lease metadata and
+collider view to carry that same position/root, and the produced token to
+carry `FrontierPosition::Confirmed(tick)`. Snapshot restore preserves the
+request frontier position exactly. Reconstruction starts at
+`request.start.position` and produces `Confirmed(request.end_tick)`. These
+checks use the closed frontier encoding and never map Genesis to a tick
+sentinel.
+
 ```rust
 pub struct ParticipantDescriptor {
     pub id: ParticipantId,
@@ -2567,7 +2589,7 @@ decoding. Its exact behavior is:
 
 Each explicit retry is one newly admitted, resource-reserved operation; Moria
 performs no timer-driven or unbounded internal retry. Recovery installs a
-replacement token only when participant ID, contract, tick, root, commitment,
+replacement token only when participant ID, contract, frontier position, root, commitment,
 RNG commitments, and new device generation exactly match the retained
 frontier. It changes no canonical bytes and emits a lifecycle observation.
 Recovery mismatch follows the same policy row again. A non-retryable adapter

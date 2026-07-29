@@ -468,7 +468,10 @@ A tick attempt has these ordered phases:
 12. deliver one generation-tagged candidate envelope through the reserved
     render-to-main completion bridge, then atomically swap the main-world
     `FrontierBundle` containing the GPU root token and participant state
-    tokens, confirm the receipt, append replay records, and emit observations.
+    tokens, confirm the receipt, install the semantic replay-log record, and
+    emit observations. The ordinary live-stream append then follows TECH-047;
+    a correction instead satisfies TECH-048's durable branch precondition
+    before this swap.
 
 Dependent GPU phases are ordered dispatches on one queue. No shader uses a
 cross-workgroup spin protocol. Before step 12, only private slots refer to the
@@ -545,8 +548,11 @@ Every participant registers exactly one strategy:
 Its canonical state is participant-owned in meaning and representation, but it
 must be encapsulated in an immutable opaque state token whose lifetime Moria
 can pin. There is no adapter-global mutable canonical state. A token is bound
-to `(participant, contract, tick, world_root, commitment,
-device_generation?)`, and only the originating adapter may inspect it.
+to `(participant, contract, frontier: FrontierPosition, world_root,
+commitment, device_generation?)`, and only the originating adapter may inspect
+it. Genesis tokens are bound to `FrontierPosition::Genesis`; the token
+produced by attempted tick `n` is bound to
+`FrontierPosition::Confirmed(n)`. No sentinel tick represents genesis.
 
 For every attempted tick the adapter receives a lease to the source token,
 source root hash, bounded input slice, and canonical artifact leases. It

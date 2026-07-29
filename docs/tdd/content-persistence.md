@@ -401,8 +401,11 @@ Implements: REQ-001, REQ-014, REQ-017, REQ-028, REQ-032
   `moria-checkpoint-replay-v1` chunk descriptors `{first_tick, last_tick,
   record_count, uncompressed_bytes, blob_digest}` whose exact bytes cover the
   union of all such ranges without gaps or overlap;
-- replay prefix/suffix digests binding that covered range to the public
-  `moria-replay-v1` sequence;
+- the active-history digest over the ordered semantic tick-record projection,
+  plus the public stream key, physical durable-prefix position/digest, and
+  per-record physical sequence/subrecord locator needed to bind that covered
+  range through any `CorrectionBranch` to the public `moria-replay-v1`
+  sequence;
 - completeness counts, total uncompressed bytes, and manifest checksum.
 
 Derived meshes, dressing, resident base-cache entries, physical slots, Bevy
@@ -499,13 +502,15 @@ and `CheckpointBudgets.store_bytes_in_flight` (default 64 MiB, portable maximum
 Snapshot participants cannot provide an external locator instead of bytes.
 Reconstructible participants contribute descriptor, commitment, and required
 replay range but no snapshot blob. Moria takes the union of those ranges,
-pins every exact confirmed `moria-replay-v1` tick record, and rejects
+pins every exact confirmed tick record from the active semantic projection,
+and rejects
 checkpoint admission if any record is absent or a participant's range exceeds
 its declared `max_replay_ticks`. Chunks contain at most 64 consecutive records
 and at most 8 MiB uncompressed; an oversized individual record is one
 single-record chunk only if it fits both the checkpoint request and
-`rollback.log_bytes`, otherwise admission fails. Chunk encoding retains the exact
-length-prefixed tick-record bytes and adds only the
+`rollback.log_bytes`, otherwise admission fails. Chunk encoding retains the
+exact length-prefixed tick-record bytes—extracting the identical framed
+subrecord when its physical locator is inside a correction branch—and adds only the
 `moria-checkpoint-replay-v1` version, first/last tick, record count, and
 checksum. It never reconstructs records from digests.
 
@@ -519,7 +524,8 @@ LogPinned -> BytesReserved -> ChunkEncoded -> BytesVerified
 
 Encoding and storage reserve the chunk's declared uncompressed bytes before
 work starts. Moria verifies tick continuity, each embedded record checksum and
-digest, the chunk length, and its BLAKE3 blob digest before
+digest, the chunk length, its active-history/physical-sequence locator
+binding, and its BLAKE3 blob digest before
 `CheckpointStore::put_blob`; store completion must confirm that digest.
 
 `commit_manifest` is not called until every scar/node/metadata,
@@ -668,6 +674,12 @@ pub enum ReplayAppendRange {
         last_tick: Tick,
         record_count: u32,
     },
+    CorrectionBranch {
+        target_tick: Tick,
+        superseded_through: Tick,
+        corrected_through: Tick,
+        record_count: u32,
+    },
 }
 
 pub struct ReplayExportFailure {
@@ -750,14 +762,30 @@ pub struct ReplayFailure {
 }
 ```
 
-`ReplayAppendRange` has wire tag `0 = Header` and `1 = TickRecords`.
+The registered `ReplaySink` contract is per-record atomic and append-only for
+each `(sink, stream, sequence)`: a matching `stored` completion means the
+complete exact bytes are durable and visible at that sequence, while `fail`,
+drop, or a rejected completion means no record is visible there. Reuse of a
+sequence with different bytes is `Corrupt`; replaying the identical digest may
+only return the same durable success. This is required equally for ordinary
+tick and correction-branch records and is validated when the provider
+descriptor is frozen.
+
+`ReplayAppendRange` has wire tag `0 = Header`, `1 = TickRecords`, and
+`2 = CorrectionBranch`.
 `Header` is valid only at sequence zero, has implicit record count zero, and
 requires `next_tick` to equal the checked next-tick function of `starting`.
 `TickRecords` is valid only at sequence greater than zero; v1 requires
 `record_count == 1` and `first_tick == last_tick`. Unknown tags, a header at a
 later sequence, a tick record at sequence zero, an inconsistent next tick, or
 an inconsistent tick range fails the owning construction/append before sink
-success can publish anything.
+success can publish anything. `CorrectionBranch` is valid only at the current
+nonzero `next_sequence`; it requires
+`target_tick < superseded_through == corrected_through`, checked
+`corrected_through - target_tick <= u32::MAX`,
+`record_count == corrected_through - target_tick`, and an exact target
+frontier in the current active-history projection. It is one append record,
+not `record_count` independent sink calls.
 
 `ReplayStreamKey` is a consumer-selected fixed 32-byte key. Its only live
 source is the per-world value passed to `MoriaClient::begin_world` and frozen
@@ -784,10 +812,32 @@ tick record {
   participant commitments, bounded opaque participant event bytes/digest,
   expected world root hash
 }
+correction branch record {
+  target frontier/root, superseded-through frontier/root,
+  previous active-history digest, corrected-through frontier/root,
+  corrected active-history digest, replacement record count,
+  exact length-prefixed tick records for target+1..=corrected-through
+}
 ```
 
-Records are length-prefixed, checksummed, bounded, and committed only after the
-tick confirms. Presentation and timing are excluded. A `Genesis` anchor's
+The physical stream is append-only, while its active history is the unique
+semantic projection obtained by folding records in sequence order. A
+`TickRecords` item appends to that projection. A `CorrectionBranch` verifies
+its target frontier/root and previous active-history digest, removes the
+projected suffix after `target_tick`, then appends its embedded replacement
+tick records. The superseded physical bytes remain durable evidence but are
+not canonical-log inputs after the branch. The active-history digest is
+`BLAKE3("moria-active-history-v1" || header_anchor_digest || ordered
+(tick:u64 LE, tick_record_digest:[u8;32]))`; branch validation recomputes it
+before accepting the record. Unknown, gapped, mismatched, nested, or
+overlapping embedded records invalidate the branch. A consumer replaying the
+complete physical stream therefore derives exactly one corrected ordered log
+without deleting or relabeling old durable bytes.
+
+Records are length-prefixed, checksummed, and bounded. An ordinary tick record
+is appended only after that tick confirms; a correction branch is durably
+appended before its corrected suffix publishes under TECH-048. Presentation
+and timing are excluded. A `Genesis` anchor's
 starting frontier is exactly `FrontierPosition::Genesis` and its `next_tick`
 is exactly zero. A `Checkpoint` anchor's starting frontier is
 `FrontierPosition::Confirmed(t)` and its `next_tick` is exactly checked
@@ -808,8 +858,10 @@ sequence-zero request uses `ReplayAppendRange::Header`; it never fabricates a
 tick range or `record_count`. Each later tick record uses
 `ReplayAppendRange::TickRecords { first_tick: record.tick, last_tick:
 record.tick, record_count: 1 }`. Tick zero therefore appears first in this
-range only after its batch confirms. Each confirmed tick record is appended in
-sequence order through that registered sink. At most one append for a given
+range only after its batch confirms. A correction uses the one
+`CorrectionBranch` append specified by TECH-048; its embedded tick frames use
+the identical standalone tick-record encoding. Each append is invoked in
+physical sequence order through that registered sink. At most one append for a given
 world stream is invoked at once; the
 configured in-flight record/byte budgets cover all worlds and providers
 without weakening this per-stream order. Moria reserves the immutable
@@ -824,13 +876,15 @@ at the in-memory log boundary later `reserve_tick` returns
 The v1 post-genesis append-failure policy is deliberately terminal rather than
 an implicit or public redrive. If `ReplayAppendSink::fail`, producer drop,
 wrong identity/digest, or an invalid first terminal completion occurs after a
-tick is confirmed, Moria closes further tick admission and moves the world
-from `Ready` to `Failed`. A duplicate call observed after an already accepted
-success is only `AlreadyCompleted` and does not fail the world. The
-already-returned `TickConfirmed` remains valid;
+tick is confirmed, or while a correction branch is awaiting its required
+prepublication durability, Moria closes further tick admission and moves the
+world from `Ready` to `Failed`. A duplicate call observed after an already
+accepted success is only `AlreadyCompleted` and does not fail the world. An
+already-returned `TickConfirmed` remains valid; a failed correction branch
+leaves the original frontier and active-history projection installed;
 the failure is reported as `OperationError { code: StoreFailure,
 scope: Provider(ReplaySink(id)), retryability: Never,
-committed: Frontier(the_confirmed_frontier), ... }` in one
+committed: Frontier(the_last_trustworthy_frontier), ... }` in one
 `WorldLifecycleFact`, a
 `FailureCounter { code: ErrorCode::StoreFailure, count: ... }` telemetry
 bucket, and
@@ -849,9 +903,9 @@ The failure transition appends exactly one `WorldLifecycleFact` whose
 lifecycle fact carries `None`. `ShutdownReport.replay_export_failure` repeats
 that same fixed metadata. Because one stream has at most one invoked append,
 both fields are `Option`, not a growable list. The record contains the exact
-sink, stream, sequence, append range (header position/next tick or confirmed
-tick range/count), byte length, digest, and failure code from the original
-request; it does not copy the pinned replay
+sink, stream, sequence, append range (header position/next tick, confirmed
+tick range/count, or correction target/superseded/corrected/count), byte
+length, digest, and failure code from the original request; it does not copy the pinned replay
 bytes. Its retained v1 allocation is at most 128 bytes and is reserved in the
 observation/terminal-receipt budgets before invoking the append. Shutdown
 constructs and retains the report metadata before releasing the raw replay
@@ -871,7 +925,10 @@ sequence-prefix digest exposed by `ReplayCompleted`.
 `next_sequence` is checked `durable_through_sequence + 1`. Genesis and restore
 return `{ durable_through_sequence: 0, next_sequence: 1 }`. Every subsequent
 append advances all three fields only after matching sink success; integer
-overflow fails the world before another invocation.
+overflow fails the world before another invocation. A correction branch
+advances the physical sequence and prefix digest exactly once regardless of
+its embedded tick count; its separate active-history digest commits the
+semantic suffix replacement.
 `ReplayCompleted.frontier` is the last replayed
 `FrontierPosition::Confirmed(tick)`, or the header's unchanged starting
 position when the owned record sequence is empty.
@@ -892,34 +949,46 @@ bootstrap in-flight/byte limits. Rejection
 returns the unchanged builder and complete owned request in `ReplayRejected`.
 The header must describe the builder's world and frozen registries, and its
 `next_tick` must equal the checked next-tick function for its starting frontier
-position. Records must be a contiguous sequence starting at that exact
-`header.next_tick`: tick zero for a genesis anchor, or checked `t + 1` for a
-checkpoint anchored at confirmed tick `t`. Each record is individually within
-the canonical tick limits and carries the expected root/outcome/participant
-digests. Checked tick overflow rejects admission. A checkpoint anchor is first
-restored privately as described above; a genesis anchor constructs the
-declared genesis privately.
+position. `ReplayRequest.records` are the exact physical append records after
+sequence zero, in sequence order. Each ordinary tick record must be the next
+tick in the active semantic projection. Each branch must satisfy the closed
+fold above, must target a still-retained private frontier no deeper than
+`rollback.ticks_per_correction`, and must contain exactly the contiguous
+replacement ticks through the superseded present. `ReplayLimits.max_ticks`
+counts every decoded tick transition, including tick records later
+superseded by a branch, while `max_input_bytes` counts all physical and
+embedded bytes. These bounds reserve the private rollback deque needed to
+install a branch target without whole-world traversal. Every tick subrecord is
+individually within the canonical limits and carries the expected
+root/outcome/participant digests. Checked tick, sequence, count, or byte
+overflow rejects admission. A checkpoint anchor is first restored privately
+as described above; a genesis anchor constructs the declared genesis
+privately.
 
 Replay decodes each sealed batch into the same canonical transition function,
 but only inside the private builder context. For every tick the exclusive
 private publication step calculates the candidate root, outcome digest,
 participant commitments/events, and expected-hash comparison before advancing
-the private replay frontier. It never calls live `submit_tick`, cannot omit or
+the private replay frontier. On a branch it restores the named retained
+private target, discards the superseded private suffix, and processes the
+embedded replacement records; only the branch's corrected projection remains
+in `ReplayCompleted.ticks`. It never calls live `submit_tick`, cannot omit or
 override an encoded expected hash, and emits no live observation or
 presentation work. After complete semantic success, but before the final
 swap, Moria copies the exact verified source header to the selected fresh
-stream as sequence zero and then copies every exact verified source record as
-sequences `1..=N`, one durable append at a time. It does not regenerate, omit,
-or reorder those bytes. Only after all `N + 1` appends are durable does one
-final `FrontierBundle` swap publish the new world and `ReplayCompleted`; its
-`replay` has `durable_through_sequence == N` and
-`next_sequence == N + 1`, so the first new tick is ordered after the copied
-prefix. Intermediate roots were never public. Cancellation, device loss,
-validation failure, mismatch, sink failure, or wrong sink completion drains
-and drops all private state and publishes no world. Failure before
-sequence-zero invocation releases the stream reservations;
-failure/cancellation after it retires the pair, reports the exact provider
-failure through `ReplayFailure.error`, and offers no redrive or fallback.
+stream as sequence zero and then copies every exact verified physical source
+record—including every branch record—as sequences `1..=N`, one durable append
+at a time. It does not flatten, regenerate, omit, or reorder those bytes. Only
+after all `N + 1` appends are durable does one final `FrontierBundle` swap
+publish the new world and `ReplayCompleted`; its `replay` has
+`durable_through_sequence == N` and `next_sequence == N + 1`, so the first new
+tick is ordered after the copied prefix. Intermediate and superseded roots
+were never public. Cancellation, device loss, validation failure, mismatch,
+sink failure, or wrong sink completion drains and drops all private state and
+publishes no world. Failure before sequence-zero invocation releases the
+stream reservations; failure/cancellation after it retires the pair, reports
+the exact provider failure through `ReplayFailure.error`, and offers no
+redrive or fallback.
 
 Participant events are schema-bound opaque bytes in deterministic
 `(ParticipantId, local_sequence)` order. Replay compares them exactly and
@@ -963,15 +1032,28 @@ pub struct CorrectedTickOutput {
 pub struct CorrectionCommitted {
     pub frontier: FrontierSummary,
     pub ticks: BoundedVec<CorrectedTickOutput>,
+    pub replay: ReplayStreamPosition,
 }
 ```
 
 The TECH-070 `request_correction` call accepts only a retained
-confirmed frontier and a complete contiguous input sequence from
-`target.tick + 1` through the desired corrected present. It reserves replay
-bytes, output roots, participant resources, and pins the original live and
-target roots before starting. Admission rejection returns the complete request,
-including every still-owned sealed batch. Acceptance returns
+confirmed frontier strictly before the current confirmed frontier and a
+complete contiguous input sequence from `target.tick + 1` through that current
+frontier's tick. Thus v1 replaces a suffix without changing the numbered
+present; shortening, extending, or submitting an empty correction is
+`InvalidRequest`. The current physical replay stream must already be durable
+through the current frontier with no append in flight; otherwise admission
+returns `PersistenceBackpressure` and invokes no participant or sink. This
+gives the branch one unambiguous next physical sequence and a fully durable
+superseded suffix. Admission reserves replay bytes, output roots, participant
+resources, and pins the original live and target roots before starting. It
+also computes the worst-case single encoded branch length and rejects before
+private work unless the actual replacement count/bytes can fit
+`rollback.ticks_per_correction`, `rollback.bytes_per_correction`,
+`rollback.log_ticks`, `rollback.log_bytes`,
+`rollback.replay_sink_bytes_in_flight`, and the configured
+`ReplaySinkDescriptor.max_record_bytes`. Admission rejection returns the
+complete request, including every still-owned sealed batch. Acceptance returns
 `CorrectionReceipt`; no batch may be submitted independently while it belongs
 to that correction.
 
@@ -982,16 +1064,63 @@ replaying the bounded prefix. Each replacement tick consumes only the prior
 private token and returns the next one through the ordinary transition.
 Intermediate roots and participant tokens remain private and do not emit consumer
 observations or presentation work. Expected hashes, when supplied, are checked
-at each tick. Failure discards private roots and keeps the original live
-frontier. Success atomically replaces the live frontier with the final
-corrected `FrontierBundle`, emits one correction observation plus canonical
-outcome range, and schedules only the final accumulated dirty regions for
-derived rebuild.
+at each tick. Before any durable export, failure or cancellation discards
+private roots and keeps the original live frontier, rollback deque, active
+log, and replay stream position unchanged.
+
+After every replacement tick validates, Moria encodes one bounded
+`moria-replay-v1` correction-branch record. Its embedded frames are the exact
+standalone tick-record bytes that ordinary confirmation would have produced,
+including corrected outcomes, participant commitments/events, and root hashes.
+The request is:
+
+```text
+stream = the world's frozen ReplayStreamKey
+sequence = current ReplayStreamPosition.next_sequence
+range = CorrectionBranch {
+  target_tick,
+  superseded_through = original_live_tick,
+  corrected_through = original_live_tick,
+  record_count = original_live_tick - target_tick
+}
+```
+
+Moria reserves the immutable branch bytes, callback cell, and sink
+count/byte permit before invocation. The branch is one atomically durable sink
+record: `stored` means the exact complete record is visible at that sequence,
+while `fail`, drop, or wrong completion means no record is visible there.
+Cancellation is accepted only before this invocation. Once invoked,
+`CorrectionReceipt::cancel` returns `NotCancellable`; a matching durable
+completion makes corrected publication mandatory, and shutdown/device-loss
+notifications are ordered after that publication. All candidate GPU work and
+generation checks finish before invocation, so the remaining main-world
+publication is an infallible host transaction.
+
+On matching durability, the exclusive TECH-032 critical section atomically:
+
+1. replaces rollback-deque entries after the target with the corrected
+   frontiers;
+2. splices the in-memory active log to
+   `prefix_through_target || corrected_records`;
+3. advances the physical `ReplayStreamPosition` by this one branch record and
+   installs the corrected active-history digest;
+4. swaps the live `FrontierBundle`, receipt result, participant tokens,
+   revision metadata, and one success observation; and
+5. schedules only the final accumulated dirty regions for derived rebuild.
+
+Superseded roots, records, and participant tokens become reclaimable only
+after their existing reader/checkpoint/query pins and GPU uses drain. Their
+already-durable physical stream bytes are never deleted, reused, or considered
+active log records after the branch. `CorrectionCommitted.frontier` is the
+corrected live frontier and `CorrectionCommitted.replay` is the advanced
+durable physical position. The success `CorrectionObservation` carries the
+same `to` frontier and `replay`; a failure carries `to: None, replay: None`.
 
 The correction observation contains Moria-owned frontier/outcome facts only.
 Participant-owned events from private replay ticks are delivered in the
 bounded `CorrectionCommitted.ticks` result after final publication and in the
-replay record, never through TECH-025 or during private replay. Admission
+embedded tick frames of the correction-branch record, never through TECH-025
+or during private replay. Admission
 reserves their worst-case aggregate count/bytes under the correction and
 terminal-receipt budgets.
 
@@ -1000,19 +1129,32 @@ and all GPU readers complete. On failure, staged CPU tokens drop immediately
 after callback closure and staged GPU tokens enter generation-tagged retire
 queues until their last submission completes; no participant restore-back call
 is needed or permitted. Target outside the window, missing state,
-resource bound, participant failure, content mismatch, or divergence is
-terminal for that correction and never advances the world.
+resource bound, participant failure, content mismatch, or divergence before
+branch invocation is terminal for that correction and never advances the
+world. A branch append failure also leaves the original bundle/log installed
+but applies TECH-047's terminal provider-failure policy, retains the exact
+undurable `ReplayExportFailure`, and closes new authority admission; there is
+no redrive or alternate sink. Because a successful append mandates the one
+host publication transaction, no reachable state has a durable correction
+branch while continuing to expose the superseded live frontier.
 
 ### TECH-049 — Replay/log and checkpoint bounds
 
 Implements: REQ-015, REQ-018, REQ-021, REQ-029, REQ-032
 
-The in-memory confirmed log retains at least the rollback window and at most
+The in-memory confirmed log is the active semantic projection, not the raw
+physical append sequence. It retains at least the rollback window and at most
 `rollback.log_ticks` (default 256), `rollback.log_bytes` (default 256 MiB), and
-the newest durable checkpoint suffix. The configured replay sink exports exact immutable
-records under TECH-047. A record is releasable only after its exact sink append
-is durable; checkpoint coverage may release other recovery pins but never
-substitutes for the public replay export. At
+the newest durable checkpoint suffix. Each active entry stores its exact tick
+record bytes/digest plus physical `(sequence, subrecord_offset)` locator.
+Correction atomically splices this log after its target; superseded entries
+leave the active count immediately but remain pinned by preexisting readers
+until drain. The configured replay sink exports exact immutable physical
+records under TECH-047. An ordinary record is releasable only after its exact
+sink append is durable; a correction's embedded records become releasable
+under the same rule only after the containing branch append is durable and
+the branch publication transaction completes. Checkpoint coverage may release
+other recovery pins but never substitutes for the public replay export. At
 the boundary, `reserve_tick` returns `PersistenceBackpressure`; Moria never
 silently drops the only recovery or requested replay record.
 
@@ -1044,9 +1186,12 @@ would exceed the canonical budget receives
 CanonicalFailure::LogicalCapacity), error.code:
 ErrorCode::CanonicalBudget, ... }`;
 runtime pressure does not evict the required 20 confirmed frontiers.
-Public replay request records, private roots/results, sink completion records,
-and divergence artifact bytes count against the dedicated TECH-017 rollback
-fields; no replay path borrows untracked checkpoint or terminal-receipt memory.
+Public replay request records, correction branch bytes and embedded record
+index, private roots/results, sink completion records, and divergence artifact
+bytes count against the dedicated TECH-017 rollback fields; no replay path
+borrows untracked checkpoint or terminal-receipt memory. A branch whose single
+physical record cannot fit the configured sink/byte permits is rejected before
+private correction begins, never split into a partially durable transaction.
 
 ## Reclamation and dirty truth
 

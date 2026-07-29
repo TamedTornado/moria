@@ -85,8 +85,12 @@ work. Consumer-registered checkpoint stores, bundled-content stores, and the
 replay sink are selected by stable IDs and receive only bounded
 owned values/completion tokens. Public replay consumes owned records in a
 private builder and can publish only its fully verified final frontier. A
-successful queue operation means admission only. Authority changes
-only when a receipt reaches `Confirmed`.
+correction durably appends one bounded branch record before atomically
+replacing the active in-memory suffix and live frontier; superseded append-only
+bytes remain diagnostic evidence but are not part of the active semantic log.
+A successful queue operation means admission only. Authority changes only in
+the coordinated publication transaction reported by a confirmed tick or a
+successful construction/correction/restore/recovery receipt.
 
 The CPU may retain bounded configuration, stable identities, receipt state,
 root handles, tick/replay logs, participant commitments, persistence staging,

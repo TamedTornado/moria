@@ -163,7 +163,7 @@ pub struct WorldContactNormalQWire(pub [i16; 3]); // Q1.14, cell toward shape
 pub struct TimeOfImpactWire(pub u64); // Q0.32, 0..=0x1_0000_0000
 
 pub struct CollisionFact {
-    pub tick: Tick,
+    pub source_frontier: FrontierPosition,
     pub world_root: CanonicalHash,
     pub volume: VolumeId,
     pub revision: VolumeRevision,
@@ -181,10 +181,18 @@ closed `CollisionFact` above is the complete fact; its field order is its wire
 order. Conceptually it contains:
 
 ```text
-tick, world root, volume/revision, local cell, material,
+source frontier, world root, volume/revision, local cell, material,
 time_of_impact, world_contact_point: WorldContactPointQWire,
 world_contact_normal: WorldContactNormalQWire, source leaf hash
 ```
+
+`source_frontier` uses TECH-070's exact canonical
+`0 = Genesis | 1 = Confirmed(Tick)` encoding. It identifies the pinned state
+from which the fact was derived: a query against the pre-tick root emits
+`Genesis`, while collision for attempted tick `n` emits the position of
+`SourceState(n)`. `Genesis` and `Confirmed(Tick::from_raw(0))` therefore have
+different fact bytes and cannot be substituted even when all other fields
+match.
 
 `NoHit` is emitted only if every required brick was ready and inspected.
 Missing/cold/corrupt truth is `Pending` or `Unavailable`. Canonical participant
@@ -202,7 +210,7 @@ artifact from a pinned state:
 
 ```text
 header {
-  contract, tick, world_root, request_digest,
+  contract, source_frontier, world_root, request_digest,
   volume_count, record_count, complete
 }
 sorted volume records { id, revision, inverse placement, range }
@@ -259,7 +267,9 @@ pub struct GpuParticipantIoMetadata {
     pub operation: GpuParticipantOperation,
     pub participant: ParticipantId,
     pub world: WorldId,
-    pub tick: Tick,
+    pub source_frontier: Option<FrontierPosition>,
+    pub destination_frontier: Option<FrontierPosition>,
+    pub attempted_tick: Option<Tick>,
     pub source_root: CanonicalHash,
     pub source_commitment: CanonicalHash,
     pub artifact_hash: CanonicalHash,
@@ -373,17 +383,43 @@ pub trait GpuParticipantDeviceState: Send + Sync {
 ```
 
 The `io_abi` fixes one Moria-created group-zero layout for every operation.
-Binding 0 is a 192-byte uniform `moria-participant-io-v1` wire; bindings 1
+Binding 0 is a 224-byte uniform `moria-participant-io-v1` wire; bindings 1
 through 6 are respectively operand input/snapshot/replay, collider artifact,
 source state, destination state/status, effect output/status, and event
 output/status. The uniform byte offsets are: operation tag `0`, participant
-`4`, 16-byte world ID `8`, tick low/high `u32` words `24/28`, device-generation
-low/high words `32/36`, effect/event capacities `40/44`, source root
-`48..80`, source commitment `80..112`, artifact hash `112..144`, and six
-`{offset:u32, bytes:u32}` ranges in binding order at `144..192`. Every scalar
-is little-endian and every unknown operation tag is invalid.
+`4`, 16-byte world ID `8`, source-position tag/low/high `u32` words
+`24/28/32`, destination-position tag/low/high words `36/40/44`,
+attempted-tick presence/low/high words `48/52/56`, one reserved zero word at
+`60`, device-generation low/high words `64/68`, effect/event capacities
+`72/76`, source root `80..112`, source commitment `112..144`, artifact hash
+`144..176`, and six `{offset:u32, bytes:u32}` ranges in binding order at
+`176..224`. Optional position tag `0` means absent, tag `1` means `Genesis`
+and requires zero tick words, and tag `2` means `Confirmed` followed by its
+exact tick; attempted-tick presence is `0` or `1` and absent tick words are
+zero. Every scalar is little-endian, reserved bytes must be zero, and every
+unknown tag is invalid.
 `GpuParticipantIoMetadata` is the decoded host view of those bytes, not a Rust
 struct transmute.
+
+The operation-specific position contract is closed:
+
+| Operation | Source frontier | Destination frontier | Attempted tick |
+| --- | --- | --- | --- |
+| `Genesis` | `None` | `Some(Genesis)` | `None` |
+| `Tick` | `Some(SourceState(n).position)` | `Some(Confirmed(n))` | `Some(n)` |
+| `RestoreSnapshot` | `Some(snapshot.frontier.position)` | the same position | `None` |
+| `Reconstruct` | `Some(request.start.position)` | `Some(Confirmed(request.end_tick))` | `None` |
+| `ExportSnapshot` | `Some(source_token.frontier.position)` | `None` | `None` |
+
+For `Tick`, `source_frontier.next_tick()` must equal `attempted_tick`; for
+restore the two positions must be byte-identical. Genesis output metadata and
+the installed token both carry `Genesis`, never zero-filled tick words
+interpreted as `Confirmed(0)`. When `source_frontier` is absent,
+`source_root` and `source_commitment` are all-zero non-identity wire values;
+when present they must match the source token/frontier. `artifact_hash` is
+nonzero only for an operation carrying a collider artifact. All
+operation-unused ranges, capacities, hashes, and option payload words are
+zero, so no stale tick/frontier data survives wrapper reuse.
 
 An unused binding references a shared four-byte zero buffer with a logical
 range of zero. Each storage range is page-local, fits `u32`, lies inside its
@@ -405,7 +441,8 @@ share the same private attempt token before invoking the adapter; wrappers
 cannot be constructed, mixed, retained past `'a`, or rebound by consumer code.
 
 `ParticipantGpuInput` thereby exposes the bounded canonical collider artifact,
-immutable participant input bytes, exact counts, tick/root/artifact hash,
+immutable participant input bytes, exact counts, source/destination frontier,
+attempted tick, root, and artifact hash,
 leased source state, and declared scratch ranges without returning Moria's
 radix, brick, page-table, allocator, or mutable buffers.
 `ParticipantEffectSink` is a Moria-owned fixed-slot range whose schema is

@@ -1784,3 +1784,179 @@ link changed. Mechanical checks find 70 unique `TECH-001` through `TECH-070`
 contracts, exactly one `Implements:` line per contract, 351 normative
 requirement/contract pairs, all 43 approved requirements, no `REQ-042`, and
 exact parity with `traceability.md`. `git diff --check` passes.
+
+## Auditor Turn — 2026-07-29T19:21:53Z
+
+Mode: continue
+
+Responding to: 2026-07-29T19:14:16Z
+
+### Prior Findings Status
+
+1. **Pre-tick genesis and tick-zero authority — resolved.** The world root now
+   commits the closed `Genesis | Confirmed(Tick)` frontier and `TECH-011`
+   admits tick zero from genesis without spending that tick
+   (`architecture.md:366-383`). The facade gives genesis its own encoding,
+   checked next-tick rule, and ready-result invariant
+   (`interfaces.md:512-542,692-702`); replay headers likewise distinguish the
+   pre-tick anchor from the first tick record
+   (`content-persistence.md:769-810,867-877`). The new headless fixture checks
+   both sides of that boundary (`validation.md:107-116`).
+2. **Concrete telemetry and tick-global failure APIs — resolved.**
+   `TickReceipt` now returns the closed `FailedNoAdvance`, which retains the
+   attempted tick, source frontier, structured provider/participant/device
+   cause, and `OperationError` (`interfaces.md:1966-2003`). Its invariants bind
+   scope, committed effect, cause, and retryability
+   (`interfaces.md:2185-2194`). `TelemetryError` now has the three promised
+   pattern-matchable variants and explicit retry semantics
+   (`interfaces.md:1992-2003,2196-2200`), with external contract tests required
+   in `validation.md:98-105`.
+3. **Replay digest and stale public-contract names — resolved.**
+   `ReplayStreamPosition.durable_prefix_digest` is now the sole exposed prefix
+   digest and has an exact ordered tuple domain
+   (`content-persistence.md:867-874`). Normative persistence, recovery, and
+   presentation references use the declared nested budget/status names, and
+   the mechanical closure test retains the former aliases only as negative
+   fixtures (`validation.md:202-208`).
+
+### New Findings
+
+1. **Rollback correction has no implementable replay-log or durable-stream
+   branch contract.** Approved `REQ-035` expressly allows corrected inputs to
+   produce a new tick/hash sequence, and `REQ-032`/`REQ-038` require genesis
+   plus the complete ordered log to reproduce the current hash sequence
+   (`design-document.md:803-827,1094-1123`). `TECH-047` defines only a linear
+   append stream whose post-header records are ordinary single-tick records
+   (`content-persistence.md:769-822`). `TECH-048` privately replays replacement
+   batches and swaps the corrected frontier, but never says how the superseded
+   in-memory suffix is replaced, how the already-durable append-only suffix is
+   invalidated or branched, which corrected records receive stream sequences,
+   or when those records become durable
+   (`content-persistence.md:969-996`). Its statement that participant events
+   appear “in the replay record” names no record variant or append operation.
+   As written, appending replacement ticks after the old suffix creates
+   duplicate/noncontiguous tick numbers that public replay rejects, while
+   retaining the old suffix makes checkpoint reconstruction of a corrected
+   reconstructible participant use the wrong bytes. Select a concrete bounded
+   branch/reset representation and publication policy across `TECH-047`–
+   `TECH-049`: define in-memory suffix replacement, durable stream records and
+   sequence/digest evolution, reconstruction/checkpoint ownership,
+   cancellation and append-failure outcomes, and whether corrected-frontier
+   publication waits for durability or follows a precisely reported
+   post-publication terminal policy. Add a cold public-replay and checkpoint
+   restore fixture in which corrected inputs change hashes and only the
+   exported corrected history reproduces the live frontier.
+
+2. **The explicit genesis frontier has not propagated through all canonical
+   fact and participant wire contracts.** `TECH-070` forbids a sentinel tick
+   for genesis and explicitly permits querying the genesis frontier
+   (`interfaces.md:692-701`), yet the “complete” canonical `CollisionFact`
+   still contains only `tick: Tick` (`collision-presentation.md:157-180`).
+   A collision query against genesis must therefore either mislabel its source
+   as confirmed tick zero or leave a canonical wire field without a value.
+   Participant state has the same mismatch: `TECH-016` still binds every token
+   to a bare tick even though genesis preparation creates the source token
+   (`architecture.md:542-549`), while the public metadata has already selected
+   `FrontierSummary` (`interfaces.md:2342-2349`). The GPU ABI compounds the
+   ambiguity by requiring tick words for all operations, including `Genesis`,
+   without defining their operation-specific value or validity
+   (`collision-presentation.md:251-275,375-385`). Replace source-position
+   fields with the closed frontier representation where they identify state,
+   or explicitly separate attempted tick from source frontier and define every
+   operation's encoding. Extend the genesis fixture to query collision truth
+   and exercise CPU/GPU genesis participant token metadata, proving
+   byte-level distinction from `Confirmed(Tick(0))`.
+
+### Questions For Coder
+
+None. Both findings are ordinary consistency and persistence engineering
+within already approved authority; neither requires a protected human
+decision.
+
+### Answers To Coder
+
+No coder questions were pending. I verified all three claimed corrections
+against the committed TDD; each prior finding is resolved as recorded above.
+
+### Notes To Coder
+
+Preserve the new pre-tick frontier, concrete failure APIs, replay bootstrap,
+query blocker/capacity records, and full nonzero `RngStreamId` domain. The
+mechanical provenance audit still passes independently: 70 unique
+`TECH-001`–`TECH-070` contracts, one `Implements:` line per contract, 351
+unique contract/requirement pairs, all 43 approved requirements, no
+`REQ-042`, and exact parity with `traceability.md`. `git diff --check` passed
+and the worktree was clean before this required ledger append.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-29T19:45:24Z
+
+Mode: continue
+
+Responding to: 2026-07-29T19:21:53Z
+
+### Responses To Findings
+
+1. Addressed. `TECH-047` now defines a third physical replay record,
+   `CorrectionBranch`, whose one atomic append contains the exact framed
+   corrected tick records and the target, superseded, corrected, previous
+   active-history, and corrected active-history commitments. Folding the
+   append-only physical stream removes the superseded semantic suffix without
+   deleting its diagnostic bytes. `TECH-048` admits only a complete replacement
+   through the existing present, requires the current stream to be durable and
+   idle, bounds the one branch record before private work, and waits for branch
+   durability before one mandatory `FrontierBundle`/rollback-deque/active-log/
+   stream-position publication. Cancellation ends at sink invocation; earlier
+   failures preserve the original live world, while append failure preserves
+   that frontier but terminally fails the world under the existing exact replay
+   provider-failure record. `TECH-049` makes the in-memory log the active
+   projection with physical sequence/subrecord locators. Checkpoints extract
+   only active exact tick frames, including frames embedded in a branch, and
+   bind them to the physical stream and active-history digest. Public replay
+   folds and copies physical branch records exactly. Validation now cold-replays
+   a corrected stream and restores a post-correction checkpoint after discarding
+   all live state.
+2. Addressed. `TECH-052::CollisionFact` and the `TECH-053` collider header/view
+   now carry `FrontierPosition`, so Genesis facts are byte-distinct from
+   confirmed tick zero. `TECH-016` binds every participant token to the closed
+   frontier position. The CPU tick request now separates attempted `tick` from
+   `source_frontier` and validates their checked next-tick relation. The GPU
+   participant ABI is now a fixed 224-byte wire with independently tagged
+   optional source frontier, destination frontier, and attempted tick, exact
+   offsets/zero rules, and a closed per-operation validity table for Genesis,
+   Tick, snapshot restore, reconstruction, and snapshot export. The genesis
+   fixture now queries collision and inspects CPU/GPU token metadata on both
+   sides of the Genesis/Confirmed(0) boundary.
+
+### TDD Changes Made
+
+- Revised `architecture.md` for frontier-bound participant tokens and the
+  correction durability precondition on publication.
+- Revised `content-persistence.md` for atomic correction branches, semantic
+  replay folding, physical sequence/digest evolution, active-log splicing,
+  checkpoint record ownership, cancellation/failure behavior, and cold replay.
+- Revised `interfaces.md` for correction phases/results/observations,
+  source-frontier CPU participant inputs, and collider views.
+- Revised `collision-presentation.md` for frontier-bearing facts/artifacts and
+  the complete 224-byte operation-specific GPU wire.
+- Revised `gpu-runtime.md`, `overview.md`, and `validation.md` for the atomic
+  correction publication bridge, ownership summary, Genesis byte fixtures, and
+  corrected replay/checkpoint scenarios.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The correction design deliberately retains one consumer-selected live stream:
+an append-only branch record changes only its semantic projection, so it
+requires neither deletion nor an inferred replacement stream identity. A
+single-record branch is rejected before private work if it cannot fit the
+configured correction, log, sink-record, or in-flight byte bounds. No stable
+`TECH` ID or `Implements:` link changed. Mechanical checks still find 70
+unique `TECH-001` through `TECH-070` contracts with one heading each;
+`git diff --check` passes.
