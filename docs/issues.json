@@ -3675,7 +3675,7 @@
         "C-010"
       ]
     },
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-014, M-015, M-016, M-077, M-078\n**Produces:** `src/bin/moria-qualify/oracle/fixed.rs`, `src/bin/moria-qualify/oracle/fixed_generate.rs`\n\n## Description\n\nImplement an independent arbitrary-precision reference for every scalar fixed-point operation and placement split, plus a generator for checked-in CPU/WGSL scalar golden vectors. This issue implements TECH-059, TECH-071 under REQ-007, REQ-021, REQ-023, REQ-028, REQ-036, REQ-038, REQ-043.\n\n## Inputs\n\n- TECH-059 (docs/tdd/validation.md); TECH-071 (docs/tdd/architecture.md).\n- Authorized design requirements REQ-007, REQ-021, REQ-023, REQ-028, REQ-036, REQ-038, REQ-043 and authority chain C-015, D-003, D-004, C-003, D-002, D-005, D-006, D-007, D-008, D-009, C-013, C-008, C-010.\n- Outputs of M-014, M-015, M-016, M-077, M-078.\n- Use a maintained arbitrary-precision crate such as `rug`; do not implement ad hoc big integers.\n\n## Acceptance Criteria\n\n- [ ] Generated cases cover all splits, exact half ties, extrema, invalid operations, and byte-match both production implementations without importing production math.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-014, M-015, M-016, M-077, M-078\n**Produces:** `src/bin/moria-qualify/oracle/fixed.rs`, `src/bin/moria-qualify/oracle/fixed_generate.rs`\n\n## Description\n\nImplement an independent arbitrary-precision reference for every scalar fixed-point operation and placement split, plus a generator for checked-in CPU/WGSL scalar golden vectors. This issue implements TECH-059, TECH-071 under REQ-007, REQ-021, REQ-023, REQ-028, REQ-036, REQ-038, REQ-043.\n\n## Inputs\n\n- TECH-059 (docs/tdd/validation.md); TECH-071 (docs/tdd/architecture.md).\n- Authorized design requirements REQ-007, REQ-021, REQ-023, REQ-028, REQ-036, REQ-038, REQ-043 and authority chain C-015, D-003, D-004, C-003, D-002, D-005, D-006, D-007, D-008, D-009, C-013, C-008, C-010.\n- Outputs of M-014, M-015, M-016, M-077, M-078.\n- Use the selected maintained arbitrary-precision crate `rug = \"=1.27.0\"`; do not implement ad hoc big integers.\n\n## Acceptance Criteria\n\n- [ ] Generated cases use `rug = \"=1.27.0\"` and cover all splits, exact half ties, extrema, invalid operations, and byte-match both production implementations without importing production math.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   },
   {
     "id": "M-080",
@@ -3886,7 +3886,9 @@
     "depends_on": [
       "M-062",
       "M-070",
-      "M-078"
+      "M-078",
+      "M-079",
+      "M-080"
     ],
     "provenance": {
       "technical_contracts": [
@@ -3912,7 +3914,7 @@
         "C-013"
       ]
     },
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-062, M-070, M-078\n**Produces:** `src/bin/moria-qualify/evidence/shader_validate.rs`, `tests/fixtures/wgsl/invalid/README.md`\n\n## Description\n\nDiscover every referenced WGSL module, parse and validate it with matching Naga 29 capabilities, reflect bindings against ABI tables, pop every error scope, and classify each negative fixture at its expected layer. This issue implements TECH-061 under REQ-007, REQ-021, REQ-023, REQ-036.\n\n## Inputs\n\n- TECH-061 (docs/tdd/validation.md).\n- Authorized design requirements REQ-007, REQ-021, REQ-023, REQ-036 and authority chain C-015, D-003, D-004, C-003, D-002, D-005, D-006, D-007, D-008, D-009, C-013.\n- Outputs of M-062, M-070, M-078.\n- Use `naga = 29.x` matching wgpu; do not implement a WGSL parser or validator.\n\n## Acceptance Criteria\n\n- [ ] The command fails on missing modules, malformed/semantic WGSL, mismatched bindings/ranges/workgroups/barriers/indirect args, map/decode errors, unsupported features, crashes, timeouts, silent no-ops, or uncaptured errors.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-062, M-070, M-078, M-079, M-080\n**Produces:** `src/bin/moria-qualify/evidence/shader_validate.rs`, `tests/fixtures/wgsl/invalid/README.md`\n\n## Description\n\nDiscover every referenced WGSL module, parse and validate it with matching `naga = 29.x` capabilities, reflect bindings against ABI tables, pop every error scope, and classify each negative fixture at its expected layer. Regenerate TECH-071's CPU/WGSL fixed-math sources and CORDIC table for every supported fractional split and require byte equality with the checked-in sources before validation succeeds. This issue implements TECH-061 under REQ-007, REQ-021, REQ-023, REQ-036.\n\n## Inputs\n\n- TECH-061 (docs/tdd/validation.md).\n- Authorized design requirements REQ-007, REQ-021, REQ-023, REQ-036 and authority chain C-015, D-003, D-004, C-003, D-002, D-005, D-006, D-007, D-008, D-009, C-013.\n- Outputs of M-062, M-070, M-078, M-079, M-080, including the arbitrary-precision fixed-math and CORDIC generators.\n- Use matching `naga = 29.x` for WGSL parsing, semantic validation, and reflection; do not implement a WGSL parser or validator.\n\n## Acceptance Criteria\n\n- [ ] The command uses matching `naga = 29.x` and fails on missing modules, malformed/semantic WGSL, mismatched bindings/ranges/workgroups/barriers/indirect args, map/decode errors, unsupported features, crashes, timeouts, silent no-ops, or uncaptured errors.\n- [ ] The command regenerates TECH-071's CPU fixed-math source, WGSL fixed-math source, and CORDIC table for every supported fractional split and fails unless each generated byte exactly matches the checked-in source.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   },
   {
     "id": "M-085",
@@ -3958,7 +3960,7 @@
         "C-013"
       ]
     },
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-033, M-062, M-063, M-064, M-079, M-080, M-084\n**Produces:** `src/bin/moria-qualify/evidence/contamination.rs`\n\n## Description\n\nBuild the complete transitive inventory of atomics, workgroup storage, slot assignment, compaction/sort, padding, allocator inputs, hash inputs, and callback dataflow for every canonical entry point. This issue implements TECH-035, TECH-061 under REQ-007, REQ-021, REQ-023, REQ-026, REQ-028, REQ-033, REQ-036.\n\n## Inputs\n\n- TECH-035 (docs/tdd/gpu-runtime.md); TECH-061 (docs/tdd/validation.md).\n- Authorized design requirements REQ-007, REQ-021, REQ-023, REQ-026, REQ-028, REQ-033, REQ-036 and authority chain C-015, D-003, D-004, C-003, D-002, D-005, D-006, D-007, D-008, D-009, C-013.\n- Outputs of M-033, M-062, M-063, M-064, M-079, M-080, M-084.\n\n## Acceptance Criteria\n\n- [ ] The audit fails on missing entry points, unclassified atomics, race/physical/arrival identities, uninitialized bytes, order-dependent compaction, forbidden floats/transcendentals, or canonical helpers outside `moria-fixed-v1`.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-033, M-062, M-063, M-064, M-079, M-080, M-084\n**Produces:** `src/bin/moria-qualify/evidence/contamination.rs`\n\n## Description\n\nBuild the complete transitive inventory of atomics, workgroup storage, slot assignment, compaction/sort, padding, allocator inputs, hash inputs, and callback dataflow for every canonical entry point by consuming the matching Naga parsed and validated module graph or IR produced by M-084. Custom analysis is limited to TECH-035/TECH-061 contamination rules; it does not parse or generally validate WGSL. This issue implements TECH-035, TECH-061 under REQ-007, REQ-021, REQ-023, REQ-026, REQ-028, REQ-033, REQ-036.\n\n## Inputs\n\n- TECH-035 (docs/tdd/gpu-runtime.md); TECH-061 (docs/tdd/validation.md).\n- Authorized design requirements REQ-007, REQ-021, REQ-023, REQ-026, REQ-028, REQ-033, REQ-036 and authority chain C-015, D-003, D-004, C-003, D-002, D-005, D-006, D-007, D-008, D-009, C-013.\n- Outputs of M-033, M-062, M-063, M-064, M-079, M-080, M-084.\n- Use matching `naga = 29.x` parsed/validated module graphs or IR for discovery and analysis; do not implement a WGSL parser or general validator.\n\n## Acceptance Criteria\n\n- [ ] The audit consumes matching `naga = 29.x` parsed and validated module graphs or IR and fails on missing entry points, unclassified atomics, race/physical/arrival identities, uninitialized bytes, order-dependent compaction, forbidden floats/transcendentals, or canonical helpers outside `moria-fixed-v1`.\n- [ ] Custom code implements only the approved contamination inventory and dataflow rules and contains no home-grown WGSL parser or general validator.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   },
   {
     "id": "M-086",
@@ -5466,6 +5468,646 @@
   },
   {
     "id": "M-113",
+    "title": "[system] Fuzz bounded canonical and persistence decoders",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-017",
+      "M-041",
+      "M-042",
+      "M-045",
+      "M-046",
+      "M-048",
+      "M-050",
+      "M-078",
+      "M-081",
+      "M-082"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-059"
+      ],
+      "design_requirements": [
+        "REQ-007",
+        "REQ-021",
+        "REQ-023",
+        "REQ-036",
+        "REQ-038"
+      ],
+      "authority": [
+        "C-015",
+        "D-003",
+        "D-004",
+        "C-003",
+        "D-002",
+        "D-005",
+        "D-006",
+        "D-007",
+        "D-008",
+        "D-009",
+        "C-013"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-017, M-041, M-042, M-045, M-046, M-048, M-050, M-078, M-081, M-082\n**Produces:** `src/bin/moria-qualify/oracle/decoder_fuzz.rs`, `tests/fixtures/decoder/README.md`\n\n## Description\n\nImplement the independent TECH-059 fuzz proof for the public canonical, checkpoint-manifest, checkpoint-replay, replay-record, and active-history decoders. Exercise only the existing versioned formats and public loaders; this artifact repair must not create shared parsing or validation infrastructure. This issue implements TECH-059 under REQ-007, REQ-021, REQ-023, REQ-036, REQ-038.\n\n## Inputs\n\n- TECH-059 (docs/tdd/validation.md).\n- Authorized design requirements REQ-007, REQ-021, REQ-023, REQ-036, REQ-038 and authority chain C-015, D-003, D-004, C-003, D-002, D-005, D-006, D-007, D-008, D-009, C-013.\n- Outputs of M-017, M-041, M-042, M-045, M-046, M-048, M-050, M-078, M-081, M-082.\n- Use the selected maintained property tool `proptest = \"=1.7.0\"` against the project public decoders and loaders.\n\n## Acceptance Criteria\n\n- [ ] `proptest = \"=1.7.0\"` generated and retained regression cases cover truncation at every boundary, trailing bytes, invalid tags and counts, compressed zip-bomb declarations, corrupt hashes, and checked allocation overflow for every named decoder family.\n- [ ] Every malformed input terminates with its specified bounded public error without panic, timeout, silent acceptance, partial publication, or allocation beyond the declared limit.\n- [ ] The fixture invokes existing public decoders/loaders and adds no shared parser or general format-validation infrastructure.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-114",
+    "title": "[system] Perturb schedules and configuration fingerprints",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-013",
+      "M-020",
+      "M-030",
+      "M-044",
+      "M-048",
+      "M-060",
+      "M-064",
+      "M-069",
+      "M-077",
+      "M-078",
+      "M-081",
+      "M-082"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-059"
+      ],
+      "design_requirements": [
+        "REQ-007",
+        "REQ-021",
+        "REQ-023",
+        "REQ-036",
+        "REQ-038"
+      ],
+      "authority": [
+        "C-015",
+        "D-003",
+        "D-004",
+        "C-003",
+        "D-002",
+        "D-005",
+        "D-006",
+        "D-007",
+        "D-008",
+        "D-009",
+        "C-013"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-013, M-020, M-030, M-044, M-048, M-060, M-064, M-069, M-077, M-078, M-081, M-082\n**Produces:** `src/bin/moria-qualify/oracle/schedule_perturbation.rs`\n\n## Description\n\nImplement the independent TECH-059 schedule-perturbation and configuration-fingerprint proof. Re-submit identical sealed bytes while varying producer threads, insertion order, worker count, completion notification order, cache layout, and physical-slot history, then exercise placement-split, simulation-unit, and cell-extent identity changes at replay and restore boundaries. This issue implements TECH-059 under REQ-007, REQ-021, REQ-023, REQ-036, REQ-038.\n\n## Inputs\n\n- TECH-059 (docs/tdd/validation.md).\n- Authorized design requirements REQ-007, REQ-021, REQ-023, REQ-036, REQ-038 and authority chain C-015, D-003, D-004, C-003, D-002, D-005, D-006, D-007, D-008, D-009, C-013.\n- Outputs of M-013, M-020, M-030, M-044, M-048, M-060, M-064, M-069, M-077, M-078, M-081, M-082.\n- Use the selected maintained property tool `proptest = \"=1.7.0\"` to generate schedule and configuration cases.\n\n## Acceptance Criteria\n\n- [ ] `proptest = \"=1.7.0\"` drives repeated same-machine runs whose canonical outcomes, bytes, and hashes remain identical across every approved scheduling and physical-history perturbation.\n- [ ] Minimum, midpoint, and maximum placement splits use distinct simulation-unit IDs and cell extents; each changed field changes the configuration fingerprint, and mismatched replay and restore fail before canonical transition.\n- [ ] Evidence is explicitly same-machine only and makes no cross-machine, vendor, or driver qualification claim.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-115",
+    "title": "[system] Verify the participant RNG reference contract",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-012",
+      "M-016",
+      "M-035",
+      "M-036",
+      "M-043",
+      "M-044",
+      "M-045",
+      "M-048",
+      "M-077",
+      "M-078",
+      "M-082"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-059"
+      ],
+      "design_requirements": [
+        "REQ-007",
+        "REQ-021",
+        "REQ-023",
+        "REQ-036",
+        "REQ-038"
+      ],
+      "authority": [
+        "C-015",
+        "D-003",
+        "D-004",
+        "C-003",
+        "D-002",
+        "D-005",
+        "D-006",
+        "D-007",
+        "D-008",
+        "D-009",
+        "C-013"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-012, M-016, M-035, M-036, M-043, M-044, M-045, M-048, M-077, M-078, M-082\n**Produces:** `src/bin/moria-qualify/oracle/participant_rng.rs`, `fixtures/replay/participant-rng-v1.bin`\n\n## Description\n\nImplement the independent TECH-059 participant RNG oracle and retained golden artifact for one published toy algorithm contract. The oracle owns its reference transition and byte encoding and does not reuse participant production state evolution. This issue implements TECH-059 under REQ-007, REQ-021, REQ-023, REQ-036, REQ-038.\n\n## Inputs\n\n- TECH-059 (docs/tdd/validation.md).\n- Authorized design requirements REQ-007, REQ-021, REQ-023, REQ-036, REQ-038 and authority chain C-015, D-003, D-004, C-003, D-002, D-005, D-006, D-007, D-008, D-009, C-013.\n- Outputs of M-012, M-016, M-035, M-036, M-043, M-044, M-045, M-048, M-077, M-078, M-082.\n- Use the selected maintained property tool `proptest = \"=1.7.0\"` for generated state-machine sequences.\n\n## Acceptance Criteria\n\n- [ ] `proptest = \"=1.7.0\"` and retained goldens verify seed decoding, every reference state/output step, snapshot bytes, reconstruction bytes, and state-digest changes without importing production RNG evolution.\n- [ ] Rollback, checkpoint, public replay, and reconstruction reproduce the exact stream state; exhaustion and undeclared streams fail at their specified boundary.\n- [ ] Instrumented fixtures prove Moria requests no OS, wall-clock, thread, or other owned entropy.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-116",
+    "title": "[system] Exercise headless admission and lifecycle state machines",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-005",
+      "M-013",
+      "M-022",
+      "M-023",
+      "M-029",
+      "M-059",
+      "M-060",
+      "M-067",
+      "M-077"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-005, M-013, M-022, M-023, M-029, M-059, M-060, M-067, M-077\n**Produces:** `tests/headless/admission_lifecycle.rs`\n\n## Description\n\nImplement the TECH-060 headless Bevy proof for facade admission, permit and receipt transitions, cancellation lifetime, world failure, device-generation handling, and shutdown. Use `MinimalPlugins`, deliberately selected Moria plugins, explicit `App::update()`, and controlled completion sinks. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-005, M-013, M-022, M-023, M-029, M-059, M-060, M-067, M-077.\n\n## Acceptance Criteria\n\n- [ ] Headless tests cover every legal transition and invalid-transition rejection for permit drop/queue close, receipt drop before and after submission, cancellation, terminal retention, retry, device loss, and shutdown, including ownership return on every admission rejection.\n- [ ] Every TECH-021 operation-family row, including public replay, asserts its exact phase, cancellation point, terminal state, retry policy, committed effect, generation behavior, and shutdown disposition.\n- [ ] Tick-global arithmetic, budget, participant, provider, device-loss, shutdown, and validation failures surface exact `FailedNoAdvance` attempted-tick and source-frontier data; dirty-truth shutdown remains explicit.\n- [ ] A missing `RenderApp` returns `BackendUnavailable` without installing a no-op backend or opening a window.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-117",
+    "title": "[system] Prove genesis and query readiness boundaries headlessly",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-013",
+      "M-023",
+      "M-024",
+      "M-025",
+      "M-026",
+      "M-057",
+      "M-058",
+      "M-077",
+      "M-116"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-013, M-023, M-024, M-025, M-026, M-057, M-058, M-077, M-116\n**Produces:** `tests/headless/genesis_query.rs`\n\n## Description\n\nImplement the TECH-060 headless Bevy proof for genesis numbering, canonical frontier identity, query readiness and unavailability, collision truth at genesis and tick zero, and interest withdrawal while pins remain. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-013, M-023, M-024, M-025, M-026, M-057, M-058, M-077, M-116.\n\n## Acceptance Criteria\n\n- [ ] The genesis fixture proves `FrontierPosition::Genesis`, next tick zero, no confirmed-zero rollback/outcome, the exact sequence-zero replay header, confirmation of tick zero, and next tick one; wrong before/after-next-tick classifications fail on both sides.\n- [ ] Canonical encodings, query results, collision facts, participant metadata, and TECH-053 artifact headers distinguish Genesis from Confirmed(0) byte-for-byte.\n- [ ] Query polling covers cold, materializing, minimum-revision, and pressure blockers; failed truth, retained-frontier age, and post-admission result-capacity failure terminate through their exact public variants.\n- [ ] Withdrawing interest while query, collision, or artifact pins remain preserves required truth until those pins drain.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-118",
+    "title": "[system] Prove historical observation and gap recovery headlessly",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-023",
+      "M-024",
+      "M-027",
+      "M-029",
+      "M-030",
+      "M-077",
+      "M-116"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-023, M-024, M-027, M-029, M-030, M-077, M-116\n**Produces:** `tests/headless/observation_history.rs`\n\n## Description\n\nImplement the TECH-060 headless state-machine proof for finite observation subscription admission, append-time historical filtering, cursor semantics, close/drop, count and byte gaps, bounded frontier resnapshot, and resume. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-023, M-024, M-027, M-029, M-030, M-077, M-116.\n\n## Acceptance Criteria\n\n- [ ] Subscription creation tests cover accepted finite membership, cursor start, kind/spatial filtering, invalid requests, close, explicit drop, and world shutdown.\n- [ ] After movement, retirement, and old directory-version reclamation, older retained records still match only their immutable append-time bounds and membership facts.\n- [ ] Count- and byte-triggered gaps each pin a bounded resnapshot, admit new events during resnapshot, resume at the captured cursor, and return the exact suffix or another honest gap without loss or duplication.\n- [ ] Correlation propagation and expiry are asserted at ordinary delivery, gap, resnapshot, and resume boundaries.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-119",
+    "title": "[system] Exercise base-content and provider registration headlessly",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-010",
+      "M-013",
+      "M-023",
+      "M-037",
+      "M-038",
+      "M-077",
+      "M-116"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-010, M-013, M-023, M-037, M-038, M-077, M-116\n**Produces:** `tests/headless/base_provider.rs`\n\n## Description\n\nImplement the TECH-060 headless callback-boundary proof for base-content completion cells and provider-registry freeze. Verify pre-reservation, exact bounded writes, cardinality, cancellation, generation, panic containment, resource release, and typed provider reference resolution. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-010, M-013, M-023, M-037, M-038, M-077, M-116.\n\n## Acceptance Criteria\n\n- [ ] Before source invocation the fixture observes reservation of all 2,048 payload bytes and callback permits, then covers exact, short, long, invalid-cell/digest, bounded-diagnostic, dropped, cancelled-during-write, duplicate, late, old-generation, and panic outcomes.\n- [ ] Every terminal path releases its fixed resources and no source-owned `Vec`, writer, error chain, diagnostic allocation, or other unbounded owner enters a Moria queue.\n- [ ] Every public builder registration method is exercised; duplicate IDs do not replace prior entries, and freeze rejects each missing or wrong-kind base-authority/source/content-store/input-source/checkpoint-store/replay-sink reference.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-120",
+    "title": "[system] Exercise store and replay completion boundaries headlessly",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-011",
+      "M-023",
+      "M-039",
+      "M-040",
+      "M-041",
+      "M-042",
+      "M-043",
+      "M-044",
+      "M-045",
+      "M-047",
+      "M-048",
+      "M-077",
+      "M-116"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-011, M-023, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-047, M-048, M-077, M-116\n**Produces:** `tests/headless/store_replay.rs`\n\n## Description\n\nImplement the TECH-060 external-style headless proof for content, checkpoint, and replay sink completion protocols; manifest framing and atomic visibility; replay stream identity, retirement, failure, and restore continuation. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-011, M-023, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-047, M-048, M-077, M-116.\n\n## Acceptance Criteria\n\n- [ ] External implementations of `ContentBlobStore`, `CheckpointStore`, and `ReplaySink` cover exact, short, long, dropped, duplicate, cancelled, late-generation, and wrong-request-store completion outcomes with exact permit release.\n- [ ] Manifest tests accept sink-layer lengths only within bounds, reject empty/truncated/checksum/declared-length/trailing-byte failures, require exact blob cursors, and observe only complete atomic manifests or `NotFound`.\n- [ ] Genesis failure, post-genesis append failure, retired-stream capacity, duplicate stream pairs, checkpoint/shutdown/recovery store routing, cancellation, and restore continuation assert exact public receipt, lifecycle, telemetry, and shutdown metadata without fallback to another provider.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-121",
+    "title": "[system] Exercise configuration boundaries headlessly",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-006",
+      "M-007",
+      "M-008",
+      "M-009",
+      "M-010",
+      "M-011",
+      "M-012",
+      "M-013",
+      "M-077",
+      "M-116"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-006, M-007, M-008, M-009, M-010, M-011, M-012, M-013, M-077, M-116\n**Produces:** `tests/headless/configuration_boundaries.rs`\n\n## Description\n\nImplement the generated TECH-060 headless configuration suite for every `ResourceBudgets` field, every TECH-036 cross-limit equation, participant representation descriptors, and the normative default-budget smoke and rejection cases. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-006, M-007, M-008, M-009, M-010, M-011, M-012, M-013, M-077, M-116.\n\n## Acceptance Criteria\n\n- [ ] Generated cases vary every budget field at zero, minimum, default, maximum, and maximum-plus-one and exercise every TECH-036 inequality and checked-arithmetic overflow; failure invokes no callback and allocates no device page.\n- [ ] Accepted genesis reports exactly the configured queue, pool, output, and retention capacities in telemetry.\n- [ ] The default-budget fixture proves the exact 1,988,100,096-byte 20-frontier calculation with both 4,096 direct inputs and 4,096 participant effects per tick; changing only `changed_bricks_per_tick` to 16,384 under the same 2 GiB defaults rejects before callback or device allocation.\n- [ ] Representation descriptors accept and reject every approved split, extent, ordering, uniqueness, size, and digest boundary before genesis.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-122",
+    "title": "[system] Exercise participant ownership and failure policies headlessly",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-012",
+      "M-023",
+      "M-035",
+      "M-036",
+      "M-043",
+      "M-044",
+      "M-049",
+      "M-070",
+      "M-071",
+      "M-077",
+      "M-116"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-012, M-023, M-035, M-036, M-043, M-044, M-049, M-070, M-071, M-077, M-116\n**Produces:** `tests/headless/participant_policy.rs`\n\n## Description\n\nImplement the TECH-060 headless proof for CPU/GPU participant source-token immutability, bounded output ownership, completion cardinality, and every `ParticipantFailurePolicy` row across genesis, tick preparation, correction, restore, recovery, checkpoint, and shutdown. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-012, M-023, M-035, M-036, M-043, M-044, M-049, M-070, M-071, M-077, M-116.\n\n## Acceptance Criteria\n\n- [ ] CPU and GPU fixtures cover wrong-type/capacity/range/schema, missing status, incompatible pipeline, overflow, cancellation, dropped lease, duplicate, late, stale-generation, snapshot-export, reconstruct, and recovery outcomes without mutating a source token or publishing partial state.\n- [ ] Every row of both failure-policy variants at every approved lifecycle site asserts retryable versus terminal behavior and proves no row publishes while omitting the participant.\n- [ ] Two participants read only `SourceState(n)`; same-tick dependencies are rejected, effects order solely by `(ParticipantId, local_sequence)`, and confirmed opaque events reach receipts/replay but never Moria observations or another participant in the same tick.\n- [ ] All output/state/effect/event/snapshot capacities are reserved in Moria-owned bounded sinks before invocation and released only after declared last use.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-123",
+    "title": "[system] Compile the complete external facade contract",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-004",
+      "M-005",
+      "M-021",
+      "M-023",
+      "M-025",
+      "M-026",
+      "M-027",
+      "M-028",
+      "M-077",
+      "M-116"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-004, M-005, M-021, M-023, M-025, M-026, M-027, M-028, M-077, M-116\n**Produces:** `tests/headless/external_facade.rs`\n\n## Description\n\nImplement the TECH-060 external-crate compile/use and headless pattern-match proof for every TECH-070 callable, bounded owner, private-field identity, admission context, readiness reason, telemetry error, failure payload, and public closure boundary. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-004, M-005, M-021, M-023, M-025, M-026, M-027, M-028, M-077, M-116.\n\n## Acceptance Criteria\n\n- [ ] A separate external-style crate imports only public `moria`, compiles and calls every TECH-070 facade method, and fills, reads, iterates, consumes, rejects, and receives every bounded owner without private imports or test-only facade features.\n- [ ] Failed construction or push preserves original values and bytes; public IDs, digests, keys, lineage, placement values, and formats round-trip only through approved checked constructors, including every nonzero/high-bit/RNG exception and compile-fail float or cross-domain conversion.\n- [ ] Tests pattern-match every `AdmissionCode` with its exact legal context and fields, every query blocker/unavailability route, all three `TelemetryError` variants, and every structured `FailedNoAdvance` identity and retry policy; fieldless or prose-surrogate outcomes do not compile.\n- [ ] No hidden storage handle, unbounded owner, or private module becomes reachable from the external facade.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-124",
+    "title": "[system] Check normative Rust public closure mechanically",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-006",
+      "M-017",
+      "M-077",
+      "M-078",
+      "M-123"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-006, M-017, M-077, M-078, M-123\n**Produces:** `src/bin/moria-qualify/evidence/public_closure.rs`, `tests/fixtures/public_closure.rs`\n\n## Description\n\nImplement the TECH-060 mechanical public-closure check over approved normative Rust snippets and the compiled public facade. Detect unowned capitalized names, duplicate fields, stale aliases, missing facade connections, invalid budget references, and unchecked public constructors without creating a home-grown Rust parser. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-006, M-017, M-077, M-078, M-123 and the approved normative Rust snippets.\n- Use the selected maintained Rust parser `syn = \"=2.0.106\"`; custom code may implement only Moria-specific ownership and closure rules.\n\n## Acceptance Criteria\n\n- [ ] The check parses every normative Rust snippet with `syn = \"=2.0.106\"` and fails on parse errors, duplicate fields, unresolved capitalized names, missing owner rows, stale aliases, absent facade connections, or references outside the exact TECH-017 budget schema.\n- [ ] Retained negatives include `max_log_ticks`, `max_log_bytes`, `recovery_replay_cap`, and `PresentationState::Failed`; only the exact approved replacements pass.\n- [ ] Compile-fail checks reject public tuple constructors, unchecked conversions, private imports, and test-only facade access.\n- [ ] No regex or custom tokenizer acts as a Rust parser, and no shared general-purpose Rust validator is introduced.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-125",
+    "title": "[system] Lint canonical Rust source boundaries",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-014",
+      "M-015",
+      "M-016",
+      "M-077",
+      "M-124"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-014, M-015, M-016, M-077, M-124\n**Produces:** `src/bin/moria-qualify/evidence/canonical_rust_lint.rs`, `tests/fixtures/canonical_rust_lint.rs`\n\n## Description\n\nImplement the TECH-060 Rust AST lint that rejects canonical Rust float contamination, transcendental use, and bypasses of `moria-fixed-v1`, while permitting only the approved one-way presentation conversion. Reuse a maintained Rust parser and limit custom code to the TDD-specific boundary rules. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-014, M-015, M-016, M-077, M-124.\n- Parse Rust with the selected maintained parser `syn = \"=2.0.106\"`; do not implement a Rust parser or general validator.\n\n## Acceptance Criteria\n\n- [ ] Rust inspection parses every in-scope canonical module with `syn = \"=2.0.106\"` and fails closed on parse or module-discovery errors.\n- [ ] Retained positive and negative fixtures prove canonical float types/literals, transcendental calls, and fixed-math bypasses fail in Rust, while the single approved one-way presentation conversion remains isolated and accepted.\n- [ ] Custom code implements only the approved canonical Rust boundary rules; no regex, tokenizer, home-grown parser, or general language validator is introduced.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-126",
+    "title": "[system] Lint canonical WGSL source boundaries",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-014",
+      "M-015",
+      "M-016",
+      "M-062",
+      "M-077",
+      "M-084"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-014, M-015, M-016, M-062, M-077, M-084\n**Produces:** `src/bin/moria-qualify/evidence/canonical_wgsl_lint.rs`, `tests/fixtures/canonical_wgsl_lint.rs`\n\n## Description\n\nImplement the TECH-060 WGSL module-graph lint that rejects canonical shader float contamination, transcendental builtins, and bypasses of `moria-fixed-v1`. Consume the approved Naga parse/validation path and limit custom code to the TDD-specific boundary rules. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-014, M-015, M-016, M-062, M-077, M-084.\n- Parse and validate WGSL with matching `naga = 29.x` and consume its module graph or IR; do not implement a WGSL parser or general validator.\n\n## Acceptance Criteria\n\n- [ ] WGSL inspection consumes matching `naga = 29.x` parsed and validated module graphs or IR and fails closed on parse, validation, reflection, or module-discovery errors.\n- [ ] Retained positive and negative fixtures prove canonical float types/literals, transcendental builtins, and fixed-math bypasses fail in WGSL.\n- [ ] Custom code implements only the approved canonical WGSL boundary rules; no regex, tokenizer, home-grown parser, or general language validator is introduced.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-127",
     "title": "[system] Enforce separate coverage and implementation-completeness gates",
     "labels": [
       "system",
@@ -5524,7 +6166,21 @@
       "M-109",
       "M-110",
       "M-111",
-      "M-112"
+      "M-112",
+      "M-113",
+      "M-114",
+      "M-115",
+      "M-116",
+      "M-117",
+      "M-118",
+      "M-119",
+      "M-120",
+      "M-121",
+      "M-122",
+      "M-123",
+      "M-124",
+      "M-125",
+      "M-126"
     ],
     "provenance": {
       "technical_contracts": [
@@ -5568,6 +6224,6 @@
         "D-001"
       ]
     },
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-007, M-013, M-024, M-025, M-026, M-027, M-029, M-035, M-036, M-037, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-046, M-047, M-048, M-049, M-070, M-071, M-077, M-084, M-085, M-086, M-087, M-088, M-089, M-090, M-091, M-092, M-093, M-094, M-095, M-096, M-097, M-098, M-099, M-100, M-101, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111, M-112\n**Produces:** `src/bin/moria-qualify/evidence/gate.rs`\n\n## Description\n\nImplement the fail-closed completion evaluator that separately reports approved GDD coverage and implementation completeness across public closure, local commands, CPU/headless/scenario tests, shader layers, real GPU replay, contamination/math, device loss, visuals, and benchmarks. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-007, M-013, M-024, M-025, M-026, M-027, M-029, M-035, M-036, M-037, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-046, M-047, M-048, M-049, M-070, M-071, M-077, M-084, M-085, M-086, M-087, M-088, M-089, M-090, M-091, M-092, M-093, M-094, M-095, M-096, M-097, M-098, M-099, M-100, M-101, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111, M-112.\n\n## Acceptance Criteria\n\n- [ ] Gate tests reject dirty or digest-mismatched worktrees, unexpected GPU errors, unavailable/divergent replay, incomplete audits, missing evidence rows, undefined callables/owners/bounds/lifecycles, and never infer one approval conclusion from the other.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-007, M-013, M-024, M-025, M-026, M-027, M-029, M-035, M-036, M-037, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-046, M-047, M-048, M-049, M-070, M-071, M-077, M-084, M-085, M-086, M-087, M-088, M-089, M-090, M-091, M-092, M-093, M-094, M-095, M-096, M-097, M-098, M-099, M-100, M-101, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111, M-112, M-113, M-114, M-115, M-116, M-117, M-118, M-119, M-120, M-121, M-122, M-123, M-124, M-125, M-126\n**Produces:** `src/bin/moria-qualify/evidence/gate.rs`\n\n## Description\n\nImplement the fail-closed completion evaluator that separately reports approved GDD coverage and implementation completeness across public closure, local commands, CPU/headless/scenario tests, shader layers, real GPU replay, contamination/math, device loss, visuals, and benchmarks. The evaluator consumes every independently produced TECH-059 and TECH-060 proof slice and treats absent, incomplete, or failing headless evidence as implementation incompleteness. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-007, M-013, M-024, M-025, M-026, M-027, M-029, M-035, M-036, M-037, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-046, M-047, M-048, M-049, M-070, M-071, M-077, M-084, M-085, M-086, M-087, M-088, M-089, M-090, M-091, M-092, M-093, M-094, M-095, M-096, M-097, M-098, M-099, M-100, M-101, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111, M-112, M-113, M-114, M-115, M-116, M-117, M-118, M-119, M-120, M-121, M-122, M-123, M-124, M-125, M-126.\n\n## Acceptance Criteria\n\n- [ ] Gate tests reject dirty or digest-mismatched worktrees, unexpected GPU errors, unavailable/divergent replay, incomplete audits, missing evidence rows, undefined callables/owners/bounds/lifecycles, and never infer one approval conclusion from the other.\n- [ ] Gate tests enumerate every required TECH-060 runtime, genesis/query, observation, provider, store/replay, configuration, participant, external-facade, public-closure, Rust source-lint, and WGSL source-lint slice and reject any absent, incomplete, skipped, or failing row.\n- [ ] Gate tests reject absent or incomplete TECH-059 decoder-fuzz, schedule/configuration-perturbation, or participant-RNG evidence.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   }
 ]

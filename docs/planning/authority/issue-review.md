@@ -141,3 +141,110 @@ All findings are correctable in `docs/issues.json`. No approved requirement,
 technical contract, authority ID, decision, source-manifest entry, or digest
 needs to change. This turn therefore requests manifest changes rather than
 failing for upstream human resolution.
+
+## Coder Response Turn — 2026-07-29T22:04:57Z
+
+**Answering:** `Issue Review Turn — 2026-07-29T21:55:19Z`
+
+**Verdict:** addressed
+
+### Responses to findings
+
+1. **Missing `TECH-060` decomposition — addressed.**
+
+   Added eleven dependency-ordered issues, each citing only `TECH-060` and the
+   exact required `REQ-002`, `REQ-005`, `REQ-012`, `REQ-015`, `REQ-016`,
+   `REQ-023` / `C-003`, `C-013`, `C-010`, `AD-003`, `D-002`, `D-007`,
+   `D-006`, `D-005`, `C-004`, `D-009`, `C-015` chain:
+
+   - `M-116` covers headless admission, receipt, cancellation, lifecycle,
+     generation, missing-renderer, and shutdown state machines.
+   - `M-117` covers genesis numbering, query readiness/unavailability,
+     collision/frontier identity, and interest-pin behavior.
+   - `M-118` covers historical observation filtering, gaps, bounded
+     resnapshot, resume, and correlation expiry.
+   - `M-119` covers base-content completion ownership and provider registry
+     freeze.
+   - `M-120` covers content/checkpoint/replay store completions, manifest
+     framing and visibility, replay stream failure, retirement, and restore
+     continuation.
+   - `M-121` covers generated resource/configuration cross-limit fixtures and
+     the exact default-budget smoke/rejection cases.
+   - `M-122` covers CPU/GPU participant ownership, completion, failure-policy,
+     event, and lifecycle rows.
+   - `M-123` covers external-crate callable use, bounded owners, checked
+     identities, admission/readiness/telemetry/failure pattern matching, and
+     facade non-escape.
+   - `M-124` covers normative Rust public closure with the selected pinned
+     `syn = "=2.0.106"` parser.
+   - `M-125` covers canonical Rust source boundaries with
+     `syn = "=2.0.106"`.
+   - `M-126` covers canonical WGSL source boundaries with matching
+     `naga = 29.x` parsed/validated IR.
+
+   The former completion gate `M-113` is now `M-127`. This is the only
+   existing ID changed: newly required proof issues must precede their gate,
+   and the manifest requires sequential IDs and dependencies only on earlier
+   IDs. `M-127` depends on every new `TECH-060` issue and explicitly rejects
+   absent, incomplete, skipped, or failing evidence for each named slice.
+
+2. **Incomplete `TECH-059` proof obligations — addressed.**
+
+   Added three separate issues, each with exactly the required `TECH-059`,
+   requirement, and authority provenance:
+
+   - `M-113` fuzzes bounded canonical, checkpoint, replay, and active-history
+     decoders for truncation, trailing bytes, invalid tags/counts, zip bombs,
+     corrupt hashes, and allocation overflow through public decoders/loaders.
+   - `M-114` proves schedule perturbation and placement-split,
+     simulation-unit, cell-extent, configuration-fingerprint, replay, and
+     restore mismatch behavior.
+   - `M-115` supplies the independent participant RNG reference and golden
+     suite across seed/state/output, snapshot/reconstruction, rollback,
+     checkpoint, replay, exhaustion, undeclared streams, and absence of
+     Moria-owned entropy.
+
+   All three name `proptest = "=1.7.0"` in Inputs and Acceptance Criteria.
+   `M-113` is explicitly an artifact-local public-loader fixture and does not
+   introduce shared parsing or validation infrastructure. `M-079` now selects
+   and pins `rug = "=1.27.0"` in both Inputs and Acceptance Criteria. `M-127`
+   depends on `M-113`–`M-115` and rejects absent or incomplete evidence for
+   each.
+
+3. **Incomplete `TECH-061` decomposition — addressed.**
+
+   `M-084` now depends on and names outputs from `M-079` and `M-080`; its
+   Description and Acceptance Criteria require regeneration and exact byte
+   comparison of TECH-071 CPU/WGSL fixed-math sources and the CORDIC table for
+   every supported fractional split. Matching `naga = 29.x` is named in its
+   Description, Inputs, and Acceptance Criteria.
+
+   `M-085` now requires inventory and contamination analysis to consume the
+   matching Naga parsed/validated module graph or IR, names
+   `naga = 29.x` in Inputs and Acceptance Criteria, and limits custom code to
+   the approved contamination/dataflow rules rather than WGSL parsing or
+   general validation. Both issues retain their prior technical-contract,
+   requirement, and authority provenance.
+
+### Exact `docs/issues.json` changes
+
+- Preserved `M-001` through `M-112`.
+- Added `M-113` through `M-126` as the fourteen independently reviewable
+  `TECH-059` and `TECH-060` proof issues described above.
+- Renumbered only the former final gate from `M-113` to `M-127`, added all
+  fourteen new dependencies to its structured and body dependency lists, and
+  added fail-closed acceptance criteria for complete `TECH-059`/`TECH-060`
+  evidence.
+- Replaced the optional arbitrary-precision wording in `M-079` with pinned
+  `rug = "=1.27.0"` Inputs and Acceptance Criteria.
+- Added `M-079` and `M-080` dependencies and fixed-math/CORDIC regeneration
+  obligations to `M-084`.
+- Added Naga-IR discovery/analysis and no-home-grown-parser boundaries to
+  `M-085`.
+
+### Authority-boundary disposition
+
+No finding requires a source, requirement, technical contract, claim,
+decision, TDD, authority ledger, source manifest, or digest change. All
+findings were satisfied solely in `docs/issues.json`; there is no unsatisfied
+finding or upstream-authority conflict requiring human resolution.
