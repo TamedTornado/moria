@@ -260,8 +260,11 @@ pub enum ParticipantRegistration {
 Builder calls only construct private configuration. `publish_genesis` freezes
 registries, checks all IDs/domains/limits/content proofs/participant strategies,
 verifies a current authority-backend qualification, materializes the configured
-genesis-resident set, calculates canonical genesis bytes and root, and then
-publishes tick zero. Any error leaves no usable world or partial registry.
+genesis-resident set, calculates canonical genesis bytes and root, durably
+exports the genesis replay header, and then publishes the explicit pre-tick
+`FrontierPosition::Genesis`. The resulting world is ready **for** tick zero;
+genesis does not confirm or consume a numbered tick. Any error leaves no usable
+world or partial registry.
 There is no default content, material, participant strategy, RNG seed,
 qualification, or empty-world substitution.
 
@@ -510,9 +513,22 @@ The facade's common ready/result records are:
 ```rust
 pub struct FrontierSummary {
     pub world: WorldId,
-    pub tick: Tick,
+    pub position: FrontierPosition,
     pub root_hash: CanonicalHash,
     pub status: AuthorityStatus,
+}
+
+pub enum FrontierPosition {
+    Genesis,
+    Confirmed(Tick),
+}
+
+impl FrontierPosition {
+    pub fn next_tick(self) -> Option<Tick>;
+}
+
+impl FrontierSummary {
+    pub fn next_tick(&self) -> Option<Tick>;
 }
 
 pub enum AuthorityStatus {
@@ -521,8 +537,8 @@ pub enum AuthorityStatus {
 }
 
 pub struct GenesisReady {
-    pub frontier: FrontierSummary, // tick zero
-    pub next_tick: Tick,           // exactly one
+    pub frontier: FrontierSummary, // position is exactly Genesis
+    pub next_tick: Tick,           // exactly Tick::from_raw(0)
     pub replay: ReplayStreamPosition,
 }
 
@@ -621,7 +637,7 @@ pub struct DirtyRootSummary {
 }
 
 pub struct ShutdownReport {
-    pub last_confirmed: FrontierSummary,
+    pub last_frontier: FrontierSummary,
     pub last_durable: Option<DurableFrontier>,
     pub abandoned_receipts: BoundedVec<ReceiptId>,
     pub dirty_roots: BoundedVec<DirtyRootSummary>,
@@ -673,6 +689,18 @@ pub struct TelemetrySnapshot {
 }
 ```
 
+`FrontierPosition` is canonically encoded with tag `0 = Genesis` and
+`1 = Confirmed` followed by the little-endian tick. No sentinel `Tick` value
+represents genesis. `FrontierSummary::next_tick()` is the checked rule
+`Genesis -> Some(Tick::from_raw(0))`,
+`Confirmed(t) -> t.get().checked_add(1).map(Tick::from_raw)`, and is the only
+eligibility calculation used by reservation, submission, restore, replay,
+correction, persistence, and observation code. A `TickConfirmed.frontier`
+always has `Confirmed(the submitted tick)`. A `GenesisReady.frontier` always
+has `Genesis`; it may be queried and hashed but is not a confirmed-tick
+rollback entry. `ShutdownReport.last_frontier` may therefore be `Genesis` when
+the world shuts down before confirming tick zero.
+
 `QualificationSummary` is the closed record in TECH-040; telemetry contains no
 string or dynamic extension map. `CollisionFact` is the closed canonical wire record in
 TECH-052. All vectors above reserve their request/configuration maximum before
@@ -690,11 +718,12 @@ without losing the operation. No facade method blocks on GPU, I/O,
 participant, or callback completion.
 
 `TelemetrySnapshot` is the only synchronous read above. It copies the latest
-already-collected bounded counters from the main world and returns
-`WorldUnknown`, `WorldClosed`, or `TelemetryBusy`; it never drives progress,
-maps a buffer, waits, or pins a root. Its encoded size is bounded by the
-identity and operation-record budgets. All other result-producing calls use
-the receipts below.
+already-collected bounded counters from the main world and returns the closed
+`TelemetryError::WorldUnknown`, `TelemetryError::WorldClosed`, or
+`TelemetryError::TelemetryBusy` variants from TECH-027; it never drives
+progress, maps a buffer, waits, or pins a root. Its encoded size is bounded by
+the identity and operation-record budgets. All other result-producing calls
+use the receipts below.
 
 The public newtypes and bounded owners used by normative signatures are
 closed, non-placeholder types: IDs, ticks, revisions, hashes, digests,
@@ -820,9 +849,9 @@ The mechanical public-type index is:
 | `BoundedVec<T>`, `BoundedBytes`, `BoundedBytes64`, `BoundedUtf8<N>`, `OwnedBytes`, `BoundedOwnerError`, `VecConstructionRejected<T>`, `BytesConstructionRejected`, `BoundedPushRejected<T>` | callable finite owners and lossless construction failures; TECH-070 and the accepting resource contract |
 | `ParticipantTokenMetadata`, `ParticipantReplayRecordView`, `ColliderArtifactView`, `SnapshotMetadata`, `PreparedParticipantState` | immutable bounded participant-owned state/replay/collider views and staged state record; TECH-016/029/053 |
 | `CanonicalContract`, `RollbackConfig`, `PersistenceConfig`, `PresentationConfig`, `QualificationPolicy`, `CandidateDiagnostics`, `TickReservation`, `InterestCapacity`, `QueryCapacity`, `MinimumRevisionGap`, `BlobLimits`, `RestoreLimits`, every `*Descriptor`, and every `*Limits` | closed configuration/request and required/supported capacity/freshness records; TECH-017/019/022/023/029/036/040/041/043/046/054 |
-| `CanonicalInput` and its variant payloads, `QueryKind`, `QueryScope`, `CollisionShapeQ`, `VolumeSelector`, `VolumeKind`, participant strategy/failure policy, and all lifecycle/poll/start/persistence policy enums | closed tagged enums in TECH-018/020/022/023/025/028/029/030/041/051 |
-| `QueryResult`, `Observation`, `ObservedVolumeSummary`, `ObservedRegionSummary`, `TelemetrySnapshot`, `FrontierSummary`, `ReplayStreamPosition`, `ReplayExportFailure`, and every receipt `Ready` payload | the concrete bounded records in TECH-020/022/025/026/038/045-048/070; their worst-case bytes are reserved before admission |
-| `OperationProgress`, `ProgressBlocker`, `QueryReadinessReason`, `NewtypeValueError`, `ConfigError`, `AdmissionError`, `AdmissionContext`, `ReserveError`, `PushError`, `BatchError`, `CanonicalFailure`, and every operation-specific `*Error`/`*Unavailable` | closed typed progress/errors under TECH-005/021/023/027; query progress and unavailability retain exact bounded blockers, and operation errors retain scope, retryability, and committed-effect fields |
+| `CanonicalInput` and its variant payloads, `QueryKind`, `QueryScope`, `CollisionShapeQ`, `VolumeSelector`, `VolumeKind`, `ReplayAppendRange`, participant strategy/failure policy, and all lifecycle/poll/start/persistence policy enums | closed tagged enums in TECH-018/020/022/023/025/028/029/030/041/047/051 |
+| `QueryResult`, `Observation`, `ObservedVolumeSummary`, `ObservedRegionSummary`, `TelemetrySnapshot`, `FrontierSummary`, `FrontierPosition`, `ReplayStreamPosition`, `ReplayExportFailure`, and every receipt `Ready` payload | the concrete bounded records in TECH-020/022/025/026/038/045-048/070; their worst-case bytes are reserved before admission |
+| `OperationProgress`, `ProgressBlocker`, `QueryReadinessReason`, `NewtypeValueError`, `ConfigError`, `AdmissionError`, `AdmissionContext`, `ReserveError`, `PushError`, `BatchError`, `CanonicalFailure`, `FailedNoAdvance`, `TickNoAdvanceCause`, `TelemetryError`, and every operation-specific `*Error`/`*Unavailable` | closed typed progress/errors under TECH-005/021/023/027; query progress and unavailability retain exact bounded blockers, tick-global failure retains attempted tick/source/cause, telemetry has exact synchronous variants, and ordinary operation errors retain scope, retryability, and committed-effect fields |
 | `BaseBrickCompletion`, participant completion/effect/event/state/snapshot sinks, checkpoint/content-store sinks, and `ReplayAppendSink` | non-clone Moria-owned bounded completion tokens; TECH-016/029/036/041/043/045/047/054 |
 | Bevy/wgpu names in `moria::bevy::gpu_participant` | deliberately coupled borrowed adapter types, generation-scoped and never general-facade or durable types; TECH-003/031/054 |
 
@@ -873,7 +902,9 @@ may correct or drop it. A sealed batch owns immutable canonical bytes, its BLAKE
 the unforgeable reservation token, and a separately bounded noncanonical
 correlation sidecar keyed by the resulting `CanonicalOrder`.
 
-Only the next tick is accepted; `Rejected.reason.code` classifications are
+Only `frontier.next_tick()` is accepted: a genesis frontier expects tick zero,
+and a confirmed tick `t` expects `t + 1`; `Rejected.reason.code`
+classifications are
 `WrongWorld`, `BeforeNextTick`, `AfterNextTick`, `AlreadyPending`,
 `WorldNotReady`, `DependencyNotReady`, `Full`, `Closed`, and `InvalidBatch`.
 `BeforeNextTick`/`AfterNextTick` carry the supplied and expected-next ticks in
@@ -1162,7 +1193,7 @@ impl GenesisReceipt {
     pub fn poll(&self) -> ReceiptState<GenesisReady, GenesisError>;
 }
 impl TickReceipt {
-    pub fn poll(&self) -> ReceiptState<TickConfirmed, TickOperationError>;
+    pub fn poll(&self) -> ReceiptState<TickConfirmed, FailedNoAdvance>;
     pub fn cancel(&self) -> CancelResult;
 }
 impl InterestReceipt {
@@ -1236,8 +1267,9 @@ observation plus telemetry reports the persistence failure.
 
 An admitted canonical tick cannot be consumer-cancelled. Before submission,
 shutdown may explicitly abandon the whole unconfirmed tick and complete it as
-`FailedNoAdvance(Shutdown)`; after GPU submission Moria drains lifetime
-tracking and then discards the candidate without publication. Queries,
+`FailedNoAdvance { cause: TickNoAdvanceCause::Shutdown, ... }`; after GPU
+submission Moria drains lifetime tracking and then discards the candidate
+without publication. Queries,
 interest materialization, presentation, and checkpoint reads may be cancelled
 before encoding. After submission, cancellation suppresses delivery but does
 not return resource permits until GPU/map completion. Correction, restore, and
@@ -1832,12 +1864,14 @@ pub enum ErrorCode {
     InvalidOrientation,
     InvalidCell,
     WrongWorld,
+    WorldUnknown,
     BeforeNextTick,
     AfterNextTick,
     AlreadyPending,
     WorldNotReady,
     WorldClosed,
     WorldFailed,
+    TelemetryBusy,
     AlreadyShuttingDown,
     DependencyNotReady,
     QueueFull,
@@ -1927,6 +1961,45 @@ pub struct OperationError {
     pub retryability: Retryability,
     pub committed: CommittedEffect,
     pub diagnostic: BoundedUtf8<160>,
+}
+
+pub enum TickNoAdvanceCause {
+    Canonical(CanonicalFailure),
+    Participant {
+        participant: ParticipantId,
+        code: ErrorCode,
+    },
+    Provider {
+        provider: ProviderId,
+        code: ErrorCode,
+    },
+    Device {
+        generation: DeviceGeneration,
+        code: ErrorCode,
+    },
+    Shutdown,
+    Internal(ErrorCode),
+}
+
+pub struct FailedNoAdvance {
+    pub world: WorldId,
+    pub attempted_tick: Tick,
+    pub source_frontier: FrontierSummary,
+    pub cause: TickNoAdvanceCause,
+    pub error: OperationError,
+}
+
+pub enum TelemetryError {
+    WorldUnknown {
+        world: WorldId,
+    },
+    WorldClosed {
+        world: WorldId,
+        last_frontier: Option<FrontierSummary>,
+    },
+    TelemetryBusy {
+        world: WorldId,
+    },
 }
 
 pub struct ConfigError {
@@ -2064,6 +2137,9 @@ pub enum MoriaError {
     Config(ConfigError),
     Admission(AdmissionError),
     Operation(OperationError),
+    Tick(FailedNoAdvance),
+    Query(QueryUnavailable),
+    Telemetry(TelemetryError),
 }
 
 pub enum QueryUnavailable {
@@ -2078,7 +2154,6 @@ pub enum QueryUnavailable {
 }
 
 pub type GenesisError = OperationError;
-pub type TickOperationError = OperationError;
 pub type InterestError = OperationError;
 pub type ObservationSnapshotError = OperationError;
 pub type CheckpointError = OperationError;
@@ -2087,16 +2162,18 @@ pub type RestoreError = OperationError;
 pub type ParticipantError = OperationError;
 pub type RecoveryError = OperationError;
 pub type ShutdownError = OperationError;
-pub type TelemetryError = OperationError;
 ```
 
 `ResourceBudgetField.field_code` is the stable closed ordinal of the named
 TECH-017 field within its `BudgetGroup`; decoding rejects any ordinal not
 present in that version. It does not accept a string extension. Operation
-aliases intentionally use one closed shape so every
-receipt exposes the same scope/retry/committed-effect contract while preserving
-the stable `ErrorCode`. `QueryUnavailable` is the deliberate exception because
-REQ-010/REQ-021 require exact unavailable ranges and supported result bounds:
+aliases intentionally use one closed shape so every applicable receipt exposes
+the same scope/retry/committed-effect contract while preserving the stable
+`ErrorCode`. `FailedNoAdvance`, `TelemetryError`, and `QueryUnavailable` are
+the deliberate specialized shapes because tick-global failure must retain the
+attempted tick and structured cause, synchronous telemetry has no operation
+receipt, and REQ-010/REQ-021 require exact unavailable ranges and supported
+result bounds:
 its `Availability.error` supplies the same scope/retry/committed fields, and
 its capacity variant is a terminal no-frontier-change outcome with
 `RetryNewRequest`. `AdmissionContext` must match its code: tick context is
@@ -2105,6 +2182,23 @@ mandatory only for `BeforeNextTick`/`AfterNextTick`, batch context only for
 codes, and `BudgetCapacity` is required for
 `RetiredReplayStreamCapacity`; every other code requires `None`. A mismatched
 code/context pair is an internal construction error and is never emitted.
+Every `FailedNoAdvance` has
+`source_frontier.next_tick() == Some(attempted_tick)`,
+`error.scope == FailureScope::Tick { world, tick: attempted_tick }`, and
+`error.committed == CommittedEffect::None`. Its cause retains a participant or
+provider ID whenever that actor failed; device loss retains the attempted
+generation. `cause` and `error.code` must describe the same stable class.
+`NoAdvanceExplicitRetry` uses `RetryNewRequest` or
+`RetryAfterDependency/Recovery` as applicable; a failure that transitions the
+world to `Failed` uses `Never`. No tick-global failure is represented only by
+a diagnostic string.
+
+`TelemetryError::WorldUnknown` and `WorldClosed` are nonretryable and have no
+committed effect; the latter optionally reports the last already-copied
+frontier. `TelemetryBusy` is retryable with a new synchronous call, reports no
+snapshot, and cannot drive progress. These variants allocate no diagnostic and
+are pattern-matchable independently of `OperationError`.
+
 Internal errors and uncaptured GPU validation errors
 never panic a consumer process; they fail the affected candidate/world and
 preserve the last trustworthy frontier. Decode, corruption, unsupported
@@ -2464,7 +2558,7 @@ decoding. Its exact behavior is:
 | Failure site | `NoAdvanceExplicitRetry` | `FailWorld` |
 | --- | --- | --- |
 | Genesis preparation | Fail construction; no genesis is published | Same |
-| Ordinary tick preparation/validation | Terminally fail that tick receipt as `NoAdvance(Participant(id, code))`; retain `State[t]` and `Ready`; only a new explicit submission may retry | Same `NoAdvance`, then enter `Failed` with `State[t]` as last trustworthy frontier |
+| Ordinary tick preparation/validation | Terminally fail that tick receipt as `FailedNoAdvance { cause: Participant { participant: id, code }, ... }`; retain the attempted tick's source frontier and `Ready`; only a new explicit submission may retry | Same `FailedNoAdvance`, then enter `Failed` with the source frontier as last trustworthy frontier |
 | Retained rollback/correction | Fail the correction, drain private tokens, retain the original live bundle and `Ready` | Same atomic abort, then enter `Failed` |
 | Durable restore/reconstruction | Fail construction; no restored bundle is published | Same |
 | Device generation loss | Fail the affected attempt and enter `RecoveringParticipant`; reject ticks until an explicit bounded recovery recreates an equal-commitment token from a retained snapshot or durable replay bytes | Enter `Failed` immediately; drain old-generation work without publication |
@@ -2482,7 +2576,8 @@ the policy still selects operation-scoped versus world-terminal handling but
 never permits publication.
 
 CPU participants receive immutable canonical phase-zero input bytes and a
-bounded collider artifact already keyed to `State[t]`; they do not receive
+bounded collider artifact already keyed to the attempted tick's
+`SourceState(n)`; they do not receive
 cell storage. `ParticipantCompletionSink` is one Moria-owned, pre-reserved
 completion containing a distinct state token, a fixed-capacity effect sink,
 and a fixed-capacity event sink. Participant effects are `Erase`, `Place`,
@@ -2520,7 +2615,7 @@ The v1 participant model is deliberately one-phase:
 
 - same-tick dependencies between participants are rejected at registration;
   descriptors have no dependency field, participant A cannot read participant
-  B's current attempt, and all participants read only `State[t]`, their own
+  B's current attempt, and all participants read only `SourceState(n)`, their own
   source token, phase-zero input, and source-bound artifacts;
 - bounded participant event output is supported only through the event sink
   above; there is no handoff buffer, prior-feedback ABI, or event-driven second
@@ -2563,6 +2658,6 @@ and emits each covered brick exactly once.
 Activation preflight requires all exact content and canonical collision inputs
 pinned before batch admission. A missing/mismatched dependency returns
 `DependencyNotReady` before admission; corruption detected after admission
-causes tick `NoAdvance`. Interest, camera, presentation, I/O completion, and
-cache eviction cannot add or remove a region. The normalized union, content
+causes tick `FailedNoAdvance`. Interest, camera, presentation, I/O completion,
+and cache eviction cannot add or remove a region. The normalized union, content
 commitments, and activity classes are hashed and retained in rollback.

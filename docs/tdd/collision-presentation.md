@@ -138,8 +138,8 @@ overflow, singular case not covered by the stated boundary reduction, or a
 world normal/contact outside its wire range is a typed collision arithmetic
 failure;
 ordinary queries become `Unavailable`, while a canonical participant tick is
-`NoAdvance`. CPU and WGSL must execute the same axis, candidate, and reduction
-order.
+`FailedNoAdvance`. CPU and WGSL must execute the same axis, candidate, and
+reduction order.
 
 ### TECH-052 — Sparse collision traversal and facts
 
@@ -188,8 +188,9 @@ world_contact_normal: WorldContactNormalQWire, source leaf hash
 
 `NoHit` is emitted only if every required brick was ready and inspected.
 Missing/cold/corrupt truth is `Pending` or `Unavailable`. Canonical participant
-collision is prepared against `State[t]`; absent or source-mismatched input
-causes tick `NoAdvance`, never collision-disabled success.
+collision for attempted tick `n` is prepared against `SourceState(n)`; absent
+or source-mismatched input
+causes tick `FailedNoAdvance`, never collision-disabled success.
 
 ### TECH-053 — Canonical collider artifact
 
@@ -470,7 +471,7 @@ turn these outputs into a participant DAG or prior-feedback ABI.
 
 Adapter pipeline/device creation failure, panic caught at the FFI/callback
 boundary where possible, validation error, output overflow, or old generation
-causes `NoAdvance`, after which the descriptor's TECH-029
+causes `FailedNoAdvance`, after which the descriptor's TECH-029
 `ParticipantFailurePolicy` selects retryable last-frontier or terminal-world
 handling. There is no automatic CPU implementation swap. Device resources
 reconstruct in `RenderStartup`; old-generation state tokens are terminal and
@@ -506,8 +507,9 @@ transform, not material cells. Neighbor edits dirty the changed brick and its
 26 halo neighbors so cuts and seams rebuild honestly.
 
 Mesh vertex/index order and float values are noncanonical. Buffers and output
-counts are bounded; overflow sets `PresentationState::Failed` for that chunk
-and leaves matter/collision intact. Raw cell display is a diagnostic option,
+counts are bounded; overflow emits `PresentationStatus::Failed` for that
+chunk through its `PresentationFact` and leaves matter/collision intact. Raw
+cell display is a diagnostic option,
 not the normal surface contract.
 
 ### TECH-056 — Presentation lifecycle and revision installation

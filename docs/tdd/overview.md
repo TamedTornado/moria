@@ -180,8 +180,10 @@ contract.
 
 1. A world has one live `CanonicalRoot`; only a confirmed tick or exact
    retained-frontier restore can replace it.
-2. A tick observes `State[t]`, one sealed `TickBatch[t]`, and participant
-   products bound to that state. Timing cannot add or remove input.
+2. Tick zero observes the explicit pre-tick genesis state; tick `n > 0`
+   observes confirmed `State[n - 1]`. Each uses one sealed `TickBatch[n]` and
+   participant products bound to that source state. Timing cannot add or
+   remove input.
 3. One matter command is wholly applied at one volume revision or has no
    committed effect.
 4. Unknown, cold, failed, or mismatched content is never encoded as empty.

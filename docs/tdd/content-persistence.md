@@ -454,8 +454,10 @@ pub struct CheckpointCommitted {
 }
 ```
 
-A checkpoint request names an exact confirmed `(tick, root_hash)` and a maximum
-readback/store budget and one exact frozen-registry `CheckpointStoreId`.
+A checkpoint request names an exact
+`FrontierPosition::Confirmed(tick)` and root hash, a maximum readback/store
+budget, and one exact frozen-registry `CheckpointStoreId`. A genesis-position
+checkpoint is rejected because no numbered tick is confirmed yet.
 Unknown stores reject admission and no fallback to the configured default or
 another registered store occurs. Admission pins that immutable root and participant
 frontier, reserves one queue/operation/receipt record and the declared staging
@@ -502,7 +504,7 @@ checkpoint admission if any record is absent or a participant's range exceeds
 its declared `max_replay_ticks`. Chunks contain at most 64 consecutive records
 and at most 8 MiB uncompressed; an oversized individual record is one
 single-record chunk only if it fits both the checkpoint request and
-`max_log_bytes`, otherwise admission fails. Chunk encoding retains the exact
+`rollback.log_bytes`, otherwise admission fails. Chunk encoding retains the exact
 length-prefixed tick-record bytes and adds only the
 `moria-checkpoint-replay-v1` version, first/last tick, record count, and
 checksum. It never reconstructs records from digests.
@@ -587,9 +589,10 @@ Restore is world construction, not a post-genesis mutation:
    participant/RNG-state commitments;
 7. recompute every root bottom-up and compare the saved world root;
 8. encode one `Checkpoint`-anchored `moria-replay-v1` header containing the
-   exact request store/key, verified manifest digest, restored frontier, and
-   next tick; append it as sequence zero to the builder's selected replay
-   stream and wait for matching durable completion; and
+   exact request store/key, verified manifest digest,
+   `FrontierPosition::Confirmed(saved_tick)`, and checked
+   `next_tick = saved_tick + 1`; append it as sequence zero to the builder's
+   selected replay stream and wait for matching durable completion; and
 9. publish the restored frontier and readiness context, then permit the next
    tick at replay sequence one.
 
@@ -618,6 +621,8 @@ Provider(ReplaySink(configured_id)), committed: None, ... }`, publishes no
 world, and never falls back to another sink. `RestoreReady.replay` is
 `durable_through_sequence == 0`, `next_sequence == 1`; therefore the first
 later confirmed tick can only append after the durable checkpoint anchor.
+`RestoreReady.frontier.position` is the saved `Confirmed(tick)`, and
+`RestoreReady.next_tick` is the same checked value encoded in that header.
 
 ## Replay and rollback
 
@@ -648,11 +653,21 @@ pub struct ReplaySinkDescriptor {
 pub struct ReplaySinkRequest {
     pub stream: ReplayStreamKey,
     pub sequence: u64,
-    pub first_tick: Tick,
-    pub last_tick: Tick,
-    pub record_count: u32,
+    pub range: ReplayAppendRange,
     pub bytes: u64,
     pub digest: BlobDigest,
+}
+
+pub enum ReplayAppendRange {
+    Header {
+        starting: FrontierPosition,
+        next_tick: Tick,
+    },
+    TickRecords {
+        first_tick: Tick,
+        last_tick: Tick,
+        record_count: u32,
+    },
 }
 
 pub struct ReplayExportFailure {
@@ -690,7 +705,6 @@ pub struct ReplayLimits {
 pub struct ReplayCompleted {
     pub frontier: FrontierSummary,
     pub ticks: BoundedVec<CorrectedTickOutput>,
-    pub sequence_digest: BlobDigest,
     pub replay: ReplayStreamPosition,
 }
 
@@ -736,6 +750,15 @@ pub struct ReplayFailure {
 }
 ```
 
+`ReplayAppendRange` has wire tag `0 = Header` and `1 = TickRecords`.
+`Header` is valid only at sequence zero, has implicit record count zero, and
+requires `next_tick` to equal the checked next-tick function of `starting`.
+`TickRecords` is valid only at sequence greater than zero; v1 requires
+`record_count == 1` and `first_tick == last_tick`. Unknown tags, a header at a
+later sequence, a tick record at sequence zero, an inconsistent next tick, or
+an inconsistent tick range fails the owning construction/append before sink
+success can publish anything.
+
 `ReplayStreamKey` is a consumer-selected fixed 32-byte key. Its only live
 source is the per-world value passed to `MoriaClient::begin_world` and frozen
 in that `WorldBuilder`; every header/tick request and completion uses that
@@ -749,7 +772,8 @@ closed anchor tag:
 ```text
 header {
   common: genesis identity/digest, contract digests, participant descriptors,
-          qualification identity, starting frontier, next tick
+          qualification identity,
+          starting frontier { world, position, root_hash }, next tick
   anchor:
     Genesis { canonical genesis bytes/digest }
     Checkpoint { checkpoint_store_id, checkpoint_key, manifest_digest,
@@ -764,24 +788,29 @@ tick record {
 
 Records are length-prefixed, checksummed, bounded, and committed only after the
 tick confirms. Presentation and timing are excluded. A `Genesis` anchor's
-starting frontier is tick zero. A `Checkpoint` anchor's starting frontier,
-store/key, and manifest digest are the exact values verified by TECH-046; a
-public replay of that stream must supply `ReplayLimits.anchor_restore:
-Some(...)`, resolve the named store in its frozen builder, and privately run
-the same bounded restore before applying the first tick record. Supplying
-`Some` for a genesis anchor or `None` for a checkpoint anchor is
-`InvalidRequest`.
+starting frontier is exactly `FrontierPosition::Genesis` and its `next_tick`
+is exactly zero. A `Checkpoint` anchor's starting frontier is
+`FrontierPosition::Confirmed(t)` and its `next_tick` is exactly checked
+`t + 1`; store/key and manifest digest are the exact values verified by
+TECH-046. No `Tick` sentinel encodes genesis. A public replay of a checkpoint
+stream must supply `ReplayLimits.anchor_restore: Some(...)`, resolve the named
+store in its frozen builder, and privately run the same bounded restore before
+applying the first tick record. Supplying `Some` for a genesis anchor or
+`None` for a checkpoint anchor is `InvalidRequest`.
 
-During private genesis, Moria first appends the header as sequence zero
-(`first_tick == last_tick == Tick::from_raw(0)`, `record_count == 0`) and
-publishes tick zero only after that completion is durable; failure fails
-`GenesisReceipt` and publishes no world. Durable restore performs the
-checkpoint-anchor sequence-zero operation specified by TECH-046. For every
-anchor, sequence zero has `first_tick == last_tick ==
-header.starting_frontier.tick` and `record_count == 0`; each tick record has
-`first_tick == last_tick == record.tick` and `record_count == 1`. Each later
-confirmed tick record is appended in sequence order through that registered
-sink. At most one append for a given world stream is invoked at once; the
+During private genesis, Moria first appends the header as sequence zero with
+`ReplayAppendRange::Header { starting: FrontierPosition::Genesis, next_tick:
+Tick::from_raw(0) }` and publishes the pre-tick genesis frontier only after
+that completion is durable;
+failure fails `GenesisReceipt` and publishes no world. Durable restore performs
+the checkpoint-anchor sequence-zero operation specified by TECH-046. Every
+sequence-zero request uses `ReplayAppendRange::Header`; it never fabricates a
+tick range or `record_count`. Each later tick record uses
+`ReplayAppendRange::TickRecords { first_tick: record.tick, last_tick:
+record.tick, record_count: 1 }`. Tick zero therefore appears first in this
+range only after its batch confirms. Each confirmed tick record is appended in
+sequence order through that registered sink. At most one append for a given
+world stream is invoked at once; the
 configured in-flight record/byte budgets cover all worlds and providers
 without weakening this per-stream order. Moria reserves the immutable
 record bytes, one callback cell, and one in-flight record/byte permit before
@@ -820,8 +849,9 @@ The failure transition appends exactly one `WorldLifecycleFact` whose
 lifecycle fact carries `None`. `ShutdownReport.replay_export_failure` repeats
 that same fixed metadata. Because one stream has at most one invoked append,
 both fields are `Option`, not a growable list. The record contains the exact
-sink, stream, sequence, tick range, record count, byte length, digest, and
-failure code from the original request; it does not copy the pinned replay
+sink, stream, sequence, append range (header position/next tick or confirmed
+tick range/count), byte length, digest, and failure code from the original
+request; it does not copy the pinned replay
 bytes. Its retained v1 allocation is at most 128 bytes and is reserved in the
 observation/terminal-receipt budgets before invoking the append. Shutdown
 constructs and retains the report metadata before releasing the raw replay
@@ -834,13 +864,17 @@ lifetime release and cannot return the world to `Ready`. Genesis, restore,
 and public-replay bootstrap failures retain the stronger construction rule:
 no world or ready construction receipt is published.
 
-`ReplayStreamPosition` is the public proof of append ordering.
+`ReplayStreamPosition` is the public proof of append ordering and is the only
+sequence-prefix digest exposed by `ReplayCompleted`.
 `durable_prefix_digest` is BLAKE3 over the ordered tuple stream
 `(sequence:u64 LE, record_digest:[u8;32])`, beginning at sequence zero;
 `next_sequence` is checked `durable_through_sequence + 1`. Genesis and restore
 return `{ durable_through_sequence: 0, next_sequence: 1 }`. Every subsequent
 append advances all three fields only after matching sink success; integer
 overflow fails the world before another invocation.
+`ReplayCompleted.frontier` is the last replayed
+`FrontierPosition::Confirmed(tick)`, or the header's unchanged starting
+position when the owned record sequence is empty.
 
 `ReplaySink` is deliberately write-only from Moria's perspective. The
 consumer retrieves its own stored bytes through its own storage API and passes
@@ -856,11 +890,13 @@ pair/tombstone under TECH-017, and returns `ReplayReceipt`. It also verifies
 that every source item fits the selected sink descriptor and aggregate
 bootstrap in-flight/byte limits. Rejection
 returns the unchanged builder and complete owned request in `ReplayRejected`.
-The header must describe the builder's world and frozen registries; records
-must be a contiguous sequence starting at
-`header.starting_frontier.tick + 1`, individually within the canonical tick
-limits, with the expected root/outcome/participant digests encoded in each
-record. Checked tick overflow rejects admission. A checkpoint anchor is first
+The header must describe the builder's world and frozen registries, and its
+`next_tick` must equal the checked next-tick function for its starting frontier
+position. Records must be a contiguous sequence starting at that exact
+`header.next_tick`: tick zero for a genesis anchor, or checked `t + 1` for a
+checkpoint anchored at confirmed tick `t`. Each record is individually within
+the canonical tick limits and carries the expected root/outcome/participant
+digests. Checked tick overflow rejects admission. A checkpoint anchor is first
 restored privately as described above; a genesis anchor constructs the
 declared genesis privately.
 
@@ -972,8 +1008,8 @@ terminal for that correction and never advances the world.
 Implements: REQ-015, REQ-018, REQ-021, REQ-029, REQ-032
 
 The in-memory confirmed log retains at least the rollback window and at most
-`max_log_ticks` (default 256), `max_log_bytes` (default 256 MiB), and the newest
-durable checkpoint suffix. The configured replay sink exports exact immutable
+`rollback.log_ticks` (default 256), `rollback.log_bytes` (default 256 MiB), and
+the newest durable checkpoint suffix. The configured replay sink exports exact immutable
 records under TECH-047. A record is releasable only after its exact sink append
 is durable; checkpoint coverage may release other recovery pins but never
 substitutes for the public replay export. At
@@ -991,7 +1027,7 @@ limits are honored. Counts/offsets use checked `u64`, while individual wire
 sequences remain `u32` bounded.
 
 The union of reconstructible participant ranges must also fit
-`max_log_ticks`, `max_log_bytes`, the checkpoint request's total byte budget,
+`rollback.log_ticks`, `rollback.log_bytes`, the checkpoint request's total byte budget,
 the 4 GiB manifest maximum, and the configured three-slot mapped/store
 in-flight byte limits.
 Replay-record and replay-chunk bytes count in checkpoint progress, completion,
@@ -1003,7 +1039,10 @@ by rollback, correction, another participant range, or an attached replay
 sink.
 
 Rollback capacity is tick- and byte-bounded. A tick whose worst-case COW state
-would exceed the canonical budget receives `NoAdvance(CanonicalBudget)`;
+would exceed the canonical budget receives
+`FailedNoAdvance { cause: TickNoAdvanceCause::Canonical(
+CanonicalFailure::LogicalCapacity), error.code:
+ErrorCode::CanonicalBudget, ... }`;
 runtime pressure does not evict the required 20 confirmed frontiers.
 Public replay request records, private roots/results, sink completion records,
 and divergence artifact bytes count against the dedicated TECH-017 rollback

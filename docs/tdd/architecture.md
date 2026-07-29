@@ -366,15 +366,21 @@ payload is byte-identical to verified base content.
 The world root includes sorted immutable registries, volume roots and
 placements, canonical simulation-domain union, `next_volume_serial`,
 participant commitments (including their ordered canonical RNG-state
-commitments), current tick, and contract identities. Runtime residency and
-readiness are a separate cache indexed by
+commitments), the canonical frontier position (`Genesis` or
+`Confirmed(Tick)`), and contract identities. `Genesis` is a real pre-tick
+position and is not encoded as tick zero. Runtime residency and readiness are
+a separate cache indexed by
 `(base digest, volume, brick)`.
 
 ### TECH-011 — Deterministic tick ordering and conflict rules
 
 Implements: REQ-011, REQ-017, REQ-027, REQ-031, REQ-033, REQ-036, REQ-043
 
-Only `current_tick + 1` is eligible. A sealed `TickBatch` contains bounded
+Tick eligibility is defined over the closed `FrontierPosition` in TECH-070:
+`Genesis` admits exactly `Tick::from_raw(0)`, and `Confirmed(t)` admits exactly
+`t.get().checked_add(1).map(Tick::from_raw)`. Overflow leaves no eligible next
+tick. Genesis publication
+therefore does not consume tick zero. A sealed `TickBatch` contains bounded
 inputs whose unique key is `(phase:u8, source_id:u32, source_sequence:u32)`.
 The fixed phase order is:
 
@@ -392,22 +398,25 @@ arrival never supplies it. Direct inputs use their registered high-bit-clear
 a bounded local sequence. Participant commitments are derived products, not
 batch inputs; they combine separately in `ParticipantId` order.
 
-Participant preparation reads `State[t]` plus its phase-zero input. It does not
-observe same-tick lifecycle, placement, or direct-matter effects; all such
-effects, including its own proposals, compose into `State[t + 1]`. This
-read-before-write rule is part of the transition version. It also cannot
+For attempted tick `n`, define `SourceState(n)` as the canonical genesis state
+when `n == 0`, otherwise confirmed `State[n - 1]`. Participant preparation
+reads `SourceState(n)` plus tick `n`'s phase-zero input. It does not observe
+same-tick lifecycle, placement, or direct-matter effects; all such effects,
+including its own proposals, compose into `State[n]`. This read-before-write
+rule is part of the transition version. It also cannot
 observe another participant's same-tick state, effects, or opaque events.
 Registration rejects a dependency declaration or adapter requiring a
 same-tick predecessor. V1 has no participant DAG, handoff pass, prior-feedback
 buffer, or conflict callback.
 
-All revision and source-hash preconditions are evaluated against `State[t]`.
+All revision and source-hash preconditions for tick `n` are evaluated against
+`SourceState(n)`.
 Eligible successful commands then compose in canonical order on a staged
 state; for overlapping writes the later canonical command sees the earlier
 staged cell. A failed command contributes a canonical outcome at its order
 position but no writes or revision advance. Tick-global inability to bind
-content, participants, arithmetic contract, or canonical resources yields
-`NoAdvance`; there is no partial tick publication.
+content, participants, arithmetic contract, or canonical resources yields the
+closed `FailedNoAdvance` receipt error; there is no partial tick publication.
 
 This is also the complete participant-effect conflict policy. Participant
 effects occupy phase 4 in `(ParticipantId, local_sequence)` order. Overlap is
@@ -445,7 +454,8 @@ Implements: REQ-001, REQ-005, REQ-011, REQ-033, REQ-035
 A tick attempt has these ordered phases:
 
 1. decode and structural validation on CPU before ownership transfers;
-2. pin `State[t]`, exact base chunks, participant resources, and pool permit;
+2. pin `SourceState(n)`, exact base chunks, participant resources, and pool
+   permit;
 3. run participant preparation against the pinned source commitment;
 4. stable-sort and validate direct and proposed effects;
 5. mark touched bricks and compute exact capacities with checked prefix scans;
@@ -463,7 +473,7 @@ A tick attempt has these ordered phases:
 Dependent GPU phases are ordered dispatches on one queue. No shader uses a
 cross-workgroup spin protocol. Before step 12, only private slots refer to the
 candidate root. Any failure, missing bridge reservation, or device-generation
-mismatch discards/retire-queues those slots and leaves `State[t]`, its
+mismatch discards/retire-queues those slots and leaves `SourceState(n)`, its
 revisions, participant state, snapshots, and hash live. Step 12 occurs in the
 exclusive main-world publication system specified by TECH-032. The root token
 names already completed device objects retained in the render world, so
@@ -487,6 +497,10 @@ tick-batch digest, outcome digest, participant commitments,
 opaque participant state tokens and snapshot metadata
 ```
 
+The separately retained genesis root has `FrontierPosition::Genesis`, is the
+source for tick zero and replay bootstrap, and does not count as one of the
+required 20 confirmed-tick frontiers. Every record in the rollback deque has
+`FrontierPosition::Confirmed(tick)` and the displayed `tick` is that value.
 The frontier is O(changed bricks × radix depth) additional logical state.
 Installing one is an O(number of registries + participants) root-handle swap;
 it does not enumerate material bricks. Active live, retained, replay, query,
@@ -623,8 +637,8 @@ qualification evidence; a 32-byte participant commitment alone is not treated
 as an RNG specification.
 
 Missing, oversized, wrong-source, duplicate, late-generation, or divergent
-products cause `NoAdvance` or rollback failure. Participant completion order
-is irrelevant: products occupy preassigned `ParticipantId` slots and are
+products cause `FailedNoAdvance` or rollback failure. Participant completion
+order is irrelevant: products occupy preassigned `ParticipantId` slots and are
 combined in ID order. Moria never interprets participant behavior or RNG
 meaning, but it validates every declared bound, identity, digest, and lifecycle
 transition. The descriptor's closed `ParticipantFailurePolicy` controls

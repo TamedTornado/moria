@@ -205,14 +205,14 @@ The fields bound these retained resources:
 | Group | What it bounds | Overload behavior |
 | --- | --- | --- |
 | `identity` | world/material/volume/participant/input/base-authority/content-store/checkpoint-store/replay-sink/RNG identities; the separate client-lifetime active/retired replay-stream reservation pool; live operation, terminal-receipt, root-pin, and artifact-lease records and retained result bytes | reject the registration/admission; an exhausted retired-stream pool returns `RetiredReplayStreamCapacity` before sequence-zero callback; held receipt/root/artifact leases apply backpressure rather than grow |
-| `canonical` | sole pending tick, input/correlation bytes, command target size, changed bricks, and all candidate scan/sort/output scratch | return owned batch before admission, command failure, or tick `NoAdvance(CanonicalBudget)` as appropriate |
+| `canonical` | sole pending tick, input/correlation bytes, command target size, changed bricks, and all candidate scan/sort/output scratch | return owned batch before admission, command failure, or `FailedNoAdvance { cause: Canonical(LogicalCapacity), error: OperationError { code: CanonicalBudget, ... }, ... }` as appropriate |
 | `content` | base request queue, invoked callback sinks and bytes, one materialization job, resident dense/uniform/radix/directory records, and authoritative GPU pages | delay/reject materialization or retire eligible cache; never evict a pin/scar/frontier |
 | `query` | queued/in-flight queries, inspected bricks, revision list, result records/bytes, staging slots, and aggregate readback bytes | reject and return request, wait only when request selected `Wait`, or finish capacity failure; never truncate `Complete` |
 | `observation` | shared ring records plus payload bytes, subscription records and finite volume lists, poll output, and resnapshot summaries/query payload | reject subscription/resnapshot or emit explicit ring gap |
 | `presentation` | dirty queue, resident chunks/bytes, in-flight jobs, vertex/index/output bytes, and dressing records | coalesce, retire, keep stale, reject, or fail the derived chunk |
 | `checkpoint` | queued/active checkpoints, map/store staging slots and bytes, blob size, manifest node/blob/count bytes, and total checkpoint output | reject/queue, cancel before submission, or fail without a manifest |
 | `rollback` | retained roots/bytes, explicit genesis/frontier metadata reserves, in-memory log, replay-sink in-flight records/bytes, public private-world replay and divergence artifacts, one correction, private replay ticks/bytes, and recovery replay depth | reject genesis, tick, replay, correction, or recovery; never evict a reachable or required-20 frontier |
-| `participant` | concurrent callback/GPU operations, input, fixed effect/event sinks, state/snapshot tokens, collider artifacts, and checkpoint snapshot bytes | reject descriptor/genesis or cause `NoAdvance`/operation failure; never resize a callback output |
+| `participant` | concurrent callback/GPU operations, input, fixed effect/event sinks, state/snapshot tokens, collider artifacts, and checkpoint snapshot bytes | reject descriptor/genesis or cause `FailedNoAdvance`/operation failure; never resize a callback output |
 | `runtime` | interest control records, all consumer callback completion cells/bytes, and render-to-main bridge cells | reject before callback/extraction or apply the owning operation's explicit backpressure |
 
 Before `VerifyingGenesis` can invoke consumer code, checked `u128` arithmetic
@@ -398,9 +398,13 @@ pub struct RecoveryRequest {
 On device loss Moria:
 
 1. closes admission and marks every candidate in the old generation
-   `FailedNoAdvance(DeviceLost)`;
-2. preserves the last confirmed root identity, tick log, checkpoint identity,
-   and participant commitments on the host, but makes GPU queries unavailable;
+   `FailedNoAdvance { attempted_tick, source_frontier,
+   cause: TickNoAdvanceCause::Device { generation, code:
+   ErrorCode::DeviceLost }, error: OperationError { committed: None, ... } }`;
+2. preserves the last trustworthy frontier identity (including
+   `FrontierPosition::Genesis` if tick zero has not confirmed), tick log,
+   checkpoint/genesis identity, and participant commitments on the host, but
+   makes GPU queries unavailable;
 3. applies every GPU participant's TECH-029 failure policy: any `FailWorld`
    participant makes the world `Failed`; otherwise the world enters
    `RecoveringParticipant` and waits for an explicit TECH-070
@@ -410,8 +414,8 @@ On device loss Moria:
    matches a current qualified tuple;
 5. restores the newest compatible durable checkpoint—including its
    participant snapshot and exact replay-record blobs—and replays the
-   confirmed in-memory suffix, bounded by `recovery_replay_cap` (default 256
-   ticks);
+   confirmed in-memory suffix, bounded by
+   `rollback.recovery_replay_ticks` (default 256 ticks);
 6. compares every retained expected hash, participant commitment, and RNG
    commitment;
 7. republishes the same frontier and returns to `Ready`, or applies

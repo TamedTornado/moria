@@ -1600,3 +1600,187 @@ unique `TECH-001` through `TECH-070` contracts, exactly one `Implements:` line
 per contract, 351 normative requirement/contract pairs, all 43 approved
 requirements, no `REQ-042`, and exact parity with `traceability.md`.
 `git diff --check` passes.
+
+## Auditor Turn — 2026-07-29T18:58:18Z
+
+Mode: continue
+
+Responding to: 2026-07-29T18:50:25Z
+
+### Prior Findings Status
+
+1. **Restore and public-replay stream bootstrap — resolved.** `TECH-017`
+   reserves the frozen builder's fresh stream pair and eventual tombstone for
+   genesis, restore, and public replay (`interfaces.md:281-321`).
+   `TECH-046` withholds a restored world until its checkpoint-anchored
+   sequence-zero record is durable and exposes the resulting next sequence
+   (`content-persistence.md:566-620`). `TECH-047` verifies a public replay
+   privately, then durably copies the exact source header and records as
+   sequences zero through `N` before its one bundle publication
+   (`content-persistence.md:850-886`). The receipt matrix and validation
+   fixtures cover cancellation, failure, reservation cleanup, and the first
+   subsequent tick (`interfaces.md:1249-1264`; `validation.md:172-181,408-423`).
+2. **Closed admission, query-progress, and query-capacity outcomes —
+   resolved.** Tick admission now uses the actual `AdmissionCode` variants and
+   contextual tick/batch data (`interfaces.md:876-881`); interest and query
+   capacity failures retain exact required/supported records
+   (`interfaces.md:1326-1346,1425-1470,1492-1501`); and pending query blockers
+   plus terminal availability/capacity outcomes are representable through
+   `OperationProgress`, `QueryReadinessReason`, and `QueryUnavailable`
+   (`interfaces.md:1077-1209,1433-1451,2069-2107`). The external facade tests
+   pattern-match these shapes (`validation.md:86-97`).
+3. **`RngStreamId` domain — resolved.** `TECH-005` now consistently makes the
+   ID participant-local and accepts every nonzero `u32`, explicitly including
+   the high-bit range (`architecture.md:14-21,78-90`). `TECH-016` retains the
+   same nonzero wire domain (`architecture.md:598-623`), and `TECH-060` tests
+   zero, the high-bit boundary, and `u32::MAX` (`validation.md:133-141`).
+
+### New Findings
+
+1. **The TDD consumes tick zero as genesis, contradicting the approved
+   pre-tick genesis boundary.** Approved `REQ-027` says verified construction
+   publishes genesis and then “Tick zero begins after that boundary”
+   (`design-document.md:271-288`); `REQ-008` likewise requires the world to
+   become ready *for* tick zero (`design-document.md:397-420`). The TDD instead
+   says genesis itself “publishes tick zero,” returns a tick-zero
+   `GenesisReady.frontier`, fixes `next_tick` to one, and labels the genesis
+   replay header as tick zero (`interfaces.md:257-265,523-527`;
+   `content-persistence.md:765-781`). Under `TECH-011`'s
+   `current_tick + 1` eligibility rule, the first post-genesis batch is
+   therefore tick one, not the authority-mandated tick zero
+   (`architecture.md:373-410`). This is not a harmless display convention:
+   tick numbers enter batch eligibility, outcomes, hashes, replay, observation,
+   persistence, and rollback. Represent the pre-tick genesis frontier
+   concretely without spending tick zero, make the first canonical batch tick
+   zero, and propagate the selected representation through genesis receipts,
+   replay-header ranges, restore/replay continuity, encoding, and validation.
+
+2. **The closed facade still promises terminal/error outcomes its public error
+   type cannot represent.** `TECH-070` says synchronous telemetry returns
+   `WorldUnknown`, `WorldClosed`, or `TelemetryBusy`
+   (`interfaces.md:692-697`), but `TelemetryError` is only an alias of
+   `OperationError`, and the closed `ErrorCode` has neither `WorldUnknown` nor
+   `TelemetryBusy` (`interfaces.md:1822-1873,2080-2090`). Separately,
+   `TickReceipt::poll` fails with `TickOperationError` (also
+   `OperationError`), while the normative lifecycle table promises
+   `Failed(FailedNoAdvance)` even though no such public type or error variant is
+   defined (`interfaces.md:1164-1167,1223-1227,1251-1255,2080-2082`).
+   Select one closed representation for each promised result: either add the
+   missing typed outcomes and their scope/retry/committed invariants, or replace
+   every promise with the exact existing `OperationError` encoding. For the
+   tick-global no-advance path, specify how the failed tick and structured
+   cause (including participant/provider identity where relevant) are retained.
+   Add external compile/use cases that pattern-match telemetry unknown/busy and
+   each tick-global failure route through the actual public type.
+
+3. **Mechanical public-contract closure still has dangling or ambiguous names.**
+   `ReplayCompleted.sequence_digest` is a public field with no defined byte
+   domain, algorithm, covered range, or relationship to the newly precise
+   `ReplayStreamPosition.durable_prefix_digest`
+   (`content-persistence.md:690-702,837-843`). An implementation cannot know
+   what value that field promises; define it exactly and test it, or remove it
+   as redundant. In addition, persistence and recovery bounds refer to
+   nonexistent `max_log_ticks`, `max_log_bytes`, and
+   `recovery_replay_cap` fields rather than the declared
+   `rollback.log_ticks`, `rollback.log_bytes`, and
+   `rollback.recovery_replay_ticks`
+   (`content-persistence.md:499-505,970-996`;
+   `gpu-runtime.md:411-424`; `interfaces.md:174-189`), and presentation
+   overflow names undefined `PresentationState::Failed` instead of the
+   selected public status/lifecycle type
+   (`collision-presentation.md:508-510`; `interfaces.md:1668-1681`).
+   Normalize these references to the exact declared fields/types and extend
+   the mechanical public-name/budget-field check so stale aliases cannot pass
+   the implementation-completeness gate.
+
+### Questions For Coder
+
+None. The genesis numbering is fixed by approved authority, and the remaining
+items are ordinary API and naming closure rather than protected human choices.
+
+### Answers To Coder
+
+No coder questions were pending. I verified all three claimed corrections
+against the actual TDD; each prior finding is resolved as described above.
+
+### Notes To Coder
+
+Preserve the new stream-bootstrap state machines, exact query blocker/capacity
+records, and full nonzero RNG-stream domain. The mechanical provenance audit
+passes independently: the seven normative TDD files contain 70 unique
+`TECH-001` through `TECH-070` headings, exactly one `Implements:` line per
+contract, 351 unique requirement/contract pairs, all 43 approved requirements,
+no invented `REQ-042`, and exact pair parity with `traceability.md`. Those
+syntactic links remain semantically applicable; the defects above are
+authority-numbering and callable-contract closure. `git diff --check` passed
+and the worktree was clean before this required ledger append.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-29T19:14:16Z
+
+Mode: continue
+
+Responding to: 2026-07-29T18:58:18Z
+
+### Responses To Findings
+
+1. Addressed. `TECH-010`, `TECH-011`, `TECH-014`, `TECH-017`, `TECH-019`,
+   `TECH-046`, `TECH-047`, and `TECH-070` now represent genesis with the
+   explicit `FrontierPosition::Genesis`, distinct from
+   `FrontierPosition::Confirmed(Tick::from_raw(0))`. Genesis publishes the
+   pre-tick frontier and returns `next_tick == 0`; batch zero is the first
+   canonical transition and produces the first confirmed frontier. Replay
+   headers now use `ReplayAppendRange::Header { starting, next_tick }` rather
+   than fabricating a tick-zero range. Genesis, checkpoint restore, and public
+   replay validate the same checked next-tick function, and the tests cover
+   genesis/confirmed-zero encoding, hash, admission, rollback, and append
+   ordering.
+2. Addressed. `TECH-027` now defines the closed `TelemetryError` variants
+   `WorldUnknown`, `WorldClosed`, and `TelemetryBusy` with fixed world,
+   retryability, and no-effect semantics. Tick receipts now fail with the
+   concrete `FailedNoAdvance` record, which retains attempted tick, exact
+   source frontier, structured canonical/participant/provider/device/shutdown/
+   internal cause, and a matching `OperationError` whose committed effect is
+   `None`. `TECH-060` requires external pattern matches for every telemetry
+   variant and every tick-global failure route, including participant/provider
+   identity and device generation.
+3. Addressed. The redundant undefined `ReplayCompleted.sequence_digest` field
+   is removed; `ReplayStreamPosition.durable_prefix_digest` is the sole prefix
+   digest and retains its exact BLAKE3 tuple domain, with independent golden
+   tests. Normative references now use `rollback.log_ticks`,
+   `rollback.log_bytes`, `rollback.recovery_replay_ticks`, and
+   `PresentationStatus::Failed`. `TECH-060` adds a mechanical public-name and
+   nested-budget-field check with the prior stale names retained as negative
+   fixtures.
+
+### TDD Changes Made
+
+- Revised `architecture.md` and `overview.md` for the pre-tick genesis source,
+  tick-zero transition, frontier-position hashing, and rollback accounting.
+- Revised `interfaces.md` with `FrontierPosition`, checked next-tick accessors,
+  genesis/confirmed result invariants, `FailedNoAdvance`,
+  `TickNoAdvanceCause`, concrete `TelemetryError`, and exact public-type index
+  ownership.
+- Revised `content-persistence.md` with header-versus-tick replay append
+  ranges, genesis/restore/replay continuity, one precise prefix digest, and
+  exact rollback budget-field references.
+- Revised `gpu-runtime.md` and `collision-presentation.md` to use the callable
+  tick-global failure and selected budget/presentation names.
+- Revised `validation.md` with genesis-to-tick-zero, telemetry, no-advance,
+  replay-prefix, and mechanical stale-name/field fixtures.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The accepted stream-bootstrap, query blocker/capacity, and full nonzero
+`RngStreamId` contracts are preserved. No stable `TECH` ID or `Implements:`
+link changed. Mechanical checks find 70 unique `TECH-001` through `TECH-070`
+contracts, exactly one `Implements:` line per contract, 351 normative
+requirement/contract pairs, all 43 approved requirements, no `REQ-042`, and
+exact parity with `traceability.md`. `git diff --check` passes.

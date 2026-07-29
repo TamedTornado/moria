@@ -95,6 +95,25 @@ age terminate through `QueryUnavailable::Availability`, while a post-admission
 output-bound proof failure terminates through
 `QueryUnavailable::ResultCapacityExceeded`. No test accepts a fieldless prose
 surrogate for these outcomes.
+It also pattern-matches all three concrete `TelemetryError` variants, proving
+unknown/closed are nonretryable and busy is retryable without a hidden
+`OperationError`. Every tick-global route—canonical arithmetic/budget,
+participant, base/provider, device loss, shutdown, and internal validation—is
+polled as `ReceiptState::Failed(FailedNoAdvance)` and asserts the exact
+attempted tick, source `FrontierPosition`, structured participant/provider/
+generation identity where applicable, `committed: None`, and matching retry
+policy.
+
+A dedicated genesis-numbering fixture verifies that `GenesisReady.frontier`
+is `FrontierPosition::Genesis`, `next_tick == Tick::from_raw(0)`, no
+confirmed-tick rollback entry or tick outcome exists yet, and the sequence-zero
+replay request is `ReplayAppendRange::Header { starting:
+FrontierPosition::Genesis, next_tick: Tick::from_raw(0) }`. It then confirms
+batch zero, observes
+`FrontierPosition::Confirmed(Tick::from_raw(0))`,
+and proves that only tick one is next. Wrong `BeforeNextTick`/`AfterNextTick`
+classifications are checked on both sides of the genesis boundary. Canonical
+encoding/hash fixtures distinguish `Genesis` from `Confirmed(Tick(0))`.
 
 Observation fixtures move and retire a volume, reclaim the old directory
 version, then poll an older retained record through volume/kind/spatial
@@ -159,7 +178,7 @@ enters `Failed`, the exact record stays pinned, new ticks are rejected, one
 world-lifecycle observation carries the bounded `ReplayExportFailure`, the
 actual `FailureCounter { code: ErrorCode::StoreFailure, ... }` and replay
 failure/high-water telemetry appear, and `ShutdownReport` repeats the same
-sink/stream/sequence/tick-range/count/length/digest/failure metadata before
+sink/stream/sequence/append-range/length/digest/failure metadata before
 releasing the raw bytes. Device loss
 does not rewrite the request; wrong/late completions cannot recover the world.
 With otherwise default budgets, an accepted genesis failure after its
@@ -180,12 +199,20 @@ releases the pair/tombstone, whereas cancellation after invocation drains and
 retires it. Duplicate-pair and retired-pool failures return the unchanged
 builder/request without a sink call.
 
+The mechanical public-closure test parses the normative snippets and rejects
+any capitalized public name without an owning row, duplicate field, stale
+alias, or budget-field reference not present in the exact TECH-017 nested
+schema. Its retained negative fixtures include `max_log_ticks`,
+`max_log_bytes`, `recovery_replay_cap`, and `PresentationState::Failed`; the
+only accepted spellings are `rollback.log_ticks`, `rollback.log_bytes`,
+`rollback.recovery_replay_ticks`, and `PresentationStatus::Failed`.
+
 The participant slice exercises every row of both
 `ParticipantFailurePolicy` variants at genesis, ordinary preparation,
 correction, durable restore, device loss/recovery, checkpoint export, and
 shutdown; it asserts that no row can publish without the participant. It also
 registers two participants and proves registration rejects same-tick
-dependencies, both read only `State[t]`, effects resolve solely by
+dependencies, both read only `SourceState(n)`, effects resolve solely by
 `(ParticipantId, local_sequence)`, opaque event bytes reach receipts/
 replay after confirmation but never the Moria-state observation ring, and no
 same-tick event handoff or
@@ -421,6 +448,11 @@ returns the earliest exact `DivergenceArtifact` without publishing a world.
 Fixtures cover record/sink count and byte backpressure, dropped/duplicate/
 late sink completion, absent/gapped/reordered records, cancellation before and
 after private submission, artifact-capacity rejection, and device loss.
+Golden cases independently recompute
+`ReplayStreamPosition.durable_prefix_digest` from each ordered
+`(sequence, record_digest)` tuple after the header, after every copied record,
+and after the first new tick. `ReplayCompleted` exposes no second ambiguous
+sequence digest.
 
 Poisoning each canonical influence category changes its appropriate leaf/root
 at the first affected tick. Poisoning mesh/cache/telemetry does not.
