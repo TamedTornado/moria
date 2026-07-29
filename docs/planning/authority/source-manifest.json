@@ -1,17 +1,19 @@
 {
-  "schema_version": 1,
-  "base_revision": "9ada24ac2c5bab387353588f7c021a5607e0d645",
-  "provenance_note": "Retrofitted after human approval because the planning run omitted the established provenance IDs. Statements and decisions are copied from the approved artifacts without changing their meaning.",
+  "schema_version": 2,
+  "base_revision": "93a6a3d72485a4ac04ee5e6b85225ca9c6f7a0c5",
+  "provenance_note": "The original authority IDs were retrofitted after human approval. Schema version 2 seals the complete approved planning package without changing its scope or technical content.",
   "sources": [
     {
       "id": "S-001",
       "path": "docs/vision.md",
+      "role": "binding_scope",
       "sha256": "e428e03d6e6fa658b6ca43a17a867a175723dc492da41a94be8002b9e2382bb9",
       "referenced_paths": []
     },
     {
       "id": "S-002",
       "path": "docs/product-vision.md",
+      "role": "approved_product_vision",
       "sha256": "32f4df4c7ba78ef8248d003c6f2d4a60d0f278452953dc21205775dacdd141f0",
       "referenced_paths": [
         "docs/vision.md"
@@ -20,10 +22,129 @@
     {
       "id": "S-003",
       "path": "docs/product-design-decisions.md",
+      "role": "human_product_design_decisions",
       "sha256": "8041ad81acf24b05e879a2dd43c2db0cb535b84f41a605614cb9af996e5c1b6d",
       "referenced_paths": [
         "docs/design-document.md"
       ]
+    }
+  ],
+  "reference_inputs": [
+    {
+      "path": "docs/seeds/README.md",
+      "role": "seed_manifest",
+      "sha256": "e871e09fc9dd6311cca55b03af742b3d51030f31b200bf78700c6d0d66834d9e"
+    },
+    {
+      "path": "docs/seeds/gpu-resident-substrate.md",
+      "role": "reference_input",
+      "sha256": "4f3462d964463f63c9c4946a65d65f32d0c1223152586677d2948350802a0201"
+    },
+    {
+      "path": "docs/seeds/product-one-seed.md",
+      "role": "future_product_reference",
+      "sha256": "3e5c8541b52bfc64127f821e887f4f0f6b00138b61b7f3f14df6360d1e5e5826"
+    },
+    {
+      "path": "docs/seeds/project-boundary.md",
+      "role": "binding_seed_scope",
+      "sha256": "aa80e721c6ac39cddac7fe63c099628881276d349730715571fcd0f5578f7fbe"
+    },
+    {
+      "path": "docs/seeds/system-substrate-pivot.md",
+      "role": "superseded_reference_marker",
+      "sha256": "8818a621ed1875cca2137025b2638307387b14630475a1fb54d160f96a6e9074"
+    },
+    {
+      "path": "docs/seeds/voxel-world-substrate.md",
+      "role": "substrate_reference_input",
+      "sha256": "c347b560109645a7cc5c61508afcb29ef5e09ffb2ab6551aab2a593e6482e9fc"
+    }
+  ],
+  "approved_artifacts": [
+    {
+      "path": "docs/design-document.md",
+      "stage": "product_design",
+      "role": "binding_requirements",
+      "sha256": "09e9e9605ed330ded81aabaa2f86d1c1fe001ac47a40c812a6c419a4a3dc4e7d"
+    },
+    {
+      "path": "docs/tdd/overview.md",
+      "stage": "technical_design",
+      "role": "technical_overview",
+      "sha256": "e6df5321d8666efbe104683877526500abf7b91db2eb43445e9e99c750642697"
+    },
+    {
+      "path": "docs/tdd/architecture.md",
+      "stage": "technical_design",
+      "role": "technical_architecture",
+      "sha256": "1e997c4f4773054a96137a3ca8498db3eb42c754fe763aa65010630ca0006987"
+    },
+    {
+      "path": "docs/tdd/state-and-storage.md",
+      "stage": "technical_design",
+      "role": "technical_contract",
+      "sha256": "139de0c30997a4914ed76bbaed8a76b0a0f81d19ac71a86ef8723443dc7e7a32"
+    },
+    {
+      "path": "docs/tdd/behavior-scheduling.md",
+      "stage": "technical_design",
+      "role": "technical_contract",
+      "sha256": "0135c95f5225f0a4ca0ec4ac6413c2459b97d36e8a5dc3f0936d5d83975bfbec"
+    },
+    {
+      "path": "docs/tdd/collision-and-presentation.md",
+      "stage": "technical_design",
+      "role": "technical_contract",
+      "sha256": "6a08ec76409592b62992b322bb649c5d637264a857f6881de2122bd3c23b33c4"
+    },
+    {
+      "path": "docs/tdd/lifecycles.md",
+      "stage": "technical_design",
+      "role": "technical_contract",
+      "sha256": "ff40d0531ca45406b4d6fe4f24895f90af14d7d94df38aa2980941e960bd57c2"
+    },
+    {
+      "path": "docs/tdd/persistence.md",
+      "stage": "technical_design",
+      "role": "technical_contract",
+      "sha256": "84ca725ded119d8fe96c05f6cce24a1eba5232850f47d23fbe1c26097341f818"
+    },
+    {
+      "path": "docs/tdd/public-api.md",
+      "stage": "technical_design",
+      "role": "public_api_contract",
+      "sha256": "5908f8da17bbd4e9b4d5dc8bee6d35ca98d98f6c99888173f3a18ddeba52b1be"
+    },
+    {
+      "path": "docs/tdd/adapter-substrate-contracts.md",
+      "stage": "technical_design",
+      "role": "adapter_contract",
+      "sha256": "1d8c44f425ec45ac371d7995882ecb01c5737d7d36ec1f01e407ac5ffd7ff3e5"
+    },
+    {
+      "path": "docs/tdd/validation.md",
+      "stage": "technical_design",
+      "role": "validation_contract",
+      "sha256": "0435853254dcca78b00f3b6d83482f57b983e501c632cf49b0bc981b8c700e61"
+    },
+    {
+      "path": "docs/tdd/decisions.md",
+      "stage": "technical_design",
+      "role": "binding_technical_decisions",
+      "sha256": "6a7686a30e8747d72edd0cdabf5585ad32931711a0da72b5e427bcfe7656e53b"
+    },
+    {
+      "path": "docs/tdd/review-findings.md",
+      "stage": "technical_design",
+      "role": "technical_review_record",
+      "sha256": "284cfae382221d921f4f7ccea9ce74887ddb8cfc76a929f7e249d6a1daf5f690"
+    },
+    {
+      "path": "docs/planning/authority/authority-ledger.json",
+      "stage": "planning_authority",
+      "role": "authority_ledger",
+      "sha256": "a72df2d9e6e3f55331dda07f8a1957b2f5e8d35cdf57feb6349f75d0037480a0"
     }
   ],
   "missing_references": []
