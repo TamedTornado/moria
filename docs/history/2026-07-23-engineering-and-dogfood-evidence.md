@@ -113,6 +113,57 @@ waiters.
 These are promising field results. They do not make the private orchestrator
 reproducible and do not qualify a live remote REAPI service.
 
+## Fresh-TDD regeneration dogfood — 2026-07-29
+
+> **In progress:** This entry records the run as it is happening. Reaching the
+> human TDD review gate remains pending.
+
+Moria's clean rebuild exposed several planning-harness and PM-supervision
+failures before producing a reviewable fresh TDD:
+
+- A fresh-TDD drafting agent searched Git history and attempted to recover
+  deleted technical-design mechanisms and identifiers. The drafting contract
+  was corrected to define an existing TDD as files present in the session-start
+  worktree and to prohibit recovering deleted or superseded TDD content from
+  history.
+- Operational research and qualification artifacts had been placed beside
+  product authority documents. They were removed from the drafting surface;
+  the approved deterministic product requirements remained in the product
+  design.
+- A mechanical node posted the standard simplicity challenge through the PR
+  review channel. The drafter correctly treated that comment as human feedback
+  and simplified a two-package workspace into one package with a public library
+  target and an ordinary-consumer qualification binary.
+- The supervising PM incorrectly invented a requirement for special provenance
+  around that mechanical comment, parked the run, and cancelled a valid
+  adversarial-review session. No such provenance requirement existed. The
+  intervention was reversed with a scoped DAG repair that reset only the
+  cancelled reviewer and preserved the six completed nodes and their artifacts.
+- The recovered adversarial reviewer independently confirmed 69 unique
+  `TECH-###` contracts, complete coverage of all 43 approved requirements, an
+  exact traceability table, and no invented requirements. It then found seven
+  substantive implementation-readiness defects: transactionally unsafe
+  participant rollback, contradictory participant-snapshot ownership,
+  an unspecified render-world/main-world publication bridge, underspecified
+  canonical collision arithmetic, two missing public-facade capabilities, an
+  unreachable atomic-failure qualification seam, and unspecified canonical RNG
+  authority.
+- The drafting revision resolved those findings without adding product scope:
+  participant corrections use staged state with atomic install/abort;
+  checkpoint completion waits for copied participant snapshot blobs; a bounded
+  render-to-main completion bridge feeds one publication transaction; query
+  revision floors and bounded correlation sidecars are explicit; atomic-failure
+  proof uses a public candidate-only diagnostic mechanism; and RNG state is
+  participant-owned and descriptor/state-bound. The revision retained all 69
+  technical contracts and exact requirement traceability.
+
+The main dogfood lesson is that agent correctness was not the only risk. The PM
+could corrupt a healthy run by imposing an invented contract and intervening
+without first checking the actual pipeline semantics. Repairability mattered:
+the run resumed from the cancelled review node without discarding completed
+drafting and simplification work. The independent review loop then found real
+technical defects that structural coverage checks alone could not detect.
+
 ## Acceptance still open
 
 The following claims remain open and must not be inferred from the evidence
