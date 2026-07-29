@@ -559,6 +559,7 @@ pub struct RestoreReady {
     pub durable_source: DurableFrontier,
     pub next_tick: Tick,
     pub rebuilt_bricks: u32,
+    pub replay: ReplayStreamPosition,
 }
 ```
 
@@ -585,8 +586,12 @@ Restore is world construction, not a post-genesis mutation:
    while proving every reproduced intermediate commitment and the saved final
    participant/RNG-state commitments;
 7. recompute every root bottom-up and compare the saved world root;
-8. publish the restored frontier and readiness context, then permit the next
-   tick.
+8. encode one `Checkpoint`-anchored `moria-replay-v1` header containing the
+   exact request store/key, verified manifest digest, restored frontier, and
+   next tick; append it as sequence zero to the builder's selected replay
+   stream and wait for matching durable completion; and
+9. publish the restored frontier and readiness context, then permit the next
+   tick at replay sequence one.
 
 The restored GPU root and all participant tokens remain in one private genesis
 bundle until all steps pass; adapter calls never mutate a live singleton.
@@ -604,6 +609,15 @@ publishes no world. Retry is a new call with a returned or newly constructed
 builder; restore never attaches to or replaces an already-published world.
 The manifest records its `CheckpointStoreId`; restore rejects a mismatch even
 if another registered store happens to return identical bytes.
+TECH-017 reserves the builder's replay pair and eventual tombstone before
+restore admission. Failure/cancellation before the sequence-zero invocation
+releases both; after invocation it drains the sink call and retires the pair.
+A sink failure completes `RestoreReceipt` with
+`OperationError { code: StoreFailure, scope:
+Provider(ReplaySink(configured_id)), committed: None, ... }`, publishes no
+world, and never falls back to another sink. `RestoreReady.replay` is
+`durable_through_sequence == 0`, `next_sequence == 1`; therefore the first
+later confirmed tick can only append after the durable checkpoint anchor.
 
 ## Replay and rollback
 
@@ -670,12 +684,21 @@ pub struct ReplayLimits {
     pub max_input_bytes: u64,
     pub max_private_bytes: u64,
     pub max_artifact_bytes: u64,
+    pub anchor_restore: Option<RestoreLimits>,
 }
 
 pub struct ReplayCompleted {
     pub frontier: FrontierSummary,
     pub ticks: BoundedVec<CorrectedTickOutput>,
     pub sequence_digest: BlobDigest,
+    pub replay: ReplayStreamPosition,
+}
+
+pub struct ReplayStreamPosition {
+    pub stream: ReplayStreamKey,
+    pub durable_through_sequence: u64,
+    pub durable_prefix_digest: BlobDigest,
+    pub next_sequence: u64,
 }
 
 pub struct DivergenceArtifact {
@@ -720,12 +743,17 @@ exact value together with the configured `ReplaySinkId`. TECH-017 reserves
 duplicate pairs. The diagnostic records above are closed and not storage
 handles; unknown logical-key tags are rejected.
 
-`moria-replay-v1` is an appendable sequence:
+`moria-replay-v1` is an appendable sequence. Its sequence-zero header has one
+closed anchor tag:
 
 ```text
 header {
-  genesis bytes/digest, contract digests, participant descriptors,
-  qualification identity, starting frontier
+  common: genesis identity/digest, contract digests, participant descriptors,
+          qualification identity, starting frontier, next tick
+  anchor:
+    Genesis { canonical genesis bytes/digest }
+    Checkpoint { checkpoint_store_id, checkpoint_key, manifest_digest,
+                 durable_frontier }
 }
 tick record {
   tick, sealed TickBatch bytes/digest, canonical outcome bytes/digest,
@@ -735,11 +763,23 @@ tick record {
 ```
 
 Records are length-prefixed, checksummed, bounded, and committed only after the
-tick confirms. Presentation and timing are excluded. During private genesis,
-Moria first appends the
-header as sequence zero (`first_tick == last_tick == Tick::from_raw(0)`,
-`record_count == 0`) and publishes tick zero only after that completion is
-durable; failure fails `GenesisReceipt` and publishes no world. Each later
+tick confirms. Presentation and timing are excluded. A `Genesis` anchor's
+starting frontier is tick zero. A `Checkpoint` anchor's starting frontier,
+store/key, and manifest digest are the exact values verified by TECH-046; a
+public replay of that stream must supply `ReplayLimits.anchor_restore:
+Some(...)`, resolve the named store in its frozen builder, and privately run
+the same bounded restore before applying the first tick record. Supplying
+`Some` for a genesis anchor or `None` for a checkpoint anchor is
+`InvalidRequest`.
+
+During private genesis, Moria first appends the header as sequence zero
+(`first_tick == last_tick == Tick::from_raw(0)`, `record_count == 0`) and
+publishes tick zero only after that completion is durable; failure fails
+`GenesisReceipt` and publishes no world. Durable restore performs the
+checkpoint-anchor sequence-zero operation specified by TECH-046. For every
+anchor, sequence zero has `first_tick == last_tick ==
+header.starting_frontier.tick` and `record_count == 0`; each tick record has
+`first_tick == last_tick == record.tick` and `record_count == 1`. Each later
 confirmed tick record is appended in sequence order through that registered
 sink. At most one append for a given world stream is invoked at once; the
 configured in-flight record/byte budgets cover all worlds and providers
@@ -790,9 +830,17 @@ ordinary terminal-receipt record.
 Device loss does not cancel a host store call or change its stream/sequence;
 its completion remains valid because replay bytes are device-independent.
 A completion carrying a closed world attempt/generation may only acknowledge
-lifetime release and cannot return the world to `Ready`. Genesis header
-failure retains the existing stronger rule: no world or tick-zero receipt is
-published.
+lifetime release and cannot return the world to `Ready`. Genesis, restore,
+and public-replay bootstrap failures retain the stronger construction rule:
+no world or ready construction receipt is published.
+
+`ReplayStreamPosition` is the public proof of append ordering.
+`durable_prefix_digest` is BLAKE3 over the ordered tuple stream
+`(sequence:u64 LE, record_digest:[u8;32])`, beginning at sequence zero;
+`next_sequence` is checked `durable_through_sequence + 1`. Genesis and restore
+return `{ durable_through_sequence: 0, next_sequence: 1 }`. Every subsequent
+append advances all three fields only after matching sink success; integer
+overflow fails the world before another invocation.
 
 `ReplaySink` is deliberately write-only from Moria's perspective. The
 consumer retrieves its own stored bytes through its own storage API and passes
@@ -803,12 +851,18 @@ Public replay is the dedicated `WorldBuilder::replay_records` operation, not
 ordinary live `submit_tick`. Admission consumes a private builder plus the
 owned header and record vector, verifies all count/byte limits against
 `ResourceBudgets.rollback`, reserves a private root/participant bundle and the
-worst-case result/artifact bytes, and returns `ReplayReceipt`. Rejection
+worst-case result/artifact bytes, reserves the builder's fresh replay
+pair/tombstone under TECH-017, and returns `ReplayReceipt`. It also verifies
+that every source item fits the selected sink descriptor and aggregate
+bootstrap in-flight/byte limits. Rejection
 returns the unchanged builder and complete owned request in `ReplayRejected`.
 The header must describe the builder's world and frozen registries; records
-must be a contiguous sequence starting at tick one, individually within the
-canonical tick limits, with the expected root/outcome/participant digests
-encoded in each record.
+must be a contiguous sequence starting at
+`header.starting_frontier.tick + 1`, individually within the canonical tick
+limits, with the expected root/outcome/participant digests encoded in each
+record. Checked tick overflow rejects admission. A checkpoint anchor is first
+restored privately as described above; a genesis anchor constructs the
+declared genesis privately.
 
 Replay decodes each sealed batch into the same canonical transition function,
 but only inside the private builder context. For every tick the exclusive
@@ -816,10 +870,20 @@ private publication step calculates the candidate root, outcome digest,
 participant commitments/events, and expected-hash comparison before advancing
 the private replay frontier. It never calls live `submit_tick`, cannot omit or
 override an encoded expected hash, and emits no live observation or
-presentation work. On complete success one final `FrontierBundle` swap
-publishes the new world and `ReplayCompleted`; intermediate roots were never
-public. Cancellation, device loss, validation failure, or mismatch drains and
-drops all private state and publishes no world.
+presentation work. After complete semantic success, but before the final
+swap, Moria copies the exact verified source header to the selected fresh
+stream as sequence zero and then copies every exact verified source record as
+sequences `1..=N`, one durable append at a time. It does not regenerate, omit,
+or reorder those bytes. Only after all `N + 1` appends are durable does one
+final `FrontierBundle` swap publish the new world and `ReplayCompleted`; its
+`replay` has `durable_through_sequence == N` and
+`next_sequence == N + 1`, so the first new tick is ordered after the copied
+prefix. Intermediate roots were never public. Cancellation, device loss,
+validation failure, mismatch, sink failure, or wrong sink completion drains
+and drops all private state and publishes no world. Failure before
+sequence-zero invocation releases the stream reservations;
+failure/cancellation after it retires the pair, reports the exact provider
+failure through `ReplayFailure.error`, and offers no redrive or fallback.
 
 Participant events are schema-bound opaque bytes in deterministic
 `(ParticipantId, local_sequence)` order. Replay compares them exactly and

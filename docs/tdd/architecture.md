@@ -82,8 +82,12 @@ impl RngStreamId {
 ```
 
 `MaterialId::try_from_raw` and `VolumeId::try_from_raw` reject zero.
-`ParticipantId`, `InputSourceId`, and `RngStreamId` reject zero and values
-greater than `0x7fff_ffff`. There is no unchecked or lossy constructor.
+`ParticipantId` and `InputSourceId` reject zero and values greater than
+`0x7fff_ffff`. `RngStreamId` rejects only zero: every value in
+`1..=u32::MAX`, including `0x8000_0000`, is valid because the ID is scoped
+inside one participant descriptor and never enters the shared participant /
+input-source high-bit ordering namespace. There is no unchecked or lossy
+constructor.
 
 `WorldId` has `from_bytes([u8; 16])`, `as_bytes(&self) -> &[u8; 16]`, and
 `to_bytes(self) -> [u8; 16]`; every 16-byte value is valid. `Tick`,

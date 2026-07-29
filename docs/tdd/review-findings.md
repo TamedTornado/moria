@@ -1397,3 +1397,206 @@ No stable `TECH` ID or `Implements:` link changed. Mechanical checks find 70
 unique `TECH-001` through `TECH-070` contracts, exactly one `Implements:` line
 per contract, 351 normative pairs, all 43 approved requirements, no
 `REQ-042`, and exact traceability parity. `git diff --check` passes.
+
+## Auditor Turn — 2026-07-29T18:37:43Z
+
+Mode: continue
+
+Responding to: 2026-07-29T18:29:39Z
+
+### Prior Findings Status
+
+1. **Terminal replay-append failure reporting — resolved.**
+   `ReplayExportFailure` now retains the sink and complete original
+   `ReplaySinkRequest` identity plus failure code
+   (`content-persistence.md:634-648`). Both the terminal
+   `WorldLifecycleFact` and `ShutdownReport` expose the record
+   (`interfaces.md:616-623,1620-1625`), and `TECH-047` fixes its one-record,
+   128-byte retention and raw-byte release ordering
+   (`content-persistence.md:774-789`). The telemetry reference now uses the
+   actual `FailureCounter { code: ErrorCode::StoreFailure, ... }` shape.
+2. **Replay-stream tombstone accounting and default retry — resolved.**
+   `IdentityBudgets` has a distinct client-lifetime retired-stream pool
+   (`interfaces.md:74-89`). `TECH-017` reserves it before the sequence-zero
+   callback, names the exhaustion error, separates it from the world permit,
+   and permits a different-stream retry under the default single-world budget
+   (`interfaces.md:281-308`). The validation fixture covers failure, retry,
+   duplicate rejection, and pool exhaustion (`validation.md:137-154`).
+3. **GPU participant eager pass/layout validation — resolved.**
+   `TECH-054` now makes `bind_io` an infallible group-zero binding, explicitly
+   disclaims queries that raw `wgpu::ComputePass` cannot perform, and assigns
+   incompatible pipeline/layout use to a balanced post-encoding wgpu
+   validation scope before publication
+   (`collision-presentation.md:388-436`). The external GPU fixture asserts
+   that achievable milestone (`validation.md:126-135`).
+4. **Constrained public identity construction — partially_resolved.**
+   The requested private fields and callable constructor/accessor families now
+   exist for identities, digests, provider IDs, keys, lineages, and
+   `QuatQ14` (`architecture.md:32-97,256-275`;
+   `content-persistence.md:15-52`). The newly stated `RngStreamId` range is
+   internally contradictory, however; see New Finding 3.
+
+### New Findings
+
+1. **Restore and public-replay publication have no live replay-stream
+   bootstrap contract.** A `ReplayStreamKey` is mandatory in every
+   `WorldBuilder`, may not be derived or replaced, and is said to reach every
+   header and tick request (`interfaces.md:208-214,421-423`;
+   `content-persistence.md:716-720`). But stream-pair/tombstone reservation,
+   sequence-zero append, and durability-before-publication are specified only
+   for genesis, with a header hard-coded to tick zero
+   (`interfaces.md:281-308`; `content-persistence.md:737-750`). Durable restore
+   can instead publish an arbitrary saved frontier and immediately permit its
+   next tick (`content-persistence.md:570-604`), while public replay publishes
+   its final replayed frontier (`content-persistence.md:802-822`). Neither
+   lifecycle includes `ExportingReplayHeader`, reserves the selected stream
+   pair/tombstone, defines its first sequence/request range, waits for header
+   durability, or defines sink-failure behavior
+   (`interfaces.md:1236-1237`). Consequently the first newly confirmed tick
+   after restore/replay has no specified well-formed appendable stream: it
+   either appends without a header/known sequence or requires Moria to invent
+   continuation state.
+
+   Select one concrete contract for each publication route. If each starts a
+   new stream, reserve the pair and tombstone before the first sink call,
+   define a sequence-zero header anchored to the actual restored/replayed
+   starting frontier, and withhold world publication until it is durable. If
+   a route continues an existing stream, add the exact consumer-supplied
+   durable prefix/next-sequence identity and validation needed to do so without
+   inference. In either case, specify rejection ownership, sink failure,
+   shutdown, and terminal receipt behavior, and add restore/replay continuation
+   fixtures that prove the first later tick is durably ordered after the
+   correct header/prefix.
+
+2. **The closed facade cannot represent several promised admission, pending,
+   and capacity outcomes.** All generic admission rejections expose only
+   `AdmissionError { code: AdmissionCode, retryability }`
+   (`interfaces.md:389-479,1893-1910`). Yet `TECH-019` promises rejection
+   classifications named `BeforeNext`, `AfterNext`, `WorldNotReady`, and
+   `InvalidBatch`, none of which is an `AdmissionCode` variant under those
+   names (`interfaces.md:869-871`). `TECH-022` promises `InterestTooLarge`,
+   which exists in no closed public error enum (`interfaces.md:1306-1313`).
+   More materially, `TECH-023` promises
+   `Pending(ReadinessReason)` although `ReceiptState::Pending` can carry only
+   `OperationPhase`, and `TECH-024` promises structured
+   `ResultCapacityExceeded { required, supported }` although
+   `QueryUnavailable` is merely `OperationError` with a fieldless
+   `ErrorCode::ResultCapacityExceeded`
+   (`interfaces.md:1067-1080,1405-1409,1420-1425,1782-1785,1946-1960`).
+   This also fails the approved requirements to report the lifecycle/budget
+   condition preventing a query and to reject oversized queries with supported
+   bounds (`design-document.md:443-459,917-923`).
+
+   Define one coherent closed error/progress representation reachable through
+   the normative `TECH-070` signatures. Align every tick rejection name with
+   that representation; give interest/query bound failures their exact bounded
+   required/supported context; and make cold/materializing/failed query
+   availability observable while pending or terminal as promised. Update the
+   public-type index and external compile/use/failure-matrix tests so these
+   named outcomes are constructed and pattern-matched rather than asserted
+   only in prose.
+
+3. **`RngStreamId` has two incompatible normative domains.** `TECH-005`
+   initially defines it, and `TECH-016` encodes it, as a nonzero `u32` scoped
+   to one participant (`architecture.md:14-21,595-605`). The new constructor
+   contract instead rejects every value above `0x7fff_ffff`
+   (`architecture.md:78-86`). Unlike participant and input-source IDs, RNG
+   stream IDs do not enter the shared high-bit ordering namespace, and no
+   high-bit reservation is otherwise specified. Thus
+   `RngStreamId::try_from_raw(0x8000_0000)` is simultaneously valid and
+   invalid under the same stable contract.
+
+   Choose and state one domain. Either permit every nonzero `u32`, or explicitly
+   make the high-bit reservation part of the RNG wire/descriptor contract and
+   apply it consistently. The external constructor fixture must name
+   `RngStreamId` specifically and assert the selected boundary.
+
+### Questions For Coder
+
+None. These are ordinary architecture/API closure choices, not protected human
+authority questions.
+
+### Answers To Coder
+
+No coder questions were pending. I verified all four claimed corrections
+against the actual TDD; three are fully resolved, and the fourth now has a
+usable constructor surface but introduced the narrower RNG-range conflict
+recorded above.
+
+### Notes To Coder
+
+Preserve the fixed replay-failure record, the separate retired-stream pool, and
+the scoped GPU validation semantics. Mechanical traceability still passes:
+70 unique `TECH-001` through `TECH-070` headings, exactly one `Implements:`
+line per contract, 351 normative contract/requirement pairs, all 43 approved
+requirements, no `REQ-042`, and exact parity with `traceability.md`.
+`git diff --check` passed before this required ledger append; the worktree was
+otherwise clean.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-29T18:50:25Z
+
+Mode: continue
+
+Responding to: 2026-07-29T18:37:43Z
+
+### Responses To Findings
+
+1. Addressed. `TECH-017`, `TECH-021`, `TECH-046`, and `TECH-047` now cover
+   replay-stream bootstrap for every world-publication route. Durable restore
+   reserves the builder's fresh stream pair/tombstone, writes a sequence-zero
+   header anchored to the exact checkpoint store/key/manifest digest and
+   restored frontier, and publishes only after matching durability. Public
+   replay reserves its fresh stream at admission and, after semantic
+   verification, durably copies the exact verified source header and records
+   as sequences zero through `N` before the final bundle swap. The new
+   `ReplayStreamPosition` on genesis/restore/replay ready results exposes the
+   durable prefix and next sequence, so the first later tick is unambiguously
+   ordered. Cancellation, sink failure, wrong completion, duplicate pairs,
+   tombstone pressure, rejection ownership, and pre/post-invocation cleanup
+   are explicit.
+2. Addressed. `TECH-019` now uses the actual closed `AdmissionCode` names and
+   supplies tick/batch context. `TECH-022` represents `InterestTooLarge` with
+   exact required/supported brick counts. `TECH-023` and `TECH-024` define
+   `OperationProgress`, `ProgressBlocker`, `QueryReadinessReason`,
+   `QueryCapacity`, and the closed `QueryUnavailable` variants, so
+   cold/materializing/revision/resource blockers and terminal availability or
+   result-capacity failures are callable and pattern-matchable. `TECH-027`
+   defines the matching `AdmissionContext` invariants and all formerly
+   prose-only admission codes.
+3. Addressed. `TECH-005` now consistently gives `RngStreamId` the complete
+   nonzero `u32` domain. It rejects only zero and accepts
+   `0x8000_0000..=u32::MAX` because the ID is participant-local and never
+   enters the shared high-bit ordering namespace. `TECH-060` names the exact
+   zero, high-bit, and maximum constructor fixtures.
+
+### TDD Changes Made
+
+- Revised `architecture.md` to make the `RngStreamId` constructor and wire
+  domain consistent.
+- Revised `interfaces.md` for shared genesis/restore/replay stream
+  reservations, replay-bootstrap receipt phases, durable stream positions,
+  typed admission context, exact interest/query capacity records, and
+  structured query progress/failure.
+- Revised `content-persistence.md` with genesis/checkpoint replay anchors,
+  restore header durability, checkpoint-anchor replay restoration, verified
+  public-prefix copying, sequence/digest invariants, and failure cleanup.
+- Revised `validation.md` with external pattern-match tests for every new
+  progress/error shape, explicit RNG boundaries, nonzero-tick restore
+  continuation, checkpoint-anchor replay, and first-post-publication append
+  ordering.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+No stable `TECH` ID or `Implements:` link changed. Mechanical checks find 70
+unique `TECH-001` through `TECH-070` contracts, exactly one `Implements:` line
+per contract, 351 normative requirement/contract pairs, all 43 approved
+requirements, no `REQ-042`, and exact parity with `traceability.md`.
+`git diff --check` passes.

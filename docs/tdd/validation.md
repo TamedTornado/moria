@@ -83,6 +83,19 @@ truth, and a missing `RenderApp`. The missing-renderer case reports
 `BackendUnavailable`; it is not a GPU test and does not install a no-op
 canonical backend.
 
+The external facade slice constructs and pattern-matches every
+`AdmissionCode` with its legal `AdmissionContext`. It specifically proves
+tick `BeforeNextTick`/`AfterNextTick` supplied-versus-next values,
+`InvalidBatch`, `InterestTooLarge` exact brick counts, and
+`ResultCapacityExceeded` exact five-field `QueryCapacity` values. Query polls
+observe each `QueryReadinessReason` through
+`OperationProgress.blocker` for cold ranges, materializing ranges, unmet
+minimum revisions, and resource pressure; failed truth and retained-frontier
+age terminate through `QueryUnavailable::Availability`, while a post-admission
+output-bound proof failure terminates through
+`QueryUnavailable::ResultCapacityExceeded`. No test accepts a fieldless prose
+surrogate for these outcomes.
+
 Observation fixtures move and retire a volume, reclaim the old directory
 version, then poll an older retained record through volume/kind/spatial
 filters. Matching must use the stored append-time bounds and membership.
@@ -122,7 +135,10 @@ lineage through its normative constructor/accessor family. It rejects zero for
 every nonzero scalar ID, rejects `0x8000_0000` for each high-bit-reserved ID,
 rejects the all-zero `ReplayStreamKey`, and proves no public tuple constructor
 or unchecked conversion compiles; unconstrained fixed-byte and counter types
-preserve zero and every input bit.
+preserve zero and every input bit. `RngStreamId` is named separately:
+`try_from_raw(0)` fails, while `0x7fff_ffff`, `0x8000_0000`, and
+`u32::MAX` all construct and round-trip because its participant-local domain
+is the complete nonzero `u32` range.
 Its CPU participant downcasts its own state lease, iterates exact replay
 record views, decodes a TECH-053 collider view, and exercises wrong-type,
 capacity, cancellation, and dropped-lease cases. Its GPU participant creates
@@ -152,6 +168,17 @@ slot; a new builder with a distinct stream reaches genesis, while the retired
 pair still returns `DuplicateId`. Four such invoked streams consume the
 default retired pool and the fifth returns
 `RetiredReplayStreamCapacity` before a sink call.
+
+A restore-continuation fixture restores a checkpoint at nonzero tick `t` into
+a builder with a fresh stream. It proves no world publishes while the
+checkpoint-anchored sequence-zero append is pending, verifies the header's
+exact store/key/manifest digest/frontier/next-tick fields, and fails without a
+world on wrong/drop/store failure. After matching durability,
+`RestoreReady.replay` reports sequence zero/next one; confirming tick `t + 1`
+produces sequence one after that header. Cancellation before invocation
+releases the pair/tombstone, whereas cancellation after invocation drains and
+retires it. Duplicate-pair and retired-pool failures return the unchanged
+builder/request without a sink call.
 
 The participant slice exercises every row of both
 `ParticipantFailurePolicy` variants at genesis, ordinary preparation,
@@ -382,7 +409,14 @@ Public replay tests retain/export exact live records through a registered
 `ReplaySink`, discard every live world/root/log object, then pass only the
 owned `ReplayRequest` header and records to a new frozen builder. Every tick's
 expected root/outcome/participant bytes are compared before private advance;
-success publishes only the final world. Poisoning each expected category
+success still withholds the world while it copies the exact verified header
+and records into the builder's fresh stream as sequences zero through `N`.
+`ReplayCompleted.replay` reports that durable prefix and the first newly
+confirmed tick appends as `N + 1`. A checkpoint-anchor replay first restores
+the exact header-named store/key/manifest using `anchor_restore`; missing or
+extraneous restore limits reject. Bootstrap sink drop/failure, cancellation,
+or wrong completion publishes no world and retires the pair only after its
+first invocation. Poisoning each expected category
 returns the earliest exact `DivergenceArtifact` without publishing a world.
 Fixtures cover record/sink count and byte backpressure, dropped/duplicate/
 late sink completion, absent/gapped/reordered records, cancellation before and

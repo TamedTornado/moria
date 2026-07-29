@@ -279,30 +279,34 @@ aggregate budget sums. Missing, extra-kind, or contract-mismatched references
 fail before a callback or device allocation. After freeze no registry can be
 modified or replaced.
 The pair `(PersistenceConfig.replay_sink, WorldBuilder.replay_stream)` is
-frozen and reserved when a builder enters genesis verification and must be
-unique among all verifying, published, or retired stream reservations owned
-by the same `MoriaClient`. When multiple private builders selected the same pair, the
-first to reserve it proceeds and every later freeze returns
-`ConfigErrorCode::DuplicateId` without calling the sink. Moria cannot detect
-reuse by another process or client, so cross-process uniqueness remains the
-consumer's responsibility and a sink may reject such reuse as
-`StoreErrorCode::Corrupt`.
-Before accepting genesis, Moria also reserves one
-`identity.retired_replay_streams_per_client` permit for the stream's eventual
-tombstone. Exhaustion returns
-`ConfigErrorCode::RetiredReplayStreamCapacity` with
-`ConfigField::Budgets(ResourceBudgetField { group: BudgetGroup::Identity,
-field_code: 2 })` and the unchanged builder; identity field codes follow
+frozen and reserved when a builder operation—genesis, durable restore, or
+public replay—is accepted, and must be unique among all constructing,
+published, or retired stream reservations owned by the same `MoriaClient`.
+When multiple private builders select the same pair, the first accepted
+operation proceeds and every later call returns its operation-specific
+rejection: genesis uses `ConfigErrorCode::DuplicateId`, while restore/replay
+use `AdmissionCode::DuplicateReplayStream`; no sink is called and the
+unchanged builder/request is returned. Moria cannot detect reuse by another process or client, so
+cross-process uniqueness remains the consumer's responsibility and a sink may
+reject such reuse as `StoreErrorCode::Corrupt`.
+Before accepting any of those three publication operations, Moria also
+reserves one `identity.retired_replay_streams_per_client` permit for the
+stream's eventual tombstone. Exhaustion returns
+`ConfigErrorCode::RetiredReplayStreamCapacity` for genesis or
+`AdmissionCode::RetiredReplayStreamCapacity` for restore/replay, with the
+identity budget field supplied by the config diagnostic/admission context,
+and the unchanged builder/request; identity field codes follow
 `IdentityBudgets` declaration order starting at one. No sink call occurs.
-Failure before the sequence-zero sink call releases both reservations. Once
-that call is invoked, the tombstone
+Failure before the route's sequence-zero sink call releases both
+reservations. Once that call is invoked, the tombstone
 permit is committed for the `MoriaClient` lifetime: the reservation is
 `Active` while a world exists and becomes `Retired` on normal shutdown or
 construction failure, so that pair can never restart at sequence zero.
 Active/retired stream reservations do not count against `identity.worlds`.
-An accepted genesis failure releases its world permit before the receipt
-becomes terminal, so at the default `worlds == 1` a new builder using a
-different stream remains admissible while the failed pair remains rejected.
+An accepted genesis/restore/replay construction failure releases its world
+permit before the receipt becomes terminal, so at the default `worlds == 1`
+a new builder using a different stream remains admissible while a pair whose
+sink was invoked remains rejected.
 The separate default of four stream tombstones permits that retry and bounds
 sequential recreation; a fifth sequence-zero attempt in one client fails with
 the named capacity error before consumer code.
@@ -311,10 +315,12 @@ request-construction helpers and must resolve, but every admitted checkpoint,
 restore, shutdown checkpoint, and recovery request carries and binds its exact
 store ID; failure never falls through to the default or another store.
 
-Pre-admission configuration rejection returns the unchanged private builder in
-`GenesisRejected`; after acceptance, `GenesisReceipt` reaches
-`Ready { tick: 0, root_hash }` or
-`Failed(OperationError)` and then remains terminal.
+Pre-admission construction rejection returns the unchanged private builder
+and, for restore/replay, the unchanged request in `GenesisRejected`,
+`RestoreRejected`, or `ReplayRejected`. After acceptance, the corresponding
+receipt remains terminal once ready/failed/cancelled; TECH-021 and TECH-047
+define the required replay-stream bootstrap that gates each ready
+publication.
 
 The budget comments above are normative defaults and portable compiled
 maxima. `authoritative_gpu_bytes`, `presentation.resident_bytes`, and
@@ -517,6 +523,7 @@ pub enum AuthorityStatus {
 pub struct GenesisReady {
     pub frontier: FrontierSummary, // tick zero
     pub next_tick: Tick,           // exactly one
+    pub replay: ReplayStreamPosition,
 }
 
 pub struct TickReservation {
@@ -812,10 +819,10 @@ The mechanical public-type index is:
 | `MoriaClient`, `WorldBuilder`, every `*Permit`, `*Receipt`, `ObservationSubscription`, and every participant/root/artifact lease or state token | opaque generational handles; their owning operation contract defines clone/drop/pin behavior, and no handle exposes storage beyond the explicit participant-only views in TECH-029/054 |
 | `BoundedVec<T>`, `BoundedBytes`, `BoundedBytes64`, `BoundedUtf8<N>`, `OwnedBytes`, `BoundedOwnerError`, `VecConstructionRejected<T>`, `BytesConstructionRejected`, `BoundedPushRejected<T>` | callable finite owners and lossless construction failures; TECH-070 and the accepting resource contract |
 | `ParticipantTokenMetadata`, `ParticipantReplayRecordView`, `ColliderArtifactView`, `SnapshotMetadata`, `PreparedParticipantState` | immutable bounded participant-owned state/replay/collider views and staged state record; TECH-016/029/053 |
-| `CanonicalContract`, `RollbackConfig`, `PersistenceConfig`, `PresentationConfig`, `QualificationPolicy`, `CandidateDiagnostics`, `TickReservation`, `BlobLimits`, `RestoreLimits`, every `*Descriptor`, and every `*Limits` | closed configuration/request records; TECH-017/019/029/036/040/041/043/046/054 |
+| `CanonicalContract`, `RollbackConfig`, `PersistenceConfig`, `PresentationConfig`, `QualificationPolicy`, `CandidateDiagnostics`, `TickReservation`, `InterestCapacity`, `QueryCapacity`, `MinimumRevisionGap`, `BlobLimits`, `RestoreLimits`, every `*Descriptor`, and every `*Limits` | closed configuration/request and required/supported capacity/freshness records; TECH-017/019/022/023/029/036/040/041/043/046/054 |
 | `CanonicalInput` and its variant payloads, `QueryKind`, `QueryScope`, `CollisionShapeQ`, `VolumeSelector`, `VolumeKind`, participant strategy/failure policy, and all lifecycle/poll/start/persistence policy enums | closed tagged enums in TECH-018/020/022/023/025/028/029/030/041/051 |
-| `QueryResult`, `Observation`, `ObservedVolumeSummary`, `ObservedRegionSummary`, `TelemetrySnapshot`, `FrontierSummary`, `ReplayExportFailure`, and every receipt `Ready` payload | the concrete bounded records in TECH-020/022/025/026/038/045-048/070; their worst-case bytes are reserved before admission |
-| `NewtypeValueError`, `ConfigError`, `AdmissionError`, `ReserveError`, `PushError`, `BatchError`, `CanonicalFailure`, and every operation-specific `*Error`/`*Unavailable` | closed typed errors under TECH-005/027; each has stable variants and, for operation errors, scope, retryability, and committed-effect fields |
+| `QueryResult`, `Observation`, `ObservedVolumeSummary`, `ObservedRegionSummary`, `TelemetrySnapshot`, `FrontierSummary`, `ReplayStreamPosition`, `ReplayExportFailure`, and every receipt `Ready` payload | the concrete bounded records in TECH-020/022/025/026/038/045-048/070; their worst-case bytes are reserved before admission |
+| `OperationProgress`, `ProgressBlocker`, `QueryReadinessReason`, `NewtypeValueError`, `ConfigError`, `AdmissionError`, `AdmissionContext`, `ReserveError`, `PushError`, `BatchError`, `CanonicalFailure`, and every operation-specific `*Error`/`*Unavailable` | closed typed progress/errors under TECH-005/021/023/027; query progress and unavailability retain exact bounded blockers, and operation errors retain scope, retryability, and committed-effect fields |
 | `BaseBrickCompletion`, participant completion/effect/event/state/snapshot sinks, checkpoint/content-store sinks, and `ReplayAppendSink` | non-clone Moria-owned bounded completion tokens; TECH-016/029/036/041/043/045/047/054 |
 | Bevy/wgpu names in `moria::bevy::gpu_participant` | deliberately coupled borrowed adapter types, generation-scoped and never general-facade or durable types; TECH-003/031/054 |
 
@@ -866,9 +873,12 @@ may correct or drop it. A sealed batch owns immutable canonical bytes, its BLAKE
 the unforgeable reservation token, and a separately bounded noncanonical
 correlation sidecar keyed by the resulting `CanonicalOrder`.
 
-Only the next tick is accepted; `Rejected.reason` classifications are `WrongWorld`,
-`BeforeNext`, `AfterNext`, `AlreadyPending`, `WorldNotReady`, `DependencyNotReady`,
-`Full`, `Closed`, and `InvalidBatch`. Rejection returns the owned batch.
+Only the next tick is accepted; `Rejected.reason.code` classifications are
+`WrongWorld`, `BeforeNextTick`, `AfterNextTick`, `AlreadyPending`,
+`WorldNotReady`, `DependencyNotReady`, `Full`, `Closed`, and `InvalidBatch`.
+`BeforeNextTick`/`AfterNextTick` carry the supplied and expected-next ticks in
+`AdmissionContext::TickEligibility`; `InvalidBatch` carries
+`AdmissionContext::InvalidBatch`. Rejection returns the owned batch.
 Accepted work gets one monotonically increasing noncanonical `ReceiptId`.
 Dropping a receipt never cancels admitted work.
 
@@ -1066,10 +1076,19 @@ until its count/byte eviction policy expires it.
 
 ```rust
 pub enum ReceiptState<T, E> {
-    Pending(OperationPhase),
+    Pending(OperationProgress),
     Ready(Arc<T>),
     Failed(Arc<E>),
     Cancelled(CancelledOperation),
+}
+
+pub struct OperationProgress {
+    pub phase: OperationPhase,
+    pub blocker: Option<ProgressBlocker>,
+}
+
+pub enum ProgressBlocker {
+    Query(QueryReadinessReason),
 }
 
 pub enum OperationPhase {
@@ -1082,6 +1101,7 @@ pub enum OperationPhase {
     LoadingOwnedRecords,
     VerifyingHeader,
     ExportingReplayHeader,
+    ExportingReplayPrefix,
     Reading,
     Materializing,
     Preparing,
@@ -1183,6 +1203,11 @@ impl ShutdownReceipt {
 }
 ```
 
+For every non-query receipt, `OperationProgress.blocker` is `None`. A query
+uses `Some(ProgressBlocker::Query(...))` only while its phase is
+`WaitingForReadiness`; this makes the exact cold/materializing/revision/budget
+condition observable through the same generic receipt shape.
+
 Each concrete receipt (`GenesisReceipt`, `TickReceipt`, `InterestReceipt`,
 `QueryReceipt`, `ObservationResnapshotReceipt`, `CheckpointReceipt`,
 `CorrectionReceipt`, `RestoreReceipt`, `ReplayReceipt`, `RecoveryReceipt`, and
@@ -1233,8 +1258,8 @@ The complete asynchronous lifecycle policy is:
 | Observation resnapshot | `Queued`, `Pinning`, `Querying`, `Encoding` | before root/query encoding | `Ready(ObservationResnapshot)` or `Failed(ObservationSnapshotError)` | new bounded request, including after an immediate resume gap | old generation fails; shutdown cancellation follows query rules |
 | Checkpoint | `Queued`, `Pinning`, `Reading`, `StoringBlobs`, `CommittingManifest` | before first GPU readback/store call; later cancellation stops new batches and drains submitted calls | `Ready(CheckpointCommitted)`, `Failed(CheckpointError)`, or `Cancelled` with no manifest | new explicit request against a retained frontier | device loss/store failure leaves no committed manifest; shutdown either completes the configured required request or reports it failed |
 | Correction | `Queued`, `RestoringPrivate`, `ReplayingPrivate`, `ValidatingFinal` | before private replay submission; later cancellation aborts and drains private state | `Ready(CorrectionCommitted)` or `Failed(CorrectionError)` with original live bundle unchanged | new complete correction request | old-generation private results cannot install; shutdown aborts without changing the frontier |
-| Restore | `Loading`, `Verifying`, `Rebuilding`, `RestoringParticipants`, `Publishing` | before device/store submission; later cancellation drains the private builder | `Ready(RestoreReady)` or `Failed(RestoreError)` with no world published | retry with the returned/new builder and request | generation loss fails private construction; shutdown has no published world to mutate |
-| Public replay | `LoadingOwnedRecords`, `VerifyingHeader`, `ReplayingPrivate`, `ComparingExpected`, `Publishing` | before first private submission; later cancellation drains the private builder and suppresses publication | `Ready(ReplayCompleted)` or `Failed(ReplayFailure)` with no world published; divergence includes the bounded artifact | new builder and complete owned replay request | old-generation results cannot install; no world exists for shutdown until final publication |
+| Restore | `Loading`, `Verifying`, `Rebuilding`, `RestoringParticipants`, `ExportingReplayHeader`, `Publishing` | before device/store submission; after either device/store submission or replay-header invocation, cancellation drains the private builder and suppresses publication | `Ready(RestoreReady)` only after the checkpoint-anchored sequence-zero replay header is durable, or `Failed(RestoreError)` with no world published | retry with a new builder/request and a different stream after an invoked header; a pre-invocation failure releases its reservation | generation loss or replay-sink failure fails private construction; no world exists for shutdown |
+| Public replay | `LoadingOwnedRecords`, `VerifyingHeader`, `ReplayingPrivate`, `ComparingExpected`, `ExportingReplayHeader`, `ExportingReplayPrefix`, `Publishing` | before first private submission; later cancellation drains the private builder, any invoked sink calls, and suppresses publication | `Ready(ReplayCompleted)` only after the verified source header/records have been copied durably to the selected fresh live stream, or `Failed(ReplayFailure)` with no world published; divergence includes the bounded artifact | new builder/owned replay request and a different stream after any sink invocation | old-generation results cannot install; sink failure fails construction; no world exists for shutdown until final publication |
 | Recovery | `Queued`, `CreatingGeneration`, `LoadingAnchor`, `Replaying`, `Comparing` | before new-generation submission; later cancellation remains in `RecoveringParticipant` | `Ready(Recovered)` or `Failed(RecoveryError)` | one explicit new recovery request | only results from the requested new generation may reinstall the equal frontier; shutdown abandons recovery |
 | Shutdown | `ClosingAdmission`, `Draining`, `FinalCheckpoint`, `Releasing` | not cancellable | `Ready(ShutdownReport)` or `Failed(ShutdownError)` after all safe release work | none; world remains `Closed` | old-generation completions are lifetime acknowledgements only |
 
@@ -1297,6 +1322,10 @@ pub struct InterestWithdrawal {
     pub world: WorldId,
     pub id: InterestId,
 }
+
+pub struct InterestCapacity {
+    pub bricks: u64,
+}
 ```
 
 `InterestId` has infallible `from_raw(u64)` and `get(self) -> u64`; all bit
@@ -1308,9 +1337,13 @@ noncanonical control queue and return `InterestReceipt`; admission rejection
 returns the complete request. Interest IDs are consumer-owned and replace
 prior requests atomically. Moria clips no request silently: the consumer
 either sets `allow_partial` and receives the exact covered bounds, or receives
-`InterestTooLarge`. At least one capability must be true. `VolumeSelector` is
-either one explicit volume or an owned bounded, sorted, unique list; there is
-no implicit future-volume selector.
+`AdmissionError { code: InterestTooLarge, context:
+AdmissionContext::InterestCapacity { required, supported }, ... }`. Both
+capacity values are exact brick counts calculated with checked arithmetic;
+`supported` is the lesser of `max_resident_bricks` and the applicable world
+budget. At least one capability must be true. `VolumeSelector` is either one
+explicit volume or an owned bounded, sorted, unique list; there is no implicit
+future-volume selector.
 
 Per `(volume, brick-range, capability)` lifecycle follows:
 
@@ -1388,6 +1421,34 @@ pub struct QueryLimits {
     pub max_workgroups: u32,
     pub max_volume_revisions: u32,
 }
+
+pub struct QueryCapacity {
+    pub bricks: u64,
+    pub records: u64,
+    pub result_bytes: u64,
+    pub workgroups: u64,
+    pub volume_revisions: u64,
+}
+
+pub struct MinimumRevisionGap {
+    pub volume: VolumeId,
+    pub required: VolumeRevision,
+    pub current: Option<VolumeRevision>,
+}
+
+pub enum QueryReadinessReason {
+    Availability {
+        missing: BoundedVec<MissingRange>,
+    },
+    MinimumRevision {
+        unmet: BoundedVec<MinimumRevisionGap>,
+    },
+    ResourcePressure {
+        field: ResourceBudgetField,
+        required: u64,
+        supported: u64,
+    },
+}
 ```
 
 Query limits cap inspected bricks, returned cells/hits, encoded result bytes,
@@ -1401,12 +1462,23 @@ returned intact.
 `minimum` is limited by `QueryLimits.max_volume_revisions`, must contain unique
 `VolumeId`s in increasing order after admission normalization, and every ID
 must be selected by the query scope.
+Before admission, Moria derives a conservative `QueryCapacity` from the
+request scope/kind and compares every dimension with a second `QueryCapacity`
+formed from the lesser of request and world/device limits. Any exceeded
+dimension rejects with the two complete records in
+`AdmissionContext::QueryCapacity`; unused dimensions are zero, so the
+consumer never has to infer which bound failed from a fieldless code.
 
-`Completeness::Complete` returns `Pending(ReadinessReason)` or
-`Unavailable(Failure)` rather than partial data. `ExplicitPartial` returns
-exact inspected bounds plus missing subranges and never describes them as
-empty. Every ready result carries tick, world root hash, sorted per-volume
-revisions, exact inspected bounds, completeness, and source commitment.
+`Completeness::Complete` returns
+`ReceiptState::Pending(OperationProgress { phase:
+WaitingForReadiness, blocker: Some(ProgressBlocker::Query(reason)) })` or a
+typed terminal `QueryUnavailable`, rather than partial data.
+`QueryReadinessReason` identifies the exact cold/materializing ranges,
+unmet revision floors, or bounded resource pressure. `ExplicitPartial`
+returns exact inspected bounds plus missing subranges and never describes
+them as empty. Every ready result carries tick, world root hash, sorted
+per-volume revisions, exact inspected bounds, completeness, and source
+commitment.
 
 Ordinary results are noncanonical observations. A participant may affect a
 later tick only by encoding the result or its commitment into a later
@@ -1420,9 +1492,13 @@ Implements: REQ-010, REQ-012, REQ-017, REQ-019
 Matter samples are ordered by `(volume_id, local z, local y, local x)`.
 Collision encounters are ordered by `(time_of_impact, volume_id, local z,
 local y, local x, face_id)`. Equal fixed-point times retain the remaining key
-order. Output capacity is precomputed; overflow returns
-`ResultCapacityExceeded { required, supported }` and no silently truncated
-complete result.
+order. Output capacity is precomputed. An oversized request is rejected with
+`AdmissionCode::ResultCapacityExceeded` and
+`AdmissionContext::QueryCapacity`; a larger-than-proven result discovered
+after admission terminates as
+`QueryUnavailable::ResultCapacityExceeded { required, supported }`. Both
+paths use exact `QueryCapacity` records and no complete result is silently
+truncated.
 
 A query pins its root at admission. It may complete after later ticks and
 still truthfully reports its older frontier. A `freshness.minimum` entry that
@@ -1893,18 +1969,49 @@ pub enum ConfigField {
 pub struct AdmissionError {
     pub code: AdmissionCode,
     pub retryability: Retryability,
+    pub context: AdmissionContext,
+}
+
+pub enum AdmissionContext {
+    None,
+    TickEligibility {
+        supplied: Tick,
+        expected_next: Tick,
+    },
+    InvalidBatch {
+        reason: BatchError,
+    },
+    InterestCapacity {
+        required: InterestCapacity,
+        supported: InterestCapacity,
+    },
+    QueryCapacity {
+        required: QueryCapacity,
+        supported: QueryCapacity,
+    },
+    BudgetCapacity {
+        field: ResourceBudgetField,
+        required: u64,
+        supported: u64,
+    },
 }
 
 pub enum AdmissionCode {
     WrongWorld,
     WrongState,
+    DuplicateReplayStream,
+    RetiredReplayStreamCapacity,
     BeforeNextTick,
     AfterNextTick,
     AlreadyPending,
+    WorldNotReady,
     DependencyNotReady,
     Full,
     Closed,
     InvalidRequest,
+    InvalidBatch,
+    InterestTooLarge,
+    ResultCapacityExceeded,
     StaleGeneration,
     PersistenceBackpressure,
 }
@@ -1959,10 +2066,20 @@ pub enum MoriaError {
     Operation(OperationError),
 }
 
+pub enum QueryUnavailable {
+    Availability {
+        error: OperationError,
+        missing: BoundedVec<MissingRange>,
+    },
+    ResultCapacityExceeded {
+        required: QueryCapacity,
+        supported: QueryCapacity,
+    },
+}
+
 pub type GenesisError = OperationError;
 pub type TickOperationError = OperationError;
 pub type InterestError = OperationError;
-pub type QueryUnavailable = OperationError;
 pub type ObservationSnapshotError = OperationError;
 pub type CheckpointError = OperationError;
 pub type CorrectionError = OperationError;
@@ -1978,7 +2095,17 @@ TECH-017 field within its `BudgetGroup`; decoding rejects any ordinal not
 present in that version. It does not accept a string extension. Operation
 aliases intentionally use one closed shape so every
 receipt exposes the same scope/retry/committed-effect contract while preserving
-the stable `ErrorCode`. Internal errors and uncaptured GPU validation errors
+the stable `ErrorCode`. `QueryUnavailable` is the deliberate exception because
+REQ-010/REQ-021 require exact unavailable ranges and supported result bounds:
+its `Availability.error` supplies the same scope/retry/committed fields, and
+its capacity variant is a terminal no-frontier-change outcome with
+`RetryNewRequest`. `AdmissionContext` must match its code: tick context is
+mandatory only for `BeforeNextTick`/`AfterNextTick`, batch context only for
+`InvalidBatch`, interest/query capacity context only for their corresponding
+codes, and `BudgetCapacity` is required for
+`RetiredReplayStreamCapacity`; every other code requires `None`. A mismatched
+code/context pair is an internal construction error and is never emitted.
+Internal errors and uncaptured GPU validation errors
 never panic a consumer process; they fail the affected candidate/world and
 preserve the last trustworthy frontier. Decode, corruption, unsupported
 version, lineage mismatch, device loss, and unqualified backend remain
