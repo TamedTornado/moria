@@ -2391,3 +2391,78 @@ contract. Mechanical checks still find 70 active unique headings
 per contract, 346 unique contract/requirement pairs with exact traceability
 parity, and all 43 design requirements represented with `REQ-039` explicitly
 superseded. `git diff --check` passes.
+
+## Auditor Turn — 2026-07-29T20:55:33Z
+
+Mode: approved
+
+Responding to: 2026-07-29T20:50:26Z
+
+### Prior Findings Status
+
+1. **`TECH-071` deterministic CORDIC and axis-angle closure — resolved.**
+   `TECH-071` now fixes the `TurnQ32` widening and signed `2^62`-per-turn
+   domain, nearest-quadrant reduction and midpoint ownership, initial state,
+   checked simultaneous 32-step recurrence, zero-residual branch, floor-shift
+   rule, final ties-to-even reduction, and exact quadrant remap
+   (`architecture.md:411-472`). It also defines exact Q1.30 axis
+   normalization, zero and checked-intermediate failures, and the exhaustive
+   representability boundary (`architecture.md:474-489`). `TECH-007` fixes
+   unsigned half-angle construction, validates the axis even for an identity
+   angle, names `ZeroAxis` and `UnrepresentableAxis`, and specifies raw
+   quaternion construction without premature narrowing
+   (`architecture.md:344-365`). Those variants are appended without changing
+   existing canonical-failure tags (`interfaces.md:2158-2179,2220-2222`).
+   Retained CPU/WGSL vectors cover centers, midpoints and adjacent words,
+   per-iteration state, the maximum turn word, zero/basis/extreme axes, odd
+   half-angle truncation, and zero/half/full-turn cases
+   (`validation.md:23-48`).
+2. **Closed replay identity and diagnostic adapter boundary — resolved.**
+   `TECH-047` replaces the undefined execution identity with the exact
+   33-byte `ReplayIdentityV1`, closed authority-status tags, the frozen
+   configuration fingerprint, and its BLAKE3 domain
+   (`content-persistence.md:801-836`). Restore and public replay compare the
+   identity and already enumerated canonical header fields before transition,
+   callbacks, device submission, or destination-sink invocation, with
+   `ContractMismatch` on any mismatch
+   (`content-persistence.md:838-845`). Adapter, device, backend, driver,
+   process, worker, and fault-plan context are expressly absent from header and
+   replay digest bytes and cannot reject replay
+   (`content-persistence.md:847-855`); `ExecutionSummary.adapter_context`
+   remains diagnostic-only (`gpu-runtime.md:530-534`). `TECH-066` now proves
+   byte identity under adapter-context-only changes and pre-transition failure
+   under configuration or status changes (`validation.md:530-539`).
+
+### New Findings
+
+None. The complete current TDD is implementation-ready under the later human
+determinism addendum.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+No coder question was pending. I verified both claimed corrections in the
+committed TDD; both prior findings are resolved as recorded above.
+
+### Notes To Coder
+
+The determinism addendum is applied without weakening replay-grade canonical
+ticks, rollback, hashing, replay artifacts, or the kernel-contamination audit,
+and without retaining the removed cross-machine tier. The current design keeps
+adapter/driver identity diagnostic, leaves `TECH-063` retired, and introduces
+no multiplayer or privileged consumer path.
+
+The independent provenance check found 70 active unique headings:
+`TECH-001`–`TECH-062`, `TECH-064`–`TECH-071`; exactly one `Implements:` line
+per contract; 346 unique contract/requirement pairs with exact parity to
+`traceability.md`; no duplicate pair or invented requirement; and every
+approved requirement represented except `REQ-039`, whose removal is explicitly
+authorized and recorded. `git diff --check` passed and the worktree was clean
+before this required ledger append.
+
+### Approval
+
+Approved.
