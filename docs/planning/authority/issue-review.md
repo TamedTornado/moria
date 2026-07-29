@@ -248,3 +248,119 @@ No finding requires a source, requirement, technical contract, claim,
 decision, TDD, authority ledger, source manifest, or digest change. All
 findings were satisfied solely in `docs/issues.json`; there is no unsatisfied
 finding or upstream-authority conflict requiring human resolution.
+
+## Issue Review Turn — 2026-07-29T22:14:44Z
+
+**Verdict:** changes_requested
+
+### Review basis
+
+Reviewed the sealed sources and reference inputs named by
+`docs/planning/authority/source-manifest.json`, the authority package, all 43
+`REQ-###` blocks in `docs/design-document.md`, all 70 active technical
+contracts in the complete approved TDD, `docs/tdd/traceability.md`, all 127
+entries in `docs/issues.json`, and the preceding review and coder-response
+turns in this ledger. All sealed source and approved-artifact SHA-256 digests
+match the source manifest.
+
+Mechanical traversal found 127 sequential unique issue IDs, no unknown
+dependency targets, self-dependencies, forward dependencies, or cycles, and
+no uncovered active technical contract. For every issue, the union of the
+cited contracts' `Implements:` IDs exactly equals structured
+`provenance.design_requirements`, and the union of those requirements'
+`Authority:` IDs exactly equals structured `provenance.authority`. Structured
+REQ and authority sets are cited exactly in each body.
+
+### Findings
+
+1. **The new `TECH-060` decomposition still omits two explicitly mandatory
+   headless proof slices.**
+
+   - **Issue IDs:** `M-116`, `M-127`; there is no current issue ID for either
+     missing proof slice.
+   - **Evidence:** `TECH-060` expressly requires both “private correction
+     success/abort” and “completion-bridge
+     reservation/exhaustion/duplicate/old-generation drain”
+     (`docs/tdd/validation.md`, lines 102–103). `M-116`'s Description and
+     Acceptance Criteria cover admission, receipt-family rows, tick-global
+     failures, device loss, shutdown, and missing `RenderApp`, but neither
+     named obligation. No other `M-113`–`M-126` Description or Acceptance
+     Criteria names private-correction success/abort or completion-bridge
+     reservation/exhaustion/duplicate/old-generation drain. `M-122` correctly
+     covers participant snapshot-export failure, but that is a different
+     adjacent `TECH-060` obligation. `M-127` can therefore accept an
+     implementation-completeness result without evidence rows for the two
+     missing slices.
+   - **Required changes:** do not broaden `M-116` with two unrelated implicit
+     obligations. Add independently testable, dependency-ordered `TECH-060`
+     issues for (a) private correction success and abort through the actual
+     correction transaction/public integration path and (b) completion-bridge
+     reservation, exhaustion, duplicate completion, and old-generation drain
+     through controlled headless completions. The correction proof must
+     consume the outputs of at least `M-049`, `M-077`, and the headless
+     lifecycle harness; the bridge proof must consume the applicable
+     publication, bounded-pool, completion/generation, recovery, facade, and
+     headless-harness outputs (`M-060`, `M-065`, `M-066`, `M-067`, `M-077`,
+     and `M-116`). Each issue must cite only `TECH-060`, exactly
+     `REQ-002`, `REQ-005`, `REQ-012`, `REQ-015`, `REQ-016`, `REQ-023`, and
+     exactly `C-003`, `C-013`, `C-010`, `AD-003`, `D-002`, `D-007`, `D-006`,
+     `D-005`, `C-004`, `D-009`, `C-015`, in both structured provenance and
+     body citations. Give each slice a concrete produced test module and exact
+     success/failure/state/resource-release assertions. Make the current
+     completion gate `M-127` (or its sequentially renumbered successor) depend
+     on both new issues, enumerate both evidence rows, and reject either row
+     when absent, incomplete, skipped, or failing.
+
+2. **`M-124` constrains Rust parsing but leaves discovery of normative Rust
+   snippets in standardized Markdown open to a home-grown parser.**
+
+   - **Issue ID:** `M-124`.
+   - **Evidence:** `M-124` must mechanically find and parse every normative
+     Rust snippet from the approved Markdown TDD. Its Inputs and Acceptance
+     Criteria select `syn = "=2.0.106"` for Rust syntax and prohibit a custom
+     Rust parser, but `syn` does not parse Markdown or identify fenced code
+     blocks. The issue names no maintained CommonMark parser and does not
+     prohibit regex/manual fence scanning. Its proof obligation can therefore
+     expand into an unapproved home-grown parser for a standardized external
+     format.
+   - **Required changes:** in `M-124` Inputs and Acceptance Criteria, name and
+     pin one maintained CommonMark parser (for example,
+     `pulldown-cmark`) to enumerate the approved Rust-tagged fenced blocks;
+     retain pinned `syn` for the extracted Rust AST. Require fail-closed,
+     complete snippet discovery and prohibit regex, a custom Markdown
+     tokenizer/fence scanner, or shared general Markdown/Rust validation
+     infrastructure. Keep the issue within `TECH-060` and its existing exact
+     provenance sets.
+
+### Checks that passed
+
+- The coder response fully closes the previously identified `TECH-059`
+  decoder-fuzz, schedule/configuration-perturbation, and participant-RNG
+  slices. `M-079` selects pinned `rug = "=1.27.0"`, and `M-113`–`M-115`
+  select pinned `proptest = "=1.7.0"` in both Inputs and Acceptance Criteria.
+- `M-084` now depends on the fixed-math/orientation oracle work, names matching
+  Naga in Inputs and Acceptance Criteria, and requires exact source/table
+  regeneration. `M-085` consumes matching Naga IR and limits custom work to
+  the approved contamination rules.
+- The remaining `TECH-060` slices are separated into independently testable
+  runtime/genesis-query/observation/provider/store/configuration/participant/
+  external-facade/public-closure/source-lint issues with explicit integration
+  inputs and fail-closed criteria. `M-125` names pinned `syn`, and `M-126`
+  consumes matching Naga IR rather than implementing a WGSL parser.
+- Extra body mentions of `TECH-071` in `M-084`, `TECH-021` in `M-116`,
+  `TECH-053` in `M-117`, `TECH-036` in `M-121`, `TECH-070` in `M-123`,
+  `TECH-017` in `M-124`, and `TECH-059`/`TECH-060` in `M-127` are
+  non-implementation integration or gate references. They do not falsely
+  broaden the issues' structured technical-contract provenance.
+- No issue adds unauthorized game content, assets, routes, controls,
+  characters, forest populations, generation, physics/damage policy,
+  networking, ship/station delivery, cross-machine qualification, universal
+  hardware gates, or a privileged consumer path.
+
+### Authority-boundary disposition
+
+Both findings are correctable solely in `docs/issues.json`. They require no
+change to an approved source, requirement, technical contract, authority ID,
+decision, TDD, authority ledger, source-manifest entry, or digest. This turn
+therefore requests manifest changes rather than failing for upstream human
+resolution.
