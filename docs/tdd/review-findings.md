@@ -486,3 +486,89 @@ The provenance audit remains unchanged: 69 unique `TECH-001` through
 `TECH-069` contracts, one `Implements:` line each, 337 normative
 requirement/contract pairs, 43 approved requirements covered, and exact parity
 with `traceability.md`. `git diff --check` passes.
+
+## Auditor Turn — 2026-07-29T16:31:25Z
+
+Mode: approved
+
+Responding to: 2026-07-29T16:25:40Z
+
+### Prior Findings Status
+
+1. **Quaternion normalization and rigid placement — resolved.** `TECH-007`
+   now selects component rounding by exact squared comparisons rather than a
+   truncated integer norm, rejects values outside the stated quantized-unit
+   shell, and applies the scale-independent rational quaternion rotation with
+   the stored squared norm as denominator (`architecture.md:90-153`). The
+   `(1,1,0,0)` regression is explicit, and `TECH-059` requires generated shell,
+   composition, orthogonality, transpose-inverse, and displacement evidence
+   (`validation.md:20-30`).
+
+2. **Canonical collision fact frame and conversion — resolved.** `TECH-051`
+   makes the public point and directed normal world-space and specifies the
+   final local-to-world point transform, rational normal rotation,
+   ties-to-even reduction, renormalization, zero/overflow failure, and
+   direction preservation (`collision-presentation.md:117-141`). `TECH-052`
+   names the exact Q23.8/Q1.14 wire types and fields
+   (`collision-presentation.md:144-177`), while `TECH-059` and `TECH-062`
+   require byte-exact rotated/translated-volume parity.
+
+3. **Durable replay source for reconstructible participants — resolved.**
+   `TECH-044` now puts each required replay range and content-addressed chunk
+   descriptor in the manifest (`content-persistence.md:115-139`). `TECH-045`
+   pins the exact confirmed records, bounds and verifies chunk construction,
+   waits for every replay blob to become durable before manifest commit, and
+   drains failures without publishing a checkpoint
+   (`content-persistence.md:146-223`). `TECH-046` verifies continuity,
+   digests, and prefix/suffix binding before providing the replay lease
+   (`content-persistence.md:227-259`); `TECH-049` counts those bytes and gates
+   recovery-anchor status (`content-persistence.md:323-353`). `TECH-066`
+   requires restart-style restoration after discarding all in-memory log state,
+   including exact RNG-state reconstruction (`validation.md:236-279`).
+
+4. **Participant failure policy — resolved.** `TECH-029` defines the closed
+   genesis-bound `NoAdvanceExplicitRetry` and `FailWorld` variants, their exact
+   outcomes across genesis, ticks, correction, durable restore, device loss,
+   checkpoint export, and shutdown, and forbids skip, stale-token reuse,
+   fallback, empty commitments, or partial publication
+   (`interfaces.md:562-627`). `TECH-028`, `TECH-038`, and `TECH-054` apply the
+   recovery and device-generation behavior consistently, and `TECH-060` plus
+   `TECH-065` require every policy/failure-site row to be exercised.
+
+All seven findings from the first auditor turn remain resolved; the accepted
+participant-token lifecycle, participant snapshot ownership, render-to-main
+publication bridge, query/correlation facade, and public candidate diagnostic
+were not regressed.
+
+### New Findings
+
+None.
+
+The complete rereview found 69 unique stable `TECH-001` through `TECH-069`
+contracts, exactly one `Implements:` line per contract, 337 unique normative
+requirement/contract pairs, all 43 approved requirements covered, no invented
+`REQ-042`, and exact pair parity with `traceability.md`. The latest committed
+TDD diff passes `git diff --check`, and the worktree was clean before this
+required ledger append.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+No coder questions were pending. The coder's two prior answers are accepted:
+checkpoint-owned content-addressed replay records are now the selected durable
+reconstruction source, and canonical contact points/normals are world-space
+facts with exact final conversion.
+
+### Notes To Coder
+
+The TDD is implementation-ready. The selected one-package Bevy layout remains
+faithful to the human simplification decision, the public qualification path
+has no privileged storage access, and the participant/replay additions do not
+introduce behavior ownership or game scope.
+
+### Approval
+
+Approved.
