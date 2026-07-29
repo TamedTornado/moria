@@ -198,25 +198,97 @@ layers.
 Implements: REQ-004, REQ-005, REQ-018, REQ-021, REQ-022
 
 `ResourceBudgets` is immutable after genesis and contains byte/count ceilings.
-Baseline defaults and compiled maxima are:
+The complete normative field schema, defaults, and portable compiled maxima are
+in TECH-017; there are no hidden queues or opportunistically growing pools.
+The fields bound these retained resources:
 
-| Resource | Default | Compiled maximum | Overload behavior |
-| --- | ---: | ---: | --- |
-| pending canonical ticks | 1 | 1 | reject and return batch |
-| tick inputs | 4,096 | 4,096 | reject batch |
-| tick encoded bytes | 8 MiB | 8 MiB | reject batch |
-| bricks per command | 64 | 64 | canonical command failure |
-| changed bricks per tick | 16,384 | 16,384 | `NoAdvance(CanonicalBudget)` |
-| query queue | 256 | 1,024 | reject request |
-| interest records | 4,096 | 16,384 | reject update |
-| observation records/world | 8,192 | 65,536 | explicit gap |
-| in-flight canonical pool | 1 | 1 | backpressure |
-| in-flight query/materialization/readback slots | 3 | 8 | reject or wait via permit |
-| in-flight presentation slots | 3 | 8 | coalesce newest dirty revision |
-| participant effects/tick | 4,096 | 4,096 | `NoAdvance` |
-| participant tokens+snapshots/frontier | declared sum | 64 MiB | reject genesis / `NoAdvance` |
-| render completion bridge | 32 cells | 32 cells | reserve before extraction |
-| rollback frontiers | 32 | budget-derived | reject genesis/tick pressure |
+| Group | What it bounds | Overload behavior |
+| --- | --- | --- |
+| `identity` | world/material/volume/participant/source/RNG identities; live operation, terminal-receipt, root-pin, and artifact-lease records and retained result bytes | reject the registration/admission; held receipt/root/artifact leases apply backpressure rather than grow |
+| `canonical` | sole pending tick, input/correlation bytes, command target size, changed bricks, and all candidate scan/sort/output scratch | return owned batch before admission, command failure, or tick `NoAdvance(CanonicalBudget)` as appropriate |
+| `content` | base request queue, invoked callback sinks and bytes, one materialization job, resident dense/uniform/radix/directory records, and authoritative GPU pages | delay/reject materialization or retire eligible cache; never evict a pin/scar/frontier |
+| `query` | queued/in-flight queries, inspected bricks, revision list, result records/bytes, staging slots, and aggregate readback bytes | reject and return request, wait only when request selected `Wait`, or finish capacity failure; never truncate `Complete` |
+| `observation` | shared ring records plus payload bytes, subscription records and finite volume lists, poll output, and resnapshot summaries/query payload | reject subscription/resnapshot or emit explicit ring gap |
+| `presentation` | dirty queue, resident chunks/bytes, in-flight jobs, vertex/index/output bytes, and dressing records | coalesce, retire, keep stale, reject, or fail the derived chunk |
+| `checkpoint` | queued/active checkpoints, map/store staging slots and bytes, blob size, manifest node/blob/count bytes, and total checkpoint output | reject/queue, cancel before submission, or fail without a manifest |
+| `rollback` | retained roots/bytes, in-memory log, one correction, private replay ticks/bytes, and recovery replay depth | reject genesis, tick, correction, or recovery; never evict a reachable or required-20 frontier |
+| `participant` | concurrent callback/GPU operations, input, fixed effect/event sinks, state/snapshot tokens, collider artifacts, and checkpoint snapshot bytes | reject descriptor/genesis or cause `NoAdvance`/operation failure; never resize a callback output |
+| `runtime` | interest control records, all consumer callback completion cells/bytes, and render-to-main bridge cells | reject before callback/extraction or apply the owning operation's explicit backpressure |
+
+Before `VerifyingGenesis` can invoke consumer code, checked `u128` arithmetic
+validates all of the following and returns a field-path `ConfigError` on the
+first violation:
+
+1. Every field is nonzero where work is enabled, lies within TECH-017's
+   min/max, and all fixed values are exact:
+   `canonical.pending_ticks == 1`, `checkpoint.active_requests == 1`,
+   `rollback.active_corrections == 1`,
+   `checkpoint.staging_slots <= 3`, and
+   `runtime.render_completion_cells == 32`.
+2. `IdentityBudgets.operation_records_per_world` is at least the sum of the
+   configured pending tick, base request queue, interest control queue, query
+   queue, checkpoint queue, active correction, one recovery, presentation
+   dirty queue, participant operations, and observation subscriptions.
+   Terminal receipts and their bytes are separate reserved pools; every
+   accepted result-producing operation must reserve both before admission.
+3. `content.base_completion_bytes_in_flight >=
+   2_048 * content.base_requests_in_flight`.
+   Every `BaseSourceDescriptor.max_requests_in_flight` is no greater than the
+   world field; Moria may invoke fewer but never more for that source.
+   `runtime.callback_completion_slots` and bytes must fit at least one largest
+   registered base, CPU-participant state/effect/event/snapshot, store-load, or
+   store-completion result. The scheduler may reserve fewer simultaneous
+   callbacks than their queue counts, but it may never invoke consumer code
+   first and seek capacity afterward.
+4. The render bridge inequality is
+   `1 canonical + query.in_flight_requests +
+   checkpoint.staging_slots + presentation.in_flight_jobs + 2 control
+   <= runtime.render_completion_cells`. Genesis, restore, correction, recovery,
+   and GPU participant work share the one canonical cell; materialization
+   shares query slots. Every extracted job reserves its cell first.
+5. `query.readback_bytes_in_flight >= query.bytes_per_result`,
+   every per-request `QueryLimits` is no larger than the world fields, and
+   terminal receipt bytes can retain the largest admitted query or resnapshot
+   result. A query result allocation reserves its full declared record and
+   byte limit before encoding.
+6. Observation record, poll, and resnapshot byte maxima are no greater than
+   `payload_bytes_per_world`; poll/resnapshot record maxima are no greater than
+   their owning count pools; and the fixed subscription volume list fits both
+   identity and resnapshot summary limits. Count and byte ring limits apply
+   independently; reaching either evicts whole oldest records and causes a
+   gap.
+7. `presentation.resident_bytes >= presentation.bytes_per_job` and each
+   vertex/index count fits that job's exact encoded output. The sum of
+   submitted presentation jobs may not exceed resident plus in-flight bytes.
+8. `checkpoint.mapped_bytes_in_flight` fits at least one 16 MiB readback page,
+   `store_bytes_in_flight >= bytes_per_blob`, manifest counts/bytes fit the
+   total checkpoint limit, each replay chunk fits `bytes_per_blob`, and a
+   registered participant snapshot fits both participant and checkpoint
+   totals. A logical blob larger than one readback page reserves its complete
+   final Moria-owned bytes first, then fills/hashes it through ordered pages;
+   no mapped page or callback buffer grows. Submitted slots are additionally
+   throttled by aggregate byte limits.
+9. `rollback.retained_frontiers` equals
+   `RollbackConfig.capacity_ticks`, is at least 20, and is no greater than
+   `rollback.log_ticks`. The checked genesis worst case
+   (genesis root + 20 times maximum COW brick/node/metadata delta + 20 times
+   the sum of registered participant state/snapshot maxima + root tables)
+   must fit `rollback.retained_bytes` and authoritative GPU pages.
+   `recovery_replay_ticks <= log_ticks`; correction ticks/bytes must fit the
+   log and private-root pools.
+10. For registrations sorted by `ParticipantId`, the sums of descriptor
+    input, effects, events, event bytes, state/snapshot, and artifact claims
+    fit the corresponding participant fields and canonical scratch. Every
+    per-event maximum fits the event aggregate; every snapshot fits the
+    checkpoint blob/total and callback or GPU staging pool. Exactly one state
+    token record per participant per retained frontier is included in the
+    rollback calculation.
+11. Dense/uniform brick, radix, directory, scratch, readback, checkpoint,
+    rollback, presentation, and participant pages fit checked `u64` page
+    counts, the configured group byte ceilings, `max_buffer_size`, and
+    `max_storage_buffer_binding_size` after TECH-033 paging/alignment. The
+    actual adapter may lower a configured byte ceiling; it may not silently
+    lower a logical canonical count after genesis.
 
 One in-flight permit owns all input, scratch, output, diagnostic, and staging
 resources for that job. A permit returns only after the last queue completion,
@@ -224,10 +296,12 @@ mapped views are dropped, buffers are unmapped, results are decoded/discarded,
 and any staging-belt chunk has been recalled.
 
 Canonical resource classifications use declared logical limits, not physical
-allocation race or current free-list order. If the adapter cannot allocate the
-declared baseline plus 20 frontiers, genesis fails. Noncanonical work applies
-priority, delay, coalescing, retirement, or rejection as shown; it never evicts
-pinned truth or unsaved scars.
+allocation race or current free-list order. Callback, observation,
+participant-event, query, checkpoint, and presentation outputs write only into
+the Moria-owned reservation made before producer execution. If the adapter
+cannot allocate the declared baseline plus 20 frontiers, genesis fails.
+Noncanonical work applies priority, delay, coalescing, retirement, or rejection
+as shown; it never evicts pinned truth or unsaved scars.
 
 ### TECH-037 — Completion, mapping, and generation safety
 
@@ -264,6 +338,16 @@ completion is silently replaced.
 
 Implements: REQ-001, REQ-005, REQ-014, REQ-015, REQ-021
 
+```rust
+pub struct RecoveryRequest {
+    pub world: WorldId,
+    pub expected_frontier: FrontierSummary,
+    pub checkpoint: CheckpointKey,
+    pub max_replay_ticks: u32,
+    pub max_replay_bytes: u64,
+}
+```
+
 On device loss Moria:
 
 1. closes admission and marks every candidate in the old generation
@@ -272,7 +356,8 @@ On device loss Moria:
    and participant commitments on the host, but makes GPU queries unavailable;
 3. applies every GPU participant's TECH-029 failure policy: any `FailWorld`
    participant makes the world `Failed`; otherwise the world enters
-   `RecoveringParticipant` and waits for an explicit `request_recovery`;
+   `RecoveringParticipant` and waits for an explicit TECH-070
+   `request_recovery`;
 4. reserves one bounded recovery attempt, asks Bevy `RenderStartup` to
    construct a new generation, and verifies that the replacement adapter
    matches a current qualified tuple;
@@ -294,6 +379,13 @@ Moria never loops or schedules a timer retry; the consumer may request another
 bounded attempt or shut down. The last durable checkpoint remains usable;
 Moria never fabricates empty matter or publishes a different state as
 recovery.
+
+Admission verifies that the expected frontier is still the last trustworthy
+frontier, the checkpoint key is a compatible visible recovery anchor, and
+request limits fit `ResourceBudgets.rollback`; rejection returns the complete
+request. Acceptance reserves one private bundle, replay/log bytes, participant
+state, one canonical GPU/bridge cell, and terminal receipt storage before
+creating the new generation.
 
 Device loss during checkpoint readback leaves the manifest uncommitted and the
 root pinned until failure cleanup. Device-bound objects are never retained

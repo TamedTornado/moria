@@ -158,6 +158,7 @@ contract.
 - [architecture.md](architecture.md): ownership, canonical state, sparse
   representation, transition, hashing, and rollback roots.
 - [interfaces.md](interfaces.md): public Rust facade, inputs, receipts,
+  complete callable surface, resource-budget schema, inputs, receipts,
   queries, participants, observations, errors, and state machines.
 - [gpu-runtime.md](gpu-runtime.md): Bevy/wgpu integration, WGSL ABI,
   scheduling, pools, bounds, device loss, and portability.
@@ -191,6 +192,13 @@ contract.
 9. Every queue, allocation, output, readback, observation stream, retained
    window, and replay is bounded.
 10. Backend or participant failure cannot partially publish a tick.
+11. Participant coordination is one-phase: no same-tick participant DAG or
+    handoff exists; bounded opaque events reach the owning tick receipt only
+    after confirmation, and effects use ordinary canonical command ordering.
+
+Performance acceptance is correctness-first. The superseded `P1`–`P10` gates
+are not claims of this TDD; TECH-067 defines the one named rollback tier and
+TECH-068 requires hardware-contextual measurements for every retained hot path.
 
 ## Engineering sequence
 
@@ -282,6 +290,12 @@ only on declared physical adapters. `UNAVAILABLE` is not `PASS`.
 - Physical slot IDs are not stable identities and never enter persistence.
 - Every WGSL bounds check and overflow flag is part of the matching Rust ABI
   test. Pop every wgpu error scope.
+- Implement the full TECH-070 facade; do not leave a prose-only capability or
+  add a second callable path. Admission rejection returns owned requests, and
+  every producer output reserves its TECH-036 count/byte capacity first.
+- Observation filtering uses append-time filter facts, never current placement.
+  Participant coordination remains one-phase with no same-tick DAG/handoff;
+  opaque participant events are delivered only by confirmed tick receipts.
 - Tests and tools use the public facade. CPU-oracle, mock, software-adapter,
   shader-compile, and rendered-frame evidence cannot be labeled real-GPU
   canonical qualification.

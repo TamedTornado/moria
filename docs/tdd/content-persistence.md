@@ -46,13 +46,90 @@ pub trait BaseContentSource: Send + Sync + 'static {
         completion: BaseBrickCompletion,
     );
 }
+
+pub struct BaseSourceDescriptor {
+    pub id: BaseContentSourceId,
+    pub contract: ContractDigest,
+    pub max_requests_in_flight: u32,
+    pub diagnostic_schema: u32,
+}
+
+pub struct BaseBrickRequest {
+    pub request_id: BaseRequestId,
+    pub world: WorldId,
+    pub volume: VolumeId,
+    pub brick: BrickCoord,
+    pub root: CanonicalHash,
+    pub expected: BaseBrickExpected,
+}
+
+pub enum BaseBrickExpected {
+    Uniform { cell: CellWire, digest: ContentDigest },
+    CanonicalBrick { bytes: u32, digest: ContentDigest },
+}
+
+pub struct BaseSourceFailure {
+    pub code: u32,
+    pub retryability: Retryability,
+    pub diagnostic: BoundedUtf8<96>,
+}
+
+pub enum BaseCompletionDisposition {
+    Accepted,
+    AlreadyCompleted,
+    Cancelled,
+    LateGeneration,
+}
+
+pub struct BaseBrickCompletion { /* private Moria completion-cell token */ }
+
+impl BaseBrickCompletion {
+    pub fn write(&mut self, bytes: &[u8])
+        -> Result<(), BaseCompletionWriteError>;
+    pub fn finish_brick(self) -> BaseCompletionDisposition;
+    pub fn finish_uniform(self, cell: CellWire) -> BaseCompletionDisposition;
+    pub fn fail(self, failure: BaseSourceFailure) -> BaseCompletionDisposition;
+}
 ```
 
-A request is bounded, names the expected manifest subtree/brick digest, and
-returns canonical brick bytes or a typed unavailable/failure result. Moria
-validates domain, cell invariants, exact byte length, and digest before
-residency. Wrong bytes fail the region. A source may retry only after an
-explicit consumer retry; timing never substitutes content.
+A request is an owned immutable descriptor with no borrowed Moria storage. It
+names one expected manifest brick/uniform digest and exact encoding length;
+`CanonicalBrick.bytes` must equal 2,048 in v1. Moria copies and freezes
+`BaseSourceDescriptor` at registration and retains the consumer's `Arc` only
+for invocation. The source may retain its request value for diagnostics, but
+the values do not pin a root; only Moria's admitted operation record does.
+
+Before invoking consumer code, Moria reserves one callback-completion slot,
+one request/lifetime record, and the worst-case 2,048 payload bytes from
+`ResourceBudgets`, even for a uniform result. `BaseBrickCompletion` is a
+non-`Clone` generation/attempt token into that Moria-owned bounded sink. It
+does not own a `Vec` or expose a raw slice. `write` copies sequential bytes
+under the sink lock, advances one checked cursor, rejects a write past 2,048,
+and returns `Cancelled` after logical cancellation. It accepts no sparse
+offsets, overlap, grow operation, writer trait, or consumer allocator.
+`finish_brick` succeeds only when the cursor is exactly 2,048;
+`finish_uniform` succeeds only for the expected uniform encoding and after no
+brick bytes were written. Moria then validates domain, every `CellWire`, exact
+length, and digest before residency. Wrong bytes fail the region.
+
+Exactly one callback invocation and one accepted terminal completion exist per
+admitted request. A terminal method consumes the token; the backing atomic
+cell still rejects a duplicate/forged attempt as `AlreadyCompleted`.
+Completion after cancellation or device-generation closure is
+`Cancelled`/`LateGeneration`, releases no result into materialization, and
+cannot revive the request. Dropping a live completion without a terminal call
+records `ProducerDropped`, fails the request, and releases its reservations.
+Cancellation before invocation removes the queue entry and never calls the
+source. Cancellation after invocation closes the cell; because `write` only
+copies while holding the cell lock, Moria can reclaim the sink once the active
+copy returns even if consumer code keeps the small closed token.
+
+The only diagnostic crossing the boundary is the fixed code, retryability,
+and at most 96 UTF-8 bytes in `BaseSourceFailure`; panic payloads, error
+chains, strings, maps, and consumer-owned byte collections are converted to a
+bounded `SourcePanicked` diagnostic or dropped. No source call is
+automatically retried. A new explicit materialization/interest retry allocates
+a new request ID, sink, and permit; timing never substitutes content.
 
 If a source cannot promise reconstructability, the consumer must use
 `Bundled`, whose store contains every base blob referenced by the manifest.
@@ -104,6 +181,18 @@ BLAKE3 digests of uncompressed canonical bytes; zstd is a storage encoding
 whose version/options are recorded and whose decode has a maximum output.
 Deduplication is optional and cannot change semantics.
 
+Every `StoreSink`, `LoadSink`, and `CommitSink` is a non-`Clone` token into the
+same bounded completion-cell discipline as TECH-041. Moria reserves the
+callback slot, worst-case result/diagnostic bytes, and operation record before
+calling the store. `LoadSink` accepts sequential bounded copies into a
+Moria-owned `BlobLimits.max_bytes` buffer, not an `OwnedBytes` returned by the
+store; commit/put completions carry only a closed status code and a
+`BoundedUtf8<96>` diagnostic. Duplicate, dropped, cancelled, and late
+completions have the same explicit dispositions and cannot commit a manifest.
+`OwnedBytes` passed *to* `put_blob`/`commit_manifest` is immutable Moria-owned
+input whose lifetime is pinned through completion; the store receives no
+allocator or growable Moria collection.
+
 The native reference store writes content-addressed blobs first, verifies
 length/digest, fsyncs them, writes a manifest to a unique temporary name,
 fsyncs it, atomically renames to the checkpoint key, and fsyncs the parent
@@ -147,10 +236,23 @@ depth, and byte bounds before allocation.
 
 Implements: REQ-005, REQ-014, REQ-017, REQ-018
 
+```rust
+pub struct CheckpointRequest {
+    pub world: WorldId,
+    pub key: CheckpointKey,
+    pub frontier: FrontierSummary,
+    pub max_uncompressed_bytes: u64,
+    pub max_manifest_nodes: u32,
+    pub max_manifest_blobs: u32,
+}
+```
+
 A checkpoint request names an exact confirmed `(tick, root_hash)` and a maximum
 readback/store budget. Admission pins that immutable root and participant
-frontier. New ticks may confirm concurrently; they remain dirty relative to
-the checkpoint.
+frontier, reserves one queue/operation/receipt record and the declared staging
+and terminal-result bytes, and returns the TECH-070 `CheckpointReceipt`.
+Admission rejection returns the unchanged `CheckpointRequest`. New ticks may
+confirm concurrently; they remain dirty relative to the checkpoint.
 
 Canonical substrate traversal follows scar and metadata nodes only; participant
 snapshots use the separate export path below. GPU blobs are copied
@@ -180,8 +282,9 @@ The export result is bound to participant ID/contract, pinned tick/root,
 participant commitment, snapshot length/digest, and device generation where
 applicable. Moria checks all fields, exact length, and BLAKE3 digest before
 calling `CheckpointStore::put_blob`; the store completion must confirm the
-same digest. At most three aggregate checkpoint staging slots and 64 MiB of
-store writes, including scar, participant, and replay bytes, are in flight.
+same digest. At most the configured three aggregate checkpoint staging slots
+and `CheckpointBudgets.store_bytes_in_flight` (default 64 MiB, portable maximum
+256 MiB), including scar, participant, and replay bytes, are in flight.
 Snapshot participants cannot provide an external locator instead of bytes.
 Reconstructible participants contribute descriptor, commitment, and required
 replay range but no snapshot blob. Moria takes the union of those ranges,
@@ -228,6 +331,20 @@ release.
 
 Implements: REQ-008, REQ-014, REQ-021, REQ-029, REQ-035
 
+```rust
+pub struct RestoreRequest {
+    pub key: CheckpointKey,
+    pub limits: RestoreLimits,
+}
+
+pub struct RestoreLimits {
+    pub manifest_bytes: u64,
+    pub blob_count: u32,
+    pub uncompressed_bytes: u64,
+    pub replay_ticks: u32,
+}
+```
+
 Restore is world construction, not a post-genesis mutation:
 
 1. load and bounded-decode the manifest;
@@ -258,6 +375,12 @@ hash disagreement fails the entire restore. Migration/rebase is a separate
 consumer-authored tool that produces a new genesis identity; Moria does not
 guess or mutate an old checkpoint in place.
 
+`WorldBuilder::restore_checkpoint` consumes the private builder and request
+only on admission. Rejection returns both in `RestoreRejected`; acceptance
+returns `RestoreReceipt`. Cancellation/failure destroys the private bundle and
+publishes no world. Retry is a new call with a returned or newly constructed
+builder; restore never attaches to or replaces an already-published world.
+
 ## Replay and rollback
 
 ### TECH-047 — Replay record and divergence artifact
@@ -273,7 +396,8 @@ header {
 }
 tick record {
   tick, sealed TickBatch bytes/digest, canonical outcome bytes/digest,
-  participant commitments, expected world root hash
+  participant commitments, bounded opaque participant event bytes/digest,
+  expected world root hash
 }
 ```
 
@@ -281,6 +405,13 @@ Records are length-prefixed, checksummed, bounded, and committed only after the
 tick confirms. Presentation and timing are excluded. Replay feeds the same
 `submit_tick` path with a replay permit; no internal state mutation or expected-
 hash override exists.
+
+Participant events are schema-bound opaque bytes in deterministic
+`(ParticipantId, local_sequence)` order. Replay compares them exactly and
+returns them in the corresponding replay tick receipt only for a published
+replay frontier; Moria does not decode their behavior meaning, place them in
+the Moria-state observation ring, or deliver them to another participant
+during the same tick.
 
 At the first mismatch, replay stops before publishing the divergent candidate
 and writes `moria-divergence-v1` containing genesis/contract/fixture digests,
@@ -293,11 +424,36 @@ calls a self-reported pass authoritative; an independent tool compares bytes.
 
 Implements: REQ-029, REQ-030, REQ-035, REQ-037, REQ-040, REQ-043
 
-`request_correction(target, replacement_batches)` accepts only a retained
+```rust
+pub struct CorrectionRequest {
+    pub world: WorldId,
+    pub target: FrontierSummary,
+    pub replacement_batches: BoundedVec<SealedTickBatch>,
+    pub expected_hashes: BoundedVec<CanonicalHash>,
+    pub max_private_bytes: u64,
+}
+
+pub struct CorrectedTickOutput {
+    pub tick: Tick,
+    pub outcome_digest: CanonicalHash,
+    pub participant_event_digest: CanonicalHash,
+    pub participant_events: BoundedVec<ParticipantEvent>,
+}
+
+pub struct CorrectionCommitted {
+    pub frontier: FrontierSummary,
+    pub ticks: BoundedVec<CorrectedTickOutput>,
+}
+```
+
+The TECH-070 `request_correction` call accepts only a retained
 confirmed frontier and a complete contiguous input sequence from
 `target.tick + 1` through the desired corrected present. It reserves replay
 bytes, output roots, participant resources, and pins the original live and
-target roots before starting.
+target roots before starting. Admission rejection returns the complete request,
+including every still-owned sealed batch. Acceptance returns
+`CorrectionReceipt`; no batch may be submitted independently while it belongs
+to that correction.
 
 Moria creates a private replay context from the target root and target
 participant tokens. Snapshot adapters return new staged tokens from the pinned
@@ -311,6 +467,13 @@ frontier. Success atomically replaces the live frontier with the final
 corrected `FrontierBundle`, emits one correction observation plus canonical
 outcome range, and schedules only the final accumulated dirty regions for
 derived rebuild.
+
+The correction observation contains Moria-owned frontier/outcome facts only.
+Participant-owned events from private replay ticks are delivered in the
+bounded `CorrectionCommitted.ticks` result after final publication and in the
+replay record, never through TECH-025 or during private replay. Admission
+reserves their worst-case aggregate count/bytes under the correction and
+terminal-receipt budgets.
 
 Original frontiers and participant tokens remain pinned until success/failure
 and all GPU readers complete. On failure, staged CPU tokens drop immediately
@@ -343,7 +506,8 @@ sequences remain `u32` bounded.
 
 The union of reconstructible participant ranges must also fit
 `max_log_ticks`, `max_log_bytes`, the checkpoint request's total byte budget,
-the 4 GiB manifest maximum, and the three-slot/64 MiB in-flight limits.
+the 4 GiB manifest maximum, and the configured three-slot mapped/store
+in-flight byte limits.
 Replay-record and replay-chunk bytes count in checkpoint progress, completion,
 telemetry, manifest completeness totals, and recovery-anchor accounting. A
 checkpoint is a recovery anchor for a reconstructible participant only after

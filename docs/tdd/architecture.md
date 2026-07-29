@@ -270,7 +270,11 @@ batch inputs; they combine separately in `ParticipantId` order.
 Participant preparation reads `State[t]` plus its phase-zero input. It does not
 observe same-tick lifecycle, placement, or direct-matter effects; all such
 effects, including its own proposals, compose into `State[t + 1]`. This
-read-before-write rule is part of the transition version.
+read-before-write rule is part of the transition version. It also cannot
+observe another participant's same-tick state, effects, or opaque events.
+Registration rejects a dependency declaration or adapter requiring a
+same-tick predecessor. V1 has no participant DAG, handoff pass, prior-feedback
+buffer, or conflict callback.
 
 All revision and source-hash preconditions are evaluated against `State[t]`.
 Eligible successful commands then compose in canonical order on a staged
@@ -279,6 +283,12 @@ staged cell. A failed command contributes a canonical outcome at its order
 position but no writes or revision advance. Tick-global inability to bind
 content, participants, arithmetic contract, or canonical resources yields
 `NoAdvance`; there is no partial tick publication.
+
+This is also the complete participant-effect conflict policy. Participant
+effects occupy phase 4 in `(ParticipantId, local_sequence)` order. Overlap is
+legal and composes by the rule above; stale or otherwise unmet preconditions
+fail only that effect. V1 adds no conflict graph, ownership lock, handoff
+buffer, arbitration callback, or automatic retry.
 
 ### TECH-012 — Atomic mutation and revision rules
 
@@ -402,14 +412,18 @@ device_generation?)`, and only the originating adapter may inspect it.
 For every attempted tick the adapter receives a lease to the source token,
 source root hash, bounded input slice, and canonical artifact leases. It
 constructs a new uninstalled token and returns a bounded ordered effect list,
-a 32-byte participant commitment, and, for each declared RNG stream, the
-canonical RNG-state commitment specified below. Effects are ordinary commands
-and have no privileged mutation path. Preparing a token may not mutate the
-source token. A tick confirms only when the exclusive coordinator installs one
-immutable `FrontierBundle` containing the candidate root and every prepared
-participant token. Before that swap all tokens are private; after it the old
-bundle remains pinned for readers and rollback. Thus participant installation
-cannot partially commit independently of substrate publication.
+a bounded ordered opaque event list, a 32-byte participant commitment, and,
+for each declared RNG stream, the canonical RNG-state commitment specified
+below. Effects are ordinary commands and have no privileged mutation path.
+Events are participant-owned output carried in canonical participant records
+and the confirmed tick receipt; they never enter Moria's observation stream or
+feed another participant in the same tick.
+Preparing a token may not mutate the source token. A tick confirms only when
+the exclusive coordinator installs one immutable `FrontierBundle` containing
+the candidate root and every prepared participant token. Before that swap all
+tokens are private; after it the old bundle remains pinned for readers and
+rollback. Thus participant installation cannot partially commit independently
+of substrate publication.
 
 A rollback or correction creates a private `CorrectionContext` containing
 tokens restored from the target frontier. Each replayed tick produces the next
@@ -436,8 +450,12 @@ swap rather than an adapter callback. A sink completion moves to
 `PreparedPrivate`; duplicate completion is rejected. Cancellation is accepted
 only before preparation is submitted. After submission it suppresses
 installation, drains the token, and returns its fixed permit. Descriptor maxima
-for source state, destination state, effects, snapshot bytes, replay ticks, and
-artifact leases are reserved before the operation; no callback may grow them.
+for source state, destination state, effects, opaque events, snapshot bytes,
+replay ticks, and artifact leases are reserved before the operation; no
+callback may grow them. Effects and events use separate Moria-owned fixed-slot
+sinks with exact aggregate byte counters. A completion cannot return a
+consumer-owned `Vec`, map, diagnostic string, or allocation; it fills those
+sinks and one bounded diagnostic record.
 
 For `PerTickSnapshot`, each prepared token also exposes immutable
 `SnapshotMetadata { uncompressed_bytes, digest }` and a bounded asynchronous

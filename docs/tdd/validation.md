@@ -71,7 +71,10 @@ open a window or depend on wall time.
 
 Required slices cover every legal transition and invalid transition rejection,
 permit drop/queue close, receipt drop after submission, cancellation lifetime,
-gap and resnapshot, interest withdrawal with pins, checkpoint failure,
+full TECH-070 callable-shape compile/use, ownership return on every admission
+rejection, every TECH-021 family/phase/cancellation/retry/device-loss/shutdown
+row, gap and bounded resnapshot/resume, subscription creation/start/filter/
+close/drop, interest withdrawal with pins, checkpoint failure,
 participant duplicate/late completion, participant source-token immutability,
 private correction success/abort, snapshot export failure, completion-bridge
 reservation/exhaustion/duplicate/old-generation drain, correlation propagation
@@ -80,10 +83,36 @@ truth, and a missing `RenderApp`. The missing-renderer case reports
 `BackendUnavailable`; it is not a GPU test and does not install a no-op
 canonical backend.
 
+Observation fixtures move and retire a volume, reclaim the old directory
+version, then poll an older retained record through volume/kind/spatial
+filters. Matching must use the stored append-time bounds and membership.
+Count- and byte-triggered gaps each pin a bounded resnapshot, allow new events
+to arrive while it runs, resume at the captured cursor, and produce either the
+exact suffix or another honest gap.
+
+Base-content fixtures prove that all 2,048 payload bytes and callback permits
+are reserved before source invocation; exercise exact/short/long writes,
+invalid cells/digest, bounded diagnostics, drop, cancellation during write,
+duplicate/late/generation completion, source panic, and resource release.
+They assert that no source-owned `Vec`, writer, error chain, or diagnostic
+allocation enters a Moria queue.
+
 The participant slice exercises every row of both
 `ParticipantFailurePolicy` variants at genesis, ordinary preparation,
 correction, durable restore, device loss/recovery, checkpoint export, and
-shutdown; it asserts that no row can publish without the participant.
+shutdown; it asserts that no row can publish without the participant. It also
+registers two participants and proves registration rejects same-tick
+dependencies, both read only `State[t]`, effects resolve solely by
+`(ParticipantId, local_sequence)`, opaque event bytes reach receipts/
+replay after confirmation but never the Moria-state observation ring, and no
+same-tick event handoff or
+behavior vocabulary exists.
+
+One generated configuration suite varies every `ResourceBudgets` field at
+zero/min/default/max/max+1 and exercises every TECH-036 cross-limit inequality,
+including checked-arithmetic overflow. Passing genesis retains exactly the
+declared queue/pool/output capacities in telemetry; failing genesis invokes no
+consumer callback and allocates no device page.
 
 `moria-qualify` compiles as a separate binary crate and imports only public
 `moria`. A lint/test fails if it enables a test-only facade feature or imports a
@@ -181,7 +210,10 @@ The permanent scenario suite uses consumer-supplied fixtures and the public
 facade:
 
 1. **Public boundary:** configure, verify genesis, interest, sample/region/
-   trace/overlap/sweep, mutate, observe, checkpoint, restore, and shut down.
+   trace/overlap/sweep, mutate, create filtered observation subscriptions,
+   force/recover a gap, read telemetry, checkpoint, correct, restore, request
+   device recovery where supported, and shut down through every TECH-070
+   callable without a private import.
 2. **Deep volume:** a static volume has voids, signed-density boundaries,
    material bands, and authored structures across all axes. Queries and edits
    operate at the deepest bounds; no height field exists in the fixture.
@@ -226,7 +258,10 @@ handle escapes, and no timing-selected tick confirms.
 External participant rows are expanded for every
 `ParticipantFailurePolicy`/failure-site pair in TECH-029, including
 `RecoveringParticipant`, successful explicit recovery, recovery mismatch, and
-terminal-world behavior.
+terminal-world behavior. Additional rows cover participant effect overlap and
+precondition conflict, event count/byte/record overflow, duplicate event
+sequence, wrong schema, and proof that no output reaches a consumer when the
+tick does not confirm.
 
 I/O, materialization, callback, and presentation schedules are permuted while
 the same activation input bytes run. Simulation-domain normalized bytes and
@@ -317,25 +352,51 @@ pass before performance supports a claim.
 
 Implements: REQ-007, REQ-022, REQ-023, REQ-041
 
+The approved design's performance policy supersedes the pre-amendment
+architecture's `P1`–`P10` feasibility gates. Those identifiers are not v1
+acceptance gates, are not silently inherited thresholds, and are not claims
+made by this TDD. V1 has:
+
+1. universal correctness, boundedness, determinism, and fail-closed gates from
+   TECH-059 through TECH-066 and TECH-069;
+2. the single named 20-tick rollback performance tier in TECH-067; and
+3. hardware-contextual benchmark receipts below, whose measured distributions
+   are reported without converting old thresholds into pass criteria.
+
 `moria-qualify benchmark` fixes fixture digest, budgets, warm-up, sample count,
 interest route, mutation density, and adapter context before running. Separate
 receipts report:
 
-- mutation admission-to-confirm and confirm-to-current-presentation;
-- point/region/trace/overlap/sweep response and bytes;
-- lifecycle transition latency and residency high-water marks;
+- sparse logical/resident brick ratio, homogeneous-region compression,
+  interest churn, eviction/reclaim, and authoritative/derived residency
+  high-water marks;
+- base callback, scar-overlay, upload, and ready-transition materialization
+  time/bytes, including cold and cache-hit paths;
+- mutation admission-to-confirm, changed-brick/hash work, and
+  confirm-to-current-presentation;
+- point/region/trace/overlap/sweep query and canonical-collision response,
+  inspected records, result/readback bytes, and oracle parity;
+- presentation queue/build/upload/install time, vertex/index bytes,
+  revision lag, stale/coalesced work, and failure isolation;
+- lifecycle transition latency and queue/pool high-water marks;
 - authoritative, rollback, scratch, readback, and derived GPU bytes;
-- checkpoint throughput/size and restore time;
-- collision oracle agreement;
-- CPU/GPU participant handoff, transfer/readback pressure, and commitment cost;
+- checkpoint pin/readback/blob/manifest throughput and size, plus cold
+  restart restore/rebuild time;
+- CPU/GPU participant input/artifact/effect/event/state/snapshot handoff,
+  transfer/readback pressure, commitment cost, and generation recovery;
 - incremental leaves/nodes/bytes hashed;
-- replay ticks/second and correction-depth curve.
+- replay ticks/second, retained bytes, root-install cost, and complete
+  correction-depth curves including depths 1/5/10/20/32.
 
-No universal latency is claimed beyond TECH-067's named tier. Each benchmark
-has `PASS`, `FAIL`, or `NOT_DEMONSTRATED`; exceeding a configured resource
-budget is always `FAIL`. Reports from differing machines remain comparable
-because raw configuration/context and distributions are retained, not only a
-summary score.
+Every receipt names CPU/GPU/driver/backend, granted limits/features, budgets,
+fixture density/scale, warm-up/sample count, timestamp availability, mapping
+cost, and software versions. No universal latency, throughput, residency
+ratio, or memory target is claimed beyond TECH-067's named tier. Correctness
+rows have `PASS`, `FAIL`, or `NOT_DEMONSTRATED`; budget exhaustion is `FAIL`.
+Performance rows report measured values and `TIER_MET` only for the named
+rollback tier, otherwise `MEASURED` or `NOT_DEMONSTRATED`. Reports from
+differing machines remain comparable because raw configuration/context and
+distributions are retained, not only a summary score.
 
 ### TECH-069 — Evidence schema and completion gate
 
@@ -351,17 +412,32 @@ numbers.
 
 The implementation-ready completion gate is:
 
-1. the exact local commands in TECH-004 pass;
-2. all CPU/headless/public-boundary/failure/persistence/rollback tests pass;
-3. every WGSL module and negative fixture passes at its named layer;
-4. real-GPU parity passes on each tuple being claimed;
-5. cross-backend comparison passes for every claimed Metal/Vulkan/DX12 row;
-6. device-loss behavior is evidenced as reconstructed or terminal;
-7. visual fixtures are captured and human-reviewed only for presentation
+1. mechanical traceability proves every approved `REQ` is implemented by at
+   least one semantically authorized stable `TECH`, every `TECH` has exactly
+   one matching `Implements:` line, and `traceability.md` has exact pair parity;
+2. implementation-completeness validation proves every normative public Rust
+   name is defined, every TECH-070 callable compiles from the external-style
+   binary, every async family has the TECH-021 admission/cancel/terminal/
+   retry/shutdown/generation tests, and every resource/callback/observation/
+   participant ownership bound has executable evidence;
+3. the exact local commands in TECH-004 pass;
+4. all CPU/headless/public-boundary/failure/persistence/rollback tests pass;
+5. every WGSL module and negative fixture passes at its named layer;
+6. real-GPU parity passes on each tuple being claimed;
+7. cross-backend comparison passes for every claimed Metal/Vulkan/DX12 row;
+8. device-loss behavior is evidenced as reconstructed or terminal;
+9. visual fixtures are captured and human-reviewed only for presentation
    claims;
-8. benchmark receipts report budgets and honest status;
-9. no missing row is interpreted as pass.
+10. benchmark receipts report every TECH-068 path, hardware context, budgets,
+    and honest status without claiming superseded `P1`–`P10` gates;
+11. no missing row is interpreted as pass.
 
 Release automation must not emit an authority qualification manifest if the
 worktree is dirty, contract/source digests differ, an unexpected GPU error
 occurred, a required row is unavailable, or byte comparison diverges.
+
+An approval statement must name both conclusions separately: **approved GDD
+coverage** means the traceability condition in item 1, while **approved
+implementation completeness** means items 2 through 11 leave no undefined
+callable, owner, bound, lifecycle, or evidence obligation. Passing one does not
+assert the other.

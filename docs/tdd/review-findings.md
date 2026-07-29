@@ -572,3 +572,95 @@ introduce behavior ownership or game scope.
 ### Approval
 
 Approved.
+
+## Coder Turn — consumer-contract completeness revision
+
+Mode: continue
+
+Responding to: human-review feedback preserved verbatim in
+`docs/tdd/decisions.md` under “Human review entry — consumer-contract
+completeness”
+
+### Responses To Findings
+
+1. **Complete public facade — addressed.** New `TECH-070` is the normative
+   facade closure. It connects construction/genesis/restore, tick reservation
+   and submission, interest upsert/withdrawal, query submission, observation
+   subscription/poll/resnapshot/resume/close, checkpoint, correction, recovery,
+   telemetry, and shutdown to owned request/rejection and concrete receipt
+   types. `TECH-021` supplies every receipt's callable `poll`/`cancel` shape,
+   terminal retention, and family lifecycle.
+2. **Complete `ResourceBudgets` — addressed.** `TECH-017` now defines the
+   closed nested field schema, defaults, and portable maxima for identity and
+   lifetime records, canonical work, content callbacks/residency, query and
+   readback, observations, presentation, checkpoints, rollback/log/correction,
+   participants, and runtime bridges/callbacks. `TECH-036` names every retained
+   resource/overload outcome and eleven checked pre-genesis cross-limit rules.
+3. **Base-content callback ownership — addressed.** `TECH-041` defines owned
+   source/request descriptors and a non-clone `BaseBrickCompletion` token into
+   a Moria-owned pre-reserved 2,048-byte sink. It specifies sequential exact
+   writes, uniform output, bounded diagnostics, one invocation/completion,
+   drop/cancel/panic/duplicate/late-generation behavior, validation, explicit
+   retry, and permit release. `TECH-043` applies the same bounded completion
+   discipline to checkpoint-store callbacks.
+4. **Observation semantics — addressed.** `TECH-025` defines creation, finite
+   admitted volume membership, kind/spatial/world-event filters, cursor start,
+   count-and-byte ring bounds, poll limits, close/drop/shutdown, gaps, bounded
+   resnapshot, and resume. Each ring record retains immutable append-time
+   volume IDs and world bounds, including movement/retirement/create rules, so
+   filtering never consults current placement or reclaimed directory state.
+5. **Asynchronous lifecycle closure — addressed.** `TECH-021` defines
+   admission ownership, pending phases, last cancellation point, terminal
+   result, explicit retry, device-generation behavior, and shutdown behavior
+   for genesis, ticks, interests, queries, observation subscriptions and
+   resnapshots, checkpoints, corrections, restore, recovery, and shutdown. It
+   also binds subordinate materialization, participant, presentation, and
+   store jobs to their owning receipts.
+6. **Participant simplification — addressed.** `TECH-011`, `TECH-016`,
+   `TECH-029`, and `TECH-054` explicitly reject same-tick participant
+   dependencies and retain no DAG, handoff, prior-feedback, or conflict
+   subsystem. V1 supports bounded schema-bound opaque participant events for
+   confirmed tick-receipt/replay delivery, but not the Moria-state observation
+   ring. Effects use only ordinary `(ParticipantId, local_sequence)` phase-4
+   ordering and preconditions. CPU/GPU participants still receive tick input
+   and canonical artifacts, return state/effects/events, and keep their
+   behavior vocabulary.
+7. **Performance-policy replacement — addressed.** `TECH-068` explicitly
+   supersedes `P1`–`P10`: universal correctness/boundedness/determinism remain
+   gates, `TECH-067` is the one named 20-tick rollback tier, and all other
+   performance evidence is hardware-contextual. Receipts cover sparse
+   residency, materialization, mutation, query/collision, presentation,
+   participants, checkpoints/restore, hashing, replay, and rollback.
+8. **Normative snippet cleanup — addressed.** `MinimumVolumeRevision` has one
+   `revision` field. `TECH-070` contains a mechanical public-type ownership
+   index and requires every facade request/receipt to be callable. Validation
+   now compiles the complete facade from the external-style binary, scans
+   duplicate fields/type ownership, and exercises every budget/lifecycle row.
+
+### Concrete TDD Evidence
+
+- `TECH-070` is the only new stable ID; all 69 surviving IDs retain their
+  meanings.
+- The normative set has 70 unique `TECH` contracts and exactly one
+  `Implements:` line per contract.
+- All 43 approved requirements are covered; no `REQ-042` or unapproved
+  requirement is cited.
+- The 351 unique normative `REQ`/`TECH` pairs exactly match
+  `traceability.md`.
+- The normative Rust struct-field scan reports no duplicate field; the facade
+  has no remaining `SubmitError` placeholder or unbounded `Vec` result shape.
+- `TECH-060`, `TECH-064`, `TECH-065`, `TECH-068`, and `TECH-069` now require
+  executable implementation-completeness evidence in addition to GDD
+  coverage.
+- `git diff --check` passes.
+
+### Questions For Reviewer
+
+None.
+
+### Notes To Reviewer
+
+The prior approval predates this human-requested completeness revision. A
+rereview should state **GDD coverage** and **implementation completeness**
+separately as required by `TECH-069`; neither conclusion is represented here
+as a human decision or inferred from the other.

@@ -231,6 +231,7 @@ pub trait GpuParticipantDeviceState: Send + Sync {
         source: GpuParticipantStateLease<'_>,
         input: ParticipantGpuInput<'_>,
         effects: ParticipantEffectSink<'_>,
+        events: ParticipantEventSink<'_>,
         output: GpuParticipantStateSink<'_>,
     ) -> Result<(), ParticipantError>;
     fn encode_restore_snapshot(
@@ -261,7 +262,11 @@ scratch buffers.
 It cannot return Moria's radix, brick, page-table, allocator, or mutable
 buffers. `ParticipantEffectSink` is a Moria-owned fixed-slot buffer whose
 schema is ordinary command wire plus one status/commitment record. The
-participant cannot submit the encoder or increase capacity.
+parallel `ParticipantEventSink` is a Moria-owned fixed-slot buffer of
+`ParticipantEvent` headers and opaque bytes. Both capacities, byte ranges,
+overflow flags, and zeroed unused slots are fixed before `encode_tick`; the
+participant cannot submit the encoder, bind a consumer buffer, or increase
+capacity.
 
 `prepare_device` owns only pipelines, layouts, and other rebuildable
 generation resources; it may not contain the participant's active canonical
@@ -277,12 +282,19 @@ handoff follow TECH-045. It is never same-frame CPU visibility.
 
 Moria invokes adapters in `ParticipantId` order in the canonical preparation
 schedule, then validates effect tags, bounds, preconditions, unique local
-sequences, unused-zero slots, overflow flags, participant and RNG-state
-commitments, state-token metadata, and snapshot digest/size before normal
-transition processing. The output remains GPU-resident through validation and
-application; only bounded canonical outcomes/commitment are read back for
-receipt and replay. Thus a GPU behavior engine need not round-trip occupancy or
-effects through CPU, while admission and publication remain identical.
+sequences, event schema/payload bounds, unused-zero slots, overflow flags,
+participant and RNG-state commitments, state-token metadata, and snapshot
+digest/size before normal transition processing. The output remains
+GPU-resident through validation and application; only bounded canonical
+outcomes, opaque event bytes, and commitments are read back for receipt,
+and replay. Thus a GPU behavior engine need not round-trip occupancy or effects
+through CPU, while admission and publication remain identical.
+
+The GPU adapter obeys TECH-029's same one-phase simplification: it receives no
+other participant's destination state, effects, or events; the event sink is
+consumer delivery after confirmation, not a same-tick handoff; and effect
+conflicts use TECH-011's ordinary phase-4 ordering. No render-graph edge may
+turn these outputs into a participant DAG or prior-feedback ABI.
 
 Adapter pipeline/device creation failure, panic caught at the FFI/callback
 boundary where possible, validation error, output overflow, or old generation
