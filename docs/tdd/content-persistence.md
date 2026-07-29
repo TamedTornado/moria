@@ -219,6 +219,7 @@ pub struct CheckpointStoreDescriptor {
 
 pub struct BlobLimits {
     pub max_bytes: u64,
+    pub expected_bytes: Option<u64>,
 }
 
 pub struct StoreFailure {
@@ -306,16 +307,34 @@ same bounded completion-cell discipline as TECH-041. Moria reserves the
 callback slot, worst-case result/diagnostic bytes, and operation record before
 calling the store. Load sinks accept sequential bounded copies into a
 Moria-owned `BlobLimits.max_bytes` buffer, not an `OwnedBytes` returned by the
-store. `finish` requires the exact reserved byte length and expected digest for
-a blob and the exact reserved byte length and requested key for a manifest.
-Short output, identity mismatch, or a wrong durable-byte count returns
-`InvalidCompletion` and fails the owning operation. `stored` and `committed`
-likewise echo the expected identity. A long write, write after terminal, or
-write after cancellation returns the closed `StoreCompletionWriteError`
-variants `TooLong`, `AlreadyTerminal`, or `Cancelled`. Commit/put completions
-carry only the closed status and bounded diagnostic. Duplicate, dropped,
-cancelled, and late completions have
-the explicit dispositions above and cannot commit a manifest.
+store. `expected_bytes` must be `Some(n)` with `n <= max_bytes` whenever the
+caller has a manifest descriptor or content record that declares an exact
+length. It is `None` only for the initial key-based manifest lookup, whose
+encoded length cannot be known before reading. Freeze/admission rejects
+`Some(n)` above `max_bytes`.
+
+Every `get_blob` call uses `Some(expected_bytes)`, and `LoadSink::finish`
+requires the requested digest and a cursor exactly equal to that value.
+For `ManifestLoadSink`, whose request alone uses `expected_bytes: None`,
+`finish` requires the requested key and an actual cursor no greater than
+`max_bytes`; the complete manifest header, declared encoded length, trailing
+checksum, and absence of trailing bytes are then validated before any manifest
+field is used. A truncated or empty manifest therefore cannot succeed merely
+because it is shorter than the maximum. Every manifest-referenced scar,
+snapshot, or replay blob load uses its descriptor's exact uncompressed
+canonical length; content bricks use the exact length from
+`BaseBrickExpected`. Store-side compression is decoded before bytes enter the
+sink and cannot change this length contract.
+
+Known-length short output, framing/digest mismatch, identity mismatch, or a
+wrong durable-byte count returns `InvalidCompletion` and fails the owning
+operation. A write beyond `max_bytes` or beyond a present `expected_bytes`,
+write after terminal, or write after cancellation returns the closed
+`StoreCompletionWriteError` variants `TooLong`, `AlreadyTerminal`, or
+`Cancelled`. `stored` and `committed` echo the expected identity.
+Commit/put completions carry only the closed status and bounded diagnostic.
+Duplicate, dropped, cancelled, and late completions have the explicit
+dispositions above and cannot commit a manifest.
 `OwnedBytes` passed *to* `put_blob`/`commit_manifest` is immutable Moria-owned
 input whose lifetime is pinned through completion; the store receives no
 allocator or growable Moria collection.
@@ -361,11 +380,12 @@ Implements: REQ-001, REQ-014, REQ-017, REQ-028, REQ-032
 - confirmed and durable tick, world root hash, per-volume revisions;
 - live and retired volume identities, domains, kinds, placements, and scar
   root hashes;
-- content-addressed scar radix nodes and brick blobs;
+- content-addressed scar radix node and brick-blob descriptors
+  `{kind, uncompressed_bytes, blob_digest}`;
 - `next_volume_serial` and simulation-domain normalized intervals;
 - participant IDs/contracts/input schemas/strategies/commitments, complete RNG
   descriptors and current RNG-state commitments, and snapshot blob digests
-  where applicable;
+  with exact uncompressed byte lengths where applicable;
 - for every reconstructible participant, its required inclusive replay tick
   range and a sorted list of content-addressed
   `moria-checkpoint-replay-v1` chunk descriptors `{first_tick, last_tick,
@@ -535,13 +555,16 @@ pub struct RestoreReady {
 Restore is world construction, not a post-genesis mutation:
 
 1. resolve `request.store` in the frozen builder registry, call that exact
-   store's key-based `load_manifest(request.key, ...)`, and bounded-decode the
-   returned manifest;
+   store's key-based `load_manifest(request.key, BlobLimits {
+   max_bytes: limits.manifest_bytes, expected_bytes: None }, ...)`, and
+   bounded-decode the complete framed returned manifest;
 2. verify all contract versions and manifest digest;
 3. match material, base lineage **and exact manifest roots**, volume sources,
    qualification tuple, and participant registrations;
-4. load every referenced scar/node/snapshot/replay-chunk blob, enforce bounds,
-   decompress, and verify its uncompressed digest; validate each replay
+4. load every referenced scar/node/snapshot/replay-chunk blob with
+   `expected_bytes: Some(manifest_descriptor.uncompressed_bytes)`, enforce
+   bounds, decompress in the store adapter before sink delivery, and verify its
+   uncompressed digest; validate each replay
    chunk's tick interval, embedded record checksum/digest, exact continuity,
    and prefix/suffix digest against the manifest before exposing a
    `ParticipantReplayLease`;
@@ -674,9 +697,12 @@ pub struct ReplayFailure {
 }
 ```
 
-`ReplayStreamKey` is a consumer-selected fixed 32-byte key. The diagnostic
-records above are closed and not storage handles; unknown logical-key tags are
-rejected.
+`ReplayStreamKey` is a consumer-selected fixed 32-byte key. Its only live
+source is the per-world value passed to `MoriaClient::begin_world` and frozen
+in that `WorldBuilder`; every header/tick request and completion uses that
+exact value together with the configured `ReplaySinkId`. TECH-017 reserves
+duplicate pairs. The diagnostic records above are closed and not storage
+handles; unknown logical-key tags are rejected.
 
 `moria-replay-v1` is an appendable sequence:
 
@@ -707,6 +733,35 @@ change the already-confirmed canonical state. Each tick record remains pinned
 until the matching `(stream, sequence, digest)` success;
 at the in-memory log boundary later `reserve_tick` returns
 `PersistenceBackpressure` rather than overwrite it.
+
+The v1 post-genesis append-failure policy is deliberately terminal rather than
+an implicit or public redrive. If `ReplayAppendSink::fail`, producer drop,
+wrong identity/digest, or an invalid first terminal completion occurs after a
+tick is confirmed, Moria closes further tick admission and moves the world
+from `Ready` to `Failed`. A duplicate call observed after an already accepted
+success is only `AlreadyCompleted` and does not fail the world. The
+already-returned `TickConfirmed` remains valid;
+the failure is reported as `OperationError { code: StoreFailure,
+scope: Provider(ReplaySink(id)), retryability: Never,
+committed: Frontier(the_confirmed_frontier), ... }` in one
+`WorldLifecycleFact`, the `FailureCounter::StoreFailure` telemetry bucket, and
+the replay-sink pinned-record/byte/oldest-age counters. The exact undurable
+record and every earlier required record remain pinned until shutdown releases
+the world; a checkpoint does not relabel the failed replay append as durable.
+There is no facade method that retries, skips, changes the stream, or attaches
+another sink to that published world.
+
+Replay append has no consumer cancellation point. Shutdown stops invoking
+later appends, waits for or closes the one already-invoked completion cell
+under the bounded provider-drain rule, reports the confirmed frontier as
+committed but the replay record as undurable, and then releases the pin.
+Device loss does not cancel a host store call or change its stream/sequence;
+its completion remains valid because replay bytes are device-independent.
+A completion carrying a closed world attempt/generation may only acknowledge
+lifetime release and cannot return the world to `Ready`. Genesis header
+failure retains the existing stronger rule: no world or tick-zero receipt is
+published.
+
 `ReplaySink` is deliberately write-only from Moria's perspective. The
 consumer retrieves its own stored bytes through its own storage API and passes
 them back as bounded `OwnedBytes` in `ReplayRequest`; that round trip grants no

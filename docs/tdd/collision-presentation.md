@@ -234,10 +234,43 @@ pub struct GpuParticipantDescriptor {
 pub struct GpuParticipantContract {
     pub device_generation: DeviceGeneration,
     pub granted_limits_digest: ContractDigest,
+    pub io_abi: ContractDigest,
     pub collider_abi: ContractDigest,
     pub effect_abi: ContractDigest,
     pub event_abi: ContractDigest,
     pub state_abi: ContractDigest,
+}
+impl GpuParticipantContract {
+    pub fn io_bind_group_layout(&self) -> &wgpu::BindGroupLayout;
+}
+pub struct GpuBufferRange {
+    pub offset: u32,
+    pub bytes: u32,
+}
+pub enum GpuParticipantOperation {
+    Genesis,
+    Tick,
+    RestoreSnapshot,
+    Reconstruct,
+    ExportSnapshot,
+}
+pub struct GpuParticipantIoMetadata {
+    pub operation: GpuParticipantOperation,
+    pub participant: ParticipantId,
+    pub world: WorldId,
+    pub tick: Tick,
+    pub source_root: CanonicalHash,
+    pub source_commitment: CanonicalHash,
+    pub artifact_hash: CanonicalHash,
+    pub input: GpuBufferRange,
+    pub collider: GpuBufferRange,
+    pub source_state: GpuBufferRange,
+    pub destination_state: GpuBufferRange,
+    pub effects: GpuBufferRange,
+    pub events: GpuBufferRange,
+    pub effect_capacity: u32,
+    pub event_capacity: u32,
+    pub device_generation: DeviceGeneration,
 }
 pub struct GpuParticipantStateLease<'a> { /* borrowed immutable state binding */ }
 pub struct ParticipantGpuInput<'a> { /* borrowed input/artifact bindings */ }
@@ -247,6 +280,56 @@ pub struct GpuParticipantStateSink<'a> { /* borrowed unreferenced state binding 
 pub struct GpuSnapshotInput<'a> { /* borrowed verified snapshot binding */ }
 pub struct GpuSnapshotOutput<'a> { /* borrowed fixed-size staging binding */ }
 pub struct GpuParticipantReplayInput<'a> { /* borrowed exact replay binding */ }
+
+impl<'a> GpuParticipantStateLease<'a> {
+    pub fn metadata(&self) -> ParticipantTokenMetadata;
+    pub fn range(&self) -> GpuBufferRange;
+}
+impl<'a> ParticipantGpuInput<'a> {
+    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>)
+        -> Result<(), ParticipantError>;
+    pub fn metadata(&self) -> GpuParticipantIoMetadata;
+    pub fn input_range(&self) -> GpuBufferRange;
+    pub fn collider_range(&self) -> GpuBufferRange;
+}
+impl<'a> ParticipantEffectSink<'a> {
+    pub fn range(&self) -> GpuBufferRange;
+    pub fn capacity(&self) -> u32;
+}
+impl<'a> ParticipantEventSink<'a> {
+    pub fn range(&self) -> GpuBufferRange;
+    pub fn capacity(&self) -> u32;
+}
+impl<'a> GpuParticipantStateSink<'a> {
+    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>)
+        -> Result<(), ParticipantError>;
+    pub fn metadata(&self) -> GpuParticipantIoMetadata;
+    pub fn range(&self) -> GpuBufferRange;
+}
+impl<'a> GpuSnapshotInput<'a> {
+    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>)
+        -> Result<(), ParticipantError>;
+    pub fn metadata(&self) -> GpuParticipantIoMetadata;
+    pub fn bytes(&self) -> GpuBufferRange;
+    pub fn digest(&self) -> BlobDigest;
+}
+impl<'a> GpuSnapshotOutput<'a> {
+    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>)
+        -> Result<(), ParticipantError>;
+    pub fn metadata(&self) -> GpuParticipantIoMetadata;
+    pub fn range(&self) -> GpuBufferRange;
+    pub fn capacity_bytes(&self) -> u32;
+}
+impl<'a> GpuParticipantReplayInput<'a> {
+    pub fn bind_io(&self, pass: &mut wgpu::ComputePass<'_>)
+        -> Result<(), ParticipantError>;
+    pub fn metadata(&self) -> GpuParticipantIoMetadata;
+    pub fn range(&self) -> GpuBufferRange;
+    pub fn first_tick(&self) -> Option<Tick>;
+    pub fn last_tick(&self) -> Option<Tick>;
+    pub fn record_count(&self) -> u32;
+    pub fn digest(&self) -> BlobDigest;
+}
 
 pub trait BevyGpuParticipant: Send + Sync + 'static {
     fn descriptor(&self) -> GpuParticipantDescriptor;
@@ -293,18 +376,47 @@ pub trait GpuParticipantDeviceState: Send + Sync {
 }
 ```
 
-`ParticipantGpuInput` exposes a Moria-created read-only bind group for the
-bounded canonical collider artifact, immutable participant input bytes, exact
-counts, tick/root/artifact hash, and its leased source-state plus declared
-scratch buffers.
-It cannot return Moria's radix, brick, page-table, allocator, or mutable
-buffers. `ParticipantEffectSink` is a Moria-owned fixed-slot buffer whose
-schema is ordinary command wire plus one status/commitment record. The
-parallel `ParticipantEventSink` is a Moria-owned fixed-slot buffer of
-`ParticipantEvent` headers and opaque bytes. Both capacities, byte ranges,
-overflow flags, and zeroed unused slots are fixed before `encode_tick`; the
-participant cannot submit the encoder, bind a consumer buffer, or increase
-capacity.
+The `io_abi` fixes one Moria-created group-zero layout for every operation.
+Binding 0 is a 192-byte uniform `moria-participant-io-v1` wire; bindings 1
+through 6 are respectively operand input/snapshot/replay, collider artifact,
+source state, destination state/status, effect output/status, and event
+output/status. The uniform byte offsets are: operation tag `0`, participant
+`4`, 16-byte world ID `8`, tick low/high `u32` words `24/28`, device-generation
+low/high words `32/36`, effect/event capacities `40/44`, source root
+`48..80`, source commitment `80..112`, artifact hash `112..144`, and six
+`{offset:u32, bytes:u32}` ranges in binding order at `144..192`. Every scalar
+is little-endian and every unknown operation tag is invalid.
+`GpuParticipantIoMetadata` is the decoded host view of those bytes, not a Rust
+struct transmute.
+
+An unused binding references a shared four-byte zero buffer with a logical
+range of zero. Each storage range is page-local, fits `u32`, lies inside its
+effective binding, and its physical binding offset is aligned to the granted
+`min_storage_buffer_offset_alignment`; larger world pools remain paged under
+TECH-033. `prepare_device` builds its pipeline layout from the exact
+`io_bind_group_layout`; a pipeline using a different layout fails preparation.
+
+Exactly one wrapper is the primary binder for an encode call:
+`GpuParticipantStateSink` for genesis, `ParticipantGpuInput` for tick,
+`GpuSnapshotInput` for restore, `GpuParticipantReplayInput` for reconstruct,
+and `GpuSnapshotOutput` for export. Its `bind_io` sets only group zero with no
+dynamic offsets. Every other wrapper in that call is a range/capacity view
+into the same generation/attempt bind group. Moria verifies that all wrappers
+share the same private attempt token before invoking the adapter; wrappers
+cannot be constructed, mixed, retained past `'a`, or rebound by consumer code.
+
+`ParticipantGpuInput` thereby exposes the bounded canonical collider artifact,
+immutable participant input bytes, exact counts, tick/root/artifact hash,
+leased source state, and declared scratch ranges without returning Moria's
+radix, brick, page-table, allocator, or mutable buffers.
+`ParticipantEffectSink` is a Moria-owned fixed-slot range whose schema is
+ordinary command wire plus overflow/count status. The parallel
+`ParticipantEventSink` is a fixed-slot range of `ParticipantEvent` headers,
+opaque bytes, and status. The destination-state header contains completion,
+state length, commitment, RNG-state digests, and snapshot metadata. All
+capacities, byte ranges, overflow flags, and zeroed unused slots are fixed
+before encoding; the participant cannot submit the encoder, bind a consumer
+buffer, access a range outside the wrappers, or increase capacity.
 
 `prepare_device` owns only pipelines, layouts, and other rebuildable
 generation resources; it may not contain the participant's active canonical
@@ -317,6 +429,19 @@ then installs or aborts tokens solely through the `FrontierBundle` lifecycle
 in TECH-016. Snapshot export copies exactly the descriptor-bounded bytes to a
 Moria staging slot; mapping, digest verification, and `CheckpointStore`
 handoff follow TECH-045. It is never same-frame CPU visibility.
+
+Every accessor is allocation-free and valid only for the borrowed
+device-generation lifetime. `bind_io` validates that the pass, layout, wrapper
+attempt, and `DeviceGeneration` match; mismatch returns an encoder validation
+failure for the owning participant operation and encodes no dispatch.
+Generation loss closes every wrapper from that generation, rejects any
+mapped/status result as `LateGeneration`, and retains its ranges only until
+the last submitted use completes. Moria maps or copies back the bounded status,
+effect, event, destination-state, and snapshot ranges through the ordinary
+TECH-032 path; missing completion status, count/byte overflow, malformed
+records, unexpected writes in unused ranges, or commitment mismatch fails the
+attempt before publication. No output is inferred merely because
+`encode_*` returned `Ok`.
 
 Moria invokes adapters in `ParticipantId` order in the canonical preparation
 schedule, then validates effect tags, bounds, preconditions, unique local

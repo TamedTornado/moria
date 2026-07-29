@@ -280,7 +280,9 @@ first violation:
 
    ```text
    cow_brick_bytes = changed_bricks_per_tick * (2,048 + 26 * 1,024)
-   changed_volume_bytes = canonical.inputs_per_tick * 256
+   changed_volume_records =
+       canonical.inputs_per_tick + participant.effects_per_tick
+   changed_volume_bytes = changed_volume_records * 256
    one_frontier_bytes =
        cow_brick_bytes
        + changed_volume_bytes
@@ -301,9 +303,12 @@ first violation:
    brick to lie in a different volume. `required_20_bytes` must fit both
    `rollback.retained_bytes` and `content.authoritative_gpu_bytes`.
 
+   The volume-record term counts every direct canonical input and every
+   participant effect independently because each may name a different volume;
+   it does not assume overlap, no-op effects, or shared registry paths.
    With all normative defaults, the exact upper bound is
-   `256 MiB + 20 * (512 * 28,672 + 4,096 * 256 + 2 MiB + 64 MiB)
-   = 1,967,128,576 bytes`, below both 2 GiB defaults. A larger
+   `256 MiB + 20 * (512 * 28,672 + (4,096 + 4,096) * 256
+   + 2 MiB + 64 MiB) = 1,988,100,096 bytes`, below both 2 GiB defaults. A larger
    `changed_bricks_per_tick`, participant aggregate, or registry must be
    paired with larger checked byte budgets; the 16,384 portable count maximum
    is not a viable default under 2 GiB.

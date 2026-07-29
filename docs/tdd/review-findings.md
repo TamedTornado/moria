@@ -959,3 +959,229 @@ per contract, all 43 approved requirements covered, no `REQ-042`, and exact
 351-pair parity with `traceability.md`. The compact one-package layout,
 one-phase participant model, staged frontier publication, and
 correctness-first performance policy are preserved. `git diff --check` passes.
+
+## Auditor Turn — 2026-07-29T17:57:35Z
+
+Mode: continue
+
+Responding to: 2026-07-29T17:48:26Z
+
+### Prior Findings Status
+
+1. **Construction facade and provider identities — partially_resolved.**
+   `TECH-017` now has bounded registrations for every named provider, rejects
+   duplicate IDs without replacement, validates cross-references at freeze,
+   and puts an exact `CheckpointStoreId` on checkpoint, restore, recovery, and
+   shutdown-checkpoint requests (`interfaces.md:219-294`;
+   `content-persistence.md:388-434,514-573`; `gpu-runtime.md:380-434`).
+   The configured replay export still lacks one required consumer-owned
+   identity: no builder/configuration field supplies the
+   consumer-selected `ReplayStreamKey`. See New Finding 2.
+2. **Concrete public results, errors, and configuration —
+   partially_resolved.** The previously missing records and closed error
+   taxonomy now exist in `TECH-017`, `TECH-020` through `TECH-029`, and
+   `TECH-070`. The facade nevertheless remains unusable from an external crate
+   because its private bounded owners and participant/GPU leases have no
+   normative construction or access methods. See New Finding 1.
+3. **Manifest load and store completions — partially_resolved.**
+   `CheckpointStore::load_manifest` and exact sink method names are now present
+   (`content-persistence.md:193-295`), and request-to-store selection is
+   explicit. The load completion rule requires an exact length that neither
+   load call supplies or can know for the root manifest, so a conforming store
+   cannot determine which short load is valid. See New Finding 3.
+4. **Public replay/divergence capability — partially_resolved.** A dedicated
+   private-world `ReplayReceipt`, owned request, pre-publication expected-value
+   comparison, bounded divergence result, and validation scenarios now exist
+   (`content-persistence.md:577-754`; `interfaces.md:455-458,1014,1050-1052,
+   1110`; `validation.md:325-343`). Live export has no selected stream key and
+   no terminal policy or callable redrive after a confirmed tick's sink append
+   fails. See New Finding 2.
+5. **Default rollback-budget viability — partially_resolved.** Reducing the
+   default changed-brick count to 512 makes the advertised defaults fit 2 GiB
+   even after the omitted participant-effect term is included. However,
+   `TECH-036` labels its equation conservative and its validation fixture
+   asserts an exact value that omits up to 4,096 participant placement effects
+   per tick. See New Finding 4.
+
+### New Findings
+
+1. **The claimed complete public API still exposes opaque values that an
+   external consumer or registered provider cannot construct or inspect.**
+   `BoundedVec<T>`, `BoundedBytes`, and `OwnedBytes` have private storage
+   (`interfaces.md:658-681`), but the TDD gives only constructor names in prose:
+   it defines no signatures for inserting bytes/elements, reading a slice,
+   iterating, obtaining a length, or consuming the value. Those types occur
+   throughout constructible requests, participant descriptors and events,
+   `ReplayRequest`, and the bytes passed *to* consumer stores. More critically,
+   a CPU participant receives opaque `ParticipantStateLease`,
+   `ParticipantReplayLease`, and `ColliderArtifactLease` values with no
+   callable accessors even though the prose says it can inspect its prior
+   state, exact replay, and collider bytes (`interfaces.md:1914-1985,
+   2061-2072,2193-2203`). The GPU adapter likewise receives private borrowed
+   input/state/effect/event/snapshot wrappers with no binding, metadata, or
+   output methods (`collision-presentation.md:242-293`). Merely naming these
+   wrappers does not make the public traits implementable, and the stated
+   external-style compile/use test cannot populate a replay request or make a
+   store read `OwnedBytes`. Define the minimal normative constructor/read/
+   iteration APIs for bounded owners, the typed downcast or equivalent lease
+   access for CPU state, the exact collider/replay views, and the coupled GPU
+   binding/sink operations. Include their capacity, lifetime, error, and
+   generation behavior in `TECH-070`/`TECH-060`.
+
+2. **Live replay export has neither a selected stream identity nor a recovery
+   policy after sink failure.** `ReplayStreamKey` is explicitly
+   consumer-selected (`content-persistence.md:677-679`) and is mandatory in
+   every `ReplaySinkRequest` and success echo
+   (`content-persistence.md:601-620`), but `PersistenceConfig` contains only a
+   `ReplaySinkId` (`interfaces.md:49-52`), provider registration supplies only
+   the sink descriptor, and no other construction call accepts a stream key.
+   Genesis therefore cannot form the required sequence-zero request without
+   inventing or deriving consumer identity outside the contract. Separately,
+   a confirmed tick remains pinned until a matching append success and later
+   ticks eventually receive `PersistenceBackpressure`
+   (`content-persistence.md:695-713,823-830`), but a failed append is terminal,
+   store calls are not automatically retried, and the complete facade has no
+   replay-export retry/redrive operation. The TDD does not say that such a
+   failure fails the world either. Add the stream key to frozen consumer
+   configuration with uniqueness/duplicate rules, and choose a bounded,
+   observable append-failure transition: an explicit redrive operation or a
+   stated terminal world policy. Define cancellation, shutdown, generation,
+   receipt/observation/telemetry, and validation behavior for that choice.
+
+3. **The load-sink success rule requires information absent from both load
+   requests.** `get_blob` and `load_manifest` accept only an identity plus
+   `BlobLimits { max_bytes }` (`content-persistence.md:194-203,220-222`), while
+   `LoadSink::finish` and `ManifestLoadSink::finish` echo only the digest/key
+   (`content-persistence.md:268-286`). The normative prose nevertheless says
+   `finish` requires the “exact reserved byte length”
+   (`content-persistence.md:303-312`). A maximum is not an expected length, and
+   the initial key-based manifest read cannot know its encoded byte length
+   before reading it. Requiring the cursor to equal `max_bytes` would reject
+   every valid shorter value; accepting an arbitrary shorter cursor
+   contradicts the claimed short-output check. Define whether expected length
+   is an explicit request field when known, or whether finish accepts the
+   actual `0..=max` cursor and validates digest/decode framing. Preserve
+   unambiguous exact-length checks only where the caller actually has an
+   expected length, then update the short/long fixtures accordingly.
+
+4. **`TECH-036`'s revised “conservative” 20-frontier equation still
+   undercounts canonical volume changes.** The equation uses
+   `canonical.inputs_per_tick * 256` for changed-volume metadata
+   (`gpu-runtime.md:281-306`). That covers the default 4,096 sealed inputs, but
+   `TECH-011` adds a separate phase of participant effects
+   (`architecture.md:318-354`), and `TECH-029` permits another independently
+   bounded 4,096 effects per tick, including `SetPlacement`
+   (`interfaces.md:188-190,2022-2049,2161-2169`). Thus a legal default tick can
+   change up to 4,096 directly named volumes plus 4,096 more through
+   participant placement effects. The current exact fixture is low by
+   `20 * 4,096 * 256 = 20,971,520` bytes. The corrected default total still
+   fits 2 GiB, so retain the simpler 512-brick default, but include all
+   canonical effect sources in the checked formula and change
+   `default-budget-smoke-v1` to assert the corrected complete bound.
+
+### Questions For Coder
+
+1. For a post-genesis replay-sink append failure, will the public contract
+   expose a bounded explicit redrive, or will the world enter a stated failed
+   state while retaining the record? Either can be coherent; indefinite
+   pinning with no transition cannot.
+
+### Answers To Coder
+
+No coder questions were pending. I independently verified the two answers
+given to the prior auditor: the TDD selects a dedicated private-world public
+replay operation, and checkpoint/restore/recovery/shutdown checkpoint requests
+now carry exact registered store IDs with no fallback.
+
+### Notes To Coder
+
+The mechanical provenance claims pass independently: the seven normative TDD
+files contain 70 unique `TECH-001` through `TECH-070` headings, exactly one
+`Implements:` line per contract, 351 unique requirement/contract pairs, all 43
+approved requirements, no normative `REQ-042`, and exact pair parity with
+`traceability.md`. `git diff --check` passed and the worktree was clean before
+this required ledger append. The compact package/plugin organization,
+one-phase participant model, store-ID isolation, and dedicated private replay
+direction remain sound; the remaining defects are callable-contract and bound
+closure, not a request to expand product scope.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-29T18:12:50Z
+
+Mode: continue
+
+Responding to: 2026-07-29T17:57:35Z
+
+### Responses To Findings
+
+1. Addressed. `TECH-070` now gives `BoundedVec`, `BoundedBytes`,
+   `BoundedBytes64`, `BoundedUtf8`, and `OwnedBytes` concrete fallible
+   constructors, mutation/read/iteration/length/capacity/consume methods, and
+   lossless rejected-value records. `TECH-029` exposes participant-only typed
+   state downcast, token metadata, exact replay-record iteration, and a
+   source-bound collider byte view, with explicit pin/cancellation/lifetime
+   behavior. `TECH-054` now fixes a 192-byte group-zero I/O wire, its binding
+   layout and offsets, callable primary `bind_io` methods, range/capacity
+   accessors, status/output validation, attempt coupling, and generation-loss
+   behavior.
+2. Addressed. The consumer supplies one exact `ReplayStreamKey` to
+   `MoriaClient::begin_world`; it is frozen in the builder and paired with the
+   configured sink for sequence zero and every later append. `TECH-017`
+   defines duplicate reservation and retired-stream tombstones. I selected the
+   terminal policy for post-genesis append failure: the confirmed tick receipt
+   remains valid, the world enters `Failed`, the exact undurable record remains
+   pinned, no redrive/fallback exists, and a scoped lifecycle error, telemetry,
+   and shutdown report expose the outcome. Device loss, late completion, and
+   cancellation behavior are explicit.
+3. Addressed. `BlobLimits` now carries `expected_bytes: Option<u64>`.
+   Every digest-based `get_blob` call supplies the exact known length and
+   rejects short or long output. Only initial key-based manifest load uses
+   `None`; it accepts an actual cursor up to the maximum and then requires
+   complete declared framing, checksum, and no trailing bytes. Manifest scar,
+   snapshot, and replay descriptors now carry exact uncompressed lengths, and
+   restore passes them to each load.
+4. Addressed. `TECH-036` now counts
+   `canonical.inputs_per_tick + participant.effects_per_tick` in the
+   changed-volume term. The complete default bound is
+   `1,988,100,096` bytes, including independent direct and participant
+   placement changes, and `default-budget-smoke-v1` asserts that value with
+   both 4,096-record sources exercised.
+
+### Answers To Auditor
+
+1. Post-genesis replay-sink append failure is terminal for the published world;
+   v1 exposes no redrive operation. The already-confirmed frontier remains
+   trustworthy and its tick receipt remains `Ready`, but new authority
+   admission closes, the undurable record remains pinned, and shutdown is the
+   only remaining release path.
+
+### TDD Changes Made
+
+- Revised `interfaces.md` for per-world replay stream construction, bounded
+  owner APIs, participant state/replay/collider views, exact failure
+  observation, and lease lifetimes.
+- Revised `collision-presentation.md` for the fixed GPU participant bind-group
+  ABI, public binding/range methods, status sinks, validation, and generation
+  cleanup.
+- Revised `content-persistence.md` for exact/unknown load lengths, manifest
+  length descriptors, selected stream identity, and terminal append failure.
+- Revised `gpu-runtime.md` and `validation.md` for the complete rollback bound
+  and external-style API/load/replay-failure evidence.
+- Mechanical checks still find 70 unique `TECH-001` through `TECH-070`
+  contracts, one `Implements:` line each, 351 normative pairs, all 43 approved
+  requirements, no `REQ-042`, and exact traceability parity.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The replay stream key is per builder rather than global `MoriaConfig`, so one
+`MoriaClient` can host multiple worlds on the same registered sink without
+deriving identities; duplicate `(sink, stream)` pairs remain fail-closed. The
+terminal append policy does not roll back an already-confirmed tick or pretend
+the failed export became durable. `git diff --check` passes.

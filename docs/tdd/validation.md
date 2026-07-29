@@ -102,11 +102,38 @@ duplicate IDs without replacement, and fail freeze for every missing or
 wrong-kind base-authority/source/content-store/input-source/checkpoint-store/
 replay-sink reference. Store fixtures compile external implementations of
 `ContentBlobStore`, `CheckpointStore`, and `ReplaySink`; exercise exact,
-short, long, dropped, duplicate, cancelled, and late-generation sink methods;
-and prove `load_manifest(key)` sees either the complete atomically committed
-manifest or `NotFound`, never a partial value. Checkpoint, restore, shutdown
-checkpoint, and recovery each use the exact request store ID and never fall
-through after that store fails.
+known-length short, long, dropped, duplicate, cancelled, and late-generation
+sink methods. Unknown-length manifest loads accept actual lengths from zero
+through the maximum only at the sink layer, then reject empty, truncated,
+bad-checksum, declared-length-mismatched, and trailing-byte manifests during
+framing; manifest-referenced blob loads reject any cursor unequal to
+`expected_bytes`. The fixture proves `load_manifest(key)` sees either the
+complete atomically committed manifest or `NotFound`, never a partial value.
+Checkpoint, restore, shutdown checkpoint, and recovery each use the exact
+request store ID and never fall through after that store fails.
+
+The external crate constructs, fills, reads, iterates, and consumes every
+bounded owner through the TECH-070 methods, including a complete
+`ReplayRequest` and the `OwnedBytes` received by each store. It asserts
+unchanged values on failed construction/push, no partial byte extension,
+UTF-8/64-byte validation, exact length/capacity, and admission charging.
+Its CPU participant downcasts its own state lease, iterates exact replay
+record views, decodes a TECH-053 collider view, and exercises wrong-type,
+capacity, cancellation, and dropped-lease cases. Its GPU participant creates
+pipelines from `io_bind_group_layout`, binds every primary wrapper, inspects
+all ranges/capacities/metadata, writes status/effect/event/state/snapshot
+records, and proves mixed attempts, bad ranges/layouts, overflow, missing
+status, and stale generations fail before publication.
+
+Genesis configuration supplies a nonzero consumer-chosen replay stream key.
+Two worlds using the same `(ReplaySinkId, ReplayStreamKey)` in one client
+reject the second freeze without a sink call, while distinct pairs reach their
+exact sequence-zero request. A post-genesis append-failure fixture confirms
+tick `t`, then fails that append: the tick receipt remains `Ready`, the world
+enters `Failed`, the exact record stays pinned, new ticks are rejected, one
+world-lifecycle observation and the replay failure/high-water telemetry appear,
+and shutdown reports the undurable record before releasing it. Device loss
+does not rewrite the request; wrong/late completions cannot recover the world.
 
 The participant slice exercises every row of both
 `ParticipantFailurePolicy` variants at genesis, ordinary preparation,
@@ -127,10 +154,12 @@ consumer callback and allocates no device page.
 An explicit `default-budget-smoke-v1` uses every normative `ResourceBudgets`
 default, a qualifying baseline adapter with the declared 2 GiB authoritative
 ceiling, the default 65,536-volume capacity, and aggregate participant
-frontier claims of 64 MiB. It asserts the exact 1,967,128,576-byte
-`required_20_bytes` calculation, reaches `GenesisReady`, and retains 20
-frontiers. A companion changes only `changed_bricks_per_tick` to 16,384 under
-the 2 GiB byte defaults and must reject before callback/device allocation.
+frontier claims of 64 MiB. It asserts the exact 1,988,100,096-byte
+`required_20_bytes` calculation after exercising both 4,096 direct inputs and
+4,096 participant placement effects per tick, reaches `GenesisReady`, and
+retains 20 frontiers. A companion changes only `changed_bricks_per_tick` to
+16,384 under the 2 GiB byte defaults and must reject before callback/device
+allocation.
 
 `moria-qualify` compiles as a separate binary crate and imports only public
 `moria`. A lint/test fails if it enables a test-only facade feature or imports a

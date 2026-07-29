@@ -207,9 +207,10 @@ pub struct RuntimeBudgets {
 `RollbackConfig` defaults to `{ capacity_ticks: 32, log_ticks: 256,
 retain_outcome_bytes: true }` and must equal the corresponding rollback budget
 tick fields. Presentation defaults are enabled, stale display allowed, 32-cell
-chunks, and maximum LOD 6. The configured replay sink is mandatory, and its
-frozen registered descriptor
-must fit the replay-sink count/byte limits.
+chunks, and maximum LOD 6. The configured replay sink and the per-world
+consumer-selected replay stream key passed to `begin_world` are mandatory, and
+the frozen registered sink descriptor must fit the replay-sink count/byte
+limits. Moria never derives, randomizes, or replaces the stream key.
 
 `MoriaPlugin` installs one `MoriaClient` resource and feature plugins. A
 consumer constructs exactly one world through `WorldBuilder`; multiple worlds
@@ -276,6 +277,19 @@ checks provider descriptor IDs, contracts, per-provider bounds, and all
 aggregate budget sums. Missing, extra-kind, or contract-mismatched references
 fail before a callback or device allocation. After freeze no registry can be
 modified or replaced.
+The pair `(PersistenceConfig.replay_sink, WorldBuilder.replay_stream)` is
+frozen and reserved when a builder enters genesis verification and must be
+unique among all verifying, published, or retired stream reservations owned
+by the same `MoriaClient`. When multiple private builders selected the same pair, the
+first to reserve it proceeds and every later freeze returns
+`ConfigErrorCode::DuplicateId` without calling the sink. Moria cannot detect
+reuse by another process or client, so cross-process uniqueness remains the
+consumer's responsibility and a sink may reject such reuse as
+`StoreErrorCode::Corrupt`.
+Failure before the sequence-zero sink call releases the reservation. Once that
+call is invoked, shutdown or construction failure converts it to a bounded
+retired tombstone for the `MoriaClient` lifetime so a new world cannot restart
+the same stream at sequence zero. Tombstones count against `identity.worlds`.
 `PersistenceConfig.default_checkpoint_store` is the ID used by the public
 request-construction helpers and must resolve, but every admitted checkpoint,
 restore, shutdown checkpoint, and recovery request carries and binds its exact
@@ -386,7 +400,7 @@ pub struct GenesisRejected {
 }
 
 impl MoriaClient {
-    pub fn begin_world(&self, id: WorldId)
+    pub fn begin_world(&self, id: WorldId, replay_stream: ReplayStreamKey)
         -> Result<WorldBuilder, ConfigError>;
     pub fn reserve_tick(
         &self,
@@ -662,23 +676,111 @@ fixed-point points/vectors/AABBs, and limits are fixed-width value types;
 validated finite allocations whose capacity is fixed at construction and
 counted against the accepting operation; request/result/error types are the
 closed records or enums defined in their owning `TECH` contract. `Arc`,
-`Result`, `Option`, and `Box` have their standard Rust meanings. A public Rust
-signature may not introduce another named type without defining its ownership,
-bound, and owner contract in this document.
+`Vec`, `Result`, `Option`, and `Box` have their standard Rust meanings. A
+public Rust signature may not introduce another named type without defining
+its ownership, bound, and owner contract in this document.
 
 ```rust
 pub struct BoundedVec<T> { /* private owned allocation and fixed capacity */ }
 pub struct BoundedBytes { /* private owned allocation, admitted u32 capacity */ }
-pub struct BoundedBytes64(pub [u8; 64], pub u8);
+pub struct BoundedBytes64([u8; 64], u8);
 pub struct BoundedUtf8<const N: usize> { /* private validated bytes, length <= N */ }
 pub struct OwnedBytes { /* private immutable Arc<[u8]> plus admitted u64 length */ }
+
+pub enum BoundedOwnerError {
+    CapacityTooLarge,
+    LengthExceedsCapacity,
+    InvalidUtf8,
+    AllocationFailed,
+}
+
+pub struct VecConstructionRejected<T> {
+    pub values: Vec<T>,
+    pub reason: BoundedOwnerError,
+}
+pub struct BytesConstructionRejected {
+    pub bytes: Vec<u8>,
+    pub reason: BoundedOwnerError,
+}
+pub struct BoundedPushRejected<T> {
+    pub value: T,
+    pub reason: BoundedOwnerError,
+}
+
+impl<T> BoundedVec<T> {
+    pub fn try_with_capacity(capacity: u32) -> Result<Self, BoundedOwnerError>;
+    pub fn try_from_vec(
+        values: Vec<T>,
+        capacity: u32,
+    ) -> Result<Self, VecConstructionRejected<T>>;
+    pub fn try_push(&mut self, value: T) -> Result<(), BoundedPushRejected<T>>;
+    pub fn as_slice(&self) -> &[T];
+    pub fn iter(&self) -> std::slice::Iter<'_, T>;
+    pub fn len(&self) -> u32;
+    pub fn capacity(&self) -> u32;
+    pub fn is_empty(&self) -> bool;
+    pub fn into_vec(self) -> Vec<T>;
+}
+
+impl BoundedBytes {
+    pub fn try_with_capacity(capacity: u32) -> Result<Self, BoundedOwnerError>;
+    pub fn try_from_vec(
+        bytes: Vec<u8>,
+        capacity: u32,
+    ) -> Result<Self, BytesConstructionRejected>;
+    pub fn try_extend_from_slice(&mut self, bytes: &[u8])
+        -> Result<(), BoundedOwnerError>;
+    pub fn as_slice(&self) -> &[u8];
+    pub fn len(&self) -> u32;
+    pub fn capacity(&self) -> u32;
+    pub fn is_empty(&self) -> bool;
+    pub fn into_vec(self) -> Vec<u8>;
+}
+
+impl BoundedBytes64 {
+    pub fn try_from_slice(bytes: &[u8]) -> Result<Self, BoundedOwnerError>;
+    pub fn as_slice(&self) -> &[u8];
+    pub fn len(&self) -> u8;
+    pub fn is_empty(&self) -> bool;
+}
+
+impl<const N: usize> BoundedUtf8<N> {
+    pub fn try_from_bytes(bytes: Vec<u8>)
+        -> Result<Self, BytesConstructionRejected>;
+    pub fn as_str(&self) -> &str;
+    pub fn as_bytes(&self) -> &[u8];
+    pub fn len(&self) -> usize;
+    pub fn is_empty(&self) -> bool;
+    pub fn into_bytes(self) -> Vec<u8>;
+}
+
+impl OwnedBytes {
+    pub fn try_from_vec(
+        bytes: Vec<u8>,
+        max_bytes: u64,
+    ) -> Result<Self, BytesConstructionRejected>;
+    pub fn as_slice(&self) -> &[u8];
+    pub fn len(&self) -> u64;
+    pub fn is_empty(&self) -> bool;
+    pub fn into_arc(self) -> Arc<[u8]>;
+}
 ```
 
-`BoundedVec::try_with_capacity`, `BoundedBytes::try_with_capacity`, and
-`OwnedBytes::try_from` fail before ownership transfer when their accepting
-operation cannot reserve the declared capacity. No public method grows them
-past that immutable capacity; decoding validates count, byte length, and
-trailing data before allocation.
+All lengths and capacities are exact and never saturate. `try_from_vec`
+returns the original allocation on failure, `try_push` returns the rejected
+element, and `try_extend_from_slice` performs no partial append.
+`BoundedBytes64` rejects a stored length above 64; `BoundedUtf8` rejects
+invalid UTF-8 and a length above `N`. `OwnedBytes` has no spare growable
+capacity in the public contract: `max_bytes` is checked at construction,
+`len()` is the exact immutable length, and `into_arc` transfers or shares the
+same immutable allocation.
+
+Caller-side construction performs only checked finite allocation. When one of
+these owners enters a facade request, provider callback, or completion sink,
+that accepting contract separately validates its exact length and declared
+capacity and reserves the corresponding Moria budget before ownership
+transfers. No public method grows a bounded owner past its immutable capacity;
+decoding validates count, byte length, and trailing data before allocation.
 
 The mechanical public-type index is:
 
@@ -687,8 +789,9 @@ The mechanical public-type index is:
 | `WorldId`, `MaterialId`, `VolumeId`, `ParticipantId`, `InputSourceId`, `RngStreamId`, `BaseContentSourceId`, `BaseAuthorityId`, `ContentBlobStoreId`, `CheckpointStoreId`, `ReplaySinkId`, `ReplayStreamKey`, `BaseRequestId`, `InterestId`, `CorrelationId`, `ObservationStreamId`, `ReceiptId`, `DeviceGeneration`, `Tick`, `VolumeRevision`, `CanonicalOrder` | fixed-width copy newtypes; TECH-005, TECH-021, TECH-025, TECH-037, TECH-041, TECH-043, and TECH-047 |
 | `CanonicalHash`, `ContentDigest`, `ContractDigest`, `SchemaDigest`, `BlobDigest` | distinct 32-byte digest newtypes; TECH-008/009/041/043 |
 | `WorldPointQ`, `WorldVectorQ`, `WorldAabbQ`, `LocalCellPoint`, `LocalCellAabb`, `BrickCoord`, `SegmentQ`, `PlacementQ`, `QuatQ14`, `Q23_8`, `CellWire` | fixed-width canonical values; TECH-006/007/018/051 |
-| `MoriaClient`, `WorldBuilder`, every `*Permit`, `*Receipt`, `ObservationSubscription`, and every participant/root/artifact lease or state token | opaque generational handles; their owning operation contract defines clone/drop/pin behavior, and no handle exposes storage |
-| `BoundedVec<T>`, `BoundedBytes`, `BoundedBytes64`, `BoundedUtf8<N>`, `OwnedBytes` | owned allocations with immutable admission capacity; TECH-070 and the accepting resource contract |
+| `MoriaClient`, `WorldBuilder`, every `*Permit`, `*Receipt`, `ObservationSubscription`, and every participant/root/artifact lease or state token | opaque generational handles; their owning operation contract defines clone/drop/pin behavior, and no handle exposes storage beyond the explicit participant-only views in TECH-029/054 |
+| `BoundedVec<T>`, `BoundedBytes`, `BoundedBytes64`, `BoundedUtf8<N>`, `OwnedBytes`, `BoundedOwnerError`, `VecConstructionRejected<T>`, `BytesConstructionRejected`, `BoundedPushRejected<T>` | callable finite owners and lossless construction failures; TECH-070 and the accepting resource contract |
+| `ParticipantTokenMetadata`, `ParticipantReplayRecordView`, `ColliderArtifactView`, `SnapshotMetadata`, `PreparedParticipantState` | immutable bounded participant-owned state/replay/collider views and staged state record; TECH-016/029/053 |
 | `CanonicalContract`, `RollbackConfig`, `PersistenceConfig`, `PresentationConfig`, `QualificationPolicy`, `CandidateDiagnostics`, `TickReservation`, `BlobLimits`, `RestoreLimits`, every `*Descriptor`, and every `*Limits` | closed configuration/request records; TECH-017/019/029/036/040/041/043/046/054 |
 | `CanonicalInput` and its variant payloads, `QueryKind`, `QueryScope`, `CollisionShapeQ`, `VolumeSelector`, `VolumeKind`, participant strategy/failure policy, and all lifecycle/poll/start/persistence policy enums | closed tagged enums in TECH-018/020/022/023/025/028/029/030/041/051 |
 | `QueryResult`, `Observation`, `ObservedVolumeSummary`, `ObservedRegionSummary`, `TelemetrySnapshot`, `FrontierSummary`, and every receipt `Ready` payload | the concrete bounded records in TECH-020/022/025/026/038/045-048/070; their worst-case bytes are reserved before admission |
@@ -1080,7 +1183,11 @@ Reserved -> Admitted -> Preparing -> Encoded -> Submitted
 
 `Confirmed` means the live root, revisions, outcome record, participant
 commitments, rollback frontier, replay entry, and root hash were coordinated.
-`Submitted` does not.
+It does not mean the later asynchronous `ReplaySink` append is durable.
+`Submitted` does not. TECH-047 defines the terminal-world policy when that
+post-confirmation append fails: the already-terminal tick receipt remains
+`Ready`, the committed frontier remains trustworthy, and a world-lifecycle
+observation plus telemetry reports the persistence failure.
 
 An admitted canonical tick cannot be consumer-cancelled. Before submission,
 shutdown may explicitly abandon the whole unconfirmed tick and complete it as
@@ -1489,7 +1596,7 @@ pub struct CorrectionObservation {
 pub struct WorldLifecycleFact {
     pub state: WorldState,
     pub generation: DeviceGeneration,
-    pub failure: Option<ErrorCode>,
+    pub failure: Option<OperationError>,
 }
 ```
 
@@ -1884,6 +1991,12 @@ Ready/Replaying -> RecoveringParticipant -> Ready | Failed
 Ready/Replaying/RecoveringParticipant/Failed -> ShuttingDown -> Closed
 ```
 
+`Ready -> Failed` includes TECH-047's failure to durably append an
+already-confirmed replay record. That transition does not revoke the confirmed
+frontier or rewrite its terminal tick receipt; it closes new authority
+admission and reports the committed persistence failure through the world
+lifecycle observation and telemetry before shutdown.
+
 `Failed` exposes the last trustworthy frontier but rejects new ticks; bounded
 queries against pinned readable roots may continue when their failure scope
 allows. Shutdown:
@@ -1975,10 +2088,39 @@ pub struct ParticipantSnapshotExportRequest {
 pub struct ParticipantStateLease { /* private immutable token lease */ }
 pub struct ParticipantReplayLease { /* private bounded exact record lease */ }
 pub struct ColliderArtifactLease { /* private source-hash-bound artifact lease */ }
+pub struct ParticipantTokenMetadata {
+    pub participant: ParticipantId,
+    pub contract: ContractDigest,
+    pub frontier: FrontierSummary,
+    pub commitment: CanonicalHash,
+    pub state_bytes: u64,
+    pub device_generation: Option<DeviceGeneration>,
+}
+pub struct ParticipantReplayRecordView<'a> {
+    pub tick: Tick,
+    pub digest: BlobDigest,
+    pub bytes: &'a [u8],
+}
+pub struct ColliderArtifactView<'a> {
+    pub contract: ContractDigest,
+    pub tick: Tick,
+    pub source_root: CanonicalHash,
+    pub request_digest: CanonicalHash,
+    pub artifact_hash: CanonicalHash,
+    pub volume_count: u32,
+    pub record_count: u32,
+    pub bytes: &'a [u8],
+}
+pub struct SnapshotMetadata {
+    pub uncompressed_bytes: u64,
+    pub digest: BlobDigest,
+}
 pub struct PreparedParticipantState {
     pub opaque: Arc<dyn Any + Send + Sync>,
+    pub state_bytes: u64,
     pub commitment: CanonicalHash,
     pub rng_state_digests: BoundedVec<CanonicalHash>,
+    pub snapshot: Option<SnapshotMetadata>,
 }
 pub struct ParticipantStateSink { /* private one-result completion */ }
 pub struct ParticipantCompletionSink { /* private state/effect/event completion */ }
@@ -1989,6 +2131,25 @@ pub enum ParticipantCompletionDisposition {
     AlreadyCompleted,
     Cancelled,
     LateGeneration,
+}
+
+impl ParticipantStateLease {
+    pub fn metadata(&self) -> ParticipantTokenMetadata;
+    pub fn downcast_ref<T: Any + Send + Sync>(&self) -> Option<&T>;
+}
+impl ParticipantReplayLease {
+    pub fn first_tick(&self) -> Option<Tick>;
+    pub fn last_tick(&self) -> Option<Tick>;
+    pub fn len(&self) -> u32;
+    pub fn total_bytes(&self) -> u64;
+    pub fn is_empty(&self) -> bool;
+    pub fn record(&self, index: u32) -> Option<ParticipantReplayRecordView<'_>>;
+    pub fn records(
+        &self,
+    ) -> impl ExactSizeIterator<Item = ParticipantReplayRecordView<'_>> + '_;
+}
+impl ColliderArtifactLease {
+    pub fn view(&self) -> ColliderArtifactView<'_>;
 }
 
 impl ParticipantStateSink {
@@ -2064,7 +2225,12 @@ participant/tick/source token/hash, duplicate completion, excessive
 bytes/effects, or a closed device generation. `ParticipantStateSink` and
 `ParticipantCompletionSink` accept an opaque immutable
 `PreparedParticipantState` token bound as specified by TECH-016; the adapter
-can inspect a later lease to its own token, but consumers and Moria cannot.
+can inspect a later lease to its own concrete token through `downcast_ref`,
+but consumers and Moria never invoke the downcast or interpret the value.
+Moria validates `state_bytes`, strategy-specific `snapshot`, commitment, RNG
+count, and every descriptor limit before accepting the state. Snapshot
+strategy states require matching metadata; reconstructible states require
+`snapshot: None`.
 There is no `commit` callback: installing the immutable token is the
 coordinator's infallible `FrontierBundle` pointer swap. Dropping an uninstalled
 token is abort. The descriptor fixes contract/input versions, strategy,
@@ -2173,6 +2339,25 @@ and participant commitment, retained in replay, and returned only in
 TECH-025 observations, which remain facts about Moria-owned state under
 REQ-012. The substrate assigns no physics, collision-response, damage, or
 gameplay meaning to participant events.
+
+`ParticipantStateLease`, `ParticipantReplayLease`, and
+`ColliderArtifactLease` are non-`Clone`, immutable owned leases whose backing
+storage remains pinned until the lease and its operation sink are both
+terminal. Their accessors borrow only for the lease lifetime and allocate
+nothing. Moria invokes an adapter only with the registered participant's
+token, a contiguous replay range in increasing tick order, and a collider view
+whose header and checksum were validated under TECH-053. A wrong concrete
+state type returns `None`; the adapter must report participant failure and
+cannot request a Moria downcast or fallback. Cancellation closes output sinks
+but does not invalidate memory already borrowed by an active callback; late
+completion is rejected, and dropping the final lease releases its fixed
+permit. CPU leases have no device-generation invalidation. A GPU participant
+uses the generation-scoped binding types in TECH-054 instead of these CPU
+leases.
+An empty replay lease is valid only when the requested reconstruction range
+contains no post-start ticks; it reports `len() == 0`, `total_bytes() == 0`,
+and `None` for both endpoint accessors. Nonempty endpoints equal the first and
+last record views exactly.
 
 The v1 participant model is deliberately one-phase:
 
