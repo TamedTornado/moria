@@ -115,8 +115,8 @@ reproducible and do not qualify a live remote REAPI service.
 
 ## Fresh-TDD regeneration dogfood — 2026-07-29
 
-> **In progress:** This entry records the run as it is happening. Reaching the
-> human TDD review gate remains pending.
+> **Result:** The regenerated TDD reached the human review gate after one
+> simplicity revision and two adversarial drafting revisions.
 
 Moria's clean rebuild exposed several planning-harness and PM-supervision
 failures before producing a reviewable fresh TDD:
@@ -156,6 +156,16 @@ failures before producing a reviewable fresh TDD:
   proof uses a public candidate-only diagnostic mechanism; and RNG state is
   participant-owned and descriptor/state-bound. The revision retained all 69
   technical contracts and exact requirement traceability.
+- The second independent audit did not accept the first repair wholesale. It
+  found four remaining defects: non-rigid quaternion normalization,
+  underspecified world-space collision-fact conversion, missing durable replay
+  bytes for reconstructible participants, and an incomplete participant
+  failure-policy state machine.
+- A second drafting revision closed those four contracts. A third independent
+  audit checked the fixed-point math numerically, reread the approved design,
+  rechecked the participant and persistence lifecycles, and approved the TDD
+  with no remaining findings. The run then advanced to the human review gate in
+  [PR #400](https://github.com/TamedTornado/moria/pull/400).
 
 The main dogfood lesson is that agent correctness was not the only risk. The PM
 could corrupt a healthy run by imposing an invented contract and intervening
