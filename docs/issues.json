@@ -6019,7 +6019,7 @@
         "C-015"
       ]
     },
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-006, M-017, M-077, M-078, M-123\n**Produces:** `src/bin/moria-qualify/evidence/public_closure.rs`, `tests/fixtures/public_closure.rs`\n\n## Description\n\nImplement the TECH-060 mechanical public-closure check over approved normative Rust snippets and the compiled public facade. Detect unowned capitalized names, duplicate fields, stale aliases, missing facade connections, invalid budget references, and unchecked public constructors without creating a home-grown Rust parser. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-006, M-017, M-077, M-078, M-123 and the approved normative Rust snippets.\n- Use the selected maintained Rust parser `syn = \"=2.0.106\"`; custom code may implement only Moria-specific ownership and closure rules.\n\n## Acceptance Criteria\n\n- [ ] The check parses every normative Rust snippet with `syn = \"=2.0.106\"` and fails on parse errors, duplicate fields, unresolved capitalized names, missing owner rows, stale aliases, absent facade connections, or references outside the exact TECH-017 budget schema.\n- [ ] Retained negatives include `max_log_ticks`, `max_log_bytes`, `recovery_replay_cap`, and `PresentationState::Failed`; only the exact approved replacements pass.\n- [ ] Compile-fail checks reject public tuple constructors, unchecked conversions, private imports, and test-only facade access.\n- [ ] No regex or custom tokenizer acts as a Rust parser, and no shared general-purpose Rust validator is introduced.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-006, M-017, M-077, M-078, M-123\n**Produces:** `src/bin/moria-qualify/evidence/public_closure.rs`, `tests/fixtures/public_closure.rs`\n\n## Description\n\nImplement the TECH-060 mechanical public-closure check over approved normative Rust snippets and the compiled public facade. Use a maintained CommonMark parser to discover every Rust-tagged fenced block, then a maintained Rust parser for the extracted syntax; detect unowned capitalized names, duplicate fields, stale aliases, missing facade connections, invalid budget references, and unchecked public constructors. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-006, M-017, M-077, M-078, M-123 and the approved normative Rust snippets.\n- Enumerate Rust-tagged fenced blocks with the selected maintained CommonMark parser `pulldown-cmark = \"=0.13.4\"`, then parse the extracted Rust with `syn = \"=2.0.106\"`; custom code may implement only Moria-specific ownership and closure rules.\n\n## Acceptance Criteria\n\n- [ ] `pulldown-cmark = \"=0.13.4\"` enumerates every Rust-tagged fenced block in every approved Markdown TDD input, and the check fails closed if any input is unreadable, any discovered Rust block cannot be extracted, or the complete document/block inventory cannot be established.\n- [ ] The check parses every discovered normative Rust snippet with `syn = \"=2.0.106\"` and fails on parse errors, duplicate fields, unresolved capitalized names, missing owner rows, stale aliases, absent facade connections, or references outside the exact TECH-017 budget schema.\n- [ ] Retained negatives include `max_log_ticks`, `max_log_bytes`, `recovery_replay_cap`, and `PresentationState::Failed`; only the exact approved replacements pass.\n- [ ] Compile-fail checks reject public tuple constructors, unchecked conversions, private imports, and test-only facade access.\n- [ ] No regex, custom Markdown tokenizer/fence scanner, or home-grown Rust parser performs standardized-format discovery or parsing, and no shared general-purpose Markdown/Rust validation infrastructure is introduced.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   },
   {
     "id": "M-125",
@@ -6108,6 +6108,89 @@
   },
   {
     "id": "M-127",
+    "title": "[system] Prove private correction success and abort headlessly",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-049",
+      "M-077",
+      "M-116"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-049, M-077, M-116\n**Produces:** `tests/headless/private_correction.rs`\n\n## Description\n\nImplement the TECH-060 headless state-machine proof for private retained-suffix correction through the actual TECH-070 correction request, private replay, durable branch, and coordinated publication path. Prove both successful same-present replacement and every prepublication abort boundary without introducing a privileged correction path. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-049, M-077, and the controlled headless lifecycle/completion harness from M-116.\n\n## Acceptance Criteria\n\n- [ ] A controlled successful correction calls the public correction facade, replays only in private roots and participant tokens, makes the exact single branch durable before publication, then atomically replaces the live frontier bundle, rollback suffix, active log, replay position, participant tokens, receipt, and one correction observation while scheduling only the final dirty union.\n- [ ] Expected-hash divergence, participant failure, cancellation before sink invocation, and branch-sink failure each exercise the actual correction transaction and assert the original live frontier, rollback deque, active log, replay position, participant commitments, and readable pinned roots remain byte-identical with no partial correction or intermediate observation/presentation publication.\n- [ ] Abort assertions distinguish pre-invocation cancellation from post-invocation noncancellability and verify the exact terminal correction/store failure, retry policy, committed-none state, lifecycle/observation records, and unchanged authority frontier required at each boundary.\n- [ ] Every success and abort case releases correction byte/count permits, callback cells, and private-root pins at its declared last use; staged CPU tokens drop after closure, staged GPU tokens retire only after controlled completion, and no resource remains stranded.\n- [ ] The fixture uses only the public correction integration path and controlled completions exposed by the headless harness; it adds no test-only authority or storage mutation path.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-128",
+    "title": "[system] Prove completion-bridge reservation and drain headlessly",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-060",
+      "M-065",
+      "M-066",
+      "M-067",
+      "M-077",
+      "M-116"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-060"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-005",
+        "REQ-012",
+        "REQ-015",
+        "REQ-016",
+        "REQ-023"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-010",
+        "AD-003",
+        "D-002",
+        "D-007",
+        "D-006",
+        "D-005",
+        "C-004",
+        "D-009",
+        "C-015"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-060, M-065, M-066, M-067, M-077, M-116\n**Produces:** `tests/headless/completion_bridge.rs`\n\n## Description\n\nImplement the TECH-060 controlled headless proof for completion-bridge reservation, exhaustion, matching completion, duplicate completion, and old-generation drain. Exercise the real bounded-pool, publication, generation, recovery, and facade integration while keeping GPU execution outside this headless proof. This issue implements TECH-060 under REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023.\n\n## Inputs\n\n- TECH-060 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-005, REQ-012, REQ-015, REQ-016, REQ-023 and authority chain C-003, C-013, C-010, AD-003, D-002, D-007, D-006, D-005, C-004, D-009, C-015.\n- Outputs of M-060, M-065, M-066, M-067, M-077, and the controlled headless lifecycle/completion harness from M-116.\n\n## Acceptance Criteria\n\n- [ ] Every extracted job reserves exactly one bridge cell before extraction; saturating every job-reservable cell while preserving both dedicated generation/shutdown control cells makes the next applicable public admission fail with the specified retryable backpressure before callback, extraction, or device-page allocation, without dropping or overwriting an envelope.\n- [ ] A matching controlled completion crosses encoded, submitted, complete, mapped, decoded, drained, acknowledged, and published states exactly once; its reserved cell, job permit, staging/readback resources, pins, and completion record are released only after their declared last use and main-world acknowledgement.\n- [ ] A duplicate completion terminally fails the generation, never republishes or replaces the first result, drains the duplicate for lifetime cleanup, and returns every reserved cell and bounded resource exactly once while preserving the last trustworthy frontier.\n- [ ] Old-generation completions after device loss release only their old-generation resources and cells and cannot publish; `GenerationLost` plus per-job terminal envelopes drain before recovery or shutdown removes either bridge clone, including exhausted job capacity and cancelled-consumer cases.\n- [ ] All cases use controlled headless completions through the actual facade, publication, pool, generation, and recovery paths; no no-op GPU backend or test-only completion bypass is installed.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-129",
     "title": "[system] Enforce separate coverage and implementation-completeness gates",
     "labels": [
       "system",
@@ -6180,7 +6263,9 @@
       "M-123",
       "M-124",
       "M-125",
-      "M-126"
+      "M-126",
+      "M-127",
+      "M-128"
     ],
     "provenance": {
       "technical_contracts": [
@@ -6224,6 +6309,6 @@
         "D-001"
       ]
     },
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-007, M-013, M-024, M-025, M-026, M-027, M-029, M-035, M-036, M-037, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-046, M-047, M-048, M-049, M-070, M-071, M-077, M-084, M-085, M-086, M-087, M-088, M-089, M-090, M-091, M-092, M-093, M-094, M-095, M-096, M-097, M-098, M-099, M-100, M-101, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111, M-112, M-113, M-114, M-115, M-116, M-117, M-118, M-119, M-120, M-121, M-122, M-123, M-124, M-125, M-126\n**Produces:** `src/bin/moria-qualify/evidence/gate.rs`\n\n## Description\n\nImplement the fail-closed completion evaluator that separately reports approved GDD coverage and implementation completeness across public closure, local commands, CPU/headless/scenario tests, shader layers, real GPU replay, contamination/math, device loss, visuals, and benchmarks. The evaluator consumes every independently produced TECH-059 and TECH-060 proof slice and treats absent, incomplete, or failing headless evidence as implementation incompleteness. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-007, M-013, M-024, M-025, M-026, M-027, M-029, M-035, M-036, M-037, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-046, M-047, M-048, M-049, M-070, M-071, M-077, M-084, M-085, M-086, M-087, M-088, M-089, M-090, M-091, M-092, M-093, M-094, M-095, M-096, M-097, M-098, M-099, M-100, M-101, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111, M-112, M-113, M-114, M-115, M-116, M-117, M-118, M-119, M-120, M-121, M-122, M-123, M-124, M-125, M-126.\n\n## Acceptance Criteria\n\n- [ ] Gate tests reject dirty or digest-mismatched worktrees, unexpected GPU errors, unavailable/divergent replay, incomplete audits, missing evidence rows, undefined callables/owners/bounds/lifecycles, and never infer one approval conclusion from the other.\n- [ ] Gate tests enumerate every required TECH-060 runtime, genesis/query, observation, provider, store/replay, configuration, participant, external-facade, public-closure, Rust source-lint, and WGSL source-lint slice and reject any absent, incomplete, skipped, or failing row.\n- [ ] Gate tests reject absent or incomplete TECH-059 decoder-fuzz, schedule/configuration-perturbation, or participant-RNG evidence.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-007, M-013, M-024, M-025, M-026, M-027, M-029, M-035, M-036, M-037, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-046, M-047, M-048, M-049, M-070, M-071, M-077, M-084, M-085, M-086, M-087, M-088, M-089, M-090, M-091, M-092, M-093, M-094, M-095, M-096, M-097, M-098, M-099, M-100, M-101, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111, M-112, M-113, M-114, M-115, M-116, M-117, M-118, M-119, M-120, M-121, M-122, M-123, M-124, M-125, M-126, M-127, M-128\n**Produces:** `src/bin/moria-qualify/evidence/gate.rs`\n\n## Description\n\nImplement the fail-closed completion evaluator that separately reports approved GDD coverage and implementation completeness across public closure, local commands, CPU/headless/scenario tests, shader layers, real GPU replay, contamination/math, device loss, visuals, and benchmarks. The evaluator consumes every independently produced TECH-059 and TECH-060 proof slice and treats absent, incomplete, or failing headless evidence as implementation incompleteness. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-007, M-013, M-024, M-025, M-026, M-027, M-029, M-035, M-036, M-037, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-046, M-047, M-048, M-049, M-070, M-071, M-077, M-084, M-085, M-086, M-087, M-088, M-089, M-090, M-091, M-092, M-093, M-094, M-095, M-096, M-097, M-098, M-099, M-100, M-101, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111, M-112, M-113, M-114, M-115, M-116, M-117, M-118, M-119, M-120, M-121, M-122, M-123, M-124, M-125, M-126, M-127, M-128.\n\n## Acceptance Criteria\n\n- [ ] Gate tests reject dirty or digest-mismatched worktrees, unexpected GPU errors, unavailable/divergent replay, incomplete audits, missing evidence rows, undefined callables/owners/bounds/lifecycles, and never infer one approval conclusion from the other.\n- [ ] Gate tests enumerate every required TECH-060 runtime, genesis/query, observation, provider, store/replay, configuration, participant, external-facade, public-closure, Rust source-lint, WGSL source-lint, private-correction, and completion-bridge slice and reject any absent, incomplete, skipped, or failing row.\n- [ ] Gate tests reject absent or incomplete TECH-059 decoder-fuzz, schedule/configuration-perturbation, or participant-RNG evidence.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   }
 ]

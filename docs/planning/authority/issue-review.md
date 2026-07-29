@@ -364,3 +364,75 @@ change to an approved source, requirement, technical contract, authority ID,
 decision, TDD, authority ledger, source-manifest entry, or digest. This turn
 therefore requests manifest changes rather than failing for upstream human
 resolution.
+
+## Coder Response Turn — 2026-07-29T22:21:25Z
+
+**Answering:** `Issue Review Turn — 2026-07-29T22:14:44Z`
+
+**Verdict:** addressed
+
+### Responses to findings
+
+1. **Missing private-correction and completion-bridge `TECH-060` proof
+   slices — addressed.**
+
+   Added two independently testable, dependency-ordered issues with only
+   `TECH-060` and the exact required `REQ-002`, `REQ-005`, `REQ-012`,
+   `REQ-015`, `REQ-016`, `REQ-023` / `C-003`, `C-013`, `C-010`, `AD-003`,
+   `D-002`, `D-007`, `D-006`, `D-005`, `C-004`, `D-009`, `C-015`
+   provenance:
+
+   - `M-127` produces `tests/headless/private_correction.rs`, depends on
+     `M-049`, `M-077`, and `M-116`, and proves successful durable
+     same-present replacement plus prepublication abort behavior through the
+     actual correction transaction and public integration path. Its criteria
+     assert atomic frontier/log/rollback/replay/participant publication,
+     byte-identical original state on abort, exact terminal failures and
+     cancellation cutoffs, and release of permits, callback cells, pins, and
+     staged CPU/GPU participant resources.
+   - `M-128` produces `tests/headless/completion_bridge.rs`, depends on
+     `M-060`, `M-065`, `M-066`, `M-067`, `M-077`, and `M-116`, and proves
+     reservation, exhaustion, matching completion, duplicate completion, and
+     old-generation drain with controlled headless completions. Its criteria
+     preserve the two dedicated control cells under job-capacity exhaustion,
+     assert exact completion/publication state transitions, fail duplicate
+     completion closed, prohibit old-generation publication, and require
+     exact-once release after acknowledgement/drain.
+
+   The former completion gate `M-127` is now `M-129` so dependencies remain
+   earlier than their consumer. `M-129` depends on both new issues, enumerates
+   private-correction and completion-bridge evidence rows, and rejects either
+   row when absent, incomplete, skipped, or failing.
+
+2. **Unconstrained Markdown discovery in `M-124` — addressed.**
+
+   `M-124` now selects and pins the maintained CommonMark parser
+   `pulldown-cmark = "=0.13.4"` in Inputs and Acceptance Criteria to enumerate
+   every Rust-tagged fenced block in the approved Markdown TDD inputs. It
+   retains `syn = "=2.0.106"` for the extracted Rust AST, fails closed when
+   the complete document/block inventory cannot be established, and
+   explicitly prohibits regex, a custom Markdown tokenizer/fence scanner, a
+   home-grown Rust parser, or shared general-purpose Markdown/Rust validation
+   infrastructure. Its `TECH-060`, requirement, and authority provenance are
+   unchanged.
+
+### Exact `docs/issues.json` changes
+
+- Preserved `M-001` through `M-126`, except for the requested body-only
+  CommonMark discovery correction to `M-124`.
+- Added `M-127` and `M-128` as the two separate `TECH-060` headless proof
+  issues described above.
+- Renumbered only the former final gate from `M-127` to `M-129`, added
+  `M-127` and `M-128` to its structured and body dependency lists, and added
+  fail-closed evidence-row criteria for both proof slices.
+- Increased the manifest from 127 to 129 sequential dependency-ordered
+  entries; no other issue, provenance chain, produced artifact, or dependency
+  changed.
+
+### Authority-boundary disposition
+
+No finding is unsatisfied, and no finding requires changing a source,
+requirement, technical contract, claim, decision, TDD, authority ledger,
+source manifest, or digest. Both findings were satisfied solely by correcting
+`docs/issues.json`; there is no upstream-authority conflict requiring human
+resolution.
