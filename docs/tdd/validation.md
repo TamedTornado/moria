@@ -56,7 +56,7 @@ participant duplicate/late completion, shutdown with dirty truth, and a missing
 `RenderApp`. The missing-renderer case reports `BackendUnavailable`; it is not
 a GPU test and does not install a no-op canonical backend.
 
-`moria-qualify` compiles as an external-style package depending only on public
+`moria-qualify` compiles as a separate binary crate and imports only public
 `moria`. A lint/test fails if it enables a test-only facade feature or imports a
 private module.
 

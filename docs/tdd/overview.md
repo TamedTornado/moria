@@ -15,12 +15,14 @@ renumbered if its contract survives a revision.
 
 ## Architecture at a glance
 
-Moria is a Cargo workspace with one public library, `moria`, and one
-qualification executable, `moria-qualify`. The library is organized internally
-as feature plugins and domain modules, but presents one facade. It owns a
-versioned canonical state machine, GPU-resident sparse material roots, bounded
-asynchronous work, collision truth, derived presentation, rollback, replay,
-and checkpoint seams.
+Moria is one Cargo package with a public `moria` library target and a
+`moria-qualify` binary target. The binary is a separate Rust crate that imports
+only the library's public API, so it proves the external-consumer boundary
+without requiring a second package or workspace. The library is organized
+internally as feature plugins and domain modules, but presents one facade. It
+owns a versioned canonical state machine, GPU-resident sparse material roots,
+bounded asynchronous work, collision truth, derived presentation, rollback,
+replay, and checkpoint seams.
 
 ```text
 consumer / moria-qualify
@@ -64,7 +66,7 @@ world configuration, content, material and volume registration, tick input,
 participants, interest, query, observation, persistence, telemetry, and Bevy
 integration. It contains no generator, player, camera, physics, damage,
 networking, AI, economy, or gameplay vocabulary. `moria-qualify` is an ordinary
-crate consumer and may use no `pub(crate)` API, internal GPU buffer, test-only
+consumer crate and may use no `pub(crate)` API, internal GPU buffer, test-only
 mutation hook, or feature that an external consumer cannot select.
 
 ### TECH-002 — Authority and ownership boundary
@@ -99,39 +101,45 @@ assets/
   shaders/
     canonical/
     presentation/
-crates/
-  moria/
-    Cargo.toml
-    src/
-      lib.rs
-      prelude.rs
-      config/
-      facade/
-      canonical/
-      content/
-      storage/
-      runtime/
-      query/
-      collision/
-      participant/
-      persistence/
-      presentation/
-      telemetry/
-      bevy/
-tools/
-  moria-qualify/
-    Cargo.toml
-    src/
-    fixtures/
+fixtures/
+  qualification/
+src/
+  lib.rs
+  prelude.rs
+  config/
+  facade/
+  canonical/
+  content/
+  storage/
+  runtime/
+  query/
+  collision/
+  participant/
+  persistence/
+  presentation/
+  telemetry/
+  bevy/
+  bin/
+    moria-qualify/
+      main.rs
+      cli/
+      evidence/
+      oracle/
+      scenarios/
+tests/
 docs/tdd/
 ```
 
-The workspace is justified by two deliverables: the reusable library and the
-qualification/evidence CLI. `moria` uses Bevy `=0.19.0`; any direct wgpu
-dependency uses `=29.0.3`, matching Bevy. `Cargo.lock` is committed. The Rust
-toolchain is pinned in `rust-toolchain.toml`; changing Rust, Bevy, wgpu, Naga,
-canonical shader source, or a canonical feature invalidates affected
-qualification evidence.
+The root manifest defines `[lib] name = "moria"` and one `[[bin]]` named
+`moria-qualify`; it does not declare a Cargo workspace. This is the smallest
+package boundary that produces both required artifacts. The binary crate uses
+`use moria::...` exactly as an external package would and has no shared private
+module tree with the library.
+
+`moria` uses Bevy `=0.19.0`; any direct wgpu dependency uses `=29.0.3`,
+matching Bevy. `Cargo.lock` is committed. The Rust toolchain is pinned in
+`rust-toolchain.toml`; changing Rust, Bevy, wgpu, Naga, canonical shader source,
+or a canonical feature invalidates affected qualification evidence.
 
 `moria` exposes no wgpu type from its general facade. The deliberately coupled
 GPU-participant API is under `moria::bevy::gpu_participant` and may expose only
@@ -156,6 +164,8 @@ contract.
 - [validation.md](validation.md): automated, real-GPU, cross-backend,
   persistence, rollback, performance, and evidence obligations.
 - [traceability.md](traceability.md): requirement-to-technical-contract index.
+- [decisions.md](decisions.md): durable human-review feedback and its applied
+  technical interpretation.
 
 ## Cross-cutting invariants
 
@@ -207,17 +217,17 @@ The root `AGENTS.md` must contain the following project-specific instructions
 
 - Format (write): `cargo fmt --all`
 - Format check: `cargo fmt --all -- --check`
-- Check: `cargo check --workspace --all-targets --all-features`
-- Lint: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-- Test: `cargo test --workspace --all-targets --all-features`
-- Shader validation: `cargo run -p moria-qualify -- shaders validate`
-- Build: `cargo build --workspace --all-targets --all-features`
-- Development scenario: `cargo run -p moria-qualify -- scenario public-boundary --mode candidate --evidence target/moria-evidence/dev`
+- Check: `cargo check --all-targets --all-features`
+- Lint: `cargo clippy --all-targets --all-features -- -D warnings`
+- Test: `cargo test --all-targets --all-features`
+- Shader validation: `cargo run --bin moria-qualify -- shaders validate`
+- Build: `cargo build --all-targets --all-features`
+- Development scenario: `cargo run --bin moria-qualify -- scenario public-boundary --mode candidate --evidence target/moria-evidence/dev`
 - Full local gate: run format check, check, lint, test, shader validation, then
   the development scenario in that order.
 
 Hardware qualification is not part of the ordinary local gate. Run
-`cargo run -p moria-qualify -- qualify --matrix <matrix.toml> --evidence <dir>`
+`cargo run --bin moria-qualify -- qualify --matrix <matrix.toml> --evidence <dir>`
 only on declared physical adapters. `UNAVAILABLE` is not `PASS`.
 
 ## Module and naming rules
@@ -237,8 +247,10 @@ only on declared physical adapters. `UNAVAILABLE` is not `PASS`.
 
 ## Dependency rules
 
-- `moria` is the only public library crate. Do not add a crate without a real
-  compile, reuse, or deliverable boundary recorded in the TDD.
+- The root package contains the public `moria` library crate and the
+  `moria-qualify` binary crate. Do not introduce a Cargo workspace, another
+  package, or another target without a concrete compile, reuse, or deliverable
+  boundary recorded in the TDD.
 - Pin Bevy and direct wgpu/Naga dependencies exactly. Do not create a second
   wgpu device in the Bevy path.
 - Keep runtime/executor types out of the general public API. Do not add Tokio
