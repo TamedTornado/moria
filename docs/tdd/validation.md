@@ -11,16 +11,23 @@ cannot stand in for canonical GPU truth.
 Implements: REQ-007, REQ-021, REQ-023, REQ-036, REQ-038
 
 `moria-qualify` contains an independent, deliberately small CPU reference
-model for canonical encoding, fixed-point arithmetic, cell edits, sorted tick
-outcomes, collision primitives, radix commitments, and replay hashes. It shares
-public wire definitions but no transition/storage implementation with Moria.
-It is evidence only and cannot publish an authority world.
+model for canonical encoding, parameterized fixed-point arithmetic, cell
+edits, sorted tick outcomes, collision primitives, radix commitments, and
+replay hashes. It shares public wire definitions but no transition/storage
+implementation with Moria. It is evidence only and cannot publish an
+authority world.
 
 Required deterministic tests include:
 
 - golden bytes and digests for every canonical record and hash domain;
-- arithmetic edges for every operation, overflow, division, shift, ties-even
-  rounding, exact square-root quaternion normalization (including
+- arbitrary-precision differential cases for every `moria-fixed-v1` placement
+  split `0..=16`: add/subtract, 64-bit-intermediate multiply, division, square
+  root, narrowing, floor shift/division, ties-even half cases, overflow, and
+  every quadrant and exact boundary class of `TurnQ32` plus generated samples
+  across its full `u32` domain; the checked-in gain/arctangent table is
+  regenerated at 256-bit precision and must byte-match the Rust/WGSL source
+  table;
+- orientation edges for exact square-root quaternion normalization (including
   `(1,1,0,0)`), composition/inverse, quantized-unit-shell membership,
   rational quaternion-vector rotation/transpose inverse and orthogonality,
   checked i64/i128 helper parity, and the maximum-radius displacement proof;
@@ -51,7 +58,11 @@ Required deterministic tests include:
 Schedule-perturbation tests submit identical sealed bytes under randomized
 producer threads, insertion orders, worker counts, completion notifications,
 cache layouts, and physical-slot histories. Canonical outcomes/bytes/hashes
-must remain identical.
+must remain identical on every repeated run on the same machine. Fixtures run
+at least the minimum, midpoint, and maximum placement splits with distinct
+simulation-unit IDs and cell extents, prove those fields change the
+configuration fingerprint, and prove mismatched replay/restore is rejected.
+No cross-machine conclusion is drawn from these results.
 
 The oracle also registers one participant RNG stream with a published toy
 algorithm contract. Golden tests cover seed decoding, every state/output step,
@@ -164,6 +175,17 @@ preserve zero and every input bit. `RngStreamId` is named separately:
 `try_from_raw(0)` fails, while `0x7fff_ffff`, `0x8000_0000`, and
 `u32::MAX` all construct and round-trip because its participant-local domain
 is the complete nonzero `u32` range.
+It constructs `PlacementScalar`, `TurnQ32`, `SimulationUnitId`,
+`PlacementFixedFormat`, and `WorldGenesisConfig` only through their exact
+integer/byte APIs. Compile-fail fixtures reject implicit or `From` conversions
+between placement values, local cell coordinates, density, orientation,
+participant representations, and `f32`/`f64`. Every participant descriptor
+Format fixtures accept splits 0 and 16 and cell extents 1 and `i32::MAX`, and
+reject split 17 plus cell extents 0 and 2,147,483,648 before `begin_world`.
+Every participant descriptor
+registers a sorted/unique bounded representation-contract list; duplicate,
+zero, oversize, or changed digests fail before genesis, while an empty list is
+valid for a participant with no non-placement physical quantities.
 Its CPU participant downcasts its own state lease, iterates exact replay
 record views, decodes a TECH-053 collider view, and exercises wrong-type,
 capacity, cancellation, and dropped-lease cases. Its GPU participant creates
@@ -243,13 +265,15 @@ allocation.
 
 `moria-qualify` compiles as a separate binary crate and imports only public
 `moria`. A lint/test fails if it enables a test-only facade feature or imports a
-private module.
+private module. A source/AST lint fails if canonical Rust or WGSL outside the
+one-way presentation conversion contains float types/literals,
+transcendental builtins, or bypasses `moria-fixed-v1`.
 
 ## Shader and real-GPU validation
 
 ### TECH-061 — Shader validation pipeline
 
-Implements: REQ-007, REQ-021, REQ-023, REQ-036, REQ-039
+Implements: REQ-007, REQ-021, REQ-023, REQ-036
 
 `moria-qualify shaders validate` discovers every WGSL module referenced by the
 crate, parses and validates it with the exact matching Naga version and
@@ -268,9 +292,16 @@ unrelated error, or silent no-op fails.
 Every pushed error scope is popped and its result recorded. Unexpected
 uncaptured validation errors fail the run.
 
+The command also regenerates and validates TECH-071's CPU/WGSL fixed-math
+sources and CORDIC table, checks every supported fractional split, and emits
+the complete TECH-035 kernel-contamination inventory. A missing entry point,
+unclassified atomic, unwritten output/padding byte, order-dependent
+compaction, or canonical dataflow from a physical/race/arrival identity fails
+at this layer.
+
 ### TECH-062 — Real-GPU semantic parity
 
-Implements: REQ-001, REQ-023, REQ-036, REQ-038, REQ-039
+Implements: REQ-001, REQ-023, REQ-026, REQ-036, REQ-038
 
 The real-GPU suite exercises public genesis, queues, participant adapter,
 canonical transition, collision, readback, checkpoint, and replay. For each
@@ -297,35 +328,20 @@ It also compares exact rotated dynamic-volume collision fact wire bytes,
 including world-space contact points and directed normals, rather than only
 hit membership.
 
+For replay evidence the suite executes the identical genesis and retained
+`TickBatch` stream at least eight times on the same physical machine. Between
+runs it perturbs worker counts, submission chunking, staging contents,
+resident-slot histories, workgroup scheduling pressure, callback order, and
+compaction input layout. It compares every canonical record and hierarchical
+hash byte-for-byte. The kernel-contamination audit remains required even when
+all sampled runs pass; sampling does not excuse an order-dependent atomic,
+race-produced byte, or arrival-order compaction. Adapter/driver/backend
+identity is recorded only as run context, and no cross-machine comparison or
+qualification status is produced.
+
 Evidence records input/output digests and decoded comparisons. “Shader
 compiled,” “queue submitted,” “frame rendered,” a mock, or a software adapter
 cannot satisfy this contract.
-
-### TECH-063 — Cross-backend qualification matrix
-
-Implements: REQ-026, REQ-039, REQ-043
-
-`moria-qualify qualify` requires physical runs for at least one declared tuple
-in each claimed family: Metal, Vulkan, and DX12. Every retained row contains:
-
-```text
-fixture/contract/source digests; git commit; dirty flag;
-OS/kernel; CPU; GPU vendor/device; driver; backend;
-Bevy/wgpu/Naga/Rust versions; granted features/limits/downlevel flags;
-fallback status; start/end UTC as evidence metadata;
-canonical genesis/tick/outcome bytes and per-tick hashes;
-readback digests; unexpected errors; PASS/FAIL/UNAVAILABLE
-```
-
-The retained conformance fixture is byte-identical across rows. An independent
-`compare` subcommand reads artifacts and compares canonical records/hashes at
-every tick; it does not trust row status. Any divergence marks the tuple
-unqualified and emits TECH-047's earliest-divergence artifact.
-
-`UNAVAILABLE` remains missing evidence. Local replay on one tuple qualifies
-only local replay. Driver or relevant contract changes expire the row. A
-qualification manifest references immutable evidence digests and is accepted
-by authority mode only when every requested tuple row is current.
 
 ## Scenario acceptance
 
@@ -350,7 +366,7 @@ facade:
    placement input, edit local matter, checkpoint, and restore the same ID.
 4. **Atomic mutation:** inject a post-admission diagnostic failure into a
    multi-brick command before publication by constructing a public
-   `QualificationPolicy::Candidate` with TECH-040's one-shot
+   `ExecutionPolicy::Candidate` with TECH-040's one-shot
    `AfterBrickConstructionBeforePublication` diagnostic. Every targeted old
    cell/revision/observation remains unchanged. `moria-qualify` imports that
    public type exactly as an external crate; the failure is the same checked
@@ -377,7 +393,8 @@ closed tick, arithmetic/range exhaustion, canonical/query/pool pressure,
 presentation failure, observation overwrite, store failure, corrupt/incomplete
 checkpoint, wrong lineage/root, missing material/source, activation mismatch,
 participant restore/divergence, rollback outside window, replay poison,
-unqualified tuple, qualified divergence, and external participant failure.
+unsupported device capability, injected determinism violation, and external
+participant failure.
 
 Each row states expected layer/code, retryability, receipt terminal state,
 committed tick/revision change, observation, and retained dirty state. The test
@@ -604,7 +621,7 @@ distributions are retained, not only a summary score.
 
 ### TECH-069 — Evidence schema and completion gate
 
-Implements: REQ-021, REQ-022, REQ-023, REQ-026, REQ-039, REQ-044
+Implements: REQ-021, REQ-022, REQ-023, REQ-026, REQ-044
 
 Evidence lives under a caller-selected directory and uses
 `moria-evidence-v1` JSON manifests referencing immutable binary blobs by
@@ -616,9 +633,11 @@ numbers.
 
 The implementation-ready completion gate is:
 
-1. mechanical traceability proves every approved `REQ` is implemented by at
-   least one semantically authorized stable `TECH`, every `TECH` has exactly
-   one matching `Implements:` line, and `traceability.md` has exact pair parity;
+1. mechanical traceability proves every current approved `REQ` is implemented
+   by at least one semantically authorized stable `TECH`, with REQ-039 retained
+   only as the explicitly superseded cross-machine record; every active
+   `TECH` has exactly one matching `Implements:` line, and `traceability.md`
+   has exact pair parity;
 2. implementation-completeness validation proves every normative public Rust
    name is defined, every TECH-070 callable compiles from the external-style
    binary, every async family has the TECH-021 admission/cancel/terminal/
@@ -628,8 +647,10 @@ The implementation-ready completion gate is:
 3. the exact local commands in TECH-004 pass;
 4. all CPU/headless/public-boundary/failure/persistence/rollback tests pass;
 5. every WGSL module and negative fixture passes at its named layer;
-6. real-GPU parity passes on each tuple being claimed;
-7. cross-backend comparison passes for every claimed Metal/Vulkan/DX12 row;
+6. real-GPU parity and eight-run replay comparison pass on the current machine
+   used to make a replay-grade claim;
+7. the complete TECH-035 kernel-contamination audit and TECH-071
+   arbitrary-precision CPU/WGSL differential suite pass;
 8. device-loss behavior is evidenced as reconstructed or terminal;
 9. visual fixtures are captured and human-reviewed only for presentation
    claims;
@@ -637,9 +658,12 @@ The implementation-ready completion gate is:
     and honest status without claiming superseded `P1`–`P10` gates;
 11. no missing row is interpreted as pass.
 
-Release automation must not emit an authority qualification manifest if the
+Release automation must not emit a replay-grade evidence manifest if the
 worktree is dirty, contract/source digests differ, an unexpected GPU error
-occurred, a required row is unavailable, or byte comparison diverges.
+occurred, replay evidence is unavailable, the contamination audit is
+incomplete, or same-machine byte comparison diverges. The retained artifact is
+a replay evidence manifest, not an adapter/vendor/driver qualification record,
+and release automation performs no cross-machine comparison.
 
 An approval statement must name both conclusions separately: **approved GDD
 coverage** means the traceability condition in item 1, while **approved

@@ -2170,3 +2170,74 @@ ledger append.
 ### Approval
 
 Approved.
+
+## Coder Turn — determinism addendum revision
+
+Mode: continue
+
+Responding to: human-review feedback preserved verbatim in
+`docs/tdd/decisions.md` under “Human review entry — determinism addendum”
+
+### Responses To Findings
+
+1. **Cross-machine tier — removed.** The former `TECH-063` cross-backend
+   qualification matrix is deleted and its ID retired. `TECH-039`,
+   `TECH-040`, `TECH-069`, the facade, persistence, overview, and repository
+   commands no longer require qualification manifests, per-driver renewal,
+   cross-vendor comparison, or backend-family CI gates. Native adapter support
+   remains a portability/runtime capability, not a cross-machine determinism
+   claim.
+2. **Replay-grade core — preserved.** Canonical tick publication,
+   event-sourced commands, rollback roots, incremental hierarchical hashing,
+   durable replay, correction branches, and divergence artifacts retain their
+   stable contracts. `ExecutionPolicy::ReplayGrade` now states the exact
+   same-machine/same-genesis/same-`TickBatch`/bit-identical-hash guarantee.
+3. **Kernel contamination audit — preserved and made explicit.** `TECH-035`,
+   `TECH-061`, and `TECH-062` retain the complete source/dataflow audit and
+   same-machine scheduling perturbations for atomics, races, padding,
+   allocation identity, and compaction order. No audit obligation was removed
+   with the cross-vendor matrix.
+4. **Fixed point — retained with revised verification rationale.** Canonical
+   code remains float-free. Golden math/replay bytes use specified integer
+   operations and are no longer tied to a qualification row or GPU-driver
+   identity.
+5. **Parameterized placement — addressed.** `TECH-007` defines the per-world
+   frozen fractional split, cell extent, and simulation-unit identity,
+   includes them in the configuration fingerprint/genesis/checkpoint/replay,
+   and rejects mismatches. `TECH-016`/`TECH-029` add bounded participant-owned
+   representation-contract declarations for every non-placement physical
+   quantity.
+6. **Canonical fixed-point math component — addressed.** New `TECH-071`
+   defines `moria-fixed-v1`, its generic CPU/WGSL implementations, 64-bit
+   intermediate multiplication, exact rounding/division/square root, canonical
+   CORDIC trig, typed boundary, and arbitrary-precision differential evidence.
+
+### Concrete TDD Evidence
+
+- The normative set has 70 active stable contracts: surviving
+  `TECH-001`–`TECH-062`, `TECH-064`–`TECH-070`, plus new `TECH-071`.
+  `TECH-063` is explicitly retired and not reused.
+- Every active contract has exactly one `Implements:` line. `REQ-039` remains
+  visible in traceability only as superseded by the supplied human amendment;
+  no active contract claims to implement its removed cross-machine gate.
+- `TECH-059` tests all placement fractional splits against an
+  arbitrary-precision reference and regenerates the CORDIC constants.
+  `TECH-061` audits every canonical WGSL entry point and helper.
+  `TECH-062` performs at least eight perturbed byte-identical replays on the
+  same physical machine.
+- `TECH-004`'s exact local commands include shader validation and same-machine
+  replay verification; no cross-vendor matrix command remains.
+- The public facade freezes `WorldGenesisConfig.placement`, exposes distinct
+  raw integer types only, and binds participant representation contracts
+  before genesis.
+
+### Questions For Reviewer
+
+None.
+
+### Notes To Reviewer
+
+The older ledger entries are preserved as the historical coding-agent/review-
+agent conversation. Their cross-GPU references describe the then-current TDD
+and are not represented as current human authority. The new human feedback is
+preserved separately and verbatim in `decisions.md`.

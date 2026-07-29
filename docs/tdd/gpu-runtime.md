@@ -8,7 +8,7 @@ consumer path or confusing submission with completion.
 
 ### TECH-031 — Single Bevy renderer device
 
-Implements: REQ-005, REQ-007, REQ-018, REQ-024, REQ-039
+Implements: REQ-005, REQ-007, REQ-018, REQ-024
 
 `MoriaPlugin` installs focused `CanonicalPlugin`, `QueryPlugin`,
 `PersistencePlugin`, `ParticipantPlugin`, `PresentationPlugin`, and
@@ -144,7 +144,7 @@ hash table.
 
 ### TECH-034 — Host/WGSL ABI
 
-Implements: REQ-007, REQ-021, REQ-028, REQ-036, REQ-039
+Implements: REQ-007, REQ-021, REQ-028, REQ-036
 
 Every wire type has:
 
@@ -170,7 +170,7 @@ records are validated against granted limits before encoding.
 
 ### TECH-035 — Kernel synchronization and deterministic output
 
-Implements: REQ-007, REQ-028, REQ-033, REQ-036, REQ-039
+Implements: REQ-007, REQ-026, REQ-028, REQ-033, REQ-036
 
 Canonical WGSL uses the portable 32-bit baseline. Atomics may claim
 noncanonical work slots or set failure flags; no atomic winner supplies stable
@@ -197,6 +197,20 @@ Each shader operation is wrapped in balanced validation error scopes. Shader
 parse, Naga validation, module/layout creation, pipeline creation, encoding,
 submission, mapping, decoding, and semantic comparison are distinct error
 layers.
+
+The kernel-contamination audit is a mandatory source and execution gate for
+every canonical WGSL entry point and every transitive helper. The audit
+records all atomic operations, workgroup/shared storage, output-slot
+assignment, compaction/sort paths, padding writes, allocator/free-list reads,
+hash inputs, and host callback inputs. It rejects any canonical byte, identity,
+revision, allocation decision, ordering key, outcome, or hash input derived
+from an atomic winner, race-produced or uninitialized byte, arrival order,
+physical-slot order, subgroup/lane identity, unordered iteration, or
+order-dependent compaction. This audit is required for same-machine,
+run-to-run replay; cross-vendor comparison is not its rationale or acceptance
+criterion. A finding blocks replay-grade execution until the kernel uses fixed
+slots or stable mark/scan/scatter and the same-machine perturbation fixture
+passes.
 
 ### TECH-036 — Bounded resource policy
 
@@ -328,12 +342,14 @@ first violation:
    `identity.terminal_receipt_bytes_per_world`; concurrent admissions reserve
    against that aggregate rather than grow it.
 10. For registrations sorted by `ParticipantId`, the sums of descriptor
-    input, effects, events, event bytes, state/snapshot, and artifact claims
-    fit the corresponding participant fields and canonical scratch. Every
-    per-event maximum fits the event aggregate; every snapshot fits the
-    checkpoint blob/total and callback or GPU staging pool. Exactly one state
-    token record per participant per retained frontier is included in the
-    rollback calculation.
+    representation contracts, RNG streams, input, effects, events, event
+    bytes, state/snapshot, and artifact claims fit the corresponding identity/
+    participant fields and canonical scratch. Representation IDs are nonzero,
+    sorted, and unique; every representation contract digest is bound before
+    participant code runs. Every per-event maximum fits the event aggregate;
+    every snapshot fits the checkpoint blob/total and callback or GPU staging
+    pool. Exactly one state token record per participant per retained frontier
+    is included in the rollback calculation.
 11. Dense/uniform brick, radix, directory, scratch, readback, checkpoint,
     rollback, presentation, and participant pages fit checked `u64` page
     counts, the configured group byte ceilings, `max_buffer_size`, and
@@ -415,8 +431,8 @@ On device loss Moria:
    `RecoveringParticipant` and waits for an explicit TECH-070
    `request_recovery`;
 4. reserves one bounded recovery attempt, asks Bevy `RenderStartup` to
-   construct a new generation, and verifies that the replacement adapter
-   matches a current qualified tuple;
+   construct a new generation, and validates the replacement adapter's
+   required capabilities plus the canonical-math startup vectors;
 5. restores the newest compatible durable checkpoint—including its
    participant snapshot and exact replay-record blobs—and replays the
    confirmed in-memory suffix, bounded by
@@ -429,8 +445,9 @@ On device loss Moria:
 
 The confirmed tick log stores inputs and bounded canonical outcome/participant
 records, not a voxel mirror. If there is no compatible checkpoint/genesis
-source, replay exceeds its bound, a participant cannot restore, the tuple is
-unqualified, or a hash diverges, that recovery attempt fails explicitly.
+source, replay exceeds its bound, a participant cannot restore, required
+capabilities are absent, canonical-math vectors fail, or a hash diverges, that
+recovery attempt fails explicitly.
 Moria never loops or schedules a timer retry; the consumer may request another
 bounded attempt or shut down. The last durable checkpoint remains usable;
 Moria never fabricates empty matter or publishes a different state as
@@ -450,40 +467,49 @@ across generations. Recovery calls that exact store's `load_manifest`; neither
 the configured default nor another store is tried after failure. The
 durable-frontier record and manifest must both name the same store ID and key.
 
-## Portability and qualification
+## Portability and execution
 
 ### TECH-039 — Native portability baseline
 
-Implements: REQ-005, REQ-007, REQ-026, REQ-039, REQ-043
+Implements: REQ-005, REQ-007, REQ-024, REQ-043
 
-First-class backend families are:
+Supported native adapter paths are:
 
 - macOS physical GPU through Metal;
 - Linux physical GPU through Vulkan;
 - Windows physical GPU through DX12.
 
-Qualification is adapter/driver/OS/backend/contract-specific, not merely
-family-specific. The baseline requires compute shaders, 32-bit integer
-atomics, storage buffers, copy/map readback, at least 128 MiB effective storage
-binding range, at least 256 MiB buffer allocation, and sufficient workgroup
-limits for 128 invocations. Actual features, limits, downlevel flags, adapter
-identity, and fallback status are recorded.
+The baseline requires compute shaders, 32-bit integer atomics, storage buffers,
+copy/map readback, at least 128 MiB effective storage binding range, at least
+256 MiB buffer allocation, and sufficient workgroup limits for 128
+invocations. Actual features, limits, downlevel flags, adapter identity, and
+fallback status are recorded for diagnosis and benchmark context.
 
 Subgroups, timestamp queries, native 64-bit shader integers, large binding
 ranges, and indirect dispatch are optional measured branches with baseline-
 equivalent public semantics. Software/fallback adapters may run diagnostics
-but cannot satisfy a physical-GPU claim. WebGPU/WebAssembly, WebGL/GLES, and
+but cannot satisfy a physical-GPU performance claim. WebGPU/WebAssembly,
+WebGL/GLES, and
 standalone second-device operation are excluded current targets.
 
-### TECH-040 — Authority and candidate modes
+This is runtime portability, not a cross-machine determinism tier. Moria makes
+no claim that different machines, GPU vendors, drivers, or backend families
+produce the same complete simulation hash sequence. There is no cross-GPU
+qualification matrix, per-driver requalification record, cross-vendor CI gate,
+Metal/Vulkan cross-vendor kernel spike, or DX12 qualification bookkeeping.
+Driver/backend identity is diagnostic context only. A conformance fixture and
+a later human-authorized contract would be required before adding a
+cross-machine determinism claim.
 
-Implements: REQ-008, REQ-021, REQ-023, REQ-026, REQ-039
+### TECH-040 — Replay-grade and diagnostic execution modes
 
-`QualificationPolicy` and its result summary are closed:
+Implements: REQ-008, REQ-021, REQ-023, REQ-026
+
+`ExecutionPolicy` and its result summary are closed:
 
 ```rust
-pub enum QualificationPolicy {
-    RequireQualified(EvidenceDigest),
+pub enum ExecutionPolicy {
+    ReplayGrade,
     Candidate { diagnostics: CandidateDiagnostics },
 }
 
@@ -501,23 +527,24 @@ pub enum CandidateFaultStage {
     AfterBrickConstructionBeforePublication,
 }
 
-pub struct QualificationSummary {
+pub struct ExecutionSummary {
     pub status: AuthorityStatus,
-    pub evidence: Option<EvidenceDigest>,
-    pub tuple_digest: ContractDigest,
+    pub configuration_fingerprint: ContractDigest,
+    pub adapter_context: ContractDigest,
 }
 ```
 
-`EvidenceDigest` is a distinct 32-byte digest newtype.
-`QualificationPolicy` has two modes:
+`ExecutionPolicy` has two modes:
 
-- `RequireQualified(EvidenceDigest)`: genesis succeeds only when the
-  digest-sealed qualification manifest exactly matches runtime tuple and all
-  canonical contract digests. This is the only authority mode.
+- `ReplayGrade`: the normal authority mode. Genesis requires the declared
+  device capabilities, exact canonical contract/configuration fingerprint,
+  generated TECH-071 constant-table digest, and fixed canonical-math startup
+  vectors to pass. It promises same-machine replay only: on the same physical
+  machine, the same genesis bytes and `TickBatch` bytes produce the same
+  canonical bytes and hash sequence on every run.
 - `Candidate { diagnostics }`: runs the identical public API and kernels to
-  produce evidence, but every frontier is labeled `UNQUALIFIED_CANDIDATE` and
-  cannot be exported as an authoritative checkpoint or a passing conformance
-  claim.
+  produce evidence, but every frontier is labeled `DiagnosticCandidate` and
+  cannot be exported as an authoritative checkpoint.
 
 `CandidateDiagnostics` is a normal public configuration type available to any
 external consumer. It is bounded to one optional
@@ -527,14 +554,16 @@ command passes normal admission and construction, after which the production
 diagnostic/status record is set to `InjectedCandidateFailure` before
 TECH-013 validation step 9. The coordinator then follows the ordinary
 `FailedNoAdvance` cleanup path. The fault plan cannot write cells, roots,
-outcomes, or buffers, cannot target authority mode, is not a canonical input,
-and is recorded in candidate evidence. Authority configuration rejects
-nonempty diagnostics. This seam is qualification control, not a mutation
+outcomes, or buffers, cannot target replay-grade mode, is not a canonical
+input, and is recorded in candidate evidence. Replay-grade configuration
+rejects nonempty diagnostics. This seam is diagnostic control, not a mutation
 bypass or a self-reported correctness result.
 
 There is no automatic CPU, alternate GPU, or relaxed-shader fallback in an
-authority world. A driver, OS, adapter, wgpu/Naga, canonical shader, encoding,
-arithmetic, hashing, transition, or participant contract change invalidates
-the matching manifest until qualification reruns. Presentation-only changes
-do not, unless they change shared bindings or scheduling relevant to canonical
-work.
+replay-grade world. A canonical shader, encoding, math table, arithmetic,
+hashing, transition, placement format, or participant contract change creates
+a different configuration fingerprint and replay identity. A driver update
+does not require bookkeeping or requalification; it must still pass the same
+startup vectors and mandatory same-machine replay/contamination tests.
+Presentation-only changes do not affect the fingerprint unless they change
+shared bindings or scheduling relevant to canonical work.

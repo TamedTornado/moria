@@ -385,6 +385,8 @@ Implements: REQ-001, REQ-014, REQ-017, REQ-028, REQ-032
 
 - product, canonical encoding, arithmetic, hash, transition, and persistence
   schema digests;
+- exact per-world configuration fingerprint and its
+  `PlacementFixedFormat { fractional_bits, cell_extent_raw, simulation_unit }`;
 - checkpoint-store ID, store contract digest, and store-visible checkpoint key;
 - world/genesis ID, exact base lineage and manifest roots, material registry;
 - confirmed and durable tick, world root hash, per-volume revisions;
@@ -393,9 +395,10 @@ Implements: REQ-001, REQ-014, REQ-017, REQ-028, REQ-032
 - content-addressed scar radix node and brick-blob descriptors
   `{kind, uncompressed_bytes, blob_digest}`;
 - `next_volume_serial` and simulation-domain normalized intervals;
-- participant IDs/contracts/input schemas/strategies/commitments, complete RNG
-  descriptors and current RNG-state commitments, and snapshot blob digests
-  with exact uncompressed byte lengths where applicable;
+- participant IDs/contracts/input schemas/strategies/commitments, complete
+  participant representation contracts, complete RNG descriptors and current
+  RNG-state commitments, and snapshot blob digests with exact uncompressed
+  byte lengths where applicable;
 - for every reconstructible participant, its required inclusive replay tick
   range and a sorted list of content-addressed
   `moria-checkpoint-replay-v1` chunk descriptors `{first_tick, last_tick,
@@ -579,7 +582,7 @@ Restore is world construction, not a post-genesis mutation:
    bounded-decode the complete framed returned manifest;
 2. verify all contract versions and manifest digest;
 3. match material, base lineage **and exact manifest roots**, volume sources,
-   qualification tuple, and participant registrations;
+   configuration fingerprint, placement format, and participant registrations;
 4. load every referenced scar/node/snapshot/replay-chunk blob with
    `expected_bytes: Some(manifest_descriptor.uncompressed_bytes)`, enforce
    bounds, decompress in the store adapter before sink delivery, and verify its
@@ -606,8 +609,9 @@ The restored GPU root and all participant tokens remain in one private genesis
 bundle until all steps pass; adapter calls never mutate a live singleton.
 Publishing that bundle is one pointer swap. Corruption, missing IDs, replay
 gaps, missing blobs, unsupported contract, wrong lineage/root, content-source
-inability, participant mismatch, resource exhaustion, unqualified backend, or
-hash disagreement fails the entire restore. Migration/rebase is a separate
+inability, participant mismatch, resource exhaustion, unsupported device
+capability, or canonical-math/hash disagreement fails the entire restore.
+Migration/rebase is a separate
 consumer-authored tool that produces a new genesis identity; Moria does not
 guess or mutate an old checkpoint in place.
 
@@ -731,7 +735,7 @@ pub struct DivergenceArtifact {
     pub format: ContractDigest,
     pub genesis_digest: BlobDigest,
     pub contract_digests: BoundedVec<ContractDigest>,
-    pub qualification: QualificationSummary,
+    pub execution: ExecutionSummary,
     pub earliest_tick: Tick,
     pub input_prefix: OwnedBytes,
     pub expected_root: CanonicalHash,
@@ -800,7 +804,7 @@ closed anchor tag:
 ```text
 header {
   common: genesis identity/digest, contract digests, participant descriptors,
-          qualification identity,
+          configuration fingerprint, placement format, execution identity,
           starting frontier { world, position, root_hash }, next tick
   anchor:
     Genesis { canonical genesis bytes/digest }

@@ -57,7 +57,6 @@ pub struct ContentDigest([u8; 32]);
 pub struct ContractDigest([u8; 32]);
 pub struct SchemaDigest([u8; 32]);
 pub struct BlobDigest([u8; 32]);
-pub struct EvidenceDigest([u8; 32]);
 
 impl MaterialId {
     pub fn try_from_raw(raw: u16) -> Result<Self, NewtypeValueError>;
@@ -153,36 +152,108 @@ pub struct BrickAabb {
 
 Both AABBs are half-open and require `min < max` on every axis.
 
-### TECH-007 — Canonical fixed-point arithmetic and placement
+### TECH-007 — Parameterized canonical placement representation
 
 Implements: REQ-003, REQ-019, REQ-021, REQ-028, REQ-036, REQ-043
 
-Simulation-facing world positions and translations are signed Q23.8 values
-stored as `i32` (1/256 cell resolution). Inputs outside
-`[-8_388_608, 8_388_607 + 255/256]` cells are unrepresentable. Addition,
-subtraction, multiplication, dot products, and squared distances use checked
-signed 64-bit semantics. WGSL implements the required 64-bit intermediate with
-reviewed two-word `u32` helpers; native shader `i64` is not a baseline feature.
+Each world freezes one `PlacementFixedFormat` before registry validation:
 
-Division truncates toward negative infinity. Right shift of signed values is
-defined as floor division by the corresponding power of two. Reduction to a
-narrower fixed-point form uses round-to-nearest, ties-to-even. Overflow,
-division by zero, invalid shift, and a nonrepresentable result return stable
-canonical failure tags; saturation is used only by an input verb that names
-it explicitly.
+```rust
+pub struct SimulationUnitId([u8; 16]);
 
-Products, sums, dot products, squared lengths, and integer square roots whose
-operands are stored Q23.8 or Q1.14 values use checked signed 64-bit
-intermediates. Exact rational comparison in collision interval clipping and
-SAT depth comparison uses checked signed 128-bit two's-complement semantics.
-The WGSL baseline implements these as reviewed two-word and four-word `u32`
-helpers respectively. Overflow at either width is
-`CanonicalFailure::ArithmeticOverflow`; an implementation may not reassociate,
-reduce early, saturate, or use floating point to avoid it.
+pub struct PlacementFixedFormat {
+    fractional_bits: u8,
+    cell_extent_raw: u32,
+    simulation_unit: SimulationUnitId,
+}
+```
 
-Orientation is a canonical quantized unit quaternion
+`fractional_bits` is in `0..=16`. A placement scalar is a signed `i32` whose
+mathematical value is `raw / 2^fractional_bits` consumer-defined simulation
+units. `cell_extent_raw` is in `1..=i32::MAX` and states that one local cell
+edge spans exactly that many raw placement increments. `SimulationUnitId` is
+a consumer-defined semantic identity; every 16-byte value is valid and Moria
+does not interpret it as meters, seconds, mass, force, or any other physical
+quantity. The three fields, their canonical bytes, and the canonical-math
+contract digest are included in the per-world configuration fingerprint,
+genesis root, checkpoint, replay header, and divergence artifact. Restore or
+replay with any mismatch fails `ContractMismatch`.
+
+The placement range in simulation units is therefore
+`i32::MIN / 2^fractional_bits ..= i32::MAX / 2^fractional_bits`; it is not
+hard-coded to a 1/256-cell scale. Genesis validates with checked `i64`
+arithmetic that every volume corner relative to its pivot, multiplied by
+`cell_extent_raw`, and every translated/rotated corner remain representable as
+`i32`. A later placement or collision input is rejected on the same check.
+Changing format is a new genesis, never an in-place conversion.
+
+```rust
+pub struct PlacementScalar(i32);
+pub struct WorldPointQ(pub [PlacementScalar; 3]);
+pub struct WorldVectorQ(pub [PlacementScalar; 3]);
+pub struct WorldAabbQ {
+    pub min: WorldPointQ,
+    pub max: WorldPointQ,
+}
+pub struct SegmentQ {
+    pub start: WorldPointQ,
+    pub end: WorldPointQ,
+}
+pub struct TurnQ32(u32);
+
+impl PlacementScalar {
+    pub fn from_raw(raw: i32) -> Self;
+    pub fn get(self) -> i32;
+}
+impl TurnQ32 {
+    pub fn from_raw(raw: u32) -> Self;
+    pub fn get(self) -> u32;
+}
+impl SimulationUnitId {
+    pub fn from_bytes(bytes: [u8; 16]) -> Self;
+    pub fn as_bytes(&self) -> &[u8; 16];
+    pub fn to_bytes(self) -> [u8; 16];
+}
+impl PlacementFixedFormat {
+    pub fn try_new(
+        fractional_bits: u8,
+        cell_extent_raw: u32,
+        simulation_unit: SimulationUnitId,
+    ) -> Result<Self, NewtypeValueError>;
+    pub fn fractional_bits(self) -> u8;
+    pub fn cell_extent_raw(self) -> u32;
+    pub fn simulation_unit(self) -> SimulationUnitId;
+}
+```
+
+`PlacementScalar::from_raw`/`get`, `TurnQ32::from_raw`/`get`, and
+`SimulationUnitId::{from_bytes,as_bytes,to_bytes}` are the only scalar/unit
+construction and inspection paths. `PlacementScalar` is not interchangeable
+with cell coordinates, density, orientation components, participant values,
+or render floats. No `From<f32>`, `Into<f32>`, implicit numeric conversion, or
+float-taking canonical constructor exists. Presentation has separately named
+one-way conversion functions that require an explicit `PlacementFixedFormat`
+and can never return a canonical type.
+`PlacementFixedFormat::try_new` rejects a split above 16 and a zero or
+`2_147_483_648..=u32::MAX` cell extent; no unchecked aggregate construction
+is public.
+
+Local lattice coordinate `c` becomes placement raw value
+`checked_i64(c) * cell_extent_raw`, then must fit `i32`. Placement is exactly
+`world = translation + rotate(orientation, local_raw - pivot_raw)` and its
+inverse is
+`local_raw = pivot_raw + rotate_transpose(orientation, world - translation)`.
+Every subtraction, product, reduction, and addition uses TECH-071; no
+operation may reassociate, reduce early, saturate, or use floating point to
+avoid a typed canonical failure. Exact rational comparison in collision
+interval clipping and SAT depth comparison uses checked signed 128-bit
+two's-complement semantics, implemented in WGSL by reviewed four-word `u32`
+helpers.
+
+Orientation remains a canonical quantized unit quaternion
 `QuatQ14Wire([i16; 4])`, component order `(x,y,z,w)`, scale
-`S = 16,384`. Registration and composition:
+`S = 16,384`. Registration and composition use TECH-071 multiplication,
+square root, division, and rounding in this exact sequence:
 
 1. registration treats the four input components as one integer vector;
    composition computes the raw Q2.28 Hamilton product in this exact order:
@@ -232,34 +303,23 @@ scale-independent quaternion rotation formula, so before the final
 fixed-point rounding the rational transform is orthogonal even when the
 stored quaternion lies anywhere in the permitted quantized-unit shell. Each
 numerator term is calculated exactly in `i64`. For each output component, the
-three numerator×vector products are checked and summed left-to-right in the
-displayed order, then divided once by `D` with round-to-nearest, ties-to-even.
+three numerator×raw-vector products are checked and summed left-to-right in
+the displayed order, then divided once by `D` with round-to-nearest,
+ties-to-even.
 Inverse rotation uses the transpose of this same numerator and denominator; it
 does not rebuild a second matrix from a rounded inverse. Placement is exactly
-`world = translation + rotate(orientation, local - pivot)` and its inverse is
-`local = pivot + rotate_transpose(orientation, world - translation)`, with a
-checked operation at every subtraction and addition. Collision, CPU oracle,
-WGSL, persistence verification, and replay all use this sequence.
+the raw-unit sequence defined above. Collision, CPU oracle, WGSL, persistence
+verification, and replay all use this sequence.
 
 The declared 4,095-cell maximum radius makes the worst representable
-one-component orientation quantization step, including final Q23.8 transform
-rounding, less than one cell. Retained generated proofs cover the unit-shell
+one-component orientation quantization step, including final placement-raw
+rounding at the selected `cell_extent_raw`, less than one cell. Retained
+generated proofs cover the unit-shell
 postcondition, rational orthogonality, transpose inverse, composition closure,
 and this displacement bound. Float transforms are one-way derived
 presentation values and are never accepted back as canonical placement.
 
 ```rust
-pub struct Q23_8(pub i32);
-pub struct WorldPointQ(pub [Q23_8; 3]);
-pub struct WorldVectorQ(pub [Q23_8; 3]);
-pub struct WorldAabbQ {
-    pub min: WorldPointQ,
-    pub max: WorldPointQ,
-}
-pub struct SegmentQ {
-    pub start: WorldPointQ,
-    pub end: WorldPointQ,
-}
 pub struct QuatQ14([i16; 4]); // private x, y, z, w
 pub struct PlacementQ {
     pub translation: WorldPointQ,
@@ -273,14 +333,88 @@ impl QuatQ14 {
     pub fn components(self) -> [i16; 4];
     pub fn try_compose(self, rhs: Self) -> Result<Self, CanonicalFailure>;
     pub fn inverse(self) -> Self;
+    pub fn try_from_axis_turn(
+        axis: WorldVectorQ,
+        angle: TurnQ32,
+        format: PlacementFixedFormat,
+    ) -> Result<Self, CanonicalFailure>;
 }
 ```
 
 `QuatQ14` has no public field or unchecked constructor; its methods apply the
 normalization, composition, sign, shell, and inverse rules above.
+`try_from_axis_turn` normalizes the distinct placement vector with TECH-071,
+evaluates the half-angle through TECH-071's canonical sine/cosine, constructs
+the raw quaternion, then applies the same registration normalization. This is
+the only trigonometric path into canonical orientation; consumers may instead
+provide already quantized components through `try_from_components`.
 `WorldAabbQ` is half-open. Facade admission validates its public coordinate
 fields and every `PlacementQ` use, so constructing an aggregate record cannot
 bypass domain, range, or AABB rules.
+
+### TECH-071 — Canonical fixed-point math library
+
+Implements: REQ-007, REQ-028, REQ-036, REQ-043
+
+`src/canonical/math/` and `assets/shaders/canonical/math/` are one named
+component, `moria-fixed-v1`. The CPU implementation is generic over
+`FixedI32<const FRACTIONAL_BITS: u8>`; the WGSL source uses the same generated
+operation bodies with a validated `FRACTIONAL_BITS` pipeline override. The
+runtime facade dispatches the frozen world's `0..=16` split to that generic
+implementation. The library is the only implementation allowed for canonical
+placement arithmetic, quaternion construction/composition, collision
+reductions, and canonical participant placement effects.
+
+This integer contract keeps golden math, replay, and hash fixtures portable
+across CI hosts and agent worktree runners and prevents a GPU driver update
+from redefining their expected bytes. That fixture portability is narrower
+than a whole-simulation cross-machine determinism claim; the latter is not in
+scope.
+
+For raw signed `i32` operands and split `F`:
+
+- add/subtract negate and absolute value use checked exact integer operations;
+- multiply computes one checked signed `i64` product, divides by `2^F`, and
+  rounds to nearest with ties to the even retained raw integer;
+- divide computes the checked signed `i64` numerator `a * 2^F`, rejects zero
+  denominator, and rounds the exact quotient to nearest with ties to even;
+- square root rejects negative input, forms the exact nonnegative `u64`
+  radicand `raw << F`, selects `floor_sqrt` by a fixed 32-step high-to-low bit
+  search, and chooses the nearer adjacent integer by exact squared-distance
+  comparison, selecting the even result on equality;
+- narrowing, signed right shift, and rational reduction use the same
+  round-to-nearest/ties-to-even primitive; floor division is a separately
+  named operation and is used only where TECH-007/051 explicitly require it.
+
+Every output must fit its declared wire width. Overflow, division by zero,
+invalid shift/split, negative square root, and nonrepresentable output map to
+stable `CanonicalFailure` tags. Saturation is forbidden except for an input
+verb that explicitly names saturation. WGSL realizes signed `i64` multiply,
+add, compare, shift, and division with reviewed two-word `u32` helpers; native
+shader `i64` is not a baseline dependency.
+
+Canonical trigonometry accepts `TurnQ32`, where `0` is zero turns and `u32`
+wrap is one full turn, and returns a signed Q1.30 sine/cosine pair. It performs
+quadrant reduction followed by exactly 32 rotation-mode CORDIC iterations.
+The signed Q2.61 gain-inverse and arctangent-in-turns table contain entries
+`round_ties_even(K^-1 * 2^61)`, where
+`K = product(i=0..31, sqrt(1 + 2^(-2i)))`, and
+`round_ties_even(atan(2^-i)/(2*pi) * 2^62)` for `i=0..31`. Those integers are
+generated once by the repository's arbitrary-precision fixture generator,
+checked in as canonical source data, hashed into the arithmetic contract, and
+emitted into both Rust and WGSL; runtime libm, shader transcendental
+instructions, fused operations, or driver-provided approximations are
+forbidden. Each CORDIC update uses the displayed iteration order in the
+generated source, checked `i64` intermediates, arithmetic floor shifts, and
+one final ties-to-even reduction. Axis-angle orientation uses the half-turn
+input, these exact sine/cosine bytes, and TECH-007 normalization.
+
+The public boundary exposes only the distinct raw canonical types from
+TECH-007. The internal generic type cannot be constructed with an unchecked
+split, and no canonical module depends on `f32`/`f64`. A Clippy deny rule and a
+source audit fail if canonical or canonical-WGSL modules contain floating
+types, float literals, implicit scalar casts, or calls outside
+`moria-fixed-v1`.
 
 ## Canonical bytes and commitments
 
@@ -328,6 +462,17 @@ telemetry are excluded.
 The canonical material-registry payload contains material ID and occupancy
 class/threshold. Surface style and asset handles are in the separately
 versioned derived-presentation registry and are excluded from the world root.
+The configuration fingerprint is a `ContractDigest` calculated as
+`BLAKE3("moria/v1/configuration" || canonical_length ||
+canonical_configuration_bytes)`. Those bytes contain, in displayed/sorted
+field order, every `CanonicalContract` digest; the exact TECH-007 placement
+format; TECH-071 arithmetic/table digest; canonical resource limits that can
+produce a transition outcome; material, volume, content, and input-source
+canonical descriptors; and participant contract/input/event/representation/
+RNG/rollback/failure descriptors. Presentation policy, asset handles,
+telemetry, adapter/driver identity, and diagnostic candidate fault plans are
+excluded. The genesis domain includes this fingerprint and rejects any
+configuration whose canonical fields were omitted from it.
 
 Hashing is incremental. A changed brick recomputes its leaf and 26 four-bit
 radix ancestors; a changed volume recomputes its volume leaf and the world
@@ -367,7 +512,8 @@ The world root includes sorted immutable registries, volume roots and
 placements, canonical simulation-domain union, `next_volume_serial`,
 participant commitments (including their ordered canonical RNG-state
 commitments), the canonical frontier position (`Genesis` or
-`Confirmed(Tick)`), and contract identities. `Genesis` is a real pre-tick
+`Confirmed(Tick)`), placement format, configuration fingerprint, and contract
+identities. `Genesis` is a real pre-tick
 position and is not encoded as tick zero. Runtime residency and readiness are
 a separate cache indexed by
 `(base digest, volume, brick)`.
@@ -438,8 +584,9 @@ one live volume and at most 64 bricks / 32,768 cells.
   `CellWire`.
 - `Patch` supplies sorted unique `(local_cell, CellWire)` pairs.
 
-Shapes are discretized by the Q23.8 integer rules. Empty target sets are valid
-no-op outcomes and do not advance a revision. All nonempty targeted cells,
+Shapes are discretized by the world's TECH-007 placement format and TECH-071
+integer rules. Empty target sets are valid no-op outcomes and do not advance a
+revision. All nonempty targeted cells,
 base bricks, destination slots, and output sizes are resolved before any new
 root is constructed. A command-level validation or capacity failure marks the
 command failed and writes nothing. A successful nonempty command advances its
@@ -639,8 +786,23 @@ derive them from the descriptor seed and canonical log and reproduce those
 digests. OS entropy, wall clock, thread identity, and undeclared streams are
 conformance failures. These descriptors and state commitments are included in
 genesis, world hashing, retained frontiers, checkpoints, replay, restore, and
-qualification evidence; a 32-byte participant commitment alone is not treated
+determinism evidence; a 32-byte participant commitment alone is not treated
 as an RNG specification.
+
+Moria defines no canonical representation for participant-owned velocity,
+acceleration, mass, force, energy, time, or any other physical quantity.
+Every deterministic participant lists its non-placement representations in
+its genesis descriptor as sorted unique
+`ParticipantRepresentationContract { representation_id, quantity_schema,
+representation_contract }` records. The referenced contract completely
+specifies width, unit identity, scale/fractional split where applicable,
+rounding, overflow, canonical byte encoding, and CPU/GPU implementation. The
+records are part of the participant descriptor commitment, genesis
+configuration fingerprint, checkpoint, and replay header. Opaque participant
+input/state/event bytes are accepted only under those bound schemas and
+contracts. Participant effects that set Moria placement must use the world's
+TECH-007 representation; a participant-specific physical representation never
+implicitly converts into it.
 
 Missing, oversized, wrong-source, duplicate, late-generation, or divergent
 products cause `FailedNoAdvance` or rollback failure. Participant completion

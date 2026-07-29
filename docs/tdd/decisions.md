@@ -147,3 +147,58 @@ The applied technical decisions are:
 None. The feedback resolves the consequential direction, and the remaining
 field limits, lifecycle choices, participant event transport, and validation
 mechanics are ordinary engineering decisions selected in the TDD.
+
+---
+
+## Human review entry — determinism addendum
+
+### Verbatim feedback
+
+```text
+TamedTornado (COMMENTED):
+Addendum to the determinism amendment (from Fable, confirmed by Jason):
+
+1. Drop the cross-machine determinism tier. Remove from scope: the cross-GPU qualification matrix, per-driver requalification, the cross-vendor CI gate, the Metal/Vulkan cross-vendor kernel spike, and the DX12 qualification bookkeeping. Moria makes no cross-machine determinism claim until a conformance fixture exists someday. Multiplayer is not a product goal.
+
+2. Keep replay-grade determinism as mandatory core, unchanged: canonical tick transitions, event-sourced mutation, the rollback ring, hierarchical hashing, replay artifacts. Replay determinism means: same machine, same genesis, same TickBatch stream, bit-identical hash sequence, every run.
+
+3. Keep the full kernel contamination audit. Order-dependent atomics, race-produced bytes, and arrival-order compaction break same-machine run-to-run replay, not just cross-machine agreement. Only the cross-vendor motivation is dropped; the audit itself is unchanged.
+
+4. Keep fixed-point simulation representation, with the justification updated: it makes replay and hash fixtures portable across CI machines and agent worktree runners, and immune to GPU driver updates. With f32 authoritative state, every golden replay file is pinned to one GPU-plus-driver configuration, which breaks the verification method itself.
+
+5. Moria specifies a canonical parameterized fixed-point representation for simulation placement; fractional split and simulation unit are per-world genesis constants included in the configuration fingerprint; the canonical math library is generic over the split; no other physical quantities are defined by the substrate—deterministic participants declare their own representations under the existing participation contract.
+
+6. New named component: canonical fixed-point math library. Multiplication with 64-bit intermediates and a specified rounding rule, division, sqrt, and the trig required for orientation composition—bit-identical CPU and GPU implementations. Verify by differential testing against an arbitrary-precision reference over generated cases. Use distinct types at the simulation boundary; no implicit conversion to or from f32.
+```
+
+### Technical decision or clarification
+
+The TDD retires the former `TECH-063` cross-backend qualification matrix and
+does not reuse that ID. It removes vendor/driver qualification manifests,
+cross-vendor CI comparison, and backend-family conformance bookkeeping.
+Metal, Vulkan, and DX12 remain supported runtime adapter paths, but their
+identity is diagnostic and benchmark context only. Replay-grade authority now
+means exact repeated execution on the same physical machine with the same
+genesis and ordered `TickBatch` bytes; no networking or multiplayer behavior
+is introduced.
+
+Canonical ticks, event-sourced mutation, copy-on-write rollback roots,
+hierarchical hashes, replay/export/divergence artifacts, and the complete
+kernel-contamination audit remain mandatory. The audit explicitly rejects
+race-produced bytes, atomic-winner authority, physical/arrival order, and
+order-dependent compaction because each can violate same-machine replay.
+
+`TECH-007` now freezes a per-world placement fractional split, exact cell
+extent in raw simulation-unit increments, and consumer-defined simulation-unit
+identity into genesis and the configuration fingerprint. `TECH-071` is the
+new named `moria-fixed-v1` component: generic CPU/WGSL fixed-point operations,
+specified ties-to-even multiply/divide/square-root reductions, canonical
+CORDIC trigonometry for axis-angle orientation construction, distinct
+simulation types, and no implicit float conversion. Participants declare
+their own non-placement physical representations through bounded,
+genesis-committed representation-contract descriptors.
+
+### Unresolved question
+
+None. A future cross-machine claim would require a new conformance fixture and
+human-authorized technical contract; it is not guessed or reserved here.

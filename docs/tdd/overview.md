@@ -52,10 +52,12 @@ Unchanged nodes and bricks are shared by retained rollback frontiers. Physical
 GPU slots, cache locations, work completion, mesh order, and presentation are
 not canonical.
 
-The baseline implementation targets native Metal, Vulkan, and DX12 through
-Bevy 0.19 and its wgpu 29.0.3 renderer. A backend tuple may publish
-authoritative results only when a matching, current qualification record is
-loaded. Web and WebGL are not targets.
+The baseline implementation supports native Metal, Vulkan, and DX12 adapter
+paths through Bevy 0.19 and its wgpu 29.0.3 renderer. Replay-grade authority
+requires capability validation plus the canonical-math startup vectors; it
+does not require a vendor/driver qualification record. Moria claims
+same-machine replay only and has no cross-machine, cross-GPU, or multiplayer
+determinism tier. Web and WebGL are not targets.
 
 ### TECH-001 — Product boundary and one facade
 
@@ -112,15 +114,17 @@ AGENTS.md
 assets/
   shaders/
     canonical/
+      math/
     presentation/
 fixtures/
-  qualification/
+  replay/
 src/
   lib.rs
   prelude.rs
   config/
   facade/
   canonical/
+    math/
   content/
   storage/
   runtime/
@@ -150,8 +154,10 @@ module tree with the library.
 
 `moria` uses Bevy `=0.19.0`; any direct wgpu dependency uses `=29.0.3`,
 matching Bevy. `Cargo.lock` is committed. The Rust toolchain is pinned in
-`rust-toolchain.toml`; changing Rust, Bevy, wgpu, Naga, canonical shader source,
-or a canonical feature invalidates affected qualification evidence.
+`rust-toolchain.toml`; changing a canonical contract, math table, shader, or
+encoding changes the configuration/replay identity. Rust, Bevy, wgpu, Naga,
+adapter, and driver versions remain evidence context, not per-driver
+qualification keys.
 
 `moria` exposes no wgpu type from its general facade. The deliberately coupled
 GPU-participant API is under `moria::bevy::gpu_participant` and may expose only
@@ -174,7 +180,7 @@ contract.
   durable checkpoints, restore, replay, and reclamation.
 - [collision-presentation.md](collision-presentation.md): canonical collision,
   participant artifacts, meshing, dressing, and revision isolation.
-- [validation.md](validation.md): automated, real-GPU, cross-backend,
+- [validation.md](validation.md): automated, real-GPU, same-machine replay,
   persistence, rollback, performance, and evidence obligations.
 - [traceability.md](traceability.md): requirement-to-technical-contract index.
 - [decisions.md](decisions.md): durable human-review feedback and its applied
@@ -194,7 +200,9 @@ contract.
 5. Stable IDs, ordering, allocation outcomes, revisions, hashes, and canonical
    collision bytes are independent of physical slots and execution order.
 6. Every authoritative output is integer/fixed-point and has one canonical
-   byte encoding.
+   byte encoding. Placement uses the world's genesis-bound fractional split,
+   cell extent, and simulation-unit identity through `moria-fixed-v1`;
+   participant-owned quantities declare separate representation contracts.
 7. A root remains physically live while referenced by the live frontier, a
    rollback snapshot, a query, checkpoint, GPU submission, or active replay.
 8. A derived artifact carries its source tick, root hash, and volume revisions;
@@ -220,7 +228,7 @@ Implementation proceeds by vertical proof, not by building presentation first:
 4. rollback roots, replay, participants, and persistence;
 5. collision and GPU-participant artifact paths;
 6. presentation and dressing;
-7. cross-backend qualification and performance receipts.
+7. same-machine replay/contamination evidence and performance receipts.
 
 Each stage must retain the same public path. A CPU oracle is test evidence, not
 an authority backend or runtime fallback.
@@ -243,18 +251,19 @@ The root `AGENTS.md` must contain the following project-specific instructions
 - Lint: `cargo clippy --all-targets --all-features -- -D warnings`
 - Test: `cargo test --all-targets --all-features`
 - Shader validation: `cargo run --bin moria-qualify -- shaders validate`
+- Replay determinism: `cargo run --bin moria-qualify -- replay verify --fixture fixtures/replay/core-v1 --runs 8 --evidence target/moria-evidence/replay`
 - Build: `cargo build --all-targets --all-features`
 - Development scenario: `cargo run --bin moria-qualify -- scenario public-boundary --mode candidate --evidence target/moria-evidence/dev`
-- Full local gate: run format check, check, lint, test, shader validation, then
-  the development scenario in that order.
+- Full local gate: run format check, check, lint, test, shader validation,
+  replay determinism, then the development scenario in that order.
 
-Hardware qualification is not part of the ordinary local gate. Run
-`cargo run --bin moria-qualify -- qualify --matrix <matrix.toml> --evidence <dir>`
-only on declared physical adapters. `UNAVAILABLE` is not `PASS`.
+Replay determinism runs on the current machine and must use a real GPU for a
+replay-grade result. `UNAVAILABLE` is not `PASS`. There is no cross-vendor
+matrix or driver requalification command.
 
 ## Module and naming rules
 
-- Keep `lib.rs`, `prelude.rs`, plugin `mod.rs` files, and the qualification
+- Keep `lib.rs`, `prelude.rs`, plugin `mod.rs` files, and the evidence
   binary entry point as wiring/facades.
 - Organize by domain responsibility. Do not add root catch-alls named
   `types.rs`, `systems.rs`, `components.rs`, `resources.rs`, or `utils.rs`.
@@ -308,16 +317,22 @@ only on declared physical adapters. `UNAVAILABLE` is not `PASS`.
   opaque participant events are delivered only by confirmed tick receipts.
 - Tests and tools use the public facade. CPU-oracle, mock, software-adapter,
   shader-compile, and rendered-frame evidence cannot be labeled real-GPU
-  canonical qualification.
+  replay evidence.
+- Canonical placement math lives only in `src/canonical/math/` and matching
+  generated WGSL. Do not use floats, implicit numeric conversions, libm, or
+  shader transcendental builtins in canonical code. Preserve the world
+  placement format and participant representation-contract boundary.
 - Preserve existing `TECH-###` meanings and `Implements:` requirement links.
+  `TECH-063` is retired and must never be recreated or reused.
 ```
 
 The initial `rust-toolchain.toml` must include `rustfmt` and `clippy`.
-CI repeats the full local gate on Linux, provisions a software Vulkan adapter
-for the candidate development scenario, and runs documentation tests. That
-scenario proves API integration only. Hardware qualification is a separate
-permanent gate because a software adapter or hosted CI without the declared
-physical adapter cannot make that claim.
+CI repeats format/check/lint/test/shader validation on Linux, provisions a
+software Vulkan adapter for the candidate development scenario, runs
+documentation tests, and reports replay verification as `UNAVAILABLE` when no
+real GPU is attached. Dedicated same-machine runners execute the replay
+command repeatedly on their current adapter. No result is compared across
+vendors or promoted into a cross-machine qualification claim.
 
 ## Open Human Questions
 

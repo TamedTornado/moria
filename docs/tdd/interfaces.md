@@ -28,7 +28,7 @@ pub struct MoriaConfig {
     pub rollback: RollbackConfig,
     pub persistence: PersistenceConfig,
     pub presentation: PresentationConfig,
-    pub qualification: QualificationPolicy,
+    pub execution: ExecutionPolicy,
 }
 
 pub struct CanonicalContract {
@@ -58,6 +58,10 @@ pub struct PresentationConfig {
     pub maximum_lod: u8,       // 0..=6
 }
 
+pub struct WorldGenesisConfig {
+    pub placement: PlacementFixedFormat,
+}
+
 pub struct ResourceBudgets {
     pub identity: IdentityBudgets,
     pub canonical: CanonicalBudgets,
@@ -84,6 +88,7 @@ pub struct IdentityBudgets {
     pub checkpoint_stores_per_world: u32,    // default 4; max 16
     pub replay_sinks_per_world: u32,         // default 4; max 16
     pub rng_streams_per_participant: u32,    // default 32; max 256
+    pub representation_contracts_per_participant: u32, // default 64; max 256
     pub interests_per_world: u32,            // default 4,096; max 16,384
     pub operation_records_per_world: u32,    // default 16,384; max 65,536
     pub terminal_receipts_per_world: u32,    // default 8,192; max 65,536
@@ -212,6 +217,11 @@ chunks, and maximum LOD 6. The configured replay sink and the per-world
 consumer-selected replay stream key passed to `begin_world` are mandatory, and
 the frozen registered sink descriptor must fit the replay-sink count/byte
 limits. Moria never derives, randomizes, or replaces the stream key.
+`WorldGenesisConfig.placement` is also mandatory and frozen by `begin_world`;
+TECH-007 defines its validation and fingerprint participation. Different
+worlds hosted by one client may select different valid formats, but no
+canonical value or artifact may cross between them without an explicit
+consumer conversion outside Moria.
 
 `MoriaPlugin` installs one `MoriaClient` resource and feature plugins. A
 consumer constructs exactly one world through `WorldBuilder`; multiple worlds
@@ -259,14 +269,15 @@ pub enum ParticipantRegistration {
 
 Builder calls only construct private configuration. `publish_genesis` freezes
 registries, checks all IDs/domains/limits/content proofs/participant strategies,
-verifies a current authority-backend qualification, materializes the configured
+validates the runtime device capabilities and canonical-math implementation,
+materializes the configured
 genesis-resident set, calculates canonical genesis bytes and root, durably
 exports the genesis replay header, and then publishes the explicit pre-tick
 `FrontierPosition::Genesis`. The resulting world is ready **for** tick zero;
 genesis does not confirm or consume a numbered tick. Any error leaves no usable
 world or partial registry.
 There is no default content, material, participant strategy, RNG seed,
-qualification, or empty-world substitution.
+placement format, or empty-world substitution.
 
 Every registered descriptor supplies its own stable ID; Moria never assigns a
 provider ID. Duplicate IDs within one registry return
@@ -334,7 +345,8 @@ check rejects configuration before any consumer callback or GPU allocation.
 `ResourceBudgets::default()` is required to produce exactly these
 self-consistent values and passes TECH-036's 20-frontier inequality.
 `MoriaConfig` deliberately has no blanket `Default`: provider IDs, canonical
-contracts, and qualification evidence require explicit consumer authority.
+contracts, execution policy, and each world's placement format require
+explicit consumer authority.
 
 ### TECH-018 — Materials and volumes
 
@@ -402,7 +414,7 @@ Implements: REQ-002, REQ-004, REQ-005, REQ-009, REQ-010, REQ-012, REQ-014, REQ-0
 The following is the complete v1 callable surface. Methods not present here or
 on the registered content/store/participant traits are not consumer
 capabilities. In particular, there is no direct storage, renderer-buffer,
-unticked mutation, participant scheduler, or privileged qualification facade.
+unticked mutation, participant scheduler, or privileged determinism facade.
 
 ```rust
 pub struct Rejected<T> {
@@ -428,7 +440,12 @@ pub struct GenesisRejected {
 }
 
 impl MoriaClient {
-    pub fn begin_world(&self, id: WorldId, replay_stream: ReplayStreamKey)
+    pub fn begin_world(
+        &self,
+        id: WorldId,
+        replay_stream: ReplayStreamKey,
+        genesis: WorldGenesisConfig,
+    )
         -> Result<WorldBuilder, ConfigError>;
     pub fn reserve_tick(
         &self,
@@ -532,8 +549,8 @@ impl FrontierSummary {
 }
 
 pub enum AuthorityStatus {
-    Qualified,
-    UnqualifiedCandidate,
+    ReplayGrade,
+    DiagnosticCandidate,
 }
 
 pub struct GenesisReady {
@@ -683,7 +700,7 @@ pub struct TelemetrySnapshot {
     pub frontier: FrontierSummary,
     pub durable: Option<DurableFrontier>,
     pub device_generation: DeviceGeneration,
-    pub qualification: QualificationSummary,
+    pub execution: ExecutionSummary,
     pub counters: BoundedVec<TelemetryCounter>,
     pub failures: BoundedVec<FailureCounter>,
 }
@@ -701,7 +718,7 @@ has `Genesis`; it may be queried and hashed but is not a confirmed-tick
 rollback entry. `ShutdownReport.last_frontier` may therefore be `Genesis` when
 the world shuts down before confirming tick zero.
 
-`QualificationSummary` is the closed record in TECH-040; telemetry contains no
+`ExecutionSummary` is the closed record in TECH-040; telemetry contains no
 string or dynamic extension map. `CollisionFact` is the closed canonical wire record in
 TECH-052. All vectors above reserve their request/configuration maximum before
 admission; `QueryData` must match the admitted `QueryKind`, and every
@@ -843,14 +860,14 @@ The mechanical public-type index is:
 | Names | Resolution and owner |
 | --- | --- |
 | `WorldId`, `MaterialId`, `VolumeId`, `ParticipantId`, `InputSourceId`, `RngStreamId`, `BaseContentSourceId`, `BaseAuthorityId`, `ContentBlobStoreId`, `CheckpointStoreId`, `ReplaySinkId`, `BaseRequestId`, `InterestId`, `CorrelationId`, `ObservationStreamId`, `ReceiptId`, `DeviceGeneration`, `Tick`, `VolumeRevision`, `CanonicalOrder`, `AssetHandleId`, `CheckpointKey`, `ReplayStreamKey`, `ContentLineage` | private-field fixed-width copy newtypes with the exact validating/infallible constructor and accessor families in TECH-005/017/018/021/022/025/037/041/043/047; no tuple construction |
-| `CanonicalHash`, `ContentDigest`, `ContractDigest`, `SchemaDigest`, `BlobDigest`, `EvidenceDigest` | distinct private-field 32-byte digest newtypes with lossless byte constructors/accessors; TECH-005/008/009/041/043 |
-| `WorldPointQ`, `WorldVectorQ`, `WorldAabbQ`, `LocalCellPoint`, `LocalCellAabb`, `BrickCoord`, `SegmentQ`, `PlacementQ`, `QuatQ14`, `Q23_8`, `CellWire` | fixed-width canonical values; TECH-006/007/018/051 |
+| `CanonicalHash`, `ContentDigest`, `ContractDigest`, `SchemaDigest`, `BlobDigest` | distinct private-field 32-byte digest newtypes with lossless byte constructors/accessors; TECH-005/008/009/041/043 |
+| `SimulationUnitId`, `PlacementFixedFormat`, `PlacementScalar`, `TurnQ32`, `WorldPointQ`, `WorldVectorQ`, `WorldAabbQ`, `LocalCellPoint`, `LocalCellAabb`, `BrickCoord`, `SegmentQ`, `PlacementQ`, `QuatQ14`, `CellWire` | distinct fixed-width canonical values and per-world placement format; TECH-006/007/018/051/071 |
 | `MoriaClient`, `WorldBuilder`, every `*Permit`, `*Receipt`, `ObservationSubscription`, and every participant/root/artifact lease or state token | opaque generational handles; their owning operation contract defines clone/drop/pin behavior, and no handle exposes storage beyond the explicit participant-only views in TECH-029/054 |
 | `BoundedVec<T>`, `BoundedBytes`, `BoundedBytes64`, `BoundedUtf8<N>`, `OwnedBytes`, `BoundedOwnerError`, `VecConstructionRejected<T>`, `BytesConstructionRejected`, `BoundedPushRejected<T>` | callable finite owners and lossless construction failures; TECH-070 and the accepting resource contract |
 | `ParticipantTokenMetadata`, `ParticipantReplayRecordView`, `ColliderArtifactView`, `SnapshotMetadata`, `PreparedParticipantState` | immutable bounded participant-owned state/replay/collider views and staged state record; TECH-016/029/053 |
-| `CanonicalContract`, `RollbackConfig`, `PersistenceConfig`, `PresentationConfig`, `QualificationPolicy`, `CandidateDiagnostics`, `TickReservation`, `InterestCapacity`, `QueryCapacity`, `MinimumRevisionGap`, `BlobLimits`, `RestoreLimits`, every `*Descriptor`, and every `*Limits` | closed configuration/request and required/supported capacity/freshness records; TECH-017/019/022/023/029/036/040/041/043/046/054 |
+| `CanonicalContract`, `RollbackConfig`, `PersistenceConfig`, `PresentationConfig`, `WorldGenesisConfig`, `ExecutionPolicy`, `CandidateDiagnostics`, `ParticipantRepresentationContract`, `TickReservation`, `InterestCapacity`, `QueryCapacity`, `MinimumRevisionGap`, `BlobLimits`, `RestoreLimits`, every `*Descriptor`, and every `*Limits` | closed configuration/request and required/supported capacity/freshness records; TECH-016/017/019/022/023/029/036/040/041/043/046/054 |
 | `CanonicalInput` and its variant payloads, `QueryKind`, `QueryScope`, `CollisionShapeQ`, `VolumeSelector`, `VolumeKind`, `ReplayAppendRange`, participant strategy/failure policy, and all lifecycle/poll/start/persistence policy enums | closed tagged enums in TECH-018/020/022/023/025/028/029/030/041/047/051 |
-| `QueryResult`, `Observation`, `ObservedVolumeSummary`, `ObservedRegionSummary`, `TelemetrySnapshot`, `FrontierSummary`, `FrontierPosition`, `ReplayStreamPosition`, `ReplayExportFailure`, and every receipt `Ready` payload | the concrete bounded records in TECH-020/022/025/026/038/045-048/070; their worst-case bytes are reserved before admission |
+| `QueryResult`, `Observation`, `ObservedVolumeSummary`, `ObservedRegionSummary`, `TelemetrySnapshot`, `ExecutionSummary`, `FrontierSummary`, `FrontierPosition`, `ReplayStreamPosition`, `ReplayExportFailure`, and every receipt `Ready` payload | the concrete bounded records in TECH-020/022/025/026/038/040/045-048/070; their worst-case bytes are reserved before admission |
 | `OperationProgress`, `ProgressBlocker`, `QueryReadinessReason`, `NewtypeValueError`, `ConfigError`, `AdmissionError`, `AdmissionContext`, `ReserveError`, `PushError`, `BatchError`, `CanonicalFailure`, `FailedNoAdvance`, `TickNoAdvanceCause`, `TelemetryError`, and every operation-specific `*Error`/`*Unavailable` | closed typed progress/errors under TECH-005/021/023/027; query progress and unavailability retain exact bounded blockers, tick-global failure retains attempted tick/source/cause, telemetry has exact synchronous variants, and ordinary operation errors retain scope, retryability, and committed-effect fields |
 | `BaseBrickCompletion`, participant completion/effect/event/state/snapshot sinks, checkpoint/content-store sinks, and `ReplayAppendSink` | non-clone Moria-owned bounded completion tokens; TECH-016/029/036/041/043/045/047/054 |
 | Bevy/wgpu names in `moria::bevy::gpu_participant` | deliberately coupled borrowed adapter types, generation-scoped and never general-facade or durable types; TECH-003/031/054 |
@@ -988,11 +1005,11 @@ pub struct Place {
     pub cell: CellWire,
 }
 
-pub struct LocalPointQ(pub [Q23_8; 3]);
+pub struct LocalPointQ(pub [PlacementScalar; 3]);
 
 pub enum MutationShapeQ {
     CellAabb(LocalCellAabb),
-    Sphere { center: LocalPointQ, radius: Q23_8 },
+    Sphere { center: LocalPointQ, radius: PlacementScalar },
     Stamp {
         bounds: LocalCellAabb,
         mask_bits: BoundedBytes,
@@ -1848,7 +1865,7 @@ cursor unchanged. Delivery order and resnapshot timing cannot affect ticks.
 
 Implements: REQ-004, REQ-018, REQ-022
 
-`TelemetrySnapshot` reports configuration identity; adapter and qualification
+`TelemetrySnapshot` reports configuration fingerprint; adapter and execution
 identity; world/region/presentation states; logical and physical residency;
 queue/pool current, capacity, and high-water marks; oldest operation age;
 tick/frontier/replay depth; changed leaves/hash nodes; observation gaps;
@@ -1915,7 +1932,7 @@ pub enum ErrorCode {
     ParticipantDivergence,
     ReplayDivergence,
     BackendUnavailable,
-    UnqualifiedBackend,
+    DeterminismViolation,
     DeviceLost,
     MappingFailure,
     DecodeFailure,
@@ -2041,7 +2058,6 @@ pub enum ConfigErrorCode {
     InvalidValue,
     CrossLimitViolation,
     UnsupportedCapability,
-    UnqualifiedBackend,
     ArithmeticOverflow,
 }
 
@@ -2051,7 +2067,7 @@ pub enum ConfigField {
     Rollback,
     Persistence,
     Presentation,
-    Qualification,
+    Execution,
     Material,
     InputSource,
     BaseSource,
@@ -2145,7 +2161,13 @@ pub enum CanonicalFailure {
     StaleSourceHash,
     InvalidBounds,
     InvalidCell,
+    InvalidOrientation,
+    InvalidFixedFormat,
     ArithmeticOverflow,
+    DivisionByZero,
+    InvalidShift,
+    NegativeSquareRoot,
+    Nonrepresentable,
     LogicalCapacity,
     DependencyUnavailable,
     ParticipantEffectInvalid,
@@ -2246,11 +2268,11 @@ frontier. `TelemetryBusy` is retryable with a new synchronous call, reports no
 snapshot, and cannot drive progress. These variants allocate no diagnostic and
 are pattern-matchable independently of `OperationError`.
 
-Internal errors and uncaptured GPU validation errors
-never panic a consumer process; they fail the affected candidate/world and
-preserve the last trustworthy frontier. Decode, corruption, unsupported
-version, lineage mismatch, device loss, and unqualified backend remain
-distinct.
+Internal errors and uncaptured GPU validation errors never panic a consumer
+process; they fail the affected candidate/world and preserve the last
+trustworthy frontier. Decode, corruption, unsupported version, lineage
+mismatch, device loss, unsupported capability, and canonical determinism
+violations remain distinct.
 
 Canonical failures have stable wire tags. Environmental failures do not enter
 canonical hashes and cannot turn into a timing-dependent canonical outcome.
@@ -2554,10 +2576,17 @@ pub struct ParticipantDescriptor {
     pub contract: ContractDigest,
     pub input_schema: SchemaDigest,
     pub event_schemas: BoundedVec<SchemaDigest>,
+    pub representations: BoundedVec<ParticipantRepresentationContract>,
     pub strategy: ParticipantRollbackStrategy,
     pub rng: BoundedVec<ParticipantRngContract>,
     pub limits: ParticipantLimits,
     pub failure: ParticipantFailurePolicy,
+}
+
+pub struct ParticipantRepresentationContract {
+    pub representation_id: u32,
+    pub quantity_schema: SchemaDigest,
+    pub representation_contract: ContractDigest,
 }
 
 pub enum ParticipantRollbackStrategy {
@@ -2603,6 +2632,15 @@ pub struct ParticipantEvent {
 RNG entries are sorted by stream ID and follow TECH-016. An adapter declaring
 no entries attests that no randomness can affect its canonical state or
 effects; Moria provides no implicit stream.
+
+Representation entries are sorted by nonzero `representation_id`, unique, and
+bounded by
+`ResourceBudgets.identity.representation_contracts_per_participant`. A
+participant with no non-placement physical quantities supplies an empty list.
+Moria treats each referenced contract as opaque but binds the complete list
+into genesis, hashing, persistence, and replay as required by TECH-016.
+Participant-owned schemas may not rely on an implicit conversion to or from
+the world's placement format.
 
 `event_schemas` is sorted/unique and bounded by `limits.events_per_tick`.
 Every emitted event must name one of these genesis-bound opaque schemas; an

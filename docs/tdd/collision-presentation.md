@@ -16,11 +16,11 @@ Implements: REQ-010, REQ-019, REQ-028, REQ-044
 pub enum CollisionShapeQ {
     Point { point: WorldPointQ },
     Aabb { center: WorldPointQ, half_extent: WorldVectorQ },
-    Sphere { center: WorldPointQ, radius: Q23_8 },
+    Sphere { center: WorldPointQ, radius: PlacementScalar },
     Capsule {
         a: WorldPointQ,
         b: WorldPointQ,
-        radius: Q23_8,
+        radius: PlacementScalar,
     },
     OrientedBox {
         center: WorldPointQ,
@@ -41,7 +41,8 @@ Each occupied local cell is its exact closed-open cell box transformed by the
 volume's canonical placement. Broad phase compares checked world AABBs.
 Narrow phase transforms the consumer shape into volume-local space and uses
 fixed-point slab, closest-feature, and separating-axis tests. Products and
-squared distances use TECH-007's exact 64-bit semantics. Contact normal is a
+squared distances use TECH-071's exact 64-bit semantics under the source
+world's frozen placement split. Contact normal is a
 canonical signed Q1.14 vector; ties select x, then y, then z, then negative
 before positive face. `TimeOfImpactWire` is an unsigned Q0.32 value stored in
 `u64` with the only valid range `0..=0x1_0000_0000`, so exact time one is
@@ -57,9 +58,11 @@ The normative collision algorithm is `moria-collision-v1`:
    oriented-box orientation becomes
    `normalize(inverse(volume_q) * shape_q)`, and capsule endpoints are
    transformed separately. No world-space float AABB is fed to narrow phase.
-2. Cell `(x,y,z)` has Q23.8 bounds
-   `[256x,256(x+1)) × [256y,256(y+1)) × [256z,256(z+1))`. A point overlaps
-   only when `lo <= p < hi` on every axis. For positive-size shape contact,
+2. Let `E = PlacementFixedFormat::cell_extent_raw()`. Cell `(x,y,z)` has raw
+   bounds
+   `[E*x,E*(x+1)) × [E*y,E*(y+1)) × [E*z,E*(z+1))`, with every product
+   checked in `i64` and required to fit `i32`. A point overlaps only when
+   `lo <= p < hi` on every axis. For positive-size shape contact,
    the geometric high planes are included and equality is overlap; duplicate
    boundary cells remain distinct facts and TECH-024 orders them.
 3. Sphere/box uses `q_i = clamp(c_i, lo_i, hi_i)`,
@@ -120,7 +123,7 @@ The normative collision algorithm is `moria-collision-v1`:
    support point along `n` and shape support point along `-n`, with
    support-vertex ties resolved by encoded vertex order. Sweep witnesses are
    evaluated at the exact winning rational time and only then rounded once to
-   local Q23.8 ties-to-even.
+   local placement raw units with TECH-071 ties-to-even.
 9. Public contact facts are always world-space. Transform the local contact
    point with TECH-007's exact `translation + R(local - pivot)` sequence.
    Rotate the directed local Q1.14 normal with TECH-007's same rational
@@ -158,7 +161,7 @@ then stable mark/scan/scatter and sort establish TECH-024 order. A complete
 fact uses the following named wire types:
 
 ```rust
-pub struct WorldContactPointQWire(pub [i32; 3]); // Q23.8 world coordinates
+pub struct WorldContactPointQWire(pub [i32; 3]); // world's placement raw units
 pub struct WorldContactNormalQWire(pub [i16; 3]); // Q1.14, cell toward shape
 pub struct TimeOfImpactWire(pub u64); // Q0.32, 0..=0x1_0000_0000
 
