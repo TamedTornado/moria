@@ -110,10 +110,23 @@ window or physical GPU and includes:
   overflow result, and its contact/byte high-water never exceeds config;
 - behavior effect sink ownership: dense/run inputs are borrowed and copied
   only into pre-reserved slots, over-capacity writes poison the participant,
-  create is rejected as nonscheduled control-plane work, no
-  `BaseContentSource` crosses the callback return, and a fracture/debris-shaped
-  adapter cannot claim an atomic create or split. A later ordinary create has
-  its own receipt and is excluded from the prior tick's published revisions;
+  arbitrary create is rejected as nonscheduled control-plane work, no
+  `BaseContentSource` crosses the callback return, and only the closed
+  source-bound `ExtractComponents` operation can split existing matter. A
+  later ordinary create has its own receipt and is excluded from the prior
+  tick's published revisions;
+- placement-stream cardinality and reservation: zero placement maximum rejects
+  kind 5, one kind-5 proposal at the declared update/byte maximum reserves
+  exactly one root transaction and all update/entry/authority/observation/
+  outcome/receipt/cleanup records, and a second kind-5 record invalidates the
+  complete participant batch without consuming a second root or admitting any
+  proposal;
+- component candidate-key preflight derives complete tables for salts
+  `0..=255` in order. A collision-injection seam forces all 256 complete sets
+  to collide and asserts synchronous
+  `ComponentIdentityExhausted`, unchanged request, no public tick ID,
+  planner, adapter, or partial table, and complete release of every tentative
+  runtime ID, key, lifetime/live record, byte permit, and tick resource;
 - behavior planner/adapter callback ownership: access scopes fill the
   Moria-owned exact-capacity sink, errors use only the fixed inline diagnostic,
   current input is the same borrowed immutable byte sequence in planner and
@@ -125,9 +138,11 @@ window or physical GPU and includes:
   exact backend flags and no usage exposes mapping or indirect dispatch;
 - live-volume reuse versus permanent `volume_records` exhaustion, including
   bounded manifest tombstones;
-- extraction, presentation artifact/dirty/instance, dressing registry, and
-  extension registration/byte-pool defaults, boundaries, pressure facts,
-  effective-config reflection, and telemetry high-water accounting.
+- extraction, directory root/node/entry/authority versions, presentation
+  artifact/dirty/instance, dressing registry, behavior egress maps/receipts/
+  records/bytes, and extension registration/byte-pool defaults, boundaries,
+  pressure facts, effective-config reflection, and telemetry high-water
+  accounting;
 - aggregate/per-record material metadata, observation fact/payload, content
   batch count/response bytes, and the reserved per-live-volume presentation
   marker partition at minimum/default/maximum cross-limits;
@@ -224,6 +239,61 @@ Explicit `app.update()` steps inject worker/GPU milestone completions.
   `Preparing/UploadingGpuInputs` that retains its submitted ranges and drains
   to a complete preflight-or-later report;
 - device-generation callback quarantine and recovery/terminal branches.
+- world-directory epoch exhaustion with an injected near-maximum allocator:
+  an ordinary root-changing operation can publish `u64::MAX` exactly once and
+  then leaves the current root readable/checkpointable while later
+  root-changing submissions reject in `DirectoryEpochExhausted`; in a separate
+  world at `u64::MAX - 1`, a scheduled tick with two selected root proposals
+  whose range would overflow returns
+  `NoPublication(DirectoryEpochExhausted)`, marks every otherwise selected
+  proposal `TickAborted`, changes no revision/root, and never wraps or reuses
+  an epoch. A checkpoint captured afterward has epoch `u64::MAX - 1` and
+  `DIRECTORY_ALLOCATOR_CLOSED` set; same-key and import restore both succeed
+  with `StartupApplied::state == DirectoryEpochExhausted`, report the closed
+  `DirectoryCheckpointState`, reject root work, and never reopen publication.
+  A control checkpoint at the same lower epoch with the flag clear restores
+  `Ready` and may publish `u64::MAX` once. Maximum epoch with the flag clear,
+  zero epoch, and every unknown flag bit fail decode as corrupt before root
+  installation. Separately force device loss from the lower-epoch exhausted
+  world with fully durable scars and hold recovery before reconstruction
+  completes. In that held state assert every `try_reserve_*`/`reserve_*` is
+  closed; every queued submission with a previously acquired permit returns
+  `SubmitError::WorldNotAccepting(Recovering)` with owned inputs and capacity
+  reclaimed; `declare_interest`/lease update, new subscription, and runtime
+  extension registration return their family-specific
+  `WorldNotAccepting(Recovering)` before allocating. In the same held state,
+  invoke immutable material lookup; receipt ID/status/cancellation; existing
+  interest ID/accepted/last-published state; existing subscriber
+  ID/accepted/poll/resume; telemetry; shutdown-receipt inspection; handle
+  clone/drop; and last-lease withdrawal. Assert their ordinary host results,
+  that withdrawal decrements host references without renderer work, and that
+  interest `Ready` is only a retained readiness snapshot rather than query
+  admission. In a separate otherwise identical held-recovery world, call
+  `shutdown` and assert it enters `ShuttingDown` under the once-only contract
+  rather than returning a lifecycle rejection; that world is not reused for a
+  recovery-completion branch. Run the non-shutdown matrix once before
+  successful recovery and once before forced terminal recovery failure.
+  Successful recovery passes through
+  `Recovering(closed)` and returns to `DirectoryEpochExhausted`, not `Ready`;
+  root rejection and the complete exhausted-state matrix remain identical
+  afterward. Also test fresh exhaustion, maximum-epoch restore, lower-epoch
+  closed restore, interest declare/update/withdrawal acceptance, every generic
+  reserve family, matter/ordinary move/query/checkpoint/subscription/extension/
+  non-root tick acceptance, extension all-or-none admission for its non-root
+  fill/patch/move candidates, shutdown, and terminal recovery failure. For the
+  lower-epoch closed restore, begin with zero runtime interest leases and every
+  reconstructed region cold. Declare interest over one cold brick and require
+  `Cold -> Requested -> Materializing -> Ready`; withdraw it, retire the brick
+  lease and advance the region lifecycle back to `Cold`, then submit a
+  `ReadinessPolicy::Materialize` query and require the exact restored
+  sample/revision. Keep a second restored brick cold, submit a matter mutation
+  targeting it, and require ordinary base-plus-scar materialization followed by
+  one atomic committed revision. Repeat a cold dependency through a non-root
+  scheduled view and an Extension ABI v1 inspection/effect batch. Every path
+  must stay within ordinary interest, content, residency, and queue bounds,
+  consume no directory epoch, and return its ordinary typed content/pressure
+  failure when forced; the ready-resident controls must produce the same public
+  truth. Root-changing work remains rejected throughout.
 
 ### CPU oracle and generated sequences
 
@@ -254,6 +324,10 @@ offsets/sizes/constants with shader declarations. Negative fixtures cover:
 - descriptor count/range larger than the validated bound buffer;
 - invalid workgroup/output capacity;
 - page/slot offset overflow;
+- every `DirectoryRootV2`, `DirectoryNodeV2`, and
+  `DirectoryEntryVersionV2` plus `VolumeAuthorityVersionV2` host/WGSL offset,
+  size, tag, null-index, low/high-word, finite placement/domain, and
+  zero-reserved invariant;
 - bad transaction sentinel path;
 - extension attempts to bind internal storage;
 - every Extension ABI v1 host/WGSL offset and size;
@@ -263,10 +337,21 @@ offsets/sizes/constants with shader declarations. Negative fixtures cover:
 - observation-delta frontier ABI parity: both oldest/head words are zero only
   for `Empty`, both are nonzero for `Retained`, one-zero/one-nonzero is rejected,
   and pre-sequence-1 `Complete` has zero records and a zero cursor;
-- every Scheduled ABI v1 host/WGSL size, alignment, offset, and stride:
-  all five 64-byte headers, the 112-byte volume, 24-byte cell, 128-byte
+- every Scheduled ABI v2 host/WGSL size, alignment, offset, and stride:
+  the five retained 64-byte headers, the headerless component-reservation
+  section, 80-byte egress header, 48-byte reservation record, 32-byte component-piece,
+  24-byte assignment, 64-byte placement update, the 112-byte volume, 24-byte cell, 128-byte
   proposal, 20-byte patch run, 32-byte handoff descriptor, 64-byte feedback
   participant, and 48-byte feedback proposal;
+- the headerless reservation formula is exactly 48 bytes times
+  `maximum_component_extraction_proposals` times
+  `maximum_component_extraction_children` under checked arithmetic; the effect
+  header's aligned `reservation_offset/reservation_bytes` and
+  `egress_offset/egress_bytes` ranges are nonoverlapping and in binding range.
+  A phantom-header offset, wrong product, overflow, misalignment, overlap, or
+  out-of-range end fails at ABI validation;
+- host `[u8; 16]` key/schema fields have the exact same 16 wire bytes as four
+  WGSL `u32` words, and egress record strides reject nonmultiples of four;
 - every logical 64-bit scheduled field is declared as adjacent low/high
   `u32` words at the documented offsets. Golden values
   `0`, `1`, `0x00000001_00000000`, and `u64::MAX` assert host pack/unpack,
@@ -283,14 +368,28 @@ offsets/sizes/constants with shader declarations. Negative fixtures cover:
   input, present input above the participant/effective range, invalid
   snapshot/volume indices, changed revisions, invalid
   cell size/domain, cross-participant record access, stale device generation,
-  malformed prior feedback, and old-generation handoff/feedback reuse.
+  a second kind-5 record or kind 5 with a zero placement maximum,
+  malformed prior feedback, component-extraction duplicate/empty/unreserved
+  assignments,
+  egress stride/count/overflow mismatch, and old-generation
+  handoff/feedback/identity/egress reuse.
 - scheduled group-0 reflection requires exactly bindings 0..=5 with the
   documented access. Binding 5 executes exact byte parity for absent optional,
   present empty, one-byte, maximum-byte, and varying-across-ticks input; an
   extra/missing/writable input binding or direct use of a handoff as implicit
-  ingress fails layout validation;
+  ingress fails layout validation. Binding 1 reflection and golden bytes cover
+  its proposal/payload, canonical child-reservation, and opaque-egress
+  subranges, including offsets 48..60 in `BehaviorEffectHeaderV2`.
+  Any overlapping/out-of-range section or shader modification of a
+  reservation byte fails the complete participant output. A
+  missing/extra/wrong-access binding fails;
+- scheduled feedback golden cases use status 4 for a placement stream and
+  status 5 for component extraction, retain the command ID and proposal index,
+  require zero single-volume revision/volume fields, and reconcile the full
+  revision result through the typed receipt plus tick published vector;
 - golden feedback fixtures map participant abort, two-party conflict fail-tick,
   transition failure with predecessor/successor/stage, preparation failure,
+  directory-epoch exhaustion as abort-cause tag 6 with zero cause payload,
   device loss with a two-word generation, and
   published-with-notification-failure with exact failed-hook count. Add the
   two-participant input-upload pre-execution fixture with addressed execution
@@ -311,7 +410,12 @@ Passing compilation is only validation evidence, not execution correctness.
 ### Persistence codec tests
 
 Run every requirement in [persistence.md](persistence.md), fuzz decoder inputs
-under bounded allocation, and keep checked-in v1 golden fixtures.
+under bounded allocation, and keep checked-in v2 golden fixtures. Golden
+manifests include open epoch `u64::MAX - 1` with flags zero, closed epoch
+`u64::MAX - 1` with exactly `DIRECTORY_ALLOCATOR_CLOSED`, and closed epoch
+`u64::MAX`. Decode rejects maximum epoch with a clear flag and every reserved
+flag bit. Re-encoding each accepted fixture is byte-identical, and restore
+asserts the matching `DirectoryCheckpointState` and operational `WorldState`.
 
 ## Real-GPU correctness suite
 
@@ -371,8 +475,10 @@ Required tests:
     shutdown, and device loss; prove every input failure occurs before adapter
     execution, Moria never owns adapter state, late old-generation work/input
     cannot publish, CPU state is untouched, and GPU adapters must recreate and
-    report ready. Attempt scheduled create/split and prove it is unrepresentable;
-    a later ordinary create is independently admitted and not part of the tick.
+    report ready. Attempt arbitrary scheduled create and source-object
+    transport and prove both unrepresentable; exercise only the pre-reserved,
+    source-bound component-extraction split. A later ordinary create is
+    independently admitted and not part of the tick.
 11. **Asynchronous GPU extension:** snapshot packet remains GPU-oriented; the
     worst-case effect batch is reserved before dispatch; fewer effects release
     unused capacity; every valid child receipt is returned; invalid/overflow
@@ -493,7 +599,7 @@ Implement four external-style adversarial adapters:
 
 The GPU variants are purpose-built or substantially adapted to be
 Moria-conforming: they use only the restricted factory, fixed six-binding
-group-0 ABI, and counted encoder. They are not presented as arbitrary
+group-0 ABI v2, and counted encoder. They are not presented as arbitrary
 pre-existing engine binaries/resources or an engine-owned submission model.
 
 These names describe harness-owned state only and must not appear in Moria
@@ -553,13 +659,14 @@ generation pair, preparation failure, disposition, defined flags, and exact
 failed-hook count after publication. Repeat across checkpoint, restore
 readiness, device loss/recovery, and shutdown.
 
-For the fracture/debris-shaped variants, assert that scheduled output can
-fill, patch, move, and retire only. It cannot encode create or atomically turn
-one source volume into newly created independently moving volumes. Submit any
-desired debris creation later through ordinary `VolumeCommand::Create` and
-prove its separate receipt/revision is absent from the earlier tick report.
-Passing a Rust `BaseContentSource` through either scheduled sink/ABI must be
-impossible.
+For the fracture/debris-shaped GPU variants, label at least three connected
+pieces in one pinned source and publish at least two pre-reserved dynamic
+children. Prove exact coordinate/sample conservation, tolerance-bounded
+world-box continuity, and one directory-epoch visibility gate. Copy the
+canonical child-reservation piece-handle/final-ID mappings into
+factory-owned body state and publish without CPU authority-path readback.
+Arbitrary child content and passing a Rust `BaseContentSource` through either
+scheduled sink/ABI must remain impossible.
 
 The independent reviewer must compile an external-style adapter that attempts
 every public route to obtain `RenderDevice`, `wgpu::Device`, a raw buffer/
@@ -591,6 +698,114 @@ reconciles via `SnapshotScope::SubscriptionState`, and restarts after the
 snapshot frontier's optional head without silent loss. Empty `Complete`,
 `MoreAvailable`, `NeedsSnapshot`, and `UnsupportedFact` must be distinct in
 both the shader header and the public outcome.
+
+### C11. Atomic GPU component extraction
+
+A GPU proof adapter labels three or more six-neighbor connected pieces in one
+hot source volume, retains a nonempty source remainder, and publishes at least
+two children. Before its dispatch, assert that every possible child ID/key,
+directory/lifetime record, page/brick/scar/transfer/provenance record, proposal,
+receipt, and byte is reserved. The shader copies the child-reservation
+piece-handle-to-final-`VolumeId` subrange into its own factory-created body
+state without modifying the canonical bytes.
+
+An independent CPU oracle compares exact coordinate/packed-sample records and
+world-space cell boxes within the specified f32 corner tolerance before and
+after the one `WorldDirectoryEpoch` publication. Old-epoch
+readers see only the original source; new readers see only the complete source
+remainder and all children. This fixture selects zero explicit removals, so no
+coordinate/sample record is duplicated, absent, or temporarily ownerless.
+Query, collision, observation, presentation invalidation, receipt,
+checkpoint, restore, and cold rematerialization agree on child identity,
+placement, inherited cell size/material samples, provenance, and revision.
+The extraction receipt contains only published children in ascending piece
+handle order, while the tick's unique live revision vector is in ascending
+runtime-ID order and omits a retired source.
+Same-key and import restore preserve each derived child's extraction
+nonce/reservation slot and stable key; the next extraction preflights a fresh
+candidate set and cannot collide with a saved child key.
+
+Fault injection covers every validation phase, live/lifetime ID exhaustion,
+directory root/node/entry/authority-version exhaustion,
+page/brick/scar/byte exhaustion, renderer OOM, unused reservations,
+cancellation, shutdown, device loss before and after the gate, and delayed
+old-reader reclamation. Every unpublished identity and resource returns to its
+pool after last use. Passing a source object or inventing a sample fails.
+Force every complete candidate table for salts `0..=255` to collide with a
+live key, tombstone, or another candidate. Submission must return the unchanged
+request with `ComponentIdentityExhausted`, expose no tick ID or partial table,
+invoke no planner/adapter, and release every reserved identity, record, byte,
+receipt, and cleanup slot.
+Retire one published child, reuse its runtime live slot for an unrelated
+volume, and prove the child's lifetime-index tombstone and new live mapping
+remain distinct through query, checkpoint, and restore.
+For a rejected proposal, next-tick GPU feedback makes the proof adapter remove
+every provisional body association; none of the failed candidate `VolumeId`s
+resolves in a later view or effect.
+
+### C12. CPU-authored regions and persistent multi-fidelity adapter
+
+The validation adapter declares required current input and owns a fixed
+test-only region schema carried as opaque binding-5 bytes. Use at least two
+disconnected regions, then overlap them. A GPU classification pass writes one
+class per persistent body before mark/scan/scatter; assert a body in the
+overlap appears exactly once. A per-cell diagnostic also proves every exported
+cell of a matter-backed overlap body is visited exactly once. One
+projectile-shaped body crosses full, halo, coarse, halo, and full
+classifications without changing body/volume identity or discontinuously
+changing the adapter-owned transform/velocity oracle.
+
+Objects outside every region continue changing in the adapter's coarse pass.
+Their Moria placements remain current through one compact placement stream,
+with no host body enumeration and no ordinary move proposal per object.
+Exercise a remote generic remove/extract proposal as a debris/destruction-
+shaped outcome while verifying Moria owns no such meaning. Changed placement
+records are unique, the placement receipt follows ascending snapshot index,
+and the tick's unique runtime-ID-sorted directory epoch/revision vector is
+exact.
+
+Run empty, 1%, 50%, and 100% active compact lists at the declared 65,536-body
+capacity. Every maximum-list pass dispatches 512 workgroups at width 128.
+The complete adapter uses exactly 11 dispatches/at most 3,604 workgroups
+against declared maxima 16/8,192. Overrun, duplicate classification, stale
+placement, a separate adapter/world per region, or transform/velocity
+discontinuity fails.
+
+### C13. Opaque GPU-to-CPU adapter egress
+
+Register an adapter-owned fixed record layout whose fields and meaning do not
+appear in Moria. Round-trip its initialized bytes and schema ID exactly for
+zero records, one record, multiple records/ticks, and exact capacity. Results
+are delivered in tick order with the request correlation. Zero is a successful
+empty result, not pending or unavailable.
+
+One-over capacity must return exact overflow with no prefix; saturating-counter
+overflow is a separate failure. Malformed header/stride/count/reserved fields,
+cancellation before preparation, skipped and not-run participants, shutdown,
+map failure, decode failure, and device loss each produce their closed result.
+For a participant that completed with a valid prefix, separately exercise
+`RejectLater`, `ReplaceEarlier`, another participant's `FailTick`, another
+participant's `AbortTick`, and transition/preparation no-publication. The
+same assertion applies to directory-epoch-exhaustion no-publication. The prefix
+remains byte-exact and deliverable in every case even though proposal and tick
+receipts report their independent rejection/disposition. By contrast, the
+skipped and not-run fixtures return
+`ParticipantUnavailable` with the exact existing execution reason and no
+prefix.
+Publication receipts remain independently truthful before egress
+mapping/decoding. Inject map and decode failure after a tick that published and
+assert `OperationError::revision_changed` equals that tick's true value; repeat
+after no-publication and assert false. A published zero-change tick preserves
+false. Device, working, staging, and host bytes are not reused
+before their defined last-use/unmap/drop milestones, and dropping the receipt
+still reclaims them. Clone a ready result and its byte handle, drop the
+original receipt/result, and prove the one shared host slot remains charged
+until the last clone drops without duplicating its byte charge. Attempts to
+obtain a raw mapped view/authority buffer or route a GPU handoff through egress
+fail.
+Retain terminal zero-byte receipts through the configured receipt limit;
+the next tick cannot execute until a receipt permit is available, and dropping
+one permits progress without changing byte/map accounting.
 
 ## Visual evidence
 
@@ -648,7 +863,7 @@ hot path merely to time it.
 The selected GPU hash/MVCC, bounded readback, collision, scheduled behavior,
 asynchronous extension, checkpoint,
 and dual-contouring architecture is not implementation-ready on measurement
-alone. The following v1 gates are falsifiable. They are minimum feasibility
+alone. The following gates are falsifiable. They are minimum feasibility
 floors for the physical qualification adapter in **each** claimed backend
 family, not customer frame-time promises. Software adapters cannot pass them.
 
@@ -674,6 +889,9 @@ Correctness for the same workload must pass first.
 | P8 checkpoint path | 8,192 dirty detailed scars (16 MiB raw), checkpoint concurrent with four mutation streams; in-memory durable test store so storage hardware is excluded | GPU-readback-plus-encode throughput >=64 MiB/s, mutation P2 p95 degrades by <=2×, staged bytes stay within config, and semantic restore parity passes |
 | P9 asynchronous WGSL job | 8 MiB inspection packet, 256 structurally valid candidate effects whose 32,768 record bytes plus payload total <=65,472 bytes, 2 extension jobs in flight; effects touch four volumes | p95 packet-capture-to-all-child-admitted <=50 ms, extension GPU work <=16 ms when timestamps exist, candidate + 64-byte diagnostic readback <=64 KiB/job, and zero inspection-packet/material readback to CPU |
 | P10 scheduled CPU/mixed behavior | Register distinct nonempty materials `m1 = MaterialId(1)` and `m2 = MaterialId(2)`. Their samples are respectively `{ material=1, coverage=255, flags=0 }` and `{ material=2, coverage=255, flags=0 }`, encoded in the canonical little-endian scheduled `sample:u32` field as `0x00FF0001` and `0x00FF0002`. Create 32 hot volumes, named `V0..V31` in ascending runtime-ID order, each with four full bricks at local cell bounds `[8b,0,0)..[8(b+1),8,8)` for `b=0..3`. The CPU adapter exclusively views `V0..V15`; the following GPU adapter exclusively views `V16..V31`. Thus each view has exactly 16 volumes, 64 bricks, and 32,768 cells and scans every record. For measured tick `t`, byte `j in 0..512` of CPU input is `(t+j) mod 256` and of independent GPU input is `(t+3j) mod 256`; neither input comes from a predecessor. CPU writes all 65,536 handoff bytes as `handoff[k] = cpu_input[k mod 512] XOR floor(k/512)`. GPU validates that complete pattern. Each adapter emits exactly 64 patch-run proposals in volume-major/brick-min-X order with `Correlation::NONE`, the supplied exact revision, and one proposal per brick. Each proposal has one canonical 20-byte run `{start_index=0, length=512, sample=oracle}` covering that full 8³ target. CPU chooses sample `m1` when `cpu_input[0] & 1 == 0`, else `m2`; GPU chooses `m1` when `(gpu_input[0] XOR handoff[0] XOR handoff[1]) & 1 == 0`, else `m2`. Initialize each group to the exact sample opposite its tick-1 oracle; both oracles then alternate between the two distinct packed values, so every target changes each tick. Across both adapters this is exactly 128 proposal records (16,384 bytes), 2,560 payload bytes, 65,536 affected cells, 128 affected bricks, 32 affected volumes, and zero directory effects. Use `RejectLater`; disjoint volume sets mean all 128 are admitted with no conflict/replacement. If starting revisions are `r_i`, measured tick `t in 1..=100` must publish exactly `[(V_i, r_i+t); i=0..31]` in runtime-ID order and no other revision. Run with default pools and no other workload on each forced backend family. | p95 synchronous main-thread CPU planner+callback <=4 ms; p95 total main-world Moria work for the callback update <=8 ms; p95 frontier-to-publication <=50 ms; every tick consumes the exact current input/handoff bytes, admits all 128 proposals, produces the exact oracle samples and 32-entry revision vector, and reports the stated record/payload/cell/brick/directory counts; input/handoff/view/proposal/transaction allocations stay within default config with no growth after warm-up. The qualification receipt separately reports CPU callback time and total frontier-held time. |
+| P11 multi-fidelity placement | One GPU adapter owns 65,536 persistent records, of which 16,384 are distinct dynamic Moria volumes, and receives 32 CPU-authored AABB regions with equal-width halos. This gate sets `live_volumes=16,384`, `volume_records=32,768`, and `behavior_view_volumes=16,384`; other limits retain defaults. The descriptor uses `BehaviorVolumeFilter::All { maximum_volumes: 16,384 }` and the planner pushes one `VolumeRecords { maximum_volumes: 16,384 }` scope, exporting exactly 16,384 volume records and zero cell records without transferring a planner-owned list; this does not use the ordinary 256-volume query filter. Fixtures use disconnected, 50%-overlapping, and fully overlapping arrangements. Classification compaction, three full/halo/coarse proof kernels, and changed-placement compaction use workgroup width 128, exactly 11 adapter dispatches and at most 3,604 workgroups against declared maxima 16/8,192; each maximum-list pass has 512 workgroups. Measure empty, 1%, 50%, and 100% full/halo active lists; every body still runs either transition or coarse work and all 16,384 matter-backed bodies change pose/publish placement per measured tick. | p95 input-upload-to-directory-publication <=33 ms at 50% and <=50 ms at 100%; GPU time <=20 ms when timestamps exist; adapter dispatches/workgroups are exactly 11/at most 3,604 and declared charges are 16/8,192; one-time overlap classification, exact continuous boundary oracle, continued coarse changes, exactly 16,384 unique placement entries/revision advances, zero host body enumeration, zero exported cell records, and every placement/directory pool within its configured limit |
+| P12 atomic component extraction | One 32,768-cell/512-brick source contains 64 disjoint connected pieces of 512 cells. Publish 63 dynamic children and retain one source piece. This gate sets `live_volumes=8,192`, `volume_records=8,192`, and both desired/minimum `detailed_bricks` and `dirty_scar_bricks` to 65,536; other limits retain defaults. Pre-reserve all default component-extraction capacity, use the binding-1 child-reservation IDs, transfer every sample, rebuild 64 directory entries, and hold one old-epoch reader through publication. Repeat 100 times with newly prepared sources; no presentation work is included. | p95 adapter-output-to-directory-gate <=50 ms and GPU transfer/validate/publish <=20 ms when timestamps exist; exact coordinate/sample conservation, world-box continuity within the specified f32 tolerance, 63 usable GPU child IDs, one old-or-new epoch, zero authority-path readback, and all unused reservations reclaimed after last use. Live/dirty authoritative counts must rise by exactly the published result; allocator capacity and nonauthority overhead may not grow >1% after warm-up. |
+| P13 opaque egress | One GPU adapter declares a 64-byte unknown record, 16,384-record/1 MiB maximum, and emits 0, 1, 8,192, 16,384, then 16,385 required records in a repeating sequence. Two staging slots alternate while publication effects remain valid. | p95 GPU-complete-to-decoded ready <=16 ms for <=8,192 records and <=33 ms at exact capacity; byte-exact initialized prefix/schema/tick/correlation and increasing-tick delivery order; zero is ready-empty; exact capacity succeeds; one-over is explicit overflow with zero delivered bytes; device/staging/host high-water stays within config and returns to baseline after result drop |
 
 These floors deliberately span latency, throughput, memory, density, and
 in-flight pressure. Qualification receipts may also publish stronger
@@ -698,6 +916,13 @@ Failure is blocking and scoped:
 - P10 failure rejects the selected synchronous-main-thread CPU/mixed scheduled
   execution path and requires revisiting callback placement, staging, or the
   selected workload; it cannot be waived by the GPU-only P7 result.
+- P11 failure rejects fixed maximum dispatch or the compact placement-stream
+  mechanism for persistent multi-fidelity integration.
+- P12 failure rejects atomic GPU component extraction or its directory-epoch
+  publication mechanism.
+- P13 failure rejects the opaque CPU-egress transport or its selected staging/
+  delivery bounds; publication correctness does not convert that failure into
+  a pass.
 
 The affected architectural claim remains `fail`, not “report-only,” and the TDD
 implementation cannot be called contract-complete until it is revised or the
@@ -711,10 +936,10 @@ At least one physical adapter for each claimed Linux/Vulkan, macOS/Metal, and
 Windows/DX12 family runs:
 
 - all real-GPU correctness tests;
-- contract scenarios C1–C10 where platform capabilities allow loss injection;
+- contract scenarios C1–C13 where platform capabilities allow loss injection;
 - shader validation;
 - a fixed report-only workload;
-- architecture feasibility gates P1–P10;
+- architecture feasibility gates P1–P13;
 - renderer recovery/device-loss test or an explicit `not_demonstrated` if the
   platform cannot inject it.
 
@@ -749,7 +974,7 @@ Cross-field validation rejects:
 - GPU claim from host oracle/mock/validation-only execution;
 - collision pass based only on mesh/render evidence;
 - device recovery pass without terminal outcomes for all outstanding receipts.
-- a P1–P10 pass missing its workload scale, in-flight pressure, percentile,
+- a P1–P13 pass missing its workload scale, in-flight pressure, percentile,
   throughput/memory result, or physical-adapter context.
 - a P6 pass missing both local and 512-brick dispersed receipts, per-update
   dirty/job/current series, exact 13,824 invalidations, or the final

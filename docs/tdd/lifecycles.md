@@ -5,10 +5,17 @@
 ```text
 Configured
    -> Starting
-      -> Ready
+      -> Ready                         (fresh or open-allocator restore)
+      -> DirectoryEpochExhausted       (closed-allocator restore)
       -> Failed
 Ready
-   -> Recovering -> Ready | Failed
+   -> DirectoryEpochExhausted          (allocator closes)
+   -> Recovering(open) -> Ready | Failed
+   -> ShuttingDown -> Stopped | Failed
+DirectoryEpochExhausted
+   -> Recovering(closed) -> DirectoryEpochExhausted | Failed
+   -> ShuttingDown -> Stopped | Failed
+Recovering(open | closed)
    -> ShuttingDown -> Stopped | Failed
 ```
 
@@ -18,10 +25,45 @@ Installing the returned plugin enters `Starting`, negotiates the device,
 records effective adapter-clamped limits, and installs pipelines/directory
 state. Fresh startup resolves `StartupApplied::Fresh`; restore resolves
 `StartupApplied::Restored(RestoreApplied)` with the complete restored revision
-context. Only `Ready` accepts ordinary permits. `Recovering` rejects new
-admissions with retryable state, keeps unsubmitted owned payloads, and does not
-answer material queries. `Failed` and `Stopped` are terminal for that world
-handle.
+context. The startup receipt succeeds after either operational state is
+installed and reports `StartupApplied::state`: fresh and open-allocator restore
+enter `Ready`, while a restore whose manifest has
+`DIRECTORY_ALLOCATOR_CLOSED` enters `DirectoryEpochExhausted`.
+
+`Ready` accepts every enabled facade family. `DirectoryEpochExhausted` is an
+operational capability substate: generic permits remain reservable; queries,
+matter commands, ordinary single-volume `Move`, checkpoints, subscriptions,
+telemetry, non-root behavior/extension effects, interest declaration, update,
+inspection and withdrawal, and shutdown remain accepted. Cold dependencies
+reached through any of those accepted families use the ordinary bounded region
+lifecycle; allocator closure does not create a residency freeze. `Create`,
+`Retire`, directory rebuild, placement stream, and component extraction remain
+closed. The exhaustive per-method result matrix is in
+[public-api.md](public-api.md#facade-operations); no implementation may infer a
+different rule merely from the generic permit type.
+
+Fresh exhaustion transitions atomically from `Ready` to
+`DirectoryEpochExhausted` after either a successful root publication consumes
+`u64::MAX` or a checked multi-root range reservation cannot fit. The current
+root is unchanged in the latter case. The in-memory
+`directory_allocator_closed` bit is sticky for the world lifetime and is not
+cleared by resource retirement, pressure relief, or renderer recovery.
+
+Device loss from either operational state enters `Recovering` while retaining
+that bit in host control state. `Recovering` closes every permit family and
+rejects every queued submission, new interest/subscription, interest update,
+and runtime extension registration with that exact world state. It does not
+answer queued material-registry or world-matter queries. Immutable host
+material lookup, receipt inspection/cancellation, existing interest and
+subscriber inspection, subscriber cursor resume, last-lease withdrawal,
+telemetry, shutdown, and ordinary handle cloning/drop remain callable; these
+operations need no renderer and have the exact results in
+[public-api.md](public-api.md#facade-operations). Successful reconstruction
+returns to `Ready` only when the allocator bit is open; a closed allocator
+returns to `DirectoryEpochExhausted`. A device loss with unrecoverable dirty
+truth or failed reconstruction enters `Failed`. Shutdown may start from either
+operational state or from `Recovering`; `Failed` and `Stopped` are terminal for
+that world handle.
 
 Startup failure includes a stage and all actionable causes. There is no
 partially usable hidden world.
@@ -302,15 +344,20 @@ owned request
   -> transferring declared bounded opaque handoffs
   -> validating participant batches
   -> resolving whole-proposal conflicts
-  -> publishing at most one transaction/revision per affected volume
-  -> reporting participant/proposal outcomes
+  -> validating/copying optional opaque egress prefixes
+  -> preparing component-extraction/placement directory root when selected
+  -> publishing per-volume gates or one directory epoch per root proposal
+  -> reporting participant/proposal outcomes and egress receipts
 ```
 
-Only one tick is active per world in v1. The tick permit pre-reserves every
+Only one tick is active per world in v2. The tick permit pre-reserves every
 registered participant's maximum input record/host bytes/GPU upload transport,
 view, proposal, collision scratch/calls, handoff host/device/staging/maps,
 transaction, completion, and double-buffered feedback capacity before the
-first planner runs. Unknown, duplicate, unexpected, missing required, or
+first planner runs. It also reserves every declared placement entry, component-extraction
+child identity/transfer/directory/provenance resource, and opaque-egress
+record/device/staging/host/map/receipt resource. Unknown, duplicate,
+unexpected, missing required, or
 over-capacity input rejects synchronously and invokes no planner/adapter.
 The atomic transition from waiting at the frontier to GPU input preflight is
 this family's `Preparing` point of no return. Cancellation that wins before it
@@ -329,7 +376,7 @@ GPU binding 5 receives those exact bytes through the ordered upload; Moria
 never interprets their vocabulary.
 
 CPU planners and adapters run synchronously on the Bevy main thread while the
-frontier is pinned. V1 has no worker handoff, preemption, or deadline for that
+frontier is pinned. V2 has no worker handoff, preemption, or deadline for that
 callback, so consumer latency can stall the main-world update and hold
 post-frontier commands. This is explicit selected behavior, measured by P10
 for a fixed proof adapter rather than hidden behind a worker claim.
@@ -343,12 +390,15 @@ handoff.
 Conflicts resolve in stable adapter/proposal order by the later adapter's
 declared `RejectLater | ReplaceEarlier | FailTick` policy, always for a whole
 proposal. Selected effects for one volume publish together at one revision or
-all fail for that volume; independent volumes remain independently published.
-The closed scheduled effect set is fill, patch, move, and retire. It cannot
-create a volume or atomically split one existing volume into newly created
-independent volumes. A consumer may submit later ordinary create commands
-after the tick; each follows the separate command lifecycle and cannot be
-reported as part of the scheduled publication.
+all fail for that volume. Ordinary independent volumes remain independently
+published. The closed scheduled effect set is fill, patch, move, retire,
+placement stream, and extract components. Placement stream and extract
+components are the only multi-volume exceptions and use one
+`WorldDirectoryEpoch` gate per proposal. A GPU participant may emit at most
+one placement-stream proposal per tick; its declared update count/bytes and
+one root transaction cover that complete stream. Extract components can publish only pre-reserved
+dynamic children made from samples already owned by one pinned source;
+arbitrary create and `BaseContentSource` transport remain unavailable.
 
 `AbortTick` discards every proposal when that participant fails.
 `SkipParticipant` discards only that participant and lets remaining adapters
@@ -368,6 +418,10 @@ until dependencies/last use are terminally released; recovery recreates
 adapter state only after that generation's aggregate charge reaches zero. The
 complete contract is
 [behavior-scheduling.md](behavior-scheduling.md).
+Component-extraction identity/resource reservation, exact matter conservation, placement
+stream lifetime, multi-fidelity integration, and opaque egress states are
+normative in
+[adapter-substrate-contracts.md](adapter-substrate-contracts.md).
 
 ## Asynchronous GPU extension lifecycle
 
@@ -473,6 +527,15 @@ count (default 1).
 | Scheduled consumer-input upload failure/device loss | Behavior participant/tick | Tick-global `NoPublication(PreparationFailure)` with the addressed participant `Skipped(ConsumerInputUpload)` and all others `NotRun(InputPreflightAborted)`, or typed device-loss no-publication with all `NotRun(DeviceLost)` | Empty snapshot/proposal/publication vectors; no planner, adapter, or report hook executes and no behavior effect publishes |
 | Scheduled proposal conflict | Proposal/tick | Whole proposal rejected/replaced or tick failed | Never partial proposal application |
 | Scheduled report-hook failure after publication | Behavior notification | `PublishedWithNotificationFailure` | Already published effects and receipts remain valid |
+| Scheduled component-extraction validation/conservation/capacity failure | Component-extraction proposal | Typed proposal rejection or tick failure under participant policy | Old directory epoch remains current; no child identity or sample becomes visible |
+| Component candidate-key salt exhaustion | Behavior request | Synchronous `SubmitError::Invalid` with `ComponentIdentityExhausted` and unchanged request | No public tick ID, partial candidate table, planner/adapter execution, lifetime record, or leaked permit |
+| Scheduled component-extraction device loss before/after gate | Behavior tick/world | Typed no-publication loss before the gate; applied result plus normal dirty-state recovery after it | Never parent/child partial visibility or rollback |
+| World-directory epoch exhaustion | World/root-changing operation | Ordinary operation fails `DirectoryEpochExhausted`; a scheduled range failure is typed no-publication; later root-changing submissions reject in `WorldState::DirectoryEpochExhausted` | Current root remains readable/checkpointable; allocator-closed state is checkpointed independently of the epoch, maximum-epoch restore starts exhausted, recovery returns exhausted, and no epoch wraps/reuses or partial root chain publishes |
+| Placement-stream invalid/stale/duplicate entry | Placement proposal | Whole stream rejected | No placement/revision in the stream changes |
+| Second placement stream from one participant | Behavior participant | Complete participant batch invalid; pre-reserved egress becomes participant-unavailable | No proposal admitted and the one-stream root/update reservation is not multiplied |
+| Opaque egress zero/exact output | Egress receipt | Ready with exact prefix, including explicit zero | Publication outcome unchanged |
+| Opaque egress overflow/map/decode/device loss | Egress receipt | Closed failure with no truncated bytes | Publication outcome remains independently reported |
+| Completed-participant proposal rejection or tick abort with valid egress | Egress receipt | Ready with exact prefix; error paths copy tick-wide `revision_changed` | Egress is execution-based and does not relabel independent publication truth |
 | External shader failure | Asynchronous extension request | Extension error | Only earlier ordinary commits remain |
 
 ## Time and determinism

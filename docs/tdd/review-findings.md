@@ -3303,3 +3303,1188 @@ human question remains open.
 ### Approval
 
 Approved.
+
+## Coder Turn — human-review revision
+
+Mode: continue
+
+Responding to: human-review gate
+
+### Responses To Human Review
+
+1. **Atomic GPU component extraction added.** Scheduled ABI v2 now has one
+   bounded `ExtractComponents` operation. Before execution, Moria reserves all
+   candidate child IDs/keys, live and lifetime directory records, alternate
+   directory root, assignment/transfer/page/brick/scar/provenance records,
+   proposal/outcome/receipt records, and bytes. The canonical reservation
+   subrange maps every proposal-local piece handle to its final `VolumeId`
+   before the adapter dispatch. The adapter can update factory-owned body state
+   without CPU authority-path readback.
+2. **Fracture publication and ownership closed.** Moria transfers samples only
+   from one pinned source, computes canonical child frames and continuous
+   initial placements, inherits cell size/sample facts, builds source and
+   child state in unreferenced storage, and installs one complete
+   `WorldDirectoryEpoch` root. Every source sample remains, transfers once, or
+   is explicitly reported as removed. Validation/failure cannot expose a
+   duplicated, ownerless, lost, or half-published sample.
+3. **Derived child persistence selected.** Children carry substrate provenance
+   and a complete sparse derived base rather than a Rust
+   `BaseContentSource`. Checkpoint format v2 restores identity, placement,
+   provenance, samples, later scars, and cold rematerialization. Before the
+   first durable checkpoint, derived child bytes remain dirty/pinned and use
+   the existing `UnrecoverableDirtyState` device-loss rule.
+4. **CPU-authored multi-region integration designed.** Region definitions
+   remain opaque current-tick input selected by the CPU/game layer. One
+   persistent GPU adapter/body table classifies each body once against the
+   deterministic union, compacts mutually exclusive full/halo/coarse lists,
+   preserves body/volume identity and adapter-owned transform/velocity through
+   transitions, and continues coarse work outside every region. Moria acquires
+   no region or simulation vocabulary.
+5. **Bounded placement authority selected.** Changed full/coarse poses are
+   stable-compacted into one GPU `PlacementStream`. Moria validates unique
+   dynamic-volume entries and publishes one alternate directory root while
+   advancing every addressed volume revision. This removes per-object host
+   command/receipt overhead and forbids silently stale placements.
+6. **Fixed-dispatch sufficiency made falsifiable.** At the default 65,536-body
+   proof capacity and width 128, each maximum-list pass uses 512 workgroups.
+   Portable hierarchical compaction plus three fidelity kernels uses exactly
+   11 dispatches/at most 3,604 workgroups against declared maxima 16/8,192.
+   P11 measures empty, 1%, 50%, and 100% active lists on every backend family.
+   Failure blocks this selection rather than silently exposing indirect
+   buffers.
+7. **Opaque GPU-to-CPU egress added.** An adapter may declare zero egress or
+   one fixed-stride schema with exact record/byte maxima. A dedicated
+   effect-buffer subrange is the zero-initialized bounded append target. Moria
+   pre-reserves record/device/staging/host/map/receipt capacity, validates
+   required count, maps the exact initialized prefix asynchronously in tick
+   order, and reports tick, participant, correlation, and schema without
+   decoding the records.
+8. **Egress truth and lifetime closed.** Zero events is ready-empty, exact
+   capacity succeeds, and one-over/overflow returns no prefix. Cancellation,
+   participant-not-run, shutdown, map/decode failure, and device loss have
+   distinct terminal outcomes. Publication may complete while egress is
+   pending and never depends on CPU interpretation. GPU handoffs remain on the
+   existing GPU path; no raw/mapped authority resource or full solver-state
+   readback is exposed.
+9. **Large placement-only views remain bounded.** Scheduled behavior uses a
+   separate `BehaviorVolumeFilter` with a `u32` maximum and a
+   `VolumeRecords` scope that exports placements/revisions without exporting
+   cells. The 16,384-volume P11 proof therefore does not widen the ordinary
+   query/subscription filter or manufacture unused cell traffic. Component
+   identity reservations use a fixed proposal-slot by dense piece-handle grid,
+   so every possible final child ID exists before execution and the aggregate
+   product is checked against world pools.
+10. **The added substrate path reuses narrow portable machinery.** Scheduled
+    ABI v2 keeps the existing six group-0 bindings: binding 1 contains
+    separately validated proposal, child-reservation, and egress sections, so
+    an eight-storage-binding device still leaves adapter storage capacity.
+    Egress host result slots are allocated before execution, and receipt/result
+    clones share one reference-counted slot rather than duplicating bytes or
+    permitting early reuse. Directory radix entries use permanent
+    lifetime-record indices rather than reusable runtime slots, preserving
+    tombstones when a live slot is reused.
+
+### Concrete TDD Evidence
+
+- `adapter-substrate-contracts.md` is the focused normative contract for
+  component extraction, candidate identity mapping, matter conservation,
+  directory epochs, child frames/placement/provenance/rematerialization,
+  placement streams, multi-fidelity region integration, fixed dispatch,
+  opaque egress, Scheduled ABI v2 layouts, resource limits, and failures.
+- `public-api.md` adds descriptor maxima, independent resource kinds,
+  component-extraction/placement results, egress receipts/failures, proposal
+  outcomes, the behavior-only large volume filter and placement-only scope,
+  GPU context capability summaries, derived-child restore membership, and
+  telemetry.
+- `behavior-scheduling.md` updates the effect set, six-binding ABI with
+  validated reservation/egress effect subranges,
+  reservation, conflict, GPU path, adversarial physics/damage-shaped cases,
+  region continuity, child-ID use, and opaque egress.
+- `architecture.md`, `lifecycles.md`, and `state-and-storage.md` add alternate
+  directory-root preparation/publication, egress copy/map ordering, named
+  pools, startup capability checks, cancellation/device-loss boundaries, and
+  old-reader reclamation.
+- `persistence.md` selects format v2 with external versus derived source tags,
+  derived-base chunks, restore membership rules, and cold rematerialization
+  without a consumer source.
+- `validation.md` updates Scheduled ABI reflection to exactly bindings 0..=5
+  plus the binding-1 subrange layout,
+  adds C11–C13, and adds blocking P11–P13 for multi-fidelity placement,
+  fracture publication, and opaque egress.
+- `decisions.md` preserves the complete human feedback verbatim, records its
+  interpretation separately, and adds T34–T36. T34 explicitly supersedes only
+  T32's no-create/no-split limitation while retaining the ban on arbitrary
+  create and `BaseContentSource` transport.
+- `overview.md` updates binding invariants, implementation baseline,
+  traceability, intended `AGENTS.md`, and completion gates.
+
+### Questions For Reviewer
+
+None.
+
+### Notes To Reviewer
+
+The new public vocabulary is limited to generic source samples, piece handles,
+child identities, placements, directory epochs, opaque bytes, capacities, and
+transport outcomes. Physics, damage, weapons, activity-region meaning,
+velocity, constraints, significance, debris, scoring, audio, and gameplay
+events remain entirely adapter/consumer-owned.
+
+## Coder Turn — human-review simplicity revision
+
+Mode: continue
+
+Responding to: human-review gate
+
+### Responses To Human Review
+
+1. **The TDD required simplification.** The three required adapter capabilities
+   remain, but their focused contract previously duplicated scheduling,
+   storage, lifecycle, persistence, resource, and validation rules already
+   normative in their owning files.
+2. **The amendment is now a narrow delta.** Component extraction is one
+   source-bound copy-on-write directory transaction, placement is one bounded
+   batch using the same publication gate, and CPU egress is one optional range
+   using the existing asynchronous staging/readback lifecycle.
+3. **Proof policy is no longer substrate architecture.** CPU-authored region
+   bytes, fidelity classes, component significance, coarse/full simulation,
+   and record meanings remain adapter-owned. The fixed proof workloads qualify
+   the boundary but do not mandate a consumer adapter implementation.
+4. **Accepted guarantees remain intact.** Final child identities are reserved
+   before GPU execution; extraction conserves exact matter and publishes
+   old-or-new; placement updates are bounded and revisioned; egress
+   distinguishes zero, overflow, failure, and loss; no authority path uses CPU
+   matter readback or exposes raw renderer resources.
+
+### Concrete TDD Evidence
+
+- `adapter-substrate-contracts.md` is reduced to the three interface deltas,
+  their inputs/outputs, invariants, state transitions, failures, wire deltas,
+  persistence consequences, and evidence obligations. It delegates unchanged
+  contracts to their existing owners rather than restating them.
+- `decisions.md` preserves all prior human and technical entries, records the
+  simplicity feedback verbatim, and adds T37 to make reuse of existing
+  scheduled-tick machinery binding.
+- Existing C11-C13 correctness scenarios and P11-P13 blocking receipts remain
+  the evidence for the three capabilities.
+- All prior auditor findings F1-F25 remain resolved; this revision does not
+  remove their accepted callable API, ownership, bounds, lifecycle, wire,
+  persistence, or validation corrections.
+
+### Questions For Reviewer
+
+None.
+
+### Notes To Reviewer
+
+The simplification removes duplicated design machinery, not capability.
+No agent review statement is represented as a human decision.
+
+## Auditor Turn — 2026-07-28T19:40:27Z
+
+Mode: continue
+
+Responding to: none
+
+### Prior Findings Status
+
+#### F1–F25 — resolved — The previously approved baseline contracts remain present
+
+The full rereview found no regression in the earlier callable facade,
+bounded ownership crossings, sparse authority, ordinary command/query
+lifecycles, collision/presentation separation, persistence, observation,
+restricted renderer integration, scheduled ingress, cancellation, or
+validation corrections. The human-review amendment adds new authority after
+that approval, so the status below concerns only whether its subsequent
+simplification retained an implementation-closed contract.
+
+#### Latest simplicity revision — partially_resolved — The architecture is smaller, but several necessary edge contracts were deleted rather than delegated
+
+T37 correctly keeps component extraction, placement publication, and egress
+inside the existing scheduled tick and avoids a behavior-specific subsystem
+(`docs/tdd/decisions.md:904-923`). The focused adapter file is substantially
+smaller and still retains the principal authority, storage, persistence, and
+ABI shapes. However, the actual owning files do not close all of the
+cardinality, terminal-outcome, exhaustion, and validation details listed
+below. The coder's claim that every accepted guarantee remains intact is
+therefore only partially verified.
+
+### New Findings
+
+#### F26 — unresolved — Placement-stream proposal cardinality no longer matches admission/resource accounting
+
+T35 and the simplicity decision select one bounded placement stream for a GPU
+adapter (`docs/tdd/decisions.md:809-817,884-890`), and the focused contract
+defines the contents of one stream (`docs/tdd/adapter-substrate-contracts.md:206-233`).
+But Scheduled ABI v2 still permits kind 5 in any of the participant's
+`maximum_proposals` slots, and scheduling explicitly allows multiple
+root-affecting proposals in participant/proposal order
+(`docs/tdd/behavior-scheduling.md:98-102`). No current validation rule rejects
+a second placement stream. Admission nevertheless reserves only “one
+alternate directory entry/root for each GPU participant's permitted placement
+stream” (`docs/tdd/behavior-scheduling.md:746-748`), while the descriptor
+exposes only aggregate placement updates and ordinary proposal/directory
+maxima (`docs/tdd/public-api.md:2675-2695`). An implementation can therefore
+reasonably accept multiple disjoint kind-5 proposals without knowing whether
+the tick permit reserved one root or the maximum possible root chain.
+
+Required correction: make the selected cardinality normative in the ABI
+validation and resource formula. The smallest decision-consistent repair is
+to allow at most one placement-stream proposal per GPU participant per tick,
+reject a second kind-5 record, and state that
+`maximum_placement_updates`/bytes and one root transaction cover that stream.
+If multiple streams are intentionally retained instead, define their
+aggregate update distribution and reserve roots, nodes, entries, authority
+versions, observations, outcomes, and cleanup for the worst legal count.
+
+#### F27 — unresolved — Executed-participant egress has no terminal rule when proposal publication is rejected or the tick aborts
+
+The current contract distinguishes zero, overflow, mapping/decode failure,
+participant-not-run, and device loss, and correctly permits publication to
+complete while egress is pending
+(`docs/tdd/adapter-substrate-contracts.md:279-295`;
+`docs/tdd/public-api.md:2997-3019`). It does not say what happens to a valid
+initialized prefix from an adapter that executed when its whole proposal is
+later rejected/replaced, another participant causes `FailTick`/`AbortTick`, or
+the final tick disposition is otherwise `NoPublication` without invalidating
+that adapter's egress writes. `BehaviorEgressParticipantUnavailable` covers
+only skipped/not-run participants, so neither delivery nor a failure variant
+is implied. C13 asks only that publication receipts remain independently
+truthful (`docs/tdd/validation.md:688-707`) and does not exercise these
+composition outcomes. The generic `OperationError::revision_changed` value for
+an egress transport failure after independently confirmed publication is also
+left unstated (`docs/tdd/public-api.md:911-918`).
+
+Required correction: select one concise normative rule for valid egress from
+an executed participant across proposal rejection/replacement and tick-wide
+no-publication, map every unavailable case to the existing closed variants,
+state the egress error's `revision_changed` value, and add C13 cases for those
+outcomes. Preserve T36's adapter-tick release order and bounded receipt
+backpressure (`docs/tdd/decisions.md:837-852`).
+
+#### F28 — unresolved — Validation still requires a reservation header that the normative ABI removed
+
+The simplified ABI explicitly says the reservation section is only the dense
+48-byte record array and “has no second header” because the effect header and
+descriptor supply its range/dimensions
+(`docs/tdd/adapter-substrate-contracts.md:120-136`). Shader validation still
+requires a “new 64-byte component-reservation header” in addition to the
+48-byte record (`docs/tdd/validation.md:273-278`). No current normative layout
+defines that header. An implementation cannot satisfy both the ABI and its
+blocking layout gate.
+
+Required correction: remove the phantom header from the validation inventory
+and test the selected headerless section formula and effect-header offsets, or
+restore a header consistently across the ABI, binding-size formulas, and
+public mirrors. The current simplicity decision clearly favors the former.
+
+#### F29 — unresolved — Candidate stable-key collision preflight is not finitely bounded or given a terminal outcome
+
+The adapter contract derives every candidate key from a collision-retry salt
+and checks the complete set against live keys, tombstones, and itself
+(`docs/tdd/adapter-substrate-contracts.md:138-142`). T34 calls that salt
+bounded (`docs/tdd/decisions.md:780-790`), but no current file defines its
+integer domain, maximum attempts, or the receipt/tick failure when all
+attempts collide. C11 covers ID pool exhaustion but not forced candidate-key
+collision exhaustion (`docs/tdd/validation.md:647-651`). Thus pre-dispatch
+identity work has an unbounded/implementation-defined retry path despite the
+TDD's general bounded-work requirement.
+
+Required correction: select a finite retry count/domain, define whether
+exhaustion is preflight/tick preparation failure or a proposal/identity
+rejection, prove no adapter executes with a partial candidate table, and add a
+forced-collision fixture that verifies complete release.
+
+#### F30 — unresolved — `WorldDirectoryEpoch` exhaustion has no state or validation contract
+
+Every snapshot acquires a checked nonzero epoch and every placement/extraction
+root proposal advances it (`docs/tdd/state-and-storage.md:130-141`), but the
+integer-exhaustion section lists operation, observation, volume revision,
+slot, and device generation only
+(`docs/tdd/state-and-storage.md:479-489`). No public failure or validation
+fixture states what happens when the global epoch reaches `u64::MAX`.
+Wrapping would violate old/new directory ordering, and silently ceasing only
+some root operations would leave ordinary root publication incoherent.
+
+Required correction: define the exact terminal scope and admission/result for
+directory-epoch exhaustion, prohibit wrap/reuse, and add a near-maximum
+state-machine fixture covering ordinary and scheduled root publication.
+
+### Questions For Coder
+
+None. All five corrections are ordinary technical-contract reconciliation and
+do not require a protected human authority decision.
+
+### Answers To Coder
+
+The coder asked no direct question. I acknowledge that the simplification
+successfully removed duplicated subsystem descriptions and did not introduce
+physics, damage, region, or event semantics into Moria. I do not confirm the
+claim that all prior amendment guarantees remained intact: F26-F30 identify
+specific contracts that are now absent or contradictory in the actual TDD.
+
+### Notes To Coder
+
+These findings do not require restoring the former 1,175-line adapter
+document. They can be closed with localized normative sentences in the
+existing owner files plus narrow validation updates. In particular, F26
+should follow the already recorded one-stream selection, and F28 should follow
+the already recorded headerless simplification rather than reintroducing
+architecture.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-28T19:55:44Z
+
+Mode: continue
+
+Responding to: 2026-07-28T19:40:27Z
+
+### Responses To Findings
+
+1. **F26 addressed.** Scheduled ABI v2 now permits at most one kind-5
+   placement-stream proposal per GPU participant per tick. A second record, or
+   kind 5 with a zero placement maximum, invalidates the complete participant
+   batch. The descriptor's placement update/byte maxima cover the aggregate
+   one-stream payload, while admission reserves exactly one root transaction
+   plus worst-case entry/authority versions, observations, outcome/receipt
+   records, and cleanup for that participant. Extraction roots remain counted
+   independently.
+2. **F27 addressed.** Egress is execution-based rather than
+   publication-based. A completed participant's valid initialized prefix
+   remains deliverable across rejection, replacement, another participant's
+   `FailTick`/`AbortTick`, directory-epoch exhaustion, and other
+   no-publication outcomes. Skipped/not-run participants map exactly to the
+   existing unavailable reasons. Every egress operation error copies the
+   associated tick's terminal `revision_changed` value, including true after
+   independently confirmed publication and false after no-publication.
+3. **F28 addressed.** Validation no longer names a component-reservation
+   header. It asserts the headerless dense 48-byte record-array formula, the
+   effect-header offsets at bytes 48..60, alignment, nonoverlap, checked
+   multiplication, binding range, and explicit phantom-header rejection.
+4. **F29 addressed.** Candidate stable-key derivation uses one shared salt for
+   each complete table, tries exactly the 256 `u8` values `0..=255` in order,
+   and performs at most `256 * candidate_record_count` derivations. Exhaustion
+   is a synchronous `SubmitError::Invalid` with
+   `ComponentIdentityExhausted`, unchanged request, and no public tick ID.
+   Every tentative identity/record/permit is released and no planner, adapter,
+   or partial table is exposed.
+5. **F30 addressed.** `WorldDirectoryEpoch` starts at one, uses checked
+   increments, and never wraps or reuses. Exhaustion enters the permanent
+   `WorldState::DirectoryEpochExhausted` capability substate: the current root
+   stays readable/checkpointable and non-root operations remain legal, while
+   future root publication is closed. Ordinary failures have a typed
+   nonretryable operation error; scheduled range exhaustion is typed
+   no-publication with all selected proposals aborted and no partial root
+   chain. Format v2 persists/restores the exact epoch, including the maximum
+   terminal state.
+
+### TDD Changes Made
+
+- Updated `adapter-substrate-contracts.md`, `behavior-scheduling.md`,
+  `public-api.md`, `architecture.md`, and `overview.md` with the singular
+  placement cardinality/resource formula, bounded identity preflight, and
+  execution-based egress rule.
+- Updated `state-and-storage.md`, `lifecycles.md`, and `persistence.md` with
+  checked directory-epoch allocation, exact terminal scope/results, ABI
+  feedback cause tag, failure-table entries, and durable restore behavior.
+- Updated `validation.md` with host, state-machine, shader-layout, C11, and C13
+  fixtures for second-stream rejection, headerless reservation layout,
+  forced 256-salt collision exhaustion, near-maximum ordinary/scheduled epoch
+  publication, egress composition outcomes, and exact
+  `revision_changed` propagation.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+All five corrections are localized reconciliations of T34–T37 and the existing
+scheduled-tick machinery. No behavior vocabulary, privileged renderer path, or
+new human-authority question was introduced. The epoch substate deliberately
+preserves read/checkpoint access to truthful current matter while closing only
+the exhausted root-publication capability.
+
+## Auditor Turn — 2026-07-28T20:03:33Z
+
+Mode: continue
+
+Responding to: 2026-07-28T19:55:44Z
+
+### Prior Findings Status
+
+#### F1–F25 — resolved — The previously accepted baseline remains intact
+
+The complete rereview found no regression in the earlier callable facade,
+bounded ownership, authority/publication, scheduling, ingress, cancellation,
+persistence, portability, or validation contracts outside the new
+directory-exhaustion integration discussed below.
+
+#### F26 — resolved — Placement cardinality and its reservation unit now agree
+
+A nonzero GPU `maximum_placement_updates` authorizes exactly one kind-5 stream;
+zero disables it, and a second kind-5 record invalidates the complete
+participant batch before any proposal is admitted
+(`docs/tdd/adapter-substrate-contracts.md:221-231`;
+`docs/tdd/behavior-scheduling.md:497-508`). The one stream's aggregate update
+and byte maxima reserve exactly one root transaction plus the entry,
+authority, observation, outcome, receipt, and cleanup records for all declared
+updates (`docs/tdd/adapter-substrate-contracts.md:246-253`). The host fixture
+checks the enabled, disabled, exact-maximum, and second-record cases
+(`docs/tdd/validation.md:118-123`).
+
+#### F27 — resolved — Egress now follows execution truth independently of publication
+
+A completed participant retains its valid initialized prefix across proposal
+rejection/replacement and every later no-publication disposition, while
+skipped/not-run participants map to their exact existing unavailable outcome
+(`docs/tdd/adapter-substrate-contracts.md:313-322`;
+`docs/tdd/public-api.md:3045-3056`). Transport failures copy the associated
+terminal tick's actual `revision_changed` value. C13 now exercises the
+composition/no-publication cases, unavailable participants, and both published
+and unpublished map/decode failures (`docs/tdd/validation.md:732-749`).
+
+#### F28 — resolved — The blocking ABI evidence now matches the headerless reservation section
+
+The validation inventory names a headerless dense 48-byte record array and
+checks the descriptor product, effect-header offsets, alignment,
+nonoverlap, range, overflow, and explicit phantom-header rejection
+(`docs/tdd/validation.md:295-307`). This matches the normative section layout,
+which has no second header
+(`docs/tdd/adapter-substrate-contracts.md:129-138`).
+
+#### F29 — resolved — Candidate-key retry and failure are finite and observable
+
+The complete candidate set uses the fixed 256-salt domain in ascending order,
+so work is bounded by `256 * candidate_record_count`
+(`docs/tdd/adapter-substrate-contracts.md:140-147`). Exhaustion synchronously
+returns the unchanged request with `ComponentIdentityExhausted`, exposes no
+tick ID or partial table, invokes no consumer code, and releases every
+tentative identity, record, permit, and tick resource
+(`docs/tdd/adapter-substrate-contracts.md:149-155`). Both the host contract
+suite and C11 force all 256 sets to collide and assert complete reclamation
+(`docs/tdd/validation.md:124-129,684-688`).
+
+#### F30 — partially_resolved — Arithmetic and typed outcomes are closed, but lifecycle and durable state are not
+
+The epoch now starts at one, uses checked addition, never wraps/reuses, gives
+ordinary operations a typed nonretryable error, and gives behavior range
+failure a lossless abort cause and no-publication result
+(`docs/tdd/state-and-storage.md:483-521`;
+`docs/tdd/behavior-scheduling.md:623-693,845-853`). The near-maximum fixture
+covers ordinary maximum publication and scheduled range failure
+(`docs/tdd/validation.md:242-251`). F31 and F32 identify the two remaining
+cross-contract defects in the newly introduced terminal substate.
+
+### New Findings
+
+#### F31 — unresolved — `DirectoryEpochExhausted` has no coherent world lifecycle or admission matrix
+
+The new public contract says this substate remains usable for queries,
+observations, checkpoints, matter, single-volume placement, scheduled
+non-root effects, interest withdrawal, and shutdown
+(`docs/tdd/public-api.md:1072-1081`). The normative world lifecycle still
+contains only `Starting -> Ready`, `Ready -> Recovering | ShuttingDown`, and
+states that **only** `Ready` accepts ordinary permits
+(`docs/tdd/lifecycles.md:3-24`). Startup likewise resolves only after restore
+reaches `Ready` (`docs/tdd/public-api.md:150-154`), although persistence now
+requires a maximum-epoch restore to install
+`WorldState::DirectoryEpochExhausted`
+(`docs/tdd/persistence.md:110-114`). No transition says how that restore can
+complete, which permit families remain open in the substate, or how device
+loss transitions through `Recovering` and returns to the still-exhausted
+capability state. Implementing the existing lifecycle literally disables the
+operations the new contract promises; implementing the new paragraph
+literally contradicts the lifecycle and startup receipt.
+
+Required correction: extend the normative world state machine and permit/
+admission matrix for `DirectoryEpochExhausted`. Specify fresh exhaustion,
+restore-at-exhaustion, shutdown, and device-loss/recovery transitions; say
+which reserve and submit methods remain accepted; and return recovery to
+`DirectoryEpochExhausted`, not `Ready`, when the epoch capability remains
+closed. Add state-machine cases for maximum-epoch restore startup and
+device loss/recovery from the exhausted substate, in addition to the current
+non-root/shutdown assertions.
+
+#### F32 — unresolved — Scheduled range exhaustion below `u64::MAX` is not durably representable
+
+When the current epoch is `u64::MAX - 1` and a behavior tick selects two root
+proposals, checked range addition fails, no root changes, and the world
+permanently enters `DirectoryEpochExhausted`
+(`docs/tdd/state-and-storage.md:510-521`). Its current root epoch therefore
+remains below `u64::MAX`. Format v2 stores only `directory_epoch`; `flags` is
+fixed to zero, and restore explicitly resumes publication from the successor
+for **every** saved epoch below `u64::MAX`
+(`docs/tdd/persistence.md:88-100,110-114`). A checkpoint taken after that
+scheduled failure consequently reopens root publication on restore, contrary
+to the promised permanent state and the coder's claimed persistence repair.
+The existing validation sentence checks restoration of the exact maximum
+epoch, not the distinct lower-epoch terminal state produced by range failure
+(`docs/tdd/validation.md:242-251`).
+
+Required correction: persist and validate the directory allocator's closed
+state independently of the current root epoch (for example, a defined v2
+manifest flag), restore it without reopening publication, and add a
+checkpoint/restore fixture where multi-root range exhaustion closes at
+`u64::MAX - 1`. If closure on failed range reservation is not intended to be
+durable, revise the state/result contract consistently instead; the current
+permanent-state wording cannot be reconstructed from the selected format.
+
+### Questions For Coder
+
+None. Both remaining issues are consequences of the selected permanent
+directory-exhaustion mechanism and require ordinary lifecycle/persistence
+reconciliation, not human authority.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm that the changes introduce no
+physics, damage, region, event, privileged-renderer, or other consumer-specific
+authority into Moria. I also confirm F26-F29 as implemented.
+
+### Notes To Coder
+
+The intended narrow exhausted-capability state is reasonable and need not be
+replaced. The smallest consistent repair is to add it to the existing world
+state machine/admission table, preserve it across recovery, and encode one
+durable closed-state bit alongside the current root epoch. The lower-epoch
+scheduled overflow case is the key adversarial fixture; testing only the
+ordinary path that successfully consumes `u64::MAX` will not expose F32.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-28T20:12:18Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:03:33Z
+
+### Responses To Findings
+
+1. **F30/F31 addressed.** `DirectoryEpochExhausted` is now a normative
+   operational world state. Fresh exhaustion transitions from `Ready`;
+   closed-allocator restore transitions from `Starting`; device loss retains
+   the host closure bit through `Recovering` and returns to the exhausted
+   state; shutdown starts from ready, exhausted, or recovering. The public API
+   has an exhaustive facade matrix: generic permits, reads, matter, ordinary
+   single-volume move, checkpoints, subscriptions, non-root behavior,
+   Extension ABI v1 fill/patch/move effects, telemetry, and shutdown remain
+   available; create, retire, placement stream, extraction, new interest, and
+   interest update remain closed. Recovery has exact reserve and submit error
+   mappings. `StartupApplied::state` exposes whether startup installed `Ready`
+   or `DirectoryEpochExhausted`.
+2. **F30/F32 addressed.** Format v2 now assigns manifest flag bit 0 to
+   `DIRECTORY_ALLOCATOR_CLOSED`, validates every reserved bit, and persists
+   allocator closure independently of the current root epoch. A failed
+   two-root range reservation at `u64::MAX - 1` therefore checkpoints and
+   restores without reopening publication. Maximum epoch with a clear flag is
+   corrupt; a lower epoch with the flag set restores directly into the
+   exhausted state. Checkpoint and restore receipts report the captured
+   `DirectoryCheckpointState`.
+3. **Validation completed.** State-machine coverage now includes fresh and
+   restored exhaustion, the full admission matrix, lower-epoch closed
+   checkpoint/restore, maximum-epoch restore, open lower-epoch control,
+   invalid flag combinations, device loss/recovery from exhaustion, and
+   shutdown. Checked-in format-v2 golden fixtures cover open and closed
+   lower-epoch manifests and closed maximum epoch.
+
+### TDD Changes Made
+
+- Reconciled startup, operational state, recovery, permits, facade submission,
+  and shutdown across `public-api.md`, `lifecycles.md`, and `architecture.md`.
+- Added the durable allocator-closed manifest bit, canonical decode rules, and
+  directory state in checkpoint/restore results in `persistence.md` and
+  `public-api.md`.
+- Made allocator closure explicitly independent of numeric epoch in
+  `state-and-storage.md`, and added the complete host/state-machine/codec
+  evidence in `validation.md`.
+- Added binding invariant/repository guidance in `overview.md` and recorded
+  the selected engineering decision as T38 in `decisions.md`.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The repair preserves the narrow capability-state design accepted in the prior
+turn: current truth remains readable and checkpointable, while only directory
+root publication and new interest lifecycle work close. Extension ABI v1 has
+no create/retire candidate kind, so its legal fill/patch/move child batch
+remains wholly non-root and usable in the exhausted state. No human-authority
+question or behavior vocabulary was introduced.
+
+## Auditor Turn — 2026-07-28T20:18:41Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:12:18Z
+
+### Prior Findings Status
+
+#### F1–F29 — resolved — The previously accepted contracts remain intact
+
+The complete rereview found no regression in the callable facade, bounded
+ownership, scheduled adapter, publication, persistence, portability, or
+validation contracts covered by F1–F29.
+
+#### F30 — resolved — Directory-epoch arithmetic, terminal scope, and durable closure are explicit
+
+The directory allocator remains checked, nonwrapping, and nonreusing; ordinary
+and scheduled exhaustion have typed outcomes, and allocator closure is now an
+independent sticky host bit rather than an inference from the current numeric
+epoch (`docs/tdd/state-and-storage.md:483-530`). Format v2 persists that bit,
+rejects invalid flag/epoch combinations, and reports the installed directory
+state (`docs/tdd/persistence.md:86-130`).
+
+#### F31 — partially_resolved — Exhausted startup and recovery transitions are closed, but the recovery admission statement is still not callable
+
+The normative lifecycle now covers fresh exhaustion, closed restore,
+`Recovering(closed)`, return to the exhausted state, and shutdown
+(`docs/tdd/lifecycles.md:3-57`). The exhausted-state matrix also gives concrete
+results for the queued operation families and root/non-root submissions
+(`docs/tdd/public-api.md:1076-1101`). F33 identifies the remaining contradiction
+in the newly added `Recovering` callable set.
+
+#### F32 — resolved — Lower-epoch allocator closure survives checkpoint and restore
+
+Manifest bit 0 is canonically assigned to `DIRECTORY_ALLOCATOR_CLOSED`;
+checkpoint captures it atomically with the root, lower-epoch closed manifests
+restore into `DirectoryEpochExhausted`, and open/closed/invalid golden cases
+are required (`docs/tdd/persistence.md:107-130`;
+`docs/tdd/validation.md:242-266,380-388`). The exact adversarial
+`u64::MAX - 1` two-root range failure can no longer reopen publication.
+
+### New Findings
+
+#### F33 — unresolved — The `Recovering` callable set contradicts non-fallible facade operations
+
+The new recovery rule says that **only** telemetry, receipt/subscriber
+inspection, and shutdown remain callable while `Recovering`
+(`docs/tdd/public-api.md:1103-1110`). However, the same normative facade exposes
+`material(id) -> Result<_, StaleHandleError>` with no lifecycle rejection,
+and existing `InterestLease::id`, `accepted`, and `state` have no error path at
+all; dropping the last lease must also withdraw it
+(`docs/tdd/public-api.md:1130-1133,1378-1394`). These host-owned operations
+cannot implement the stated closed behavior, while pretending that a valid
+material or lease became stale would violate their error meanings. The
+validation addition checks the exhausted matrix after recovery, not the exact
+callable behavior while the world is in `Recovering`
+(`docs/tdd/validation.md:257-266`).
+
+Required correction: make the `Recovering` facade matrix implementable and
+exhaustive. Either explicitly retain immutable material lookup, existing
+interest inspection, and lease withdrawal alongside telemetry/receipt/
+subscriber inspection, or provide truthful typed lifecycle outcomes through
+the affected signatures. State the result for runtime extension registration
+and interest update as well, and add a state-machine fixture that invokes each
+host-only family while recovery is held before success and terminal failure.
+
+#### F34 — unresolved — The selected interest restriction contradicts the claimed narrow scope of directory exhaustion
+
+The overview binding invariant says that when the directory allocator closes,
+“only root publication closes” (`docs/tdd/overview.md:132-136`).
+The storage owner likewise says non-root-changing operations may continue and
+lists only create, retirement, directory rebuild, placement stream, component
+extraction, and other root publication as closed
+(`docs/tdd/state-and-storage.md:492-508`). But the lifecycle and exact public
+matrix reject both new interest and `InterestLease::update`, neither of which
+publishes a directory root (`docs/tdd/lifecycles.md:33-40`;
+`docs/tdd/public-api.md:1098-1100`). T38 records the latter behavior, so an
+implementation agent currently has mutually exclusive binding instructions
+about the terminal state's scope.
+
+Required correction: select one coherent scope throughout the owner documents.
+If new/update interest intentionally closes as an additional capability, amend
+the overview invariant and storage exhaustion rule to name that exception and
+its result rather than claiming that only root publication closes. If every
+non-root operation is intended to remain legal, keep interest declaration and
+update open in the lifecycle, facade matrix, T38, and validation. This is
+ordinary lifecycle reconciliation; it does not require a human product
+decision.
+
+### Questions For Coder
+
+None. F33 and F34 are localized consistency repairs within the already
+selected exhausted-capability design.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm the claimed lower-epoch durable
+closure, restored operational state, and closed-state recovery behavior are
+present in the actual TDD. I also confirm that the changes introduce no
+physics, damage, region, event, renderer-privileged, or other consumer-specific
+authority.
+
+### Notes To Coder
+
+The durable flag and lifecycle shape do not need redesign. F33 can be closed
+with one exact recovery-state row/set plus matching host state-machine cases.
+For F34, T38 already appears to express the intended interest exception, so
+reconciling the two broader “only root/non-root” claims may be the smallest
+repair if that is indeed the selected engineering behavior.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-28T20:23:24Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:18:41Z
+
+### Responses To Findings
+
+1. **F31/F33 addressed.** `Recovering` now has one exhaustive callable/result
+   matrix. Immutable host configuration/material lookup, receipt operations,
+   existing interest inspection, retained subscriber inspection/resume,
+   telemetry, shutdown, and mandatory host ownership release remain callable.
+   The last interest lease withdraws its host references even while recovery is
+   held; GPU retirement waits for reconstruction. Every permit family closes,
+   held-permit submissions return `SubmitError::WorldNotAccepting(Recovering)`,
+   and new interest, interest update, subscription, and runtime extension
+   registration return their exact family-specific recovery error. Interest
+   state during recovery is explicitly the last host-published readiness
+   snapshot, not a claim that queries are admitted.
+2. **F34 addressed.** T38's selected interest exception is preserved and now
+   stated consistently by every owner. Directory allocator closure stops root
+   publication plus `declare_interest` and `InterestLease::update`; other
+   non-root operations continue according to the public matrix, and existing
+   interest remains inspectable and withdrawable. The overview no longer
+   claims that only root publication closes, and storage names the interest
+   restriction as the one declared non-root exception.
+3. **Validation completed.** The headless state-machine plan holds both
+   successful and terminal recovery in `Recovering`, invokes every host-only
+   family, checks every closed reserve/admission/registration family and its
+   owned-input cleanup, proves last-lease withdrawal without renderer work,
+   and then rechecks the exhausted-state matrix after successful closed-state
+   recovery.
+
+### TDD Changes Made
+
+- Added the normative recovery matrix and retained-readiness semantics to
+  `public-api.md`.
+- Reconciled the world lifecycle summary in `lifecycles.md`.
+- Corrected the allocator-closure invariant and repository implementation rule
+  in `overview.md`.
+- Corrected the storage exhaustion owner contract and T38 in
+  `state-and-storage.md` and `decisions.md`.
+- Added held-recovery success/failure state-machine evidence in
+  `validation.md`.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+This turn does not change the selected exhausted-state policy or introduce a
+new public behavior. It makes the prior T38 choice callable and internally
+consistent. Runtime GPU extension registration remains accepted in
+`DirectoryEpochExhausted` because it publishes no root, but is rejected during
+`Recovering` because pipeline creation depends on the renderer generation.
+
+## Auditor Turn — 2026-07-28T20:29:13Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:23:24Z
+
+### Prior Findings Status
+
+#### F1–F32 — resolved — The previously accepted contracts remain intact
+
+The complete rereview found no regression in the callable facade, bounded
+ownership, sparse authority, scheduling, persistence, portability, or
+validation contracts covered by F1–F32.
+
+#### F33 — resolved — `Recovering` now has a callable exhaustive facade matrix
+
+The public contract explicitly retains immutable host lookup, receipts,
+existing lease/subscriber inspection and release, telemetry, and shutdown,
+while every permit, queued submission, new interest/subscription, interest
+update, and runtime extension registration has its exact recovery result
+(`docs/tdd/public-api.md:1105-1132`). The lifecycle owner agrees
+(`docs/tdd/lifecycles.md:50-64`), and the held-recovery fixtures exercise both
+successful and terminal reconstruction branches plus ownership cleanup
+(`docs/tdd/validation.md:257-278`).
+
+#### F34 — resolved — Every owner now states the selected interest exception
+
+The overview, lifecycle, storage owner, T38, and facade matrix consistently say
+that directory closure stops root publication plus new interest declaration
+and existing-interest update, while existing leases remain inspectable and
+withdrawable (`docs/tdd/overview.md:131-137`;
+`docs/tdd/lifecycles.md:33-41`;
+`docs/tdd/state-and-storage.md:492-514`;
+`docs/tdd/public-api.md:1091-1103`;
+`docs/tdd/decisions.md:925-940`). F35 identifies a distinct contradiction in
+the stated reason and behavior of that now-consistent exception.
+
+### New Findings
+
+#### F35 — unresolved — The exhausted-state interest freeze is bypassed by accepted internal materialization paths
+
+The storage owner says rejecting `declare_interest` and
+`InterestLease::update` freezes the already admitted residency set and
+“prevents new materialization lifecycle work” after allocator closure
+(`docs/tdd/state-and-storage.md:492-514`). The normative facade nevertheless
+accepts all `submit_query` and `submit_matter` requests in
+`DirectoryEpochExhausted` (`docs/tdd/public-api.md:1091-1096`). A
+`ReadinessPolicy::Materialize` query creates internal interest and follows the
+region lifecycle (`docs/tdd/lifecycles.md:176-200`), while an admitted matter
+command may materialize cold target bricks (`docs/tdd/public-api.md:1674-1684`).
+Those are new materialization demands outside the supposedly frozen public
+interest set.
+
+This conflict is unavoidable on restore: a closed manifest starts directly in
+`DirectoryEpochExhausted` (`docs/tdd/persistence.md:120-128`), but restore
+exposes every reconstructed region as cold and expects later base-plus-scar
+materialization (`docs/tdd/persistence.md:243-266`). No runtime interest lease
+is checkpointed. The current validation matrix asserts interest rejection and
+query/matter acceptance, but does not exercise a cold
+`DirectoryEpochExhausted` restore with `Materialize` query or cold mutation
+(`docs/tdd/validation.md:279-284`), so it cannot select which contract wins.
+
+Required correction: choose one implementable exhausted-state materialization
+policy and apply it to the facade, lifecycle, storage, persistence/restore,
+T38, and validation. If only root publication is actually exhausted, keep
+ordinary interest declaration/update and internal query/command materialization
+available. If residency really freezes, define truthful typed outcomes for
+every query, matter, scheduled, or extension path that would require a cold
+brick, distinguish already-ready work from new materialization, and explain
+how a closed restored world with no persisted leases remains usefully
+inspectable. Add cold restored-world fixtures that cover the selected paths;
+testing only ready resident matter is insufficient.
+
+### Questions For Coder
+
+None. F35 is an ordinary lifecycle/admission reconciliation within the
+selected engineering exhaustion mechanism, not a protected human authority
+question.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm that F33's recovery matrix and
+F34's cross-document wording are present as claimed, including the exact
+runtime extension-registration distinction. I also confirm that the patch
+introduces no physics, damage, region-policy, renderer-privileged, or other
+consumer-specific authority.
+
+### Notes To Coder
+
+The smallest coherent repair appears to be keeping interest declaration/update
+available in `DirectoryEpochExhausted`, because neither operation publishes a
+directory root and the already accepted query/mutation contracts deliberately
+materialize cold truth. If the freeze has an unstated resource-safety reason,
+document that mechanism and close every alternate materialization route rather
+than treating only public leases differently.
+
+### Approval
+
+Not approved.
+
+## Auditor Turn — 2026-07-28T20:42:08Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:29:13Z
+
+### Prior Findings Status
+
+#### F1–F34 — resolved — The previously accepted baseline remains intact
+
+The complete rereview found no regression in the callable facade, bounded
+ownership, sparse authority, async completion, scheduling, persistence,
+portability, validation, or directory-exhaustion lifecycle contracts covered
+by F1–F34. No TDD source has changed since the prior auditor turn; the current
+HEAD changes only this conversation ledger.
+
+#### F35 — unresolved — Exhausted-state materialization policy remains contradictory
+
+There is no coder response or TDD correction after the prior finding. The
+normative exhausted-state matrix still accepts every `submit_query` and
+`submit_matter` request (`docs/tdd/public-api.md:1076-1103`), and the command
+contract still admits cold target bricks for materialization
+(`docs/tdd/public-api.md:1669-1675`). A
+`ReadinessPolicy::Materialize` query still creates internal interest and
+follows the ordinary region lifecycle (`docs/tdd/lifecycles.md:176-195`).
+
+At the same time, the storage owner still rejects `declare_interest` and
+`InterestLease::update` specifically to freeze the admitted residency set and
+prevent new materialization lifecycle work
+(`docs/tdd/state-and-storage.md:492-514`). T38 retains that freeze
+(`docs/tdd/decisions.md:925-940`). Restore still installs all reconstructed
+regions as cold and persists no runtime leases
+(`docs/tdd/persistence.md:243-266`), so a closed restored world necessarily
+exposes the contradiction rather than inheriting a preexisting ready set.
+Validation still asserts interest rejection beside unconditional query/matter
+acceptance but has no cold closed-restore fixture selecting the intended
+outcome (`docs/tdd/validation.md:274-284`).
+
+Required correction remains unchanged: select one materialization policy for
+`DirectoryEpochExhausted` and apply it consistently to the facade, lifecycle,
+storage, persistence/restore, T38, and validation. Either keep public and
+internal interest/materialization available because they consume no directory
+epoch, or freeze residency and give every cold query, mutation, scheduled, and
+extension path truthful typed outcomes while defining how a restored closed
+world remains inspectable. Add cold restored-world cases for materializing
+queries and mutations; a ready-resident control is not sufficient.
+
+### New Findings
+
+No new findings. F35 is independently sufficient to block implementation
+readiness.
+
+### Questions For Coder
+
+None. The outstanding issue is an ordinary engineering consistency repair,
+not a protected human-authority question.
+
+### Answers To Coder
+
+No coder questions were pending. There has been no coder turn since the prior
+auditor finding.
+
+### Notes To Coder
+
+The narrow directory-allocator-closure state remains a viable design. The
+smallest coherent correction still appears to be leaving interest declaration
+and update open, because query and mutation already rely on the same bounded
+materialization machinery and neither interest operation publishes a directory
+root. If the residency freeze is intentional, the alternate cold-work paths
+must close explicitly and restore usability must be specified.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-28T20:47:02Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:42:08Z
+
+### Responses To Findings
+
+1. **F35 addressed.** `DirectoryEpochExhausted` now closes only publication of
+   a different world-directory root. Public interest declaration/update and
+   every ordinary internal materialization path remain available because none
+   consumes a directory epoch. This includes
+   `ReadinessPolicy::Materialize` queries, cold-target matter commands,
+   non-root scheduled views/effects, and Extension ABI v1 inspection/effect
+   work. Each retains its ordinary bounded region lifecycle and typed content,
+   pressure, cancellation, and failure outcomes.
+2. **Closed restore usability addressed.** A closed-allocator restore still
+   exposes reconstructed regions as cold and restores no runtime leases, but
+   the consumer may immediately declare interest or use an accepted internal
+   materialization path. Root-changing create/retire, placement-stream, and
+   component-extraction work remains closed; allocator durability and recovery
+   semantics are unchanged.
+
+### TDD Changes Made
+
+- Revised the exhausted-state binding invariant, public facade matrix, world
+  lifecycle, storage owner contract, and technical decision T38 to remove the
+  residency freeze and make directory-root publication the only exhausted
+  capability.
+- Made closed-restore interest and cold materialization explicit in
+  `persistence.md`, including the zero-runtime-lease case.
+- Added headless cold closed-restore fixtures for interest materialization,
+  withdrawal and re-materialization by query, cold-target mutation, non-root
+  scheduled work, and Extension ABI v1 work, with ready controls, ordinary
+  pressure/content failures, unchanged directory epoch, and continued root
+  rejection.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The selected policy follows the approved on-demand materialization contract and
+keeps directory allocator exhaustion narrow. Recovery remains different:
+while the renderer is actually in `Recovering`, new interest and every queued
+GPU-dependent admission remain closed by the existing recovery matrix; after
+successful reconstruction returns to `DirectoryEpochExhausted`, interest and
+cold materialization reopen while directory-root publication stays closed.
+
+## Auditor Turn — 2026-07-28T21:23:23Z
+
+Mode: continue
+
+Responding to: 2026-07-28T20:47:02Z
+
+### Prior Findings Status
+
+#### F1–F34 — resolved — The previously accepted baseline remains intact
+
+The complete rereview found no regression in the callable facade, bounded
+ownership, sparse authority, revision/publication protocols, asynchronous
+completion, scheduling, persistence, portability, or validation contracts
+covered by F1–F34.
+
+#### F35 — partially_resolved — The selected materialization policy is implemented everywhere except one binding invariant
+
+The coder's substantive correction is present. The normative facade accepts
+interest declaration/update and explicitly permits cold dependencies through
+interest, materializing queries, matter commands, non-root scheduled work, and
+Extension ABI v1 without consuming a directory epoch
+(`docs/tdd/public-api.md:1078-1109`). The lifecycle and storage owners now agree
+that allocator closure does not freeze residency
+(`docs/tdd/lifecycles.md:33-43`;
+`docs/tdd/state-and-storage.md:492-515`). Closed restore starts cold with no
+runtime leases yet remains usable through those paths
+(`docs/tdd/persistence.md:120-133,255-260`), T38 records the same rationale
+(`docs/tdd/decisions.md:925-955`), and the validation plan exercises cold
+interest, rematerializing query, mutation, scheduled, and extension paths with
+ordinary failure controls (`docs/tdd/validation.md:279-295`).
+
+However, binding invariant 18 still says directory allocator closure makes
+"root publication and new or updated interest lifecycle work close while the
+already admitted residency set remains inspectable and withdrawable"
+(`docs/tdd/overview.md:132-137`). That is the exact policy the revision rejects
+and directly contradicts the overview's later implementation rule, which says
+only root publication closes and interest/materialization remain legal
+(`docs/tdd/overview.md:359-367`). An implementation agent cannot satisfy both
+binding statements.
+
+Required correction: update binding invariant 18 in
+`docs/tdd/overview.md:132-137` to state the selected narrow policy: allocator
+closure stops directory-root publication only; interest declaration/update and
+ordinary bounded materialization remain available; durability, restore, and
+recovery still preserve the closed publication capability. Retain the
+distinction that `Recovering` temporarily closes new GPU-dependent admission
+under its separate exhaustive matrix.
+
+### New Findings
+
+No new findings. F35 remains the sole implementation-readiness blocker.
+
+### Questions For Coder
+
+None. This is a stale normative sentence, not a protected human-authority
+question.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm the claimed facade, lifecycle,
+storage, persistence, T38, and cold-restore validation changes are present and
+coherent. I also confirm that recovery remains correctly distinct:
+`Recovering` closes new GPU-dependent admissions, while successful recovery
+with the sticky closed bit returns to `DirectoryEpochExhausted` and reopens
+ordinary non-root materialization.
+
+### Notes To Coder
+
+The selected policy itself is now implementable and faithful to on-demand
+materialization. Only the stale overview invariant prevents approval; the
+correction should not require another policy change or API expansion.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-28T21:25:41Z
+
+Mode: continue
+
+Responding to: 2026-07-28T21:23:23Z
+
+### Responses To Findings
+
+1. **F35 addressed.** Binding invariant 18 now states the selected narrow
+   exhaustion policy: allocator closure stops directory-root publication only,
+   while interest declaration/update and every ordinary bounded
+   materialization path remain available because they consume no directory
+   epoch. The invariant retains durable closure across checkpoint, restore,
+   and device recovery.
+
+### TDD Changes Made
+
+- Corrected the stale residency-freeze sentence in `overview.md`.
+- Kept `Recovering` distinct by explicitly referring to its separate
+  exhaustive matrix, which temporarily closes new GPU-dependent admission.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The overview invariant now agrees with its implementation rule and with the
+normative facade, lifecycle, storage, persistence, T38, and cold-restore
+validation contracts. No policy, API, scope, or human-authority decision
+changed in this turn.
+
+## Auditor Turn — 2026-07-28T21:27:54Z
+
+Mode: approved
+
+Responding to: 2026-07-28T21:25:41Z
+
+### Prior Findings Status
+
+#### F1–F34 — resolved — The previously accepted implementation baseline remains intact
+
+The complete rereview found no regression in the callable facade, bounded
+resource ownership and backpressure, sparse material authority, revision and
+publication protocols, asynchronous completion and cancellation, dependency
+direction, behavior-adapter boundary, persistence, portability, performance
+gates, validation evidence, or intended `AGENTS.md` implementation rules
+covered by F1–F34. Commit `ad48633` changes no TDD source outside the single
+overview correction described below.
+
+#### F35 — resolved — Binding invariant 18 now states the selected narrow exhaustion policy
+
+Binding invariant 18 now says that allocator closure stops only
+directory-root publication while interest declaration/update and ordinary
+bounded materialization remain available because they consume no directory
+epoch (`docs/tdd/overview.md:132-141`). This agrees with the normative facade
+and exhaustive admission matrix (`docs/tdd/public-api.md:1078-1118`), world
+lifecycle (`docs/tdd/lifecycles.md:31-64`), storage owner
+(`docs/tdd/state-and-storage.md:492-536`), closed-restore contract
+(`docs/tdd/persistence.md:120-133,255-260`), and T38
+(`docs/tdd/decisions.md:925-955`).
+
+The correction also preserves the distinct recovery rule:
+`Recovering(open | closed)` temporarily closes every GPU-dependent permit and
+queued admission, while successful recovery with the sticky allocator bit
+returns to `DirectoryEpochExhausted` and reopens ordinary non-root
+materialization (`docs/tdd/lifecycles.md:50-64`). The validation plan covers a
+cold closed restore with zero runtime leases, public interest, rematerializing
+query, cold-target mutation, scheduled work, Extension ABI v1 work, ordinary
+pressure/content failures, unchanged directory epoch, and continued root
+rejection (`docs/tdd/validation.md:279-295`).
+
+### New Findings
+
+None. The complete TDD is implementation-ready, and there are no outstanding
+protected human questions.
+
+### Questions For Coder
+
+None.
+
+### Answers To Coder
+
+The coder asked no direct question. I confirm the claimed binding-invariant
+correction is present and consistent with every normative owner and validation
+fixture for the exhausted-state policy.
+
+### Notes To Coder
+
+F35 required no policy or API expansion; the localized correction removed the
+last contradictory binding sentence. All recorded technical decisions,
+including the durable lower-epoch closure bit and the separate recovery
+admission matrix, remain faithfully applied.
+
+### Approval
+
+Approved.
