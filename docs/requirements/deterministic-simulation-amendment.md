@@ -184,6 +184,25 @@ Undefined overflow, backend-selected precision, relaxed floating-point
 behavior, and implementation-defined conversions are forbidden in the
 authoritative path.
 
+Canonical orientation supports arbitrary three-dimensional rigid orientation.
+A restricted axis-aligned or discrete orientation set is not an acceptable
+substitute.
+
+The orientation type must be closed under its own composition and inverse
+operations. Composition, inversion, and canonical renormalization produce
+bit-identical canonical results on CPU and GPU. Repeated composition may not
+escape the canonical representation, accumulate backend-specific drift, or
+use a floating-point normalization step.
+
+Rotation matrices, floating-point quaternions, and other render- or
+query-facing forms are derived values. They are never stored back into
+canonical simulation state.
+
+The precision floor is tied to supported world scale: at the declared maximum
+volume radius, one orientation quantization step must move a voxel by less than
+one cell. The fresh TDD selects the representation and proves that bound rather
+than choosing an arbitrary bit count without a spatial error argument.
+
 ### 3. Local replay determinism
 
 For a fixed qualified implementation and backend, identical genesis bytes and
@@ -211,6 +230,22 @@ Moria claims as qualified.
 Backend qualification is fail-closed. A backend that has not passed the
 cross-GPU conformance fixture is unqualified for deterministic authority even
 if it renders correctly or passes local replay tests.
+
+Qualification is recorded per `(GPU vendor, driver version, backend)` tuple.
+A driver-version change creates a new unqualified tuple and requires the
+conformance fixture to run again.
+
+The initial Vulkan qualification should include two GPU vendors when suitable
+hardware is available. Repeating the fixture on two machines with the same
+vendor and backend is useful repeatability evidence but does not substitute for
+cross-vendor evidence.
+
+The cross-vendor fixture is a permanent gate in the GPU-capable qualification
+pipeline for every change to authoritative transition-path kernels or their
+canonical encodings. It is not a one-time launch test. Public hosted CI without
+the required GPUs may validate non-hardware contracts, but it cannot claim this
+gate passed; authoritative qualification evidence comes from the declared
+hardware tuples.
 
 The canonical guarantee does not require identical:
 
@@ -282,9 +317,28 @@ to its declared strategy.
 Reclamation may not reuse or discard storage, identities, versions, or
 allocator state reachable by the retained rollback window or an active replay.
 
-The final product design must state a measurable restore budget and reference
-workload. The unresolved measurement is recorded below and must be resolved
-before product-design approval.
+Performance qualification measures the complete player-visible correction:
+restore the selected retained tick and replay through the corrected present.
+Restoration alone is not an acceptable substitute metric.
+
+The reference workload is adversarial rather than typical. It is a bounded
+constraint-chain scenario equivalent to a multi-player grapple island: several
+independently controlled dynamic volumes and external behavior participants
+form one interacting constraint graph while canonical matter changes at a
+declared dirty-brick rate per tick. This is a qualification fixture, not
+gameplay functionality added to Moria. The product design must require the
+workload shape; the fresh TDD must state its exact population, volume scale,
+dirty-brick rate, participant strategies, rollback depths, and hardware
+profiles.
+
+Twenty ticks restored and replayed through the corrected present within one
+simulation-frame interval is a performance qualification threshold, not a
+universal design constant or correctness threshold. The harness reports the
+measured curve of maximum replay ticks completed per frame budget for each
+hardware class. A machine that preserves deterministic correctness but
+achieves only 12 ticks does not qualify for the 20-tick performance tier; its
+reported capability permits the netcode layer above Moria to clamp rollback
+depth and add input delay. Moria must not silently claim the higher tier.
 
 ### 7. Incremental hierarchical hashing
 
@@ -507,12 +561,16 @@ following outcomes. The fresh TDD chooses precise fixtures and mechanisms.
 
 - One retained fixture runs identical canonical inputs on every claimed
   qualified backend.
+- Evidence names the GPU vendor, device, driver version, backend, canonical
+  contract version, and fixture digest.
 - Canonical state hashes are compared byte-for-byte at every tick.
 - The observer compares retained output bytes rather than trusting a
   self-reported boolean.
 - A backend or driver combination with divergent hashes is reported
   unqualified; the result is not averaged or softened into a performance
   warning.
+- A transition-path kernel or canonical-encoding change invalidates prior
+  evidence until the permanent GPU-capable conformance gate reruns.
 
 ### Simulation and presentation isolation
 
@@ -555,6 +613,8 @@ The audit includes:
 
 - public mutation and publication paths;
 - placement and coordinate transforms;
+- canonical orientation composition, inversion, normalization, quantization,
+  and CPU/GPU conversion boundaries;
 - GPU page/hash-table mutation;
 - allocation and identity assignment;
 - compaction, append, scan, sort, and reduction kernels;
@@ -602,11 +662,16 @@ The spike must exercise:
 Identical fixture bytes must run on actual Metal and Vulkan hardware. DX12 must
 pass before Windows/DX12 is claimed as a qualified deterministic backend.
 Additional vendors and drivers join the same fixture as they are claimed.
+Each result identifies the complete `(GPU vendor, device, driver version,
+backend)` qualification tuple. The initial Vulkan evidence should include two
+vendors when suitable hardware is available.
 
 Rung 0b proves feasibility of the architectural primitives; it cannot prove a
 whole engine that has not yet been implemented. The regenerated TDD must
 require the final production implementation to pass the complete cross-vendor
-conformance suite before deterministic backend qualification.
+conformance suite before deterministic backend qualification and to rerun that
+suite in GPU-capable qualification CI whenever authoritative transition
+kernels or canonical encodings change.
 
 A divergent canonical byte or hash fails the rung. Performance is recorded
 separately and cannot convert a correctness divergence into a pass.
@@ -658,44 +723,52 @@ This amendment does not add:
 - an unbounded rollback history; or
 - a guarantee for a backend that has not passed conformance.
 
-## Open human decisions
+## Resolved calls requiring technical parameterization
 
-These questions must be resolved during product-design review. They are not
-permission for the drafter to weaken the requirements.
+The governing product decisions are resolved. The fresh TDD still has to
+select and prove concrete parameters; this is technical design, not permission
+to revisit the outcomes.
 
-### OD-001. Rollback restore budget
+### TP-001. Rollback workload parameters
 
-The rollback window has a fixed minimum of 20 confirmed ticks, and restore may
-not traverse or copy the whole world. The exact wall-time budget and reference
-workload remain to be selected.
+The qualification threshold is restore plus replay of 20 ticks through the
+corrected present within one simulation-frame interval on the declared
+adversarial constraint-chain workload.
 
-The design must propose a measurable workload including at least:
+The fresh TDD must select and justify:
 
-- total resident voxel/brick scale;
-- number and distribution of dirty bricks per tick;
-- number and strategy of rollback participants;
-- rollback depth;
-- target hardware class; and
-- whether replay work after root restoration is measured separately.
+- total resident voxel and brick scale;
+- participant and dynamic-volume population;
+- the declared per-tick dirty-brick rate and distribution;
+- the mix of per-tick-snapshot and reconstructible participants;
+- simulation-frame interval;
+- reference hardware classes; and
+- the measured curve format reported to the consuming netcode layer.
 
-The human must approve the final threshold. Platform-specific performance
-results may be reported independently; canonical correctness is not
-platform-relative.
+The retained 20-tick window and deterministic replay correctness are universal.
+Failure to meet the 20-tick timing threshold means the hardware does not
+qualify for that performance tier; it does not redefine canonical correctness.
 
-### OD-002. Initial conformance hardware matrix
+### TP-002. Initial conformance tuples
 
 Metal and Vulkan are required for rung 0b because those hosts are presently
-available. Windows/DX12 cannot be called qualified until it passes the same
-fixture. Product-design review must identify the initial vendor/device/driver
-matrix used for the first public deterministic-backend qualification.
+available. Windows/DX12 remains present but unqualified until it passes.
 
-### OD-003. Canonical orientation envelope
+The qualification runner records exact vendor, device, driver, and backend.
+The initial Vulkan set should contain two vendors when suitable hardware is
+available. The fresh TDD defines how qualification evidence is retained,
+invalidated, and rerun after driver or transition-kernel changes.
 
-The product requires canonical fixed-point/integer placement orientation, but
-the supported orientation range and precision must be sufficient for
-volume-general dynamic bodies. The product design must state the required
-consumer outcome and error behavior; the fresh TDD selects and proves the
-encoding.
+### TP-003. Canonical orientation representation
+
+Arbitrary three-dimensional orientation is binding. The representation must be
+closed under canonical composition and inverse with identical integer/fixed-
+point normalization on CPU and GPU.
+
+The fresh TDD selects the encoding, range, and exact arithmetic. It must prove
+that one quantization step moves a voxel by less than one cell at the maximum
+supported volume radius and that derived floating-point forms never feed back
+into canonical state.
 
 ## Rung 0a audit appendix
 
