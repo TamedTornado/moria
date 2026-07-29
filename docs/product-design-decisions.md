@@ -31,6 +31,157 @@ observation escaped.
 coordination, rollback, and other mechanisms that provide atomicity remain
 technical-design concerns.
 
+### D-002. Mandatory canonical tick authority
+
+**Status:** Resolved in the deterministic-simulation amendment supplied by the
+human operator.
+
+**Decision:** Deterministic tick authority is mandatory for every Moria world.
+World construction and verified content installation establish a canonical
+genesis state. After genesis, every operation capable of changing canonical
+state belongs to exactly one numbered tick and enters through one versioned,
+canonically ordered tick batch. There is no nondeterministic convenience
+mutation path.
+
+**Boundary retained:** This is simulation authority, not a game loop or
+networking protocol. Consumers decide how ticks are paced and how input reaches
+Moria. Technical design selects the encoding and transition mechanisms.
+
+### D-003. Canonical simulation representation
+
+**Status:** Resolved in the deterministic-simulation amendment supplied by the
+human operator.
+
+**Decision:** Canonical transitions use integer or exactly specified
+fixed-point semantics. Canonical results may not depend on floating-point
+variation, races, iteration order, worker identity, completion timing, or
+unspecified arithmetic behavior. Canonical placement supports arbitrary
+three-dimensional rigid orientation through a representation closed under
+canonical composition and inverse. Its precision must keep one orientation
+quantization step below one cell of displacement at the maximum supported
+volume radius.
+
+**Boundary retained:** Widths, scales, encodings, overflow rules, coordinate
+mechanisms, and the orientation representation are technical-design choices
+that must satisfy these product semantics.
+
+### D-004. Local replay and cross-GPU determinism
+
+**Status:** Resolved in the deterministic-simulation amendment supplied by the
+human operator.
+
+**Decision:** Identical canonical genesis bytes and ordered tick-batch bytes
+produce identical canonical results and per-tick hashes within one qualified
+backend and across every GPU vendor, driver, and backend tuple Moria claims as
+qualified. Local replay determinism and cross-GPU determinism are separate
+named invariants. Qualification is fail-closed and driver-version specific.
+
+**Boundary retained:** Rendered pixels and derived presentation need not be
+deterministic. Unqualified backends may not claim deterministic authority even
+if they render or pass local replay tests.
+
+### D-005. Bounded rollback and performance qualification
+
+**Status:** Resolved in the deterministic-simulation amendment supplied by the
+human operator.
+
+**Decision:** Moria retains a configurable rollback window with a universal
+minimum capacity of 20 confirmed ticks. A retained snapshot shares unchanged
+world state and restore installs a retained canonical frontier without copying
+or traversing the whole voxel world. Performance qualification measures the
+complete restore-and-replay correction on a declared adversarial
+constraint-chain workload. Completing 20 ticks within the declared
+simulation-frame interval earns that performance tier; slower correct hardware
+reports its lower measured capability rather than failing deterministic
+correctness or claiming the tier.
+
+**Boundary retained:** Workload population, dirty rate, frame interval,
+hardware classes, retained-state mechanisms, and measured-curve format are
+technical-design parameters. The constraint chain is a qualification workload,
+not Moria gameplay.
+
+### D-006. Incremental hashes and public replay
+
+**Status:** Resolved in the deterministic-simulation amendment supplied by the
+human operator.
+
+**Decision:** Every confirmed tick has a canonical simulation hash covering
+all state capable of changing a future canonical result, including coordinated
+participant commitments. Hash maintenance is incremental with work following
+changed state rather than whole-world traversal. Canonical genesis plus the
+complete ordered input log reproduces the canonical hash sequence. Replay and
+an earliest-divergence artifact are public debugging and validation
+capabilities, not test-only helpers.
+
+**Boundary retained:** Hash algorithm, hierarchy representation, replay storage
+format, and diagnostic transport remain technical-design choices. Their
+domains and contract versions must be explicit.
+
+### D-007. Derived-cache freedom and deterministic collision
+
+**Status:** Resolved in the deterministic-simulation amendment supplied by the
+human operator.
+
+**Decision:** Presentation and other derived caches are outside the canonical
+determinism boundary and cannot influence simulation. Collision facts used by
+deterministic behavior are a pure, tick-synchronous derivation of canonical
+matter and placement. A conforming GPU participant may consume canonical
+occupancy/collision inputs without mandatory CPU readback; a CPU participant
+may consume a canonical collider artifact bound to its source hash.
+
+**Boundary retained:** Moria does not prescribe a physics engine, collision
+algorithm, renderer, or cache technique. Readiness timing never chooses whether
+canonical collision exists.
+
+### D-008. Coordinated participant rollback
+
+**Status:** Resolved in the deterministic-simulation amendment supplied by the
+human operator.
+
+**Decision:** Every external behavior participant capable of affecting
+canonical state registers one explicit rollback strategy:
+`PerTickSnapshot` or `ReconstructibleFromCanonicalStateAndLog`. It contributes
+to the coordinated canonical commitment and restores at the same frontier.
+There is no default strategy and divergence cannot be accepted silently.
+
+**Boundary retained:** Participants continue to own their vocabulary, state,
+algorithms, and effects. Moria coordinates identity, scheduling, commitments,
+bounded restoration, and failure without acquiring physics, damage, or
+gameplay policy.
+
+### D-009. Canonical simulation-domain lifecycle
+
+**Status:** Resolved in the deterministic-simulation amendment supplied by the
+human operator.
+
+**Decision:** Simulation-domain activation and deactivation are canonical,
+tick-stamped state, distinct from local render, inspection, or materialization
+interest. Activation binds exact content identity and fails closed when that
+content is absent or mismatched. Overlapping consumer-defined activity regions
+resolve to one deterministic union.
+
+**Boundary retained:** Consumers define what activity and any coarse simulation
+mean. Moria transports and coordinates that state without defining gameplay.
+Technical design may initially require session-scale simulation residency.
+
+### D-010. Determinism feasibility gates
+
+**Status:** Resolved in the deterministic-simulation amendment supplied by the
+human operator.
+
+**Decision:** The fresh technical design is generated from zero. After its
+first simplicity revision, a complete transition-path audit must classify and
+resolve float-tainted, order-tainted, and unknown authoritative operations.
+Before the planning package is resealed, a representative cross-vendor spike
+must prove the proposed canonical discipline on actual Metal and Vulkan
+hardware; DX12 remains unqualified until it independently passes. Production
+backend qualification requires the complete conformance suite.
+
+**Boundary retained:** The audit evaluates proposals selected by the fresh
+technical design; it does not select product mechanisms in advance. Separate
+netcode feasibility rungs add no Moria scope and do not gate approval of this
+product design.
+
 ## Open human questions
 
 None.
@@ -68,3 +219,28 @@ of Moria's voxel storage.
 None at product-design altitude. The mechanisms and measured thresholds for an
 efficient GPU-oriented extension path remain technical-design and validation
 choices.
+
+---
+
+## Deterministic-simulation amendment entry
+
+### Recorded human direction
+
+The human-supplied amendment requires Moria to serve as authoritative
+voxel-world state inside deterministic simulations with rollback, replay, and
+cross-machine desync detection. It explicitly preserves GPU-resident authority
+and external ownership of physics, damage, generation, networking, and gameplay
+policy.
+
+### Decision and clarification
+
+Decisions D-002 through D-010 preserve the amendment's settled product calls.
+The design must integrate them throughout mutation, lifecycle, collision,
+persistence, behavior-extension, failure, validation, and performance
+experience. Technical parameters TP-001 through TP-003 remain for the fresh
+technical design to select and prove; they are not open product-boundary
+questions.
+
+### Unresolved question
+
+None at product-design altitude.
