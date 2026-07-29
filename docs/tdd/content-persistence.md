@@ -799,12 +799,16 @@ duplicate pairs. The diagnostic records above are closed and not storage
 handles; unknown logical-key tags are rejected.
 
 `moria-replay-v1` is an appendable sequence. Its sequence-zero header has one
-closed anchor tag:
+closed replay identity and one closed anchor tag:
 
 ```text
+ReplayIdentityV1 {
+  authority_status: u8,
+  configuration_fingerprint: [u8; 32],
+}
 header {
   common: genesis identity/digest, contract digests, participant descriptors,
-          configuration fingerprint, placement format, execution identity,
+          replay_identity: ReplayIdentityV1, placement format,
           starting frontier { world, position, root_hash }, next tick
   anchor:
     Genesis { canonical genesis bytes/digest }
@@ -823,6 +827,32 @@ correction branch record {
   exact length-prefixed tick records for target+1..=corrected-through
 }
 ```
+
+`ReplayIdentityV1` is exactly 33 bytes with no length prefix or padding.
+`authority_status` is `0 = ReplayGrade` or `1 = DiagnosticCandidate`; every
+other value is invalid. `configuration_fingerprint` is the exact TECH-009
+digest from the frozen builder. Its identity digest, where a digest is needed,
+is `BLAKE3("moria/replay-identity-v1" || authority_status:u8 ||
+configuration_fingerprint:[u8;32])`.
+
+Genesis writes the status of the frontier it will publish. Checkpoint restore
+writes the verified checkpoint status, which v1 requires to be
+`ReplayGrade`; public replay requires the source identity's status to equal
+the private builder's selected status. Before any canonical transition,
+participant callback, device submission, or destination-sink invocation,
+restore and public replay compare the two identity fields exactly and compare
+the already listed contract/participant/placement fields by their canonical
+v1 encodings. Any mismatch is `ContractMismatch`.
+
+Adapter, device, backend, driver, process, worker, and diagnostic fault-plan
+context do not occur in the header, any record digest, the active-history
+digest, or `durable_prefix_digest`, and are never replay compatibility inputs.
+They remain noncomparison fields of `ExecutionSummary` in telemetry and
+divergence evidence. Changing only `ExecutionSummary.adapter_context` cannot
+change sequence-zero bytes or reject restore/replay. Changing placement,
+arithmetic/table data, or any other canonical configuration input changes the
+configuration fingerprint and must reject before transition as
+`ContractMismatch`.
 
 The physical stream is append-only, while its active history is the unique
 semantic projection obtained by folding records in sequence order. A

@@ -343,11 +343,26 @@ impl QuatQ14 {
 
 `QuatQ14` has no public field or unchecked constructor; its methods apply the
 normalization, composition, sign, shell, and inverse rules above.
-`try_from_axis_turn` normalizes the distinct placement vector with TECH-071,
-evaluates the half-angle through TECH-071's canonical sine/cosine, constructs
-the raw quaternion, then applies the same registration normalization. This is
-the only trigonometric path into canonical orientation; consumers may instead
-provide already quantized components through `try_from_components`.
+`try_from_axis_turn` first validates and normalizes the distinct placement
+vector with TECH-071's exact axis procedure below. A zero vector returns
+`CanonicalFailure::ZeroAxis`; any failure of a checked axis intermediate or
+its Q1.30 result returns `CanonicalFailure::UnrepresentableAxis`, never a
+partially constructed orientation. The method performs this axis validation
+even when the requested angle is zero.
+
+The axis-angle half-angle is the unsigned integer
+`TurnQ32::from_raw(angle.get() >> 1)`: this is floor division of the canonical
+word by two, discards the low bit, and does not sign-extend or choose another
+representative modulo one turn. Consequently an exact full turn has the same
+wire word as zero and constructs the same identity orientation; the maximum
+word `0xffff_ffff` uses half-angle `0x7fff_ffff`. The method evaluates that
+half-angle through TECH-071's canonical sine/cosine, multiplies each normalized
+Q1.30 axis component by the Q1.30 sine with one checked `i64` product and one
+ties-to-even reduction by `2^30`, uses the Q1.30 cosine as `w`, and applies the
+same exact four-component registration normalization above directly to those
+signed intermediates. It does not narrow them to `i16` first. This is the only
+trigonometric path into canonical orientation; consumers may instead provide
+already quantized components through `try_from_components`.
 `WorldAabbQ` is half-open. Facade admission validates its public coordinate
 fields and every `PlacementQ` use, so constructing an aggregate record cannot
 bypass domain, range, or AABB rules.
@@ -394,8 +409,25 @@ add, compare, shift, and division with reviewed two-word `u32` helpers; native
 shader `i64` is not a baseline dependency.
 
 Canonical trigonometry accepts `TurnQ32`, where `0` is zero turns and `u32`
-wrap is one full turn, and returns a signed Q1.30 sine/cosine pair. It performs
-quadrant reduction followed by exactly 32 rotation-mode CORDIC iterations.
+wrap is one full turn, and returns `(sin, cos)` as two signed Q1.30 `i32`
+words. The following integer recurrence is normative; generated Rust/WGSL may
+implement it but may not define or alter it.
+
+Let `a = angle.get()` widened to `u64`, and let one full turn in the internal
+signed angle domain be `2^62`. Reduction chooses the nearest quadrant center:
+
+```text
+q_unwrapped = (a + 0x2000_0000) >> 30       // 0..=4
+q           = q_unwrapped & 3               // 0,1,2,3
+r32         = i64(a) - i64(q_unwrapped << 30)
+z0          = r32 << 30                     // 2^62 units per turn
+```
+
+Thus `r32` is in `[-2^29, 2^29-1]`. An exact midpoint between two quadrant
+centers belongs to the center with the greater unwrapped index and therefore
+has residual `-2^29`; this also specifies the wrap midpoint near one turn.
+Exact quadrant-center inputs have zero residual.
+
 The signed Q2.61 gain-inverse and arctangent-in-turns table contain entries
 `round_ties_even(K^-1 * 2^61)`, where
 `K = product(i=0..31, sqrt(1 + 2^(-2i)))`, and
@@ -404,10 +436,57 @@ generated once by the repository's arbitrary-precision fixture generator,
 checked in as canonical source data, hashed into the arithmetic contract, and
 emitted into both Rust and WGSL; runtime libm, shader transcendental
 instructions, fused operations, or driver-provided approximations are
-forbidden. Each CORDIC update uses the displayed iteration order in the
-generated source, checked `i64` intermediates, arithmetic floor shifts, and
-one final ties-to-even reduction. Axis-angle orientation uses the half-turn
-input, these exact sine/cosine bytes, and TECH-007 normalization.
+forbidden.
+
+Initialize `x0 = gain_inverse_q61`, `y0 = 0`, and `z0` as above. For
+`i = 0..31` in increasing order, first snapshot `(xi, yi, zi)`, define
+`sx = floor_div(xi, 2^i)` and `sy = floor_div(yi, 2^i)`, and perform exactly
+one of these simultaneous checked-`i64` updates:
+
+```text
+if zi >= 0:                         // zero residual takes this branch
+    x(i+1) = xi - sy
+    y(i+1) = yi + sx
+    z(i+1) = zi - atan_table[i]
+else:
+    x(i+1) = xi + sy
+    y(i+1) = yi - sx
+    z(i+1) = zi + atan_table[i]
+```
+
+`floor_div(v, 2^i)` rounds toward negative infinity; a language or shader
+right-shift is usable only when proved to have exactly that result. Updates may
+not observe another field's new value from the same iteration. After iteration
+31, reduce `x32` and `y32` from Q2.61 to Q1.30 by one division by `2^31`,
+rounding nearest with ties to even. Call those retained words `(c, s)` and
+apply the exact checked quadrant remap:
+
+```text
+q = 0: (sin, cos) = ( s,  c)
+q = 1: (sin, cos) = ( c, -s)
+q = 2: (sin, cos) = (-s, -c)
+q = 3: (sin, cos) = (-c,  s)
+```
+
+No clamp, second normalization, early reduction, reassociation, or
+table-dependent branch is permitted.
+
+Axis normalization treats the three signed `i32` raw components as one exact
+integer vector, independent of the placement fractional split because a
+common scale cancels. It forms
+`N = abs(x)^2 + abs(y)^2 + abs(z)^2` with checked `u64` products and sums. For
+each magnitude `a`, it uses a 31-step binary search for the largest
+`q in 0..=2^30` satisfying `q*q*N <= a*a*2^60`, compares the adjacent
+candidates by comparing `4*a*a*2^60` with `(2*q+1)*(2*q+1)*N`, chooses `q`
+when the left side is smaller, `q+1` when it is greater, and the even one on
+equality (`q == 2^30` cannot increment), then restores the sign. All
+comparison products use checked `u128` (reviewed four-word `u32` helpers in
+WGSL).
+`N == 0` is `ZeroAxis`; any overflow, impossible comparison, or result outside
+signed Q1.30 is `UnrepresentableAxis`. Retained exhaustive range proofs show
+that every nonzero three-`i32` public axis is representable in v1; the latter
+tag remains the fail-closed outcome for decoder corruption or implementation
+contract violation.
 
 The public boundary exposes only the distinct raw canonical types from
 TECH-007. The internal generic type cannot be constructed with an unchecked

@@ -559,10 +559,10 @@ input, and is recorded in candidate evidence. Replay-grade configuration
 rejects nonempty diagnostics. This seam is diagnostic control, not a mutation
 bypass or a self-reported correctness result.
 
-There is no automatic CPU, alternate GPU, or relaxed-shader fallback in an
+There is no automatic CPU, alternate GPU, or relaxed-shader fallback in a
 replay-grade world. A canonical shader, encoding, math table, arithmetic,
 hashing, transition, placement format, or participant contract change creates
-a different configuration fingerprint and replay identity. A driver update
+a different configuration fingerprint and TECH-047 replay identity. A driver update
 does not require bookkeeping or requalification; it must still pass the same
 startup vectors and mandatory same-machine replay/contamination tests.
 Presentation-only changes do not affect the fingerprint unless they change

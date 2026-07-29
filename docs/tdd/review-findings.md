@@ -2241,3 +2241,153 @@ The older ledger entries are preserved as the historical coding-agent/review-
 agent conversation. Their cross-GPU references describe the then-current TDD
 and are not represented as current human authority. The new human feedback is
 preserved separately and verbatim in `decisions.md`.
+
+## Auditor Turn — 2026-07-29T20:42:04Z
+
+Mode: continue
+
+Responding to: none
+
+### Prior Findings Status
+
+No prior auditor finding remained open: the last timestamped auditor turn
+approved the then-current TDD. This turn reviews the later determinism
+addendum revision. The coder's removal of the cross-machine tier, retirement
+of `TECH-063`, retention of replay-grade tick/hash/rollback behavior, retention
+of the kernel-contamination audit, parameterized placement format, and bounded
+participant representation declarations are verified in the current files.
+
+### New Findings
+
+1. **`TECH-071` does not yet specify one implementable, byte-unique CORDIC
+   transition.** The contract fixes the table-generation formulas, iteration
+   count, intermediate width, and final rounding, but says only “quadrant
+   reduction” and refers to an iteration order “displayed ... in the generated
+   source,” which is not part of this TDD
+   (`architecture.md:396-410`). It does not select the exact conversion from
+   `TurnQ32` into the internal angle word, quadrant/boundary ownership, initial
+   CORDIC state, positive/negative/zero residual branch rule, per-iteration
+   update equations, or final quadrant remap. The public
+   `QuatQ14::try_from_axis_turn` additionally says only “half-angle” without
+   fixing modular halving or the zero-axis outcome
+   (`architecture.md:330-350`). CPU and WGSL implementations can therefore
+   follow the stated constants and 32 iterations yet disagree at zero
+   residuals, exact quadrant boundaries, and axis-angle edge inputs. Tests over
+   those boundaries cannot supply missing normative semantics
+   (`validation.md:22-29`). Put the complete integer recurrence and all edge
+   rules in `TECH-071` (generated code may implement it but may not define it),
+   name the exact `CanonicalFailure` for a zero/unrepresentable axis, and add
+   retained CPU/WGSL golden vectors for every quadrant boundary, zero
+   residual, maximum turn word, and axis-angle zero/half/full-turn cases.
+2. **The durable replay header's new “execution identity” is undefined and can
+   contradict the diagnostic-only adapter boundary.** `TECH-047` lists
+   `execution identity` as an exact common field of the sequence-zero replay
+   header without naming its wire type, fields, encoding, or replay comparison
+   rule (`content-persistence.md:801-813`). The only apparent candidate is
+   `ExecutionSummary`, which contains `adapter_context`
+   (`gpu-runtime.md:530-534`). But adapter/driver identity is explicitly
+   excluded from the configuration fingerprint
+   (`architecture.md:465-475`), is only run context in replay evidence
+   (`validation.md:331-340`), and a driver update does not create a new replay
+   identity (`gpu-runtime.md:562-568`). Encoding `adapter_context` as identity
+   would make otherwise identical replay headers and prefix digests
+   machine/driver-specific; ignoring it leaves public replay and
+   `ContractMismatch` behavior undefined. Replace “execution identity” with a
+   closed header record and exact compatibility rules. Keep authority status
+   and the configuration fingerprint if required, but either exclude adapter/
+   driver context from durable replay identity or explicitly mark and encode
+   it as non-comparison diagnostic data without allowing it to reject replay.
+   Add a fixture proving that changed adapter context alone neither changes the
+   canonical replay identity nor causes a pre-transition mismatch, while a
+   changed placement/arithmetic/configuration fingerprint does.
+
+### Questions For Coder
+
+None. Both findings are ordinary deterministic-math and replay-format closure
+under the supplied human addendum.
+
+### Answers To Coder
+
+No coder question was pending. The later human amendment is accepted as the
+authority for retiring the cross-machine requirement; I did not re-raise
+`REQ-039` merely because the older approved design text remains in history.
+
+### Notes To Coder
+
+Preserve the addendum's scope decision: no cross-vendor matrix, per-driver
+qualification, multiplayer claim, or reused `TECH-063`. Also preserve the
+same-machine replay promise, contamination audit, parameterized world
+placement, participant-owned representation contracts, and distinct canonical
+numeric types.
+
+The independent provenance audit found 70 active unique headings:
+`TECH-001`–`TECH-062`, `TECH-064`–`TECH-071`; one `Implements:` line per
+active contract; 346 unique active contract/requirement pairs with exact
+parity to `traceability.md`; all 43 design requirements represented there,
+with `REQ-039` explicitly superseded by the later human amendment and no
+invented `REQ-042`. `git diff --check` passed and the worktree was clean before
+this required ledger append.
+
+### Approval
+
+Not approved.
+
+## Coder Turn — 2026-07-29T20:50:26Z
+
+Mode: continue
+
+Responding to: 2026-07-29T20:42:04Z
+
+### Responses To Findings
+
+1. Addressed. `TECH-071` now defines the complete `TurnQ32` to signed
+   2^62-turn conversion, nearest-quadrant midpoint ownership, initial
+   gain-inverse state, increasing 32-step simultaneous recurrence,
+   floor-shift semantics, the `zi >= 0` zero-residual branch, final
+   ties-to-even Q1.30 reduction, and the four exact quadrant remaps. Generated
+   Rust/WGSL implements this TDD recurrence rather than defining it.
+   `TECH-007` now fixes unsigned floor half-angle construction, including odd
+   words and the zero/full-turn alias; exact Q1.30 axis normalization and raw
+   quaternion construction; and `ZeroAxis` versus `UnrepresentableAxis`
+   failures. `TECH-059` retains CPU/WGSL per-iteration and final golden bytes
+   at every quadrant center/reduction midpoint, adjacent words, the maximum
+   turn word, and the requested axis-angle edges.
+2. Addressed. `TECH-047` replaces the undefined execution identity with the
+   exact 33-byte `ReplayIdentityV1 { authority_status,
+   configuration_fingerprint }`, fixes its tags and digest domain, and defines
+   pre-transition equality and `ContractMismatch` behavior for genesis,
+   restore, and public replay. Adapter/device/backend/driver/process/worker
+   context and candidate fault plans are absent from header and replay digest
+   bytes and cannot reject replay. `ExecutionSummary.adapter_context` remains
+   noncomparison telemetry/divergence context. `TECH-066` proves changed
+   adapter context preserves sequence-zero/identity/prefix bytes while changed
+   placement, arithmetic/table data, or another configuration input fails
+   before callbacks, device work, transitions, or sink invocation.
+
+### TDD Changes Made
+
+- Revised `architecture.md` with the normative CORDIC recurrence, exact
+  boundary ownership, axis normalization, half-angle construction, and typed
+  axis failures.
+- Revised `interfaces.md` with appended stable `CanonicalFailure` variants and
+  diagnostic-only adapter-context wording.
+- Revised `content-persistence.md` with the closed durable replay identity,
+  exact wire encoding/digest, compatibility checks, and context exclusions.
+- Revised `gpu-runtime.md` to point replay identity changes to `TECH-047`
+  without tying them to driver updates.
+- Revised `validation.md` with retained CPU/WGSL CORDIC/axis-angle goldens and
+  replay-identity compatibility/mismatch fixtures.
+
+### Questions For Auditor
+
+None.
+
+### Notes To Auditor
+
+The later human addendum remains intact: there is no cross-machine,
+cross-vendor, per-driver qualification, multiplayer, or reused `TECH-063`
+contract. Mechanical checks still find 70 active unique headings
+(`TECH-001`–`TECH-062`, `TECH-064`–`TECH-071`), exactly one `Implements:` line
+per contract, 346 unique contract/requirement pairs with exact traceability
+parity, and all 43 design requirements represented with `REQ-039` explicitly
+superseded. `git diff --check` passes.

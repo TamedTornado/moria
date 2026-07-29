@@ -1865,9 +1865,10 @@ cursor unchanged. Delivery order and resnapshot timing cannot affect ticks.
 
 Implements: REQ-004, REQ-018, REQ-022
 
-`TelemetrySnapshot` reports configuration fingerprint; adapter and execution
-identity; world/region/presentation states; logical and physical residency;
-queue/pool current, capacity, and high-water marks; oldest operation age;
+`TelemetrySnapshot` reports configuration fingerprint, authority status, and
+adapter diagnostic context; world/region/presentation states; logical and
+physical residency; queue/pool current, capacity, and high-water marks; oldest
+operation age;
 tick/frontier/replay depth; changed leaves/hash nodes; observation gaps;
 checkpoint coverage; participant transfer/readback bytes; failures; and
 timings/histograms named in the design.
@@ -2173,6 +2174,8 @@ pub enum CanonicalFailure {
     ParticipantEffectInvalid,
     ParticipantFailed,
     InjectedCandidateFailure,
+    ZeroAxis,
+    UnrepresentableAxis,
 }
 
 pub enum AvailabilityCode {
@@ -2213,6 +2216,10 @@ pub type ParticipantError = OperationError;
 pub type RecoveryError = OperationError;
 pub type ShutdownError = OperationError;
 ```
+
+`ZeroAxis` and `UnrepresentableAxis` are appended stable wire tags; every
+existing `CanonicalFailure` variant keeps its prior tag. TECH-007/071 are the
+only producers of these two axis-specific failures.
 
 `ResourceBudgetField.field_code` is the stable closed ordinal of the named
 TECH-017 field within its `BudgetGroup`; decoding rejects any ordinal not

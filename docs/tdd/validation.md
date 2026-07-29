@@ -26,14 +26,26 @@ Required deterministic tests include:
   every quadrant and exact boundary class of `TurnQ32` plus generated samples
   across its full `u32` domain; the checked-in gain/arctangent table is
   regenerated at 256-bit precision and must byte-match the Rust/WGSL source
-  table;
+  table. Retained CPU and WGSL CORDIC golden vectors include raw turns
+  `0x0000_0000`, `0x2000_0000`, `0x4000_0000`, `0x6000_0000`,
+  `0x8000_0000`, `0xa000_0000`, `0xc000_0000`, `0xe000_0000`, and
+  `0xffff_ffff`, plus one word on both sides of every quadrant center and
+  reduction midpoint. They compare every iteration's `(x,y,z)` bytes as well
+  as final `(sin,cos)`, so midpoint ownership, zero-residual branching,
+  simultaneous updates, floor shifts, final rounding, and quadrant remap are
+  independently fixed;
 - orientation edges for exact square-root quaternion normalization (including
   `(1,1,0,0)`), composition/inverse, quantized-unit-shell membership,
   rational quaternion-vector rotation/transpose inverse and orthogonality,
   checked i64/i128 helper parity, and the maximum-radius displacement proof;
   generated accepted-quaternion cases assert the shell after every
   registration/composition and the retained proof checks all permitted
-  rounding branches;
+  rounding branches. Axis-angle goldens cover zero, positive/negative basis,
+  diagonal, `i32::MIN`, and maximum nonzero axes at zero, half, and full-turn
+  aliases, both odd half-angle truncation cases, and maximum turn word.
+  A zero axis returns `ZeroAxis` even at zero/full-turn identity; injected
+  checked-helper corruption returns `UnrepresentableAxis`, and CPU/WGSL wire
+  tags and quaternion bytes match;
 - generated edit state machines with create/retire/move/erase/place/patch,
   overlaps, stale preconditions, revision exhaustion, and failed atomic
   commands;
@@ -515,6 +527,16 @@ returns the earliest exact `DivergenceArtifact` without publishing a world.
 Fixtures cover record/sink count and byte backpressure, dropped/duplicate/
 late sink completion, absent/gapped/reordered records, cancellation before and
 after private submission, artifact-capacity rejection, and device loss.
+Replay-identity fixtures run the same frozen world with two distinct
+`ExecutionSummary.adapter_context` values and prove the sequence-zero header,
+`ReplayIdentityV1` digest, record digest, and durable-prefix digest are
+byte-identical; restore and public replay reach their first transition without
+`ContractMismatch`. Changing only the placement split, cell extent,
+simulation-unit ID, TECH-071 arithmetic/table digest, or another
+configuration-fingerprint input changes the identity digest and returns
+`ContractMismatch` before a participant callback, device submission, canonical
+transition, or destination-sink invocation. An invalid authority-status tag
+and a status mismatch fail at that same pre-transition boundary.
 Golden cases independently recompute
 `ReplayStreamPosition.durable_prefix_digest` from each ordered
 `(sequence, record_digest)` tuple after the header, after every copied record,
