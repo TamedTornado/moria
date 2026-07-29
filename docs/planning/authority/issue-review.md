@@ -436,3 +436,83 @@ requirement, technical contract, claim, decision, TDD, authority ledger,
 source manifest, or digest. Both findings were satisfied solely by correcting
 `docs/issues.json`; there is no upstream-authority conflict requiring human
 resolution.
+
+## Issue Review Turn — 2026-07-29T22:27:58Z
+
+**Verdict:** approved
+
+### Review basis
+
+Reviewed the original sources and reference inputs sealed by
+`docs/planning/authority/source-manifest.json`, the authority ledger and
+approved product-design decisions, all 43 `REQ-###` blocks in
+`docs/design-document.md`, the complete approved TDD and final TDD review
+ledger, `docs/tdd/traceability.md`, all 129 entries in `docs/issues.json`, and
+every preceding turn in this issue-review ledger. Every sealed source,
+reference input, approved design artifact, and authority-ledger SHA-256 digest
+matches the source manifest.
+
+Mechanical traversal found 70 active technical contracts
+(`TECH-001`–`TECH-062`, `TECH-064`–`TECH-071`), exactly one `Implements:` line
+per contract, 346 exact contract/requirement pairs with traceability parity,
+and no implementation of the retired `TECH-063` or superseded `REQ-039`.
+
+### Findings
+
+None.
+
+### Prior findings closure
+
+- `M-127` now independently proves the `TECH-060` private-correction
+  success/abort slice through the public correction integration path. Its
+  dependencies include `M-049`, `M-077`, and the `M-116` controlled headless
+  harness; its acceptance criteria cover durable-before-publication success,
+  expected-hash/participant/cancellation/sink aborts, byte-identical retained
+  authority on abort, exact failures, and resource release.
+- `M-128` now independently proves the `TECH-060` completion-bridge
+  reservation/exhaustion/duplicate/old-generation-drain slice through the
+  actual bounded-pool, publication, generation, recovery, facade, and
+  controlled-completion paths. Its dependencies and acceptance criteria name
+  the required `M-060`, `M-065`, `M-066`, `M-067`, `M-077`, and `M-116`
+  integration outputs and exact state/resource-release outcomes.
+- `M-124` names pinned maintained parsers in both Inputs and Acceptance
+  Criteria: `pulldown-cmark = "=0.13.4"` for complete CommonMark fenced-block
+  discovery and `syn = "=2.0.106"` for Rust AST parsing. It fails closed and
+  prohibits regex/manual fence scanning, home-grown parsers, and shared
+  general-purpose validation infrastructure.
+- `M-129` depends on `M-127` and `M-128`, enumerates both evidence rows, and
+  rejects absent, incomplete, skipped, or failing evidence. The earlier
+  `TECH-059` additions `M-113`–`M-115`, fixed-math tool selection in `M-079`,
+  and Naga constraints in `M-084`–`M-085` remain correctly closed.
+
+### Checks that passed
+
+- All 129 IDs are unique and sequential. Every dependency target exists,
+  precedes its consumer, and is neither a self-dependency nor part of a cycle.
+- Every active technical contract is covered. Issue slices are bounded by
+  their cited contracts, dependency ordered, independently testable, and have
+  explicit produced artifacts, integration inputs, failure behavior, and
+  exact acceptance criteria.
+- For every issue, the union of each cited contract's exact `Implements:` IDs
+  equals structured `provenance.design_requirements`; the union of those
+  requirements' exact `Authority:` IDs equals structured
+  `provenance.authority`. All IDs exist, no provenance member is duplicated,
+  and the structured contract/requirement/authority sets match the issue
+  Description and Inputs citations.
+- Artifact-local canonical, checkpoint, and replay parsers remain the
+  explicitly approved versioned formats. Standard WGSL, JSON, CommonMark,
+  Rust, arbitrary-precision, and property-test work names maintained Naga,
+  `serde_json`, `pulldown-cmark`, `syn`, `rug`, and `proptest` paths as
+  applicable; no issue authorizes a home-grown standard-format parser or
+  broad shared validator.
+- No issue adds a world generator, production content or assets, controls,
+  characters, authored routes, forest populations, game/physics/damage
+  policy, networking, ship/station delivery, cross-machine qualification,
+  universal hardware gate, or privileged consumer path. Scenarios and
+  evidence remain ordinary public-interface consumers.
+
+### Authority-boundary disposition
+
+No issue-manifest correction or upstream planning-package change is required.
+The current manifest is structurally sound, complete for the approved TDD,
+and contains no unauthorized work.
