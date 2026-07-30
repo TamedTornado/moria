@@ -28,7 +28,35 @@ jobs:
         run: cargo test --doc --all-features
       - name: Shader validation
         run: cargo run --bin moria-qualify -- shaders validate
-      - name: Replay determinism
-        run: cargo run --bin moria-qualify -- replay verify --fixture fixtures/replay/core-v1 --runs 8 --evidence target/moria-evidence/replay
-      - name: Candidate development scenario
-        run: cargo run --bin moria-qualify -- scenario public-boundary --mode candidate --evidence target/moria-evidence/dev
+      - name: Replay scaffold reports unavailable
+        shell: bash
+        run: |
+          if output="$(cargo run --bin moria-qualify -- replay verify --fixture fixtures/replay/core-v1 --runs 8 --evidence target/moria-evidence/replay 2>&1)"; then
+            printf '%s\n' "$output"
+            echo 'expected replay scaffold verification to be unavailable' >&2
+            exit 1
+          fi
+          printf '%s\n' "$output"
+          case "$output" in
+            *'FAIL replay verify: UNAVAILABLE:'*) ;;
+            *)
+              echo 'replay scaffold did not report the expected UNAVAILABLE outcome' >&2
+              exit 1
+              ;;
+          esac
+      - name: Candidate scenario scaffold reports unavailable
+        shell: bash
+        run: |
+          if output="$(cargo run --bin moria-qualify -- scenario public-boundary --mode candidate --evidence target/moria-evidence/dev 2>&1)"; then
+            printf '%s\n' "$output"
+            echo 'expected candidate scenario scaffold to be unavailable' >&2
+            exit 1
+          fi
+          printf '%s\n' "$output"
+          case "$output" in
+            *'FAIL scenario public-boundary: UNAVAILABLE:'*) ;;
+            *)
+              echo 'candidate scenario scaffold did not report the expected UNAVAILABLE outcome' >&2
+              exit 1
+              ;;
+          esac

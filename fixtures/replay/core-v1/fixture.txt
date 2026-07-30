@@ -1,0 +1,2 @@
+moria-replay-scaffold-v1
+fixture=empty-public-facade
