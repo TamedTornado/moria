@@ -1,8 +1,8 @@
-//! Convenient public imports for Moria consumers.
-//!
-//! This module intentionally exports only the public finite owner types.
+//! Public, noncanonical request and result owners.
 
-pub use crate::facade::{
+mod bounded;
+
+pub use bounded::{
     BoundedBytes, BoundedBytes64, BoundedOwnerError, BoundedPushRejected, BoundedUtf8, BoundedVec,
     BytesConstructionRejected, OwnedBytes, VecConstructionRejected,
 };
