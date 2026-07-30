@@ -1,8 +1,6 @@
-//! Convenient public imports for Moria consumers.
-//!
-//! This module remains small and re-exports the public facade owners.
+pub mod bounded;
 
-pub use crate::facade::{
+pub use bounded::{
     BoundedBytes, BoundedBytes64, BoundedOwnerError, BoundedPushRejected, BoundedUtf8, BoundedVec,
     BytesConstructionRejected, OwnedBytes, VecConstructionRejected,
 };

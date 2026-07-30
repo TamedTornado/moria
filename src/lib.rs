@@ -4,4 +4,5 @@
 //! contracts are implemented. Consumers, including `moria-qualify`, import
 //! this crate through the same public boundary.
 
+pub mod facade;
 pub mod prelude;
