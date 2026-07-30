@@ -1,5 +1,7 @@
 //! Finite, lossless owners shared by the public facade.
 
+use std::sync::Arc;
+
 /// The reason a finite owner could not accept supplied data.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BoundedOwnerError {
@@ -45,6 +47,16 @@ pub struct BoundedPushRejected<T> {
 /// Construction reserves its complete capacity before accepting values. Calls
 /// that fail to construct or append return the supplied allocation or element
 /// unchanged; the owner never reallocates after construction.
+///
+/// # Examples
+///
+/// ```
+/// use moria::facade::BoundedVec;
+///
+/// let values = BoundedVec::try_from_vec(vec![1, 2], 2)?;
+/// assert_eq!(values.as_slice(), &[1, 2]);
+/// # Ok::<(), moria::facade::VecConstructionRejected<i32>>(())
+/// ```
 #[derive(Debug)]
 pub struct BoundedVec<T> {
     values: Vec<T>,
@@ -144,6 +156,16 @@ impl<T> BoundedVec<T> {
 }
 
 /// An owned byte vector with an immutable admitted byte capacity.
+///
+/// # Examples
+///
+/// ```
+/// use moria::facade::BoundedBytes;
+///
+/// let bytes = BoundedBytes::try_from_vec(vec![1, 2], 2)?;
+/// assert_eq!(bytes.as_slice(), &[1, 2]);
+/// # Ok::<(), moria::facade::BytesConstructionRejected>(())
+/// ```
 #[derive(Debug)]
 pub struct BoundedBytes {
     bytes: Vec<u8>,
@@ -231,6 +253,16 @@ impl BoundedBytes {
 }
 
 /// Up to 64 bytes stored inline with an exact stored length.
+///
+/// # Examples
+///
+/// ```
+/// use moria::facade::BoundedBytes64;
+///
+/// let bytes = BoundedBytes64::try_from_slice(b"moria")?;
+/// assert_eq!(bytes.len(), 5);
+/// # Ok::<(), moria::facade::BoundedOwnerError>(())
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BoundedBytes64([u8; 64], u8);
 
@@ -272,6 +304,16 @@ impl BoundedBytes64 {
 }
 
 /// Valid UTF-8 whose byte length cannot exceed `N`.
+///
+/// # Examples
+///
+/// ```
+/// use moria::facade::BoundedUtf8;
+///
+/// let text = BoundedUtf8::<5>::try_from_bytes(b"moria".to_vec())?;
+/// assert_eq!(text.as_str(), "moria");
+/// # Ok::<(), moria::facade::BytesConstructionRejected>(())
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BoundedUtf8<const N: usize> {
     text: String,
@@ -283,7 +325,10 @@ impl<const N: usize> BoundedUtf8<N> {
     /// # Errors
     ///
     /// Returns the original bytes unchanged if they are invalid UTF-8 or are
-    /// longer than `N`.
+    /// longer than `N`, and returns them unchanged with
+    /// [`BoundedOwnerError::AllocationFailed`] if normalized backing storage
+    /// cannot be reserved. Accepted text owns an exact-length backing buffer,
+    /// so [`Self::into_bytes`] cannot expose the caller's spare capacity.
     pub fn try_from_bytes(bytes: Vec<u8>) -> Result<Self, BytesConstructionRejected> {
         if bytes.len() > N {
             return Err(BytesConstructionRejected {
@@ -291,13 +336,19 @@ impl<const N: usize> BoundedUtf8<N> {
                 reason: BoundedOwnerError::LengthExceedsCapacity,
             });
         }
-        match String::from_utf8(bytes) {
-            Ok(text) => Ok(Self { text }),
-            Err(error) => Err(BytesConstructionRejected {
-                bytes: error.into_bytes(),
+        if std::str::from_utf8(&bytes).is_err() {
+            return Err(BytesConstructionRejected {
+                bytes,
                 reason: BoundedOwnerError::InvalidUtf8,
-            }),
+            });
         }
+
+        let normalized = match copy_into_exact_backing(&bytes) {
+            Ok(normalized) => normalized,
+            Err(reason) => return Err(BytesConstructionRejected { bytes, reason }),
+        };
+        let text = String::from_utf8(normalized).expect("validated UTF-8 is accepted by String");
+        Ok(Self { text })
     }
 
     /// Borrows the validated UTF-8 text.
@@ -333,12 +384,24 @@ impl<const N: usize> BoundedUtf8<N> {
 
 /// Immutable bytes with an exact admitted `u64` length.
 ///
-/// The private vector is never exposed mutably, so consumers cannot grow the
-/// owner. Its construction uses the fallible standard allocation path before
-/// moving caller bytes, preserving the original allocation on failure.
+/// Clones share the same private immutable backing, so cloning does not copy
+/// the bytes or allocate another full-size byte buffer. Construction first
+/// copies into exact-length backing with the fallible standard allocation path,
+/// preserving the caller allocation on failure.
+///
+/// # Examples
+///
+/// ```
+/// use moria::facade::OwnedBytes;
+///
+/// let bytes = OwnedBytes::try_from_vec(vec![1, 2, 3], 3)?;
+/// let shared = bytes.clone();
+/// assert_eq!(shared.as_slice(), &[1, 2, 3]);
+/// # Ok::<(), moria::facade::BytesConstructionRejected>(())
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OwnedBytes {
-    bytes: Vec<u8>,
+    bytes: Arc<Vec<u8>>,
 }
 
 impl OwnedBytes {
@@ -347,7 +410,8 @@ impl OwnedBytes {
     /// # Errors
     ///
     /// Returns the original bytes unchanged if they exceed `max_bytes` or the
-    /// immutable backing allocation cannot be reserved.
+    /// immutable backing allocation cannot be reserved. On success, clones
+    /// share the same exact-length immutable backing allocation.
     pub fn try_from_vec(bytes: Vec<u8>, max_bytes: u64) -> Result<Self, BytesConstructionRejected> {
         if u64::try_from(bytes.len()).expect("usize fits u64") > max_bytes {
             return Err(BytesConstructionRejected {
@@ -356,22 +420,19 @@ impl OwnedBytes {
             });
         }
 
-        let length = bytes.len();
-        let mut immutable = Vec::new();
-        if immutable.try_reserve_exact(length).is_err() {
-            return Err(BytesConstructionRejected {
-                bytes,
-                reason: BoundedOwnerError::AllocationFailed,
-            });
-        }
-        immutable.extend_from_slice(&bytes);
-        Ok(Self { bytes: immutable })
+        let immutable = match copy_into_exact_backing(&bytes) {
+            Ok(immutable) => immutable,
+            Err(reason) => return Err(BytesConstructionRejected { bytes, reason }),
+        };
+        Ok(Self {
+            bytes: Arc::new(immutable),
+        })
     }
 
     /// Borrows the immutable bytes.
     #[must_use]
     pub fn as_slice(&self) -> &[u8] {
-        &self.bytes
+        self.bytes.as_slice()
     }
 
     /// Returns the exact immutable byte length.
@@ -401,6 +462,34 @@ fn reserve_capacity<T>(capacity: u32) -> Result<Vec<T>, BoundedOwnerError> {
     Ok(values)
 }
 
+fn copy_into_exact_backing(bytes: &[u8]) -> Result<Vec<u8>, BoundedOwnerError> {
+    if allocation_failure_requested() {
+        return Err(BoundedOwnerError::AllocationFailed);
+    }
+
+    let mut backing = Vec::new();
+    backing
+        .try_reserve_exact(bytes.len())
+        .map_err(|_| BoundedOwnerError::AllocationFailed)?;
+    backing.extend_from_slice(bytes);
+    Ok(backing)
+}
+
+#[cfg(test)]
+thread_local! {
+    static FORCE_ALLOCATION_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn allocation_failure_requested() -> bool {
+    FORCE_ALLOCATION_FAILURE.replace(false)
+}
+
+#[cfg(not(test))]
+fn allocation_failure_requested() -> bool {
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,5 +515,21 @@ mod tests {
             BoundedVec::<Huge>::try_with_capacity(u32::MAX),
             Err(BoundedOwnerError::CapacityTooLarge)
         ));
+    }
+
+    #[test]
+    fn allocation_failure_recovers_the_original_byte_allocation() {
+        let mut bytes = Vec::with_capacity(128);
+        bytes.extend_from_slice(b"moria");
+        let input_pointer = bytes.as_ptr();
+        let input_capacity = bytes.capacity();
+
+        FORCE_ALLOCATION_FAILURE.set(true);
+        let rejected = OwnedBytes::try_from_vec(bytes, 5).unwrap_err();
+
+        assert_eq!(rejected.reason, BoundedOwnerError::AllocationFailed);
+        assert_eq!(rejected.bytes, b"moria");
+        assert_eq!(rejected.bytes.as_ptr(), input_pointer);
+        assert_eq!(rejected.bytes.capacity(), input_capacity);
     }
 }

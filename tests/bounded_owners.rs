@@ -57,12 +57,27 @@ fn fixed_and_utf8_bytes_enforce_their_exact_bounds_without_losing_input() {
 }
 
 #[test]
+fn bounded_utf8_normalizes_an_overallocated_input() {
+    let mut input = Vec::with_capacity(16 * 1024);
+    input.push(b'x');
+
+    let output = BoundedUtf8::<1>::try_from_bytes(input)
+        .unwrap()
+        .into_bytes();
+
+    assert_eq!(output, b"x");
+    assert_eq!(output.capacity(), 1);
+}
+
+#[test]
 fn owned_bytes_have_an_exact_immutable_length_and_recover_failed_input() {
     let owned = OwnedBytes::try_from_vec(vec![1, 2, 3], 3).unwrap();
     assert_eq!(owned.as_slice(), &[1, 2, 3]);
     assert_eq!(owned.len(), 3);
     assert!(!owned.is_empty());
-    assert_eq!(owned.clone().as_slice(), owned.as_slice());
+    let shared = owned.clone();
+    assert_eq!(shared.as_slice(), owned.as_slice());
+    assert_eq!(shared.as_slice().as_ptr(), owned.as_slice().as_ptr());
 
     let rejected = OwnedBytes::try_from_vec(vec![1, 2, 3], 2).unwrap_err();
     assert_eq!(rejected.reason, BoundedOwnerError::LengthExceedsCapacity);
