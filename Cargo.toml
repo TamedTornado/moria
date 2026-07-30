@@ -21,6 +21,10 @@ persistence-zstd = ["dep:zstd"]
 presentation = ["bevy"]
 
 [dependencies]
+# `arc-slice` provides the fallible shared allocation required by `OwnedBytes`.
+# Its MIT license is compatible with Moria, default OOM-handling is disabled,
+# and its allocation-only implementation has no platform or wasm assumptions.
+arc-slice = { version = "=0.1.0", default-features = false, features = ["std"] }
 bevy = { version = "=0.19.0", default-features = false, optional = true }
 naga = { version = "=29.0.1", default-features = false, features = ["wgsl-in"] }
 wgpu = { version = "=29.0.3", default-features = false }

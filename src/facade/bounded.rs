@@ -1,6 +1,6 @@
 //! Lossless finite owners used by the public facade.
 
-use std::sync::Arc;
+use arc_slice::ArcBytes;
 
 /// A reason a finite owner could not be constructed or extended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -357,7 +357,7 @@ impl<const N: usize> BoundedUtf8<N> {
 /// Immutable bytes that can be shared without exposing mutable storage.
 #[derive(Clone, Debug)]
 pub struct OwnedBytes {
-    bytes: Arc<[u8]>,
+    bytes: ArcBytes,
 }
 
 impl OwnedBytes {
@@ -365,17 +365,30 @@ impl OwnedBytes {
     ///
     /// # Errors
     ///
-    /// A length rejection returns the original byte allocation unchanged.
+    /// A length or allocation rejection returns the original byte allocation
+    /// unchanged.
     pub fn try_from_vec(bytes: Vec<u8>, max_bytes: u64) -> Result<Self, BytesConstructionRejected> {
+        Self::try_from_vec_with(bytes, max_bytes, |bytes| {
+            ArcBytes::try_from_slice(bytes).map_err(|_| ())
+        })
+    }
+
+    fn try_from_vec_with<E>(
+        bytes: Vec<u8>,
+        max_bytes: u64,
+        allocate: impl FnOnce(&[u8]) -> Result<ArcBytes, E>,
+    ) -> Result<Self, BytesConstructionRejected> {
         if u64::try_from(bytes.len()).expect("usize fits u64 on supported targets") > max_bytes {
             return Err(BytesConstructionRejected {
                 bytes,
                 reason: BoundedOwnerError::LengthExceedsCapacity,
             });
         }
-        Ok(Self {
-            bytes: Arc::from(bytes),
-        })
+        let shared = allocate(&bytes).map_err(|_| BytesConstructionRejected {
+            bytes,
+            reason: BoundedOwnerError::AllocationFailed,
+        })?;
+        Ok(Self { bytes: shared })
     }
 
     /// Borrows the immutable accepted bytes.
@@ -398,7 +411,7 @@ impl OwnedBytes {
 
     /// Consumes this owner and transfers its immutable shared allocation.
     #[must_use]
-    pub fn into_arc(self) -> Arc<[u8]> {
+    pub fn into_arc(self) -> ArcBytes {
         self.bytes
     }
 }
@@ -408,4 +421,24 @@ fn ensure_element_capacity<T>(capacity: usize) -> Result<(), BoundedOwnerError> 
         return Err(BoundedOwnerError::CapacityTooLarge);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BoundedOwnerError, OwnedBytes};
+
+    #[test]
+    fn owned_bytes_returns_the_original_vector_when_shared_allocation_fails() {
+        let mut bytes = Vec::with_capacity(16);
+        bytes.extend_from_slice(&[1, 2, 3]);
+        let original_pointer = bytes.as_ptr();
+        let original_capacity = bytes.capacity();
+
+        let rejected = OwnedBytes::try_from_vec_with(bytes, 3, |_| Err(())).unwrap_err();
+
+        assert_eq!(rejected.reason, BoundedOwnerError::AllocationFailed);
+        assert_eq!(rejected.bytes, [1, 2, 3]);
+        assert_eq!(rejected.bytes.as_ptr(), original_pointer);
+        assert_eq!(rejected.bytes.capacity(), original_capacity);
+    }
 }

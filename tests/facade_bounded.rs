@@ -131,6 +131,6 @@ fn owned_bytes_are_immutable_share_clones_and_keep_the_exact_length() {
     let clone = bytes.clone();
     let original_arc = bytes.into_arc();
     let cloned_arc = clone.into_arc();
-    assert!(std::sync::Arc::ptr_eq(&original_arc, &cloned_arc));
+    assert_eq!(original_arc.as_ptr(), cloned_arc.as_ptr());
     assert_eq!(&*original_arc, &[1, 2, 3]);
 }
