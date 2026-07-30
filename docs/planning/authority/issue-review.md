@@ -720,3 +720,76 @@ change to an approved source, requirement, technical contract, authority ID,
 decision, TDD, authority ledger, source-manifest entry, or digest. This turn
 therefore requests issue-manifest changes rather than failing for upstream
 human resolution.
+
+## Coder Response Turn — 2026-07-30T06:11:16Z
+
+**Answering:** `Issue Review Turn — 2026-07-30T06:03:33Z`
+
+**Verdict:** addressed
+
+### Responses to findings
+
+1. **Missing human presentation-review proof for `TECH-064` completion item
+   9 — addressed.**
+
+   `M-096` remains within `TECH-064` and now produces
+   `presentation/capture-manifest-v1.json` under the caller-selected evidence
+   directory in addition to its two scenario modules. Its acceptance criteria
+   require a closed bounded catalog for smooth, crisp, and
+   supported/unsupported-dressing captures; immutable BLAKE3 digests and
+   presentation-only claim identities; fail-closed handling of missing,
+   duplicate, unlisted, unreadable, or digest-mismatched captures; and tests
+   proving that capture evidence cannot replace matter, collision, hash,
+   persistence, or other non-presentation evidence.
+
+   Added assisted issue `M-132`, depending only on `M-096`, for the distinct
+   human review obligation. It cites only `TECH-064` and carries exactly
+   `REQ-002`, `REQ-003`, `REQ-010`, `REQ-011`, `REQ-013`, `REQ-019`,
+   `REQ-020`, `REQ-023`, `REQ-044` and exactly `C-003`, `C-013`, `C-002`,
+   `C-006`, `C-007`, `AD-004`, `AD-005`, `C-016`, `D-006`, `D-007`,
+   `C-005`, `AD-002`, `D-001`, `D-002`, `C-011`, `D-003`, `C-012`,
+   `D-009`, `C-015`, `C-001`, `C-004`, `C-008`, `C-009`, `C-010`,
+   `C-014`, `AD-003`, `AD-007`, `D-004`, `D-005`, `D-008` in structured
+   provenance and body citations. It produces
+   `presentation/human-review-attestation-v1.json`, binds the exact capture
+   manifest and capture digests, records each reviewed presentation claim
+   with explicit `PASS`/`FAIL` and notes bounded to 4096 UTF-8 bytes per
+   claim, and fails closed on incomplete or stale review. Its criteria
+   expressly prevent pixels, reviewer identity, or visual approval from
+   becoming canonical state or evidence for matter, collision, hashing,
+   persistence, deterministic behavior, performance, or any other
+   non-presentation claim.
+
+   The former `M-132` performance/presentation domain evaluator is now
+   `M-133`. It depends on `M-132`, maps `presentation_visual_capture` only to
+   the `M-096` capture manifest and `presentation_human_review` only to the
+   `M-132` attestation, verifies their digest binding, and rejects absent,
+   invalid, mismatched, or non-passing review evidence. The former `M-133`
+   provenance evaluator is now `M-134`, and the former `M-134` final gate is
+   now `M-135`. `M-135` retains exactly five direct typed-domain dependencies:
+   `M-129`, `M-130`, `M-131`, `M-133`, and `M-134`.
+
+### Exact `docs/issues.json` changes
+
+- Changed only the body of `M-096` to add the bounded digest-bound capture
+  manifest output and its capture-specific acceptance criteria.
+- Added `M-132` as the assisted human presentation-review issue with the exact
+  `TECH-064` authorization chain requested by the reviewer.
+- Renumbered the former `M-132`, `M-133`, and `M-134` to `M-133`, `M-134`,
+  and `M-135`, respectively, updating their structured and body dependencies
+  and inputs.
+- Added `M-132` to `M-133` and split the visual-capture and human-review row
+  mappings across `M-096` and `M-132`; updated `M-134` to consume the
+  renumbered performance/presentation report; kept `M-135` at five direct
+  domain-report dependencies.
+- Increased the manifest from 134 to 135 sequential dependency-ordered
+  entries. No other issue body, provenance chain, produced artifact, or
+  dependency changed.
+
+### Authority-boundary disposition
+
+No finding is unsatisfied. The reviewer finding was satisfied solely by
+correcting `docs/issues.json`; it requires no source, seed, vision, design
+requirement, technical contract, claim, decision, TDD, authority ledger,
+source manifest, or digest change. There is no upstream-authority conflict
+requiring human resolution.

@@ -4565,7 +4565,7 @@
         "D-008"
       ]
     },
-    "body": "**Category:** system\n**Automation:** assisted\n**Depends on:** M-071, M-072, M-073, M-074, M-075, M-076, M-077, M-078\n**Produces:** `src/bin/moria-qualify/scenarios/truth_view.rs`, `src/bin/moria-qualify/scenarios/presentation.rs`\n\n## Description\n\nIndependently remove, stale, corrupt, discard, and rebuild smooth/crisp presentation; remove dressing support; and model matter-backed assemblies only as ordinary small volumes. This issue implements TECH-064 under REQ-002, REQ-003, REQ-010, REQ-011, REQ-013, REQ-019, REQ-020, REQ-023, REQ-044.\n\n## Inputs\n\n- TECH-064 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-003, REQ-010, REQ-011, REQ-013, REQ-019, REQ-020, REQ-023, REQ-044 and authority chain C-003, C-013, C-002, C-006, C-007, AD-004, AD-005, C-016, D-006, D-007, C-005, AD-002, D-001, D-002, C-011, D-003, C-012, D-009, C-015, C-001, C-004, C-008, C-009, C-010, C-014, AD-003, AD-007, D-004, D-005, D-008.\n- Outputs of M-071, M-072, M-073, M-074, M-075, M-076, M-077, M-078.\n\n## Acceptance Criteria\n\n- [ ] Automated assertions preserve matter/collision/hash/persistence across every derived failure, while bounded captures support human visual review without treating pixel identity as canonical evidence.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+    "body": "**Category:** system\n**Automation:** assisted\n**Depends on:** M-071, M-072, M-073, M-074, M-075, M-076, M-077, M-078\n**Produces:** `src/bin/moria-qualify/scenarios/truth_view.rs`, `src/bin/moria-qualify/scenarios/presentation.rs`, `presentation/capture-manifest-v1.json` under the caller-selected evidence directory\n\n## Description\n\nIndependently remove, stale, corrupt, discard, and rebuild smooth/crisp presentation; remove dressing support; model matter-backed assemblies only as ordinary small volumes; and emit the bounded visual-capture manifest consumed by human presentation review. This issue implements TECH-064 under REQ-002, REQ-003, REQ-010, REQ-011, REQ-013, REQ-019, REQ-020, REQ-023, REQ-044.\n\n## Inputs\n\n- TECH-064 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-003, REQ-010, REQ-011, REQ-013, REQ-019, REQ-020, REQ-023, REQ-044 and authority chain C-003, C-013, C-002, C-006, C-007, AD-004, AD-005, C-016, D-006, D-007, C-005, AD-002, D-001, D-002, C-011, D-003, C-012, D-009, C-015, C-001, C-004, C-008, C-009, C-010, C-014, AD-003, AD-007, D-004, D-005, D-008.\n- Outputs of M-071, M-072, M-073, M-074, M-075, M-076, M-077, M-078.\n\n## Acceptance Criteria\n\n- [ ] Automated assertions preserve matter/collision/hash/persistence across every derived failure, and bounded smooth-surface, crisp-surface, and supported/unsupported-dressing captures are produced only after those state assertions pass.\n- [ ] `presentation/capture-manifest-v1.json` has a closed bounded capture catalog, records the immutable BLAKE3 digest and presentation-only claim for every smooth, crisp, and dressing capture submitted for review, rejects a missing, duplicate, unlisted, unreadable, or digest-mismatched capture, and never treats pixel identity as canonical evidence.\n- [ ] Manifest tests prove that changing a capture changes its recorded digest, omitting any required capture fails closed, and no capture or manifest field can substitute for matter, collision, hash, persistence, or other non-presentation evidence.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   },
   {
     "id": "M-097",
@@ -6394,6 +6394,66 @@
   },
   {
     "id": "M-132",
+    "title": "[system] Review presentation captures",
+    "labels": [
+      "system",
+      "assisted"
+    ],
+    "depends_on": [
+      "M-096"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-064"
+      ],
+      "design_requirements": [
+        "REQ-002",
+        "REQ-003",
+        "REQ-010",
+        "REQ-011",
+        "REQ-013",
+        "REQ-019",
+        "REQ-020",
+        "REQ-023",
+        "REQ-044"
+      ],
+      "authority": [
+        "C-003",
+        "C-013",
+        "C-002",
+        "C-006",
+        "C-007",
+        "AD-004",
+        "AD-005",
+        "C-016",
+        "D-006",
+        "D-007",
+        "C-005",
+        "AD-002",
+        "D-001",
+        "D-002",
+        "C-011",
+        "D-003",
+        "C-012",
+        "D-009",
+        "C-015",
+        "C-001",
+        "C-004",
+        "C-008",
+        "C-009",
+        "C-010",
+        "C-014",
+        "AD-003",
+        "AD-007",
+        "D-004",
+        "D-005",
+        "D-008"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** assisted\n**Depends on:** M-096\n**Produces:** `presentation/human-review-attestation-v1.json` under the caller-selected evidence directory\n\n## Description\n\nPerform the distinct human proof obligation for the smooth-surface, crisp-surface, and dressing presentation claims captured by M-096, and emit a bounded digest-bound review attestation. This issue implements TECH-064 under REQ-002, REQ-003, REQ-010, REQ-011, REQ-013, REQ-019, REQ-020, REQ-023, REQ-044.\n\n## Inputs\n\n- TECH-064 (docs/tdd/validation.md).\n- Authorized design requirements REQ-002, REQ-003, REQ-010, REQ-011, REQ-013, REQ-019, REQ-020, REQ-023, REQ-044 and authority chain C-003, C-013, C-002, C-006, C-007, AD-004, AD-005, C-016, D-006, D-007, C-005, AD-002, D-001, D-002, C-011, D-003, C-012, D-009, C-015, C-001, C-004, C-008, C-009, C-010, C-014, AD-003, AD-007, D-004, D-005, D-008.\n- M-096's `presentation/capture-manifest-v1.json` and every digest-bound smooth, crisp, and dressing capture listed by that manifest.\n\n## Acceptance Criteria\n\n- [ ] A human reviews every manifest-listed smooth-surface, crisp-surface, and supported/unsupported-dressing capture against only its named presentation claim; no automated aggregator may synthesize or default the review result.\n- [ ] `presentation/human-review-attestation-v1.json` records its schema version, the immutable BLAKE3 digest of the exact M-096 capture manifest, the reviewed capture digests, each human-reviewed presentation claim, an explicit `PASS` or `FAIL` disposition for each claim, and UTF-8 review notes bounded to at most 4096 bytes per claim.\n- [ ] Attestation validation fails closed on a missing, duplicate, unreviewed, digest-mismatched, unknown, or non-`PASS` required presentation claim and on over-bound notes; changing the manifest or any capture invalidates the attestation rather than silently carrying approval forward.\n- [ ] Pixels, reviewer identity, and visual approval remain noncanonical diagnostic evidence and cannot change or prove matter, collision, hash, persistence, deterministic behavior, performance, or any other non-presentation claim.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-133",
     "title": "[system] Aggregate performance and presentation evidence",
     "labels": [
       "system",
@@ -6409,66 +6469,7 @@
       "M-108",
       "M-109",
       "M-110",
-      "M-111"
-    ],
-    "provenance": {
-      "technical_contracts": [
-        "TECH-069"
-      ],
-      "design_requirements": [
-        "REQ-021",
-        "REQ-022",
-        "REQ-023",
-        "REQ-026",
-        "REQ-044"
-      ],
-      "authority": [
-        "C-003",
-        "C-015",
-        "D-002",
-        "D-003",
-        "D-004",
-        "D-005",
-        "D-006",
-        "D-007",
-        "D-008",
-        "D-009",
-        "C-013",
-        "C-001",
-        "C-004",
-        "C-005",
-        "C-006",
-        "C-007",
-        "C-008",
-        "C-009",
-        "C-010",
-        "C-011",
-        "C-012",
-        "C-014",
-        "C-016",
-        "AD-002",
-        "AD-003",
-        "AD-005",
-        "AD-007",
-        "D-001"
-      ]
-    },
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-090, M-096, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111\n**Produces:** `src/bin/moria-qualify/evidence/domain/performance_presentation.rs`\n\n## Description\n\nImplement the fail-closed benchmark, presentation, device-loss/recovery, and performance domain evaluator and emit a typed `PerformancePresentationDomainReportV1`. Keep correctness, visual review, the named rollback tier, and hardware-contextual measurements as separate rows and statuses. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-090, M-096, and M-104 through M-111.\n\n## Acceptance Criteria\n\n- [ ] The closed row catalog contains exactly `device_loss_recovery`, `presentation_truth_isolation`, `presentation_visual_capture`, `presentation_human_review`, `rollback_correctness`, `rollback_tier_measurement`, `benchmark_sparse_lifecycle`, `benchmark_materialization_mutation_hashing`, `benchmark_query_collision`, `benchmark_presentation_lifecycle`, `benchmark_checkpoint_restore`, `benchmark_participant_recovery`, and `benchmark_replay_correction`, bound to the independent M-090, M-096, M-104, and M-105–M-111 evidence slices.\n- [ ] `PerformancePresentationDomainReportV1` records typed row identity, immutable artifact digest, hardware/software/budget/fixture context, correctness prerequisite, measurement or review status, and domain validity; GPU timestamps remain measurement only and visual review remains presentation-only.\n- [ ] The evaluator fails closed on every missing, skipped, unavailable, incomplete, or failed row, any device-loss result that is neither reconstructed nor terminal, absent capture or human review for a presentation claim, absent TECH-068 path/context/status, or an attempted revival of P1–P10 or a universal hardware claim.\n- [ ] Tests prove `TIER_MET` is available only for the exact correct depth-20 fixture, slower correct results retain their measured curve, correctness failure cannot become performance success, and no visual, software-adapter, or timestamp result substitutes for canonical or physical evidence.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
-  },
-  {
-    "id": "M-133",
-    "title": "[system] Verify provenance and evidence-manifest integrity",
-    "labels": [
-      "system",
-      "auto"
-    ],
-    "depends_on": [
-      "M-078",
-      "M-112",
-      "M-124",
-      "M-129",
-      "M-130",
-      "M-131",
+      "M-111",
       "M-132"
     ],
     "provenance": {
@@ -6513,20 +6514,22 @@
         "D-001"
       ]
     },
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-078, M-112, M-124, M-129, M-130, M-131, M-132\n**Produces:** `src/bin/moria-qualify/evidence/domain/provenance_manifest.rs`\n\n## Description\n\nImplement the fail-closed provenance, public-closure, local-command, and evidence-manifest integrity evaluator and emit a typed `ProvenanceManifestDomainReportV1`. Validate sealed authority and traceability independently from implementation results, and validate immutable report/blob references without interpreting one domain's conclusion as another's. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-078, M-112, M-124, M-129, M-130, M-131, and M-132 plus the approved source manifest, authority ledger, design requirements, TDD `Implements:` lines, and traceability index.\n- Use the maintained `serde_json` and `blake3` paths selected by M-112; do not implement a partial JSON parser or alternate digest format.\n\n## Acceptance Criteria\n\n- [ ] The closed row catalog contains exactly `approved_req_tech_traceability`, `active_tech_implements_parity`, `superseded_req039_retired_tech063`, `public_closure_inventory`, `local_command_receipts`, `source_contract_commit_digests`, `clean_worktree`, `evidence_schema`, `immutable_blob_digests`, `domain_report_references`, and `missing_claims`, with each row bound to the approved documents or the M-078, M-112, M-124, and M-129–M-132 outputs named in Inputs.\n- [ ] `ProvenanceManifestDomainReportV1` records typed row identity, immutable artifact/source digest, expected and observed authority or schema identity, report-reference digest, and domain validity; its traceability rows expose approved GDD coverage evidence without deriving implementation completeness.\n- [ ] The evaluator fails closed on every missing, skipped, unavailable, incomplete, or failed row; unknown/duplicate required fields, malformed/trailing JSON, bad BLAKE3 references, dirty worktrees, changed source/contract/commit identities, unreadable public closure, missing exact local-command receipts, stale or cross-wired domain reports, and hidden missing claims all invalidate the report.\n- [ ] Traceability tests require every current approved REQ to have a semantically authorized active stable TECH, retain REQ-039 only as superseded, reject TECH-063, require exactly one matching `Implements:` line per active TECH, and require exact traceability pair parity without changing any approved digest.\n- [ ] Manifest tests use `serde_json` and `blake3`, preserve canonical binary blobs outside JSON numbers, and prove that structurally valid but identity-mismatched or incomplete domain reports cannot pass reference integrity.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-090, M-096, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111, M-132\n**Produces:** `src/bin/moria-qualify/evidence/domain/performance_presentation.rs`\n\n## Description\n\nImplement the fail-closed benchmark, presentation, device-loss/recovery, and performance domain evaluator and emit a typed `PerformancePresentationDomainReportV1`. Keep correctness, visual capture, human review, the named rollback tier, and hardware-contextual measurements as separate rows and statuses. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-090, M-096, M-104 through M-111, and M-132; specifically map `presentation_visual_capture` to M-096's digest-bound capture manifest and `presentation_human_review` to M-132's manifest-bound review attestation.\n\n## Acceptance Criteria\n\n- [ ] The closed row catalog contains exactly `device_loss_recovery`, `presentation_truth_isolation`, `presentation_visual_capture`, `presentation_human_review`, `rollback_correctness`, `rollback_tier_measurement`, `benchmark_sparse_lifecycle`, `benchmark_materialization_mutation_hashing`, `benchmark_query_collision`, `benchmark_presentation_lifecycle`, `benchmark_checkpoint_restore`, `benchmark_participant_recovery`, and `benchmark_replay_correction`; `presentation_visual_capture` is bound only to M-096's `presentation/capture-manifest-v1.json`, `presentation_human_review` is bound only to M-132's `presentation/human-review-attestation-v1.json`, and the other rows remain bound to the independent M-090 and M-104–M-111 slices.\n- [ ] `PerformancePresentationDomainReportV1` records typed row identity, immutable artifact digest, hardware/software/budget/fixture context, correctness prerequisite, measurement or review status, and domain validity; it verifies the attestation's capture-manifest digest before accepting either presentation row, GPU timestamps remain measurement only, and visual review remains presentation-only.\n- [ ] The evaluator fails closed on every missing, skipped, unavailable, incomplete, or failed row, any device-loss result that is neither reconstructed nor terminal, an absent/digest-mismatched capture manifest or human-review attestation, any required presentation claim without a human `PASS`, absent TECH-068 path/context/status, or an attempted revival of P1–P10 or a universal hardware claim.\n- [ ] Tests prove `TIER_MET` is available only for the exact correct depth-20 fixture, slower correct results retain their measured curve, correctness failure cannot become performance success, capture and review rows cannot substitute for each other, and no visual, software-adapter, or timestamp result substitutes for canonical or physical evidence.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   },
   {
     "id": "M-134",
-    "title": "[system] Enforce separate coverage and implementation-completeness gates",
+    "title": "[system] Verify provenance and evidence-manifest integrity",
     "labels": [
       "system",
       "auto"
     ],
     "depends_on": [
+      "M-078",
+      "M-112",
+      "M-124",
       "M-129",
       "M-130",
       "M-131",
-      "M-132",
       "M-133"
     ],
     "provenance": {
@@ -6571,6 +6574,64 @@
         "D-001"
       ]
     },
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-129, M-130, M-131, M-132, M-133\n**Produces:** `src/bin/moria-qualify/evidence/gate.rs`\n\n## Description\n\nImplement the small fail-closed completion gate over the five typed TECH-069 domain reports. Return approved GDD coverage and approved implementation completeness as separate conclusions with separate derivations; never infer either conclusion from the other or re-expand the gate over individual evidence producers. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Typed domain reports from M-129, M-130, M-131, M-132, and M-133.\n\n## Acceptance Criteria\n\n- [ ] `CompletionGateReportV1` returns distinct `approved_gdd_coverage` and `approved_implementation_completeness` conclusions: coverage derives only from the exact traceability rows in `ProvenanceManifestDomainReportV1`, while completeness derives only from the complete implementation/evidence rows across all five valid domain reports.\n- [ ] The gate accepts exactly one identity-matching `CanonicalGpuDomainReportV1`, `FacadeHeadlessDomainReportV1`, `ScenarioDurabilityDomainReportV1`, `PerformancePresentationDomainReportV1`, and `ProvenanceManifestDomainReportV1`; any missing, duplicate, wrong-version, stale-identity, digest-invalid, internally invalid, skipped, unavailable, incomplete, or failed report is rejected before an approved completion result is emitted.\n- [ ] Gate tests prove approved GDD coverage cannot make implementation completeness pass, implementation completeness cannot make approved GDD coverage pass, and changing either source conclusion changes only that conclusion when all five reports remain structurally valid.\n- [ ] Release tests reject dirty or digest-mismatched worktrees, unexpected GPU errors, unavailable or divergent replay, incomplete contamination audits, missing evidence rows, undefined callables/owners/bounds/lifecycles, absent visual review for a presentation claim, and incomplete benchmark paths through their owning typed domain report.\n- [ ] The final gate has exactly five direct issue dependencies and contains no producer-specific row catalog or direct dependency on the former roughly 69 producers.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-078, M-112, M-124, M-129, M-130, M-131, M-133\n**Produces:** `src/bin/moria-qualify/evidence/domain/provenance_manifest.rs`\n\n## Description\n\nImplement the fail-closed provenance, public-closure, local-command, and evidence-manifest integrity evaluator and emit a typed `ProvenanceManifestDomainReportV1`. Validate sealed authority and traceability independently from implementation results, and validate immutable report/blob references without interpreting one domain's conclusion as another's. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-078, M-112, M-124, M-129, M-130, M-131, and M-133 plus the approved source manifest, authority ledger, design requirements, TDD `Implements:` lines, and traceability index.\n- Use the maintained `serde_json` and `blake3` paths selected by M-112; do not implement a partial JSON parser or alternate digest format.\n\n## Acceptance Criteria\n\n- [ ] The closed row catalog contains exactly `approved_req_tech_traceability`, `active_tech_implements_parity`, `superseded_req039_retired_tech063`, `public_closure_inventory`, `local_command_receipts`, `source_contract_commit_digests`, `clean_worktree`, `evidence_schema`, `immutable_blob_digests`, `domain_report_references`, and `missing_claims`, with each row bound to the approved documents or the M-078, M-112, M-124, M-129–M-131, and M-133 outputs named in Inputs.\n- [ ] `ProvenanceManifestDomainReportV1` records typed row identity, immutable artifact/source digest, expected and observed authority or schema identity, report-reference digest, and domain validity; its traceability rows expose approved GDD coverage evidence without deriving implementation completeness.\n- [ ] The evaluator fails closed on every missing, skipped, unavailable, incomplete, or failed row; unknown/duplicate required fields, malformed/trailing JSON, bad BLAKE3 references, dirty worktrees, changed source/contract/commit identities, unreadable public closure, missing exact local-command receipts, stale or cross-wired domain reports, and hidden missing claims all invalidate the report.\n- [ ] Traceability tests require every current approved REQ to have a semantically authorized active stable TECH, retain REQ-039 only as superseded, reject TECH-063, require exactly one matching `Implements:` line per active TECH, and require exact traceability pair parity without changing any approved digest.\n- [ ] Manifest tests use `serde_json` and `blake3`, preserve canonical binary blobs outside JSON numbers, and prove that structurally valid but identity-mismatched or incomplete domain reports cannot pass reference integrity.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-135",
+    "title": "[system] Enforce separate coverage and implementation-completeness gates",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-129",
+      "M-130",
+      "M-131",
+      "M-133",
+      "M-134"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-069"
+      ],
+      "design_requirements": [
+        "REQ-021",
+        "REQ-022",
+        "REQ-023",
+        "REQ-026",
+        "REQ-044"
+      ],
+      "authority": [
+        "C-003",
+        "C-015",
+        "D-002",
+        "D-003",
+        "D-004",
+        "D-005",
+        "D-006",
+        "D-007",
+        "D-008",
+        "D-009",
+        "C-013",
+        "C-001",
+        "C-004",
+        "C-005",
+        "C-006",
+        "C-007",
+        "C-008",
+        "C-009",
+        "C-010",
+        "C-011",
+        "C-012",
+        "C-014",
+        "C-016",
+        "AD-002",
+        "AD-003",
+        "AD-005",
+        "AD-007",
+        "D-001"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-129, M-130, M-131, M-133, M-134\n**Produces:** `src/bin/moria-qualify/evidence/gate.rs`\n\n## Description\n\nImplement the small fail-closed completion gate over the five typed TECH-069 domain reports. Return approved GDD coverage and approved implementation completeness as separate conclusions with separate derivations; never infer either conclusion from the other or re-expand the gate over individual evidence producers. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Typed domain reports from M-129, M-130, M-131, M-133, and M-134.\n\n## Acceptance Criteria\n\n- [ ] `CompletionGateReportV1` returns distinct `approved_gdd_coverage` and `approved_implementation_completeness` conclusions: coverage derives only from the exact traceability rows in `ProvenanceManifestDomainReportV1`, while completeness derives only from the complete implementation/evidence rows across all five valid domain reports.\n- [ ] The gate accepts exactly one identity-matching `CanonicalGpuDomainReportV1`, `FacadeHeadlessDomainReportV1`, `ScenarioDurabilityDomainReportV1`, `PerformancePresentationDomainReportV1`, and `ProvenanceManifestDomainReportV1`; any missing, duplicate, wrong-version, stale-identity, digest-invalid, internally invalid, skipped, unavailable, incomplete, or failed report is rejected before an approved completion result is emitted.\n- [ ] Gate tests prove approved GDD coverage cannot make implementation completeness pass, implementation completeness cannot make approved GDD coverage pass, and changing either source conclusion changes only that conclusion when all five reports remain structurally valid.\n- [ ] Release tests reject dirty or digest-mismatched worktrees, unexpected GPU errors, unavailable or divergent replay, incomplete contamination audits, missing evidence rows, undefined callables/owners/bounds/lifecycles, absent or digest-invalid human visual review for a presentation claim, and incomplete benchmark paths through their owning typed domain report.\n- [ ] The final gate has exactly five direct issue dependencies and contains no producer-specific row catalog or direct dependency on the former roughly 69 producers.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   }
 ]
