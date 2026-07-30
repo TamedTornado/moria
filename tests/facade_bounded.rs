@@ -2,6 +2,7 @@ use moria::facade::{
     BoundedBytes, BoundedBytes64, BoundedOwnerError, BoundedPushRejected, BoundedUtf8, BoundedVec,
     OwnedBytes,
 };
+use std::sync::Arc;
 
 #[test]
 fn bounded_vec_preserves_exact_capacity_and_rejected_value() {
@@ -129,8 +130,9 @@ fn owned_bytes_are_immutable_share_clones_and_keep_the_exact_length() {
     assert_eq!(bytes.as_slice(), &[1, 2, 3]);
 
     let clone = bytes.clone();
-    let original_arc = bytes.into_arc();
-    let cloned_arc = clone.into_arc();
-    assert_eq!(original_arc.as_ptr(), cloned_arc.as_ptr());
+    let into_arc: fn(OwnedBytes) -> Arc<[u8]> = OwnedBytes::into_arc;
+    let original_arc = into_arc(bytes);
+    let cloned_arc = into_arc(clone);
     assert_eq!(&*original_arc, &[1, 2, 3]);
+    assert_eq!(&*cloned_arc, &[1, 2, 3]);
 }

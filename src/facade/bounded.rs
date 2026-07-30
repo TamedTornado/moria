@@ -1,6 +1,7 @@
 //! Lossless finite owners used by the public facade.
 
 use arc_slice::ArcBytes;
+use std::sync::Arc;
 
 /// A reason a finite owner could not be constructed or extended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -409,10 +410,10 @@ impl OwnedBytes {
         self.bytes.is_empty()
     }
 
-    /// Consumes this owner and transfers its immutable shared allocation.
+    /// Consumes this owner and returns its immutable standard shared bytes.
     #[must_use]
-    pub fn into_arc(self) -> ArcBytes {
-        self.bytes
+    pub fn into_arc(self) -> Arc<[u8]> {
+        Arc::from(self.bytes.as_ref())
     }
 }
 
