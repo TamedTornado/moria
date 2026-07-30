@@ -1,8 +1,8 @@
-//! Convenient public imports for Moria consumers.
-//!
-//! This module contains only public consumer-facing convenience imports.
+//! Consumer-facing, finite ownership types.
 
-pub use crate::facade::{
+mod bounded;
+
+pub use bounded::{
     BoundedBytes, BoundedBytes64, BoundedOwnerError, BoundedPushRejected, BoundedUtf8, BoundedVec,
     BytesConstructionRejected, OwnedBytes, VecConstructionRejected,
 };
