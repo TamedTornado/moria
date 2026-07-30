@@ -89,18 +89,26 @@ impl CellWire {
     }
 }
 
+/// A reason dense canonical brick bytes cannot be decoded.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum BrickDecodeError {
+    /// The dense payload did not contain exactly 2,048 bytes.
+    InvalidByteLength {
+        /// Number of bytes supplied by the caller.
+        actual: usize,
+    },
+}
+
 /// A canonical brick, stored either as one uniform cell or as all 512 cells.
 ///
-/// The dense payload remains inline because it is the exact bounded canonical
-/// form. Indirection would make dense-brick ownership fallible and add a
-/// second storage representation to this wire-domain value.
-#[allow(clippy::large_enum_variant)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// The dense payload is out of line so that a uniform brick retains compact
+/// storage while dense bricks still own their fixed-size canonical cells.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Brick {
     /// A brick whose every cell is the same canonical record.
     Uniform(CellWire),
     /// Dense cells in x-major, then y, then z order.
-    Dense([CellWire; BRICK_CELL_COUNT]),
+    Dense(Box<[CellWire; BRICK_CELL_COUNT]>),
 }
 
 impl Brick {
@@ -112,14 +120,48 @@ impl Brick {
 
     /// Creates a dense brick in canonical x-major, then y, then z order.
     #[must_use]
-    pub const fn dense(cells: [CellWire; BRICK_CELL_COUNT]) -> Self {
-        Self::Dense(cells)
+    pub fn dense(cells: [CellWire; BRICK_CELL_COUNT]) -> Self {
+        Self::Dense(Box::new(cells))
     }
 
     /// Reports whether this brick uses its uniform representation.
     #[must_use]
-    pub const fn is_uniform(self) -> bool {
+    pub const fn is_uniform(&self) -> bool {
         matches!(self, Self::Uniform(_))
+    }
+
+    /// Decodes an exact dense canonical payload in x-major, then y, then z order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BrickDecodeError::InvalidByteLength`] unless `bytes` is
+    /// exactly [`DENSE_BRICK_BYTES`] long. The accepted bytes are copied into
+    /// this brick's owned fixed-size dense representation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use moria::canonical::{Brick, DENSE_BRICK_BYTES};
+    ///
+    /// let brick = Brick::try_from_dense_le_bytes(&[0; DENSE_BRICK_BYTES])?;
+    /// assert!(!brick.is_uniform());
+    /// # Ok::<(), moria::canonical::BrickDecodeError>(())
+    /// ```
+    pub fn try_from_dense_le_bytes(bytes: &[u8]) -> Result<Self, BrickDecodeError> {
+        if bytes.len() != DENSE_BRICK_BYTES {
+            return Err(BrickDecodeError::InvalidByteLength {
+                actual: bytes.len(),
+            });
+        }
+        Ok(Self::dense(core::array::from_fn(|index| {
+            let offset = index * CellWire::BYTE_LEN;
+            CellWire::from_le_bytes([
+                bytes[offset],
+                bytes[offset + 1],
+                bytes[offset + 2],
+                bytes[offset + 3],
+            ])
+        })))
     }
 
     /// Returns the cell at a valid local coordinate in `0..8` on every axis.
@@ -128,29 +170,34 @@ impl Brick {
     ///
     /// Panics if any local coordinate lies outside `0..8`.
     #[must_use]
-    pub fn cell_at(self, local: [u8; 3]) -> CellWire {
+    pub fn cell_at(&self, local: [u8; 3]) -> CellWire {
         assert!(
             local
                 .iter()
                 .all(|&coordinate| (coordinate as usize) < BRICK_EDGE_CELLS)
         );
         match self {
-            Self::Uniform(cell) => cell,
+            Self::Uniform(cell) => *cell,
             Self::Dense(cells) => cells[Self::dense_index(local)],
         }
     }
 
     /// Encodes this brick as an exact 2,048-byte dense canonical payload.
     #[must_use]
-    pub fn to_dense_le_bytes(self) -> [u8; DENSE_BRICK_BYTES] {
+    pub fn to_dense_le_bytes(&self) -> [u8; DENSE_BRICK_BYTES] {
         let mut bytes = [0; DENSE_BRICK_BYTES];
-        for z in 0..BRICK_EDGE_CELLS {
-            for y in 0..BRICK_EDGE_CELLS {
-                for x in 0..BRICK_EDGE_CELLS {
-                    let index = x + BRICK_EDGE_CELLS * (y + BRICK_EDGE_CELLS * z);
-                    let offset = index * CellWire::BYTE_LEN;
-                    bytes[offset..offset + CellWire::BYTE_LEN]
-                        .copy_from_slice(&self.cell_at([x as u8, y as u8, z as u8]).to_le_bytes());
+        match self {
+            Self::Uniform(cell) => {
+                let cell_bytes = cell.to_le_bytes();
+                for destination in bytes.chunks_exact_mut(CellWire::BYTE_LEN) {
+                    destination.copy_from_slice(&cell_bytes);
+                }
+            }
+            Self::Dense(cells) => {
+                for (cell, destination) in
+                    cells.iter().zip(bytes.chunks_exact_mut(CellWire::BYTE_LEN))
+                {
+                    destination.copy_from_slice(&cell.to_le_bytes());
                 }
             }
         }

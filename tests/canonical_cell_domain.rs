@@ -1,6 +1,7 @@
 use moria::canonical::{
-    BRICK_CELL_COUNT, BRICK_EDGE_CELLS, Brick, BrickAabb, BrickCoord, CellValidationError,
-    CellWire, DENSE_BRICK_BYTES, LocalCellAabb, LocalCellPoint, VolumeDomainError,
+    BRICK_CELL_COUNT, BRICK_EDGE_CELLS, Brick, BrickAabb, BrickCoord, BrickDecodeError,
+    CellValidationError, CellWire, DENSE_BRICK_BYTES, LocalCellAabb, LocalCellPoint,
+    VolumeDomainError,
 };
 
 #[test]
@@ -44,6 +45,7 @@ fn dense_and_uniform_bricks_have_exact_layout_and_size() {
     assert_eq!(BRICK_EDGE_CELLS, 8);
     assert_eq!(BRICK_CELL_COUNT, 512);
     assert_eq!(DENSE_BRICK_BYTES, 2_048);
+    assert!(core::mem::size_of::<Brick>() <= 2 * core::mem::size_of::<usize>());
 
     let cells = core::array::from_fn(|index| CellWire {
         material_id: index as u16,
@@ -54,6 +56,9 @@ fn dense_and_uniform_bricks_have_exact_layout_and_size() {
     assert_eq!(&dense.to_dense_le_bytes()[0..4], &[0, 0, 0, 0]);
     assert_eq!(&dense.to_dense_le_bytes()[4..8], &[1, 0, 0xff, 0xff]);
     assert_eq!(dense.cell_at([7, 7, 7]), cells[511]);
+    assert_eq!(dense.cell_at([2, 3, 4]), cells[2 + 8 * (3 + 8 * 4)]);
+    assert_eq!(dense.cell_at([3, 2, 4]), cells[3 + 8 * (2 + 8 * 4)]);
+    assert_eq!(dense.cell_at([2, 4, 3]), cells[2 + 8 * (4 + 8 * 3)]);
 
     let uniform = CellWire {
         material_id: 3,
@@ -61,6 +66,39 @@ fn dense_and_uniform_bricks_have_exact_layout_and_size() {
     };
     assert!(Brick::uniform(uniform).is_uniform());
     assert_eq!(Brick::uniform(uniform).cell_at([2, 4, 6]), uniform);
+}
+
+#[test]
+fn dense_brick_decoding_requires_the_exact_payload_length() {
+    for length in [0, DENSE_BRICK_BYTES - 1, DENSE_BRICK_BYTES + 1] {
+        assert_eq!(
+            Brick::try_from_dense_le_bytes(&vec![0; length]),
+            Err(BrickDecodeError::InvalidByteLength { actual: length })
+        );
+    }
+
+    let bytes = [0x55; DENSE_BRICK_BYTES];
+    let decoded = Brick::try_from_dense_le_bytes(&bytes).unwrap();
+    assert_eq!(decoded.to_dense_le_bytes(), bytes);
+}
+
+#[test]
+fn uniform_and_dense_empty_and_material_bricks_encode_identically() {
+    let empty = CellWire {
+        material_id: 0,
+        density_q8_8: 0,
+    };
+    let material = CellWire {
+        material_id: 17,
+        density_q8_8: 0x1234,
+    };
+
+    for cell in [empty, material] {
+        assert_eq!(
+            Brick::uniform(cell).to_dense_le_bytes(),
+            Brick::dense([cell; BRICK_CELL_COUNT]).to_dense_le_bytes()
+        );
+    }
 }
 
 #[test]
@@ -137,5 +175,22 @@ fn local_and_brick_aabbs_are_half_open_on_every_edge() {
             BrickCoord([i32::MAX, i32::MAX, i32::MAX]),
         )
         .is_ok()
+    );
+
+    assert_eq!(
+        LocalCellAabb::try_new(
+            LocalCellPoint([i32::MIN, 0, 0]),
+            LocalCellPoint([i32::MIN + 1, 1, 1]),
+            LocalCellPoint([i32::MAX, 0, 0]),
+        ),
+        Err(VolumeDomainError::PivotRadiusExceeded { axis: 0 })
+    );
+    assert_eq!(
+        LocalCellAabb::try_new(
+            LocalCellPoint([i32::MIN, 0, 0]),
+            LocalCellPoint([i32::MAX, 1, 1]),
+            LocalCellPoint([0, 0, 0]),
+        ),
+        Err(VolumeDomainError::SideTooLong { axis: 0 })
     );
 }
