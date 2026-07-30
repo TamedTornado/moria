@@ -758,7 +758,7 @@ pub struct BoundedVec<T> { /* private owned allocation and fixed capacity */ }
 pub struct BoundedBytes { /* private owned allocation, admitted u32 capacity */ }
 pub struct BoundedBytes64([u8; 64], u8);
 pub struct BoundedUtf8<const N: usize> { /* private validated bytes, length <= N */ }
-pub struct OwnedBytes { /* private immutable Arc<[u8]> plus admitted u64 length */ }
+pub struct OwnedBytes { /* private immutable fallibly allocated bytes plus admitted u64 length */ }
 
 pub enum BoundedOwnerError {
     CapacityTooLarge,
@@ -835,7 +835,6 @@ impl OwnedBytes {
     pub fn as_slice(&self) -> &[u8];
     pub fn len(&self) -> u64;
     pub fn is_empty(&self) -> bool;
-    pub fn into_arc(self) -> Arc<[u8]>;
 }
 ```
 
@@ -845,8 +844,12 @@ element, and `try_extend_from_slice` performs no partial append.
 `BoundedBytes64` rejects a stored length above 64; `BoundedUtf8` rejects
 invalid UTF-8 and a length above `N`. `OwnedBytes` has no spare growable
 capacity in the public contract: `max_bytes` is checked at construction,
-`len()` is the exact immutable length, and `into_arc` transfers or shares the
-same immutable allocation.
+`len()` is the exact immutable length, and successful construction stores the
+bytes in an immutable, shareable allocation. Its concrete backing owner remains
+private so the implementation can use a stable-Rust fallible allocation path;
+the facade never promises conversion to a standard owner whose construction
+would require a second unchecked allocation. Failed construction returns the
+caller's original `Vec<u8>` unchanged.
 
 Caller-side construction performs only checked finite allocation. When one of
 these owners enters a facade request, provider callback, or completion sink,
