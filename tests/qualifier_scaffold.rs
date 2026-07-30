@@ -67,13 +67,15 @@ fn documented_scaffold_commands_write_external_evidence() {
         ],
         &target_directory,
     );
-    assert!(scenario.status.success());
-    assert!(String::from_utf8_lossy(&scenario.stdout).contains("PASS scenario public-boundary"));
+    assert!(!scenario.status.success());
+    assert!(String::from_utf8_lossy(&scenario.stderr).contains("UNAVAILABLE"));
     let scenario_receipt = fs::read_to_string(
         target_directory.join("moria-evidence/dev/public-boundary-scaffold-v1.txt"),
     )
     .expect("scenario evidence should be readable");
-    assert!(scenario_receipt.contains("claim=public-crate-linkage"));
+    assert!(scenario_receipt.contains("claim=public-boundary-scenario"));
+    assert!(scenario_receipt.contains("result=unavailable"));
+    assert!(scenario_receipt.contains("scenario_grade=false"));
 
     fs::remove_dir_all(target_directory).expect("evidence should be removable");
 }

@@ -191,9 +191,12 @@ fn public_boundary_scenario(evidence: &Path) -> Result<String, String> {
     write_evidence(
         evidence,
         "public-boundary-scaffold-v1.txt",
-        "schema=moria-scaffold-evidence-v1\nclaim=public-crate-linkage\nmode=candidate\npublic_surface=crate-root\n",
+        "schema=moria-scaffold-evidence-v1\nclaim=public-boundary-scenario\nresult=unavailable\nscenario_grade=false\nmode=candidate\npublic_surface=crate-root\n",
     )?;
-    Ok("candidate crate linkage validated through the public facade".to_owned())
+    Err(
+        "UNAVAILABLE: the scaffold exposes no public workflow to exercise the required candidate scenario"
+            .to_owned(),
+    )
 }
 
 fn write_evidence(directory: &Path, name: &str, contents: &str) -> Result<(), String> {
