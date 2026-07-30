@@ -6191,68 +6191,83 @@
   },
   {
     "id": "M-129",
-    "title": "[system] Enforce separate coverage and implementation-completeness gates",
+    "title": "[system] Aggregate canonical and GPU evidence",
     "labels": [
       "system",
       "auto"
     ],
     "depends_on": [
-      "M-007",
-      "M-013",
-      "M-024",
-      "M-025",
-      "M-026",
-      "M-027",
-      "M-029",
-      "M-035",
-      "M-036",
-      "M-037",
-      "M-039",
-      "M-040",
-      "M-041",
-      "M-042",
-      "M-043",
-      "M-044",
-      "M-045",
-      "M-046",
-      "M-047",
-      "M-048",
-      "M-049",
-      "M-070",
-      "M-071",
-      "M-077",
+      "M-079",
+      "M-080",
+      "M-081",
+      "M-082",
+      "M-083",
       "M-084",
       "M-085",
       "M-086",
       "M-087",
       "M-088",
       "M-089",
-      "M-090",
       "M-091",
-      "M-092",
-      "M-093",
-      "M-094",
-      "M-095",
-      "M-096",
-      "M-097",
-      "M-098",
-      "M-099",
-      "M-100",
-      "M-101",
-      "M-102",
-      "M-103",
-      "M-104",
-      "M-105",
-      "M-106",
-      "M-107",
-      "M-108",
-      "M-109",
-      "M-110",
-      "M-111",
-      "M-112",
       "M-113",
       "M-114",
       "M-115",
+      "M-125",
+      "M-126"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-069"
+      ],
+      "design_requirements": [
+        "REQ-021",
+        "REQ-022",
+        "REQ-023",
+        "REQ-026",
+        "REQ-044"
+      ],
+      "authority": [
+        "C-003",
+        "C-015",
+        "D-002",
+        "D-003",
+        "D-004",
+        "D-005",
+        "D-006",
+        "D-007",
+        "D-008",
+        "D-009",
+        "C-013",
+        "C-001",
+        "C-004",
+        "C-005",
+        "C-006",
+        "C-007",
+        "C-008",
+        "C-009",
+        "C-010",
+        "C-011",
+        "C-012",
+        "C-014",
+        "C-016",
+        "AD-002",
+        "AD-003",
+        "AD-005",
+        "AD-007",
+        "D-001"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-079, M-080, M-081, M-082, M-083, M-084, M-085, M-086, M-087, M-088, M-089, M-091, M-113, M-114, M-115, M-125, M-126\n**Produces:** `src/bin/moria-qualify/evidence/domain/canonical_gpu.rs`\n\n## Description\n\nImplement the fail-closed canonical/oracle/shader/real-GPU domain evaluator and emit a typed `CanonicalGpuDomainReportV1`. The evaluator owns a closed, exhaustive row catalog and validates each retained proof independently; it does not collapse oracle, shader-layer, contamination, source-boundary, or real-GPU claims into one surrogate result. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-079, M-080, M-081, M-082, M-083, M-084, M-085, M-086, M-087, M-088, M-089, M-091, M-113, M-114, M-115, M-125, M-126.\n\n## Acceptance Criteria\n\n- [ ] The closed row catalog contains exactly `fixed_math_oracle`, `orientation_oracle`, `sparse_transition_oracle`, `commitment_replay_oracle`, `collision_oracle`, `wgsl_validation`, `kernel_contamination`, `gpu_sparse_directory`, `gpu_canonical_publication`, `gpu_collision`, `gpu_participant`, `same_machine_replay`, `decoder_fuzz`, `schedule_configuration_perturbation`, `participant_rng`, `canonical_rust_boundary`, and `canonical_wgsl_boundary`, with each row bound to the correspondingly ordered M-079–M-089, M-091, M-113–M-115, M-125, or M-126 artifact.\n- [ ] `CanonicalGpuDomainReportV1` records typed row identity, immutable artifact digest, contract/source/fixture identity, execution context, expected and actual layer/result, and a domain-validity result without treating Naga success, a submitted queue, a rendered frame, a mock, or a software adapter as physical-GPU proof.\n- [ ] The evaluator fails closed on every missing, skipped, unavailable, incomplete, or failed row, on unexpected GPU errors, incomplete contamination or fixed-math evidence, and on unavailable or divergent eight-run same-machine replay; one passing layer never substitutes for another.\n- [ ] Tests permute, omit, duplicate, mislabel, corrupt, and downgrade every catalog row and prove that only one complete, identity-matching, immutable set can produce a valid typed report.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-130",
+    "title": "[system] Aggregate facade and headless evidence",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-077",
       "M-116",
       "M-117",
       "M-118",
@@ -6309,6 +6324,253 @@
         "D-001"
       ]
     },
-    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-007, M-013, M-024, M-025, M-026, M-027, M-029, M-035, M-036, M-037, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-046, M-047, M-048, M-049, M-070, M-071, M-077, M-084, M-085, M-086, M-087, M-088, M-089, M-090, M-091, M-092, M-093, M-094, M-095, M-096, M-097, M-098, M-099, M-100, M-101, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111, M-112, M-113, M-114, M-115, M-116, M-117, M-118, M-119, M-120, M-121, M-122, M-123, M-124, M-125, M-126, M-127, M-128\n**Produces:** `src/bin/moria-qualify/evidence/gate.rs`\n\n## Description\n\nImplement the fail-closed completion evaluator that separately reports approved GDD coverage and implementation completeness across public closure, local commands, CPU/headless/scenario tests, shader layers, real GPU replay, contamination/math, device loss, visuals, and benchmarks. The evaluator consumes every independently produced TECH-059 and TECH-060 proof slice and treats absent, incomplete, or failing headless evidence as implementation incompleteness. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-007, M-013, M-024, M-025, M-026, M-027, M-029, M-035, M-036, M-037, M-039, M-040, M-041, M-042, M-043, M-044, M-045, M-046, M-047, M-048, M-049, M-070, M-071, M-077, M-084, M-085, M-086, M-087, M-088, M-089, M-090, M-091, M-092, M-093, M-094, M-095, M-096, M-097, M-098, M-099, M-100, M-101, M-102, M-103, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111, M-112, M-113, M-114, M-115, M-116, M-117, M-118, M-119, M-120, M-121, M-122, M-123, M-124, M-125, M-126, M-127, M-128.\n\n## Acceptance Criteria\n\n- [ ] Gate tests reject dirty or digest-mismatched worktrees, unexpected GPU errors, unavailable/divergent replay, incomplete audits, missing evidence rows, undefined callables/owners/bounds/lifecycles, and never infer one approval conclusion from the other.\n- [ ] Gate tests enumerate every required TECH-060 runtime, genesis/query, observation, provider, store/replay, configuration, participant, external-facade, public-closure, Rust source-lint, WGSL source-lint, private-correction, and completion-bridge slice and reject any absent, incomplete, skipped, or failing row.\n- [ ] Gate tests reject absent or incomplete TECH-059 decoder-fuzz, schedule/configuration-perturbation, or participant-RNG evidence.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-077, M-116, M-117, M-118, M-119, M-120, M-121, M-122, M-123, M-124, M-125, M-126, M-127, M-128\n**Produces:** `src/bin/moria-qualify/evidence/domain/facade_headless.rs`\n\n## Description\n\nImplement the fail-closed public-facade and TECH-060 domain evaluator and emit a typed `FacadeHeadlessDomainReportV1`. The evaluator preserves the coherent M-077 facade integration boundary while independently accounting for every TECH-060 runtime, owner, provider, closure, source-lint, correction, and completion-bridge slice. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-077 and M-116 through M-128.\n\n## Acceptance Criteria\n\n- [ ] The closed row catalog contains exactly `complete_consumer_facade`, `admission_lifecycle`, `genesis_query`, `observation_history`, `base_provider`, `store_replay`, `configuration_boundaries`, `participant_policy`, `external_facade`, `public_closure`, `canonical_rust_lint`, `canonical_wgsl_lint`, `private_correction`, and `completion_bridge`, bound respectively to M-077 and M-116–M-128 without merging independently testable TECH-060 slices.\n- [ ] `FacadeHeadlessDomainReportV1` records typed row identity, immutable artifact digest, callable/owner/bound/lifecycle coverage, expected and actual state-machine result, and domain validity while retaining the exact TECH-021 and TECH-070 family identities.\n- [ ] The evaluator fails closed on every missing, skipped, unavailable, incomplete, or failed row, undefined callable, owner, bound, lifecycle, admission/retry/generation state, or missing headless case; a facade compile result cannot substitute for a runtime row, and one TECH-060 row cannot satisfy another.\n- [ ] Tests omit, duplicate, reorder, corrupt, substitute, and mark unavailable each facade/headless row and prove exact rejection, including all TECH-059-independent TECH-060 private-correction and completion-bridge evidence.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-131",
+    "title": "[system] Aggregate scenario and durability evidence",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-092",
+      "M-093",
+      "M-094",
+      "M-095",
+      "M-096",
+      "M-097",
+      "M-098",
+      "M-099",
+      "M-100",
+      "M-101",
+      "M-102",
+      "M-103",
+      "M-104"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-069"
+      ],
+      "design_requirements": [
+        "REQ-021",
+        "REQ-022",
+        "REQ-023",
+        "REQ-026",
+        "REQ-044"
+      ],
+      "authority": [
+        "C-003",
+        "C-015",
+        "D-002",
+        "D-003",
+        "D-004",
+        "D-005",
+        "D-006",
+        "D-007",
+        "D-008",
+        "D-009",
+        "C-013",
+        "C-001",
+        "C-004",
+        "C-005",
+        "C-006",
+        "C-007",
+        "C-008",
+        "C-009",
+        "C-010",
+        "C-011",
+        "C-012",
+        "C-014",
+        "C-016",
+        "AD-002",
+        "AD-003",
+        "AD-005",
+        "AD-007",
+        "D-001"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-092, M-093, M-094, M-095, M-096, M-097, M-098, M-099, M-100, M-101, M-102, M-103, M-104\n**Produces:** `src/bin/moria-qualify/evidence/domain/scenario_durability.rs`\n\n## Description\n\nImplement the fail-closed scenario, failure-matrix, persistence, replay, correction, and rollback domain evaluator and emit a typed `ScenarioDurabilityDomainReportV1`. Preserve each public-boundary, truth, failure, restart, correction, replay, and rollback proof as an independently identified row. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-092 through M-104.\n\n## Acceptance Criteria\n\n- [ ] The closed row catalog contains exactly `public_boundary`, `deep_volume`, `dynamic_volume`, `post_admission_atomicity`, `truth_view_dressing`, `failure_canonical_query_content`, `failure_participant_lifecycle`, `failure_durable_capability_presentation`, `checkpoint_cold_restore`, `participant_restart`, `correction_branch`, `cold_public_replay`, and `rollback_chain`, bound respectively to M-092–M-104.\n- [ ] `ScenarioDurabilityDomainReportV1` records typed row identity, immutable artifact digest, fixture and public-facade identity, expected/actual roots and lifecycle outcomes, durability/replay/correction state, and domain validity without accepting a presentation result as truth or a live in-memory object as cold-restart evidence.\n- [ ] The evaluator fails closed on every missing, skipped, unavailable, incomplete, or failed row; every failure-matrix slice remains separately required, every persistence/replay/correction row retains its exact lineage and active-history evidence, and rollback correctness must precede any timing interpretation.\n- [ ] Tests omit, duplicate, corrupt, relabel, cross-wire, and mark unavailable every catalog row and prove no scenario, failure slice, persistence round trip, correction, replay, or rollback result can stand in for another.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-132",
+    "title": "[system] Aggregate performance and presentation evidence",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-090",
+      "M-096",
+      "M-104",
+      "M-105",
+      "M-106",
+      "M-107",
+      "M-108",
+      "M-109",
+      "M-110",
+      "M-111"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-069"
+      ],
+      "design_requirements": [
+        "REQ-021",
+        "REQ-022",
+        "REQ-023",
+        "REQ-026",
+        "REQ-044"
+      ],
+      "authority": [
+        "C-003",
+        "C-015",
+        "D-002",
+        "D-003",
+        "D-004",
+        "D-005",
+        "D-006",
+        "D-007",
+        "D-008",
+        "D-009",
+        "C-013",
+        "C-001",
+        "C-004",
+        "C-005",
+        "C-006",
+        "C-007",
+        "C-008",
+        "C-009",
+        "C-010",
+        "C-011",
+        "C-012",
+        "C-014",
+        "C-016",
+        "AD-002",
+        "AD-003",
+        "AD-005",
+        "AD-007",
+        "D-001"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-090, M-096, M-104, M-105, M-106, M-107, M-108, M-109, M-110, M-111\n**Produces:** `src/bin/moria-qualify/evidence/domain/performance_presentation.rs`\n\n## Description\n\nImplement the fail-closed benchmark, presentation, device-loss/recovery, and performance domain evaluator and emit a typed `PerformancePresentationDomainReportV1`. Keep correctness, visual review, the named rollback tier, and hardware-contextual measurements as separate rows and statuses. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-090, M-096, and M-104 through M-111.\n\n## Acceptance Criteria\n\n- [ ] The closed row catalog contains exactly `device_loss_recovery`, `presentation_truth_isolation`, `presentation_visual_capture`, `presentation_human_review`, `rollback_correctness`, `rollback_tier_measurement`, `benchmark_sparse_lifecycle`, `benchmark_materialization_mutation_hashing`, `benchmark_query_collision`, `benchmark_presentation_lifecycle`, `benchmark_checkpoint_restore`, `benchmark_participant_recovery`, and `benchmark_replay_correction`, bound to the independent M-090, M-096, M-104, and M-105–M-111 evidence slices.\n- [ ] `PerformancePresentationDomainReportV1` records typed row identity, immutable artifact digest, hardware/software/budget/fixture context, correctness prerequisite, measurement or review status, and domain validity; GPU timestamps remain measurement only and visual review remains presentation-only.\n- [ ] The evaluator fails closed on every missing, skipped, unavailable, incomplete, or failed row, any device-loss result that is neither reconstructed nor terminal, absent capture or human review for a presentation claim, absent TECH-068 path/context/status, or an attempted revival of P1–P10 or a universal hardware claim.\n- [ ] Tests prove `TIER_MET` is available only for the exact correct depth-20 fixture, slower correct results retain their measured curve, correctness failure cannot become performance success, and no visual, software-adapter, or timestamp result substitutes for canonical or physical evidence.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-133",
+    "title": "[system] Verify provenance and evidence-manifest integrity",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-078",
+      "M-112",
+      "M-124",
+      "M-129",
+      "M-130",
+      "M-131",
+      "M-132"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-069"
+      ],
+      "design_requirements": [
+        "REQ-021",
+        "REQ-022",
+        "REQ-023",
+        "REQ-026",
+        "REQ-044"
+      ],
+      "authority": [
+        "C-003",
+        "C-015",
+        "D-002",
+        "D-003",
+        "D-004",
+        "D-005",
+        "D-006",
+        "D-007",
+        "D-008",
+        "D-009",
+        "C-013",
+        "C-001",
+        "C-004",
+        "C-005",
+        "C-006",
+        "C-007",
+        "C-008",
+        "C-009",
+        "C-010",
+        "C-011",
+        "C-012",
+        "C-014",
+        "C-016",
+        "AD-002",
+        "AD-003",
+        "AD-005",
+        "AD-007",
+        "D-001"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-078, M-112, M-124, M-129, M-130, M-131, M-132\n**Produces:** `src/bin/moria-qualify/evidence/domain/provenance_manifest.rs`\n\n## Description\n\nImplement the fail-closed provenance, public-closure, local-command, and evidence-manifest integrity evaluator and emit a typed `ProvenanceManifestDomainReportV1`. Validate sealed authority and traceability independently from implementation results, and validate immutable report/blob references without interpreting one domain's conclusion as another's. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Outputs of M-078, M-112, M-124, M-129, M-130, M-131, and M-132 plus the approved source manifest, authority ledger, design requirements, TDD `Implements:` lines, and traceability index.\n- Use the maintained `serde_json` and `blake3` paths selected by M-112; do not implement a partial JSON parser or alternate digest format.\n\n## Acceptance Criteria\n\n- [ ] The closed row catalog contains exactly `approved_req_tech_traceability`, `active_tech_implements_parity`, `superseded_req039_retired_tech063`, `public_closure_inventory`, `local_command_receipts`, `source_contract_commit_digests`, `clean_worktree`, `evidence_schema`, `immutable_blob_digests`, `domain_report_references`, and `missing_claims`, with each row bound to the approved documents or the M-078, M-112, M-124, and M-129–M-132 outputs named in Inputs.\n- [ ] `ProvenanceManifestDomainReportV1` records typed row identity, immutable artifact/source digest, expected and observed authority or schema identity, report-reference digest, and domain validity; its traceability rows expose approved GDD coverage evidence without deriving implementation completeness.\n- [ ] The evaluator fails closed on every missing, skipped, unavailable, incomplete, or failed row; unknown/duplicate required fields, malformed/trailing JSON, bad BLAKE3 references, dirty worktrees, changed source/contract/commit identities, unreadable public closure, missing exact local-command receipts, stale or cross-wired domain reports, and hidden missing claims all invalidate the report.\n- [ ] Traceability tests require every current approved REQ to have a semantically authorized active stable TECH, retain REQ-039 only as superseded, reject TECH-063, require exactly one matching `Implements:` line per active TECH, and require exact traceability pair parity without changing any approved digest.\n- [ ] Manifest tests use `serde_json` and `blake3`, preserve canonical binary blobs outside JSON numbers, and prove that structurally valid but identity-mismatched or incomplete domain reports cannot pass reference integrity.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
+  },
+  {
+    "id": "M-134",
+    "title": "[system] Enforce separate coverage and implementation-completeness gates",
+    "labels": [
+      "system",
+      "auto"
+    ],
+    "depends_on": [
+      "M-129",
+      "M-130",
+      "M-131",
+      "M-132",
+      "M-133"
+    ],
+    "provenance": {
+      "technical_contracts": [
+        "TECH-069"
+      ],
+      "design_requirements": [
+        "REQ-021",
+        "REQ-022",
+        "REQ-023",
+        "REQ-026",
+        "REQ-044"
+      ],
+      "authority": [
+        "C-003",
+        "C-015",
+        "D-002",
+        "D-003",
+        "D-004",
+        "D-005",
+        "D-006",
+        "D-007",
+        "D-008",
+        "D-009",
+        "C-013",
+        "C-001",
+        "C-004",
+        "C-005",
+        "C-006",
+        "C-007",
+        "C-008",
+        "C-009",
+        "C-010",
+        "C-011",
+        "C-012",
+        "C-014",
+        "C-016",
+        "AD-002",
+        "AD-003",
+        "AD-005",
+        "AD-007",
+        "D-001"
+      ]
+    },
+    "body": "**Category:** system\n**Automation:** auto\n**Depends on:** M-129, M-130, M-131, M-132, M-133\n**Produces:** `src/bin/moria-qualify/evidence/gate.rs`\n\n## Description\n\nImplement the small fail-closed completion gate over the five typed TECH-069 domain reports. Return approved GDD coverage and approved implementation completeness as separate conclusions with separate derivations; never infer either conclusion from the other or re-expand the gate over individual evidence producers. This issue implements TECH-069 under REQ-021, REQ-022, REQ-023, REQ-026, REQ-044.\n\n## Inputs\n\n- TECH-069 (docs/tdd/validation.md).\n- Authorized design requirements REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain C-003, C-015, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, C-013, C-001, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-014, C-016, AD-002, AD-003, AD-005, AD-007, D-001.\n- Typed domain reports from M-129, M-130, M-131, M-132, and M-133.\n\n## Acceptance Criteria\n\n- [ ] `CompletionGateReportV1` returns distinct `approved_gdd_coverage` and `approved_implementation_completeness` conclusions: coverage derives only from the exact traceability rows in `ProvenanceManifestDomainReportV1`, while completeness derives only from the complete implementation/evidence rows across all five valid domain reports.\n- [ ] The gate accepts exactly one identity-matching `CanonicalGpuDomainReportV1`, `FacadeHeadlessDomainReportV1`, `ScenarioDurabilityDomainReportV1`, `PerformancePresentationDomainReportV1`, and `ProvenanceManifestDomainReportV1`; any missing, duplicate, wrong-version, stale-identity, digest-invalid, internally invalid, skipped, unavailable, incomplete, or failed report is rejected before an approved completion result is emitted.\n- [ ] Gate tests prove approved GDD coverage cannot make implementation completeness pass, implementation completeness cannot make approved GDD coverage pass, and changing either source conclusion changes only that conclusion when all five reports remain structurally valid.\n- [ ] Release tests reject dirty or digest-mismatched worktrees, unexpected GPU errors, unavailable or divergent replay, incomplete contamination audits, missing evidence rows, undefined callables/owners/bounds/lifecycles, absent visual review for a presentation claim, and incomplete benchmark paths through their owning typed domain report.\n- [ ] The final gate has exactly five direct issue dependencies and contains no producer-specific row catalog or direct dependency on the former roughly 69 producers.\n- [ ] The implementation stays within the cited contracts and exposes no authority, capability, or artifact absent from them.\n- [ ] Tests exist and pass\n- [ ] No regressions — all existing tests still pass"
   }
 ]

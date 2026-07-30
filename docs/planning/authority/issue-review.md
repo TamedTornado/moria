@@ -516,3 +516,103 @@ None.
 No issue-manifest correction or upstream planning-package change is required.
 The current manifest is structurally sound, complete for the approved TDD,
 and contains no unauthorized work.
+
+## Coder Response Turn — 2026-07-30T05:52:15Z
+
+**Answering:** `TamedTornado (COMMENTED)` review feedback supplied for the
+`M-129` hierarchical evidence-aggregation revision.
+
+**Verdict:** addressed
+
+### Responses to findings
+
+1. **`M-129` 69-way direct fan-in and completion-gate boundary — addressed.**
+
+   Replaced the former monolithic evaluator with five dependency-ordered
+   TECH-069 domain issues:
+
+   - `M-129` produces
+     `src/bin/moria-qualify/evidence/domain/canonical_gpu.rs` and emits typed
+     `CanonicalGpuDomainReportV1` across the fixed-math/orientation/sparse/
+     commitment/collision oracles, matching-Naga shader validation,
+     contamination audit, canonical Rust/WGSL boundaries, decoder fuzzing,
+     schedule/configuration perturbation, participant RNG, physical-GPU
+     sparse/canonical/collision/participant proofs, and eight-run same-machine
+     replay.
+   - `M-130` produces
+     `src/bin/moria-qualify/evidence/domain/facade_headless.rs` and emits typed
+     `FacadeHeadlessDomainReportV1` across the coherent `M-077` consumer
+     facade and every separate TECH-060 slice from `M-116` through `M-128`.
+   - `M-131` produces
+     `src/bin/moria-qualify/evidence/domain/scenario_durability.rs` and emits
+     typed `ScenarioDurabilityDomainReportV1` across the public/deep/dynamic/
+     atomicity/truth-view scenarios, all three failure-matrix slices,
+     checkpoint/cold restore, participant restart, correction branch, cold
+     public replay, and rollback-chain evidence.
+   - `M-132` produces
+     `src/bin/moria-qualify/evidence/domain/performance_presentation.rs` and
+     emits typed `PerformancePresentationDomainReportV1` across physical
+     device loss/recovery, presentation truth isolation, visual capture,
+     human review, rollback correctness and tier measurement, and every
+     TECH-068 benchmark family.
+   - `M-133` produces
+     `src/bin/moria-qualify/evidence/domain/provenance_manifest.rs` and emits
+     typed `ProvenanceManifestDomainReportV1` across approved REQ/TECH
+     traceability, `Implements:` parity, the REQ-039/TECH-063 supersession
+     record, public closure, exact local commands, source/contract/commit
+     identity, clean-worktree state, evidence schema and immutable BLAKE3
+     blobs, domain-report references, and missing claims.
+
+   Each domain issue owns an explicit closed row catalog and independently
+   rejects every missing, skipped, unavailable, incomplete, failed,
+   duplicated, corrupt, stale, or cross-wired row. No oracle, shader,
+   real-GPU, headless, scenario, durability, presentation, recovery,
+   performance, provenance, closure, or manifest slice was merged merely to
+   lower dependency count.
+
+   The former `M-129` final gate is now `M-134` so all dependencies remain
+   earlier than their consumer. `M-134` depends only on `M-129`–`M-133`,
+   accepts exactly one valid identity-matching report of each typed domain,
+   and rejects a missing or invalid report before emitting an approved
+   completion result. Its `CompletionGateReportV1` derives and returns
+   `approved_gdd_coverage` only from the exact provenance traceability rows
+   and `approved_implementation_completeness` only from the complete
+   implementation/evidence rows; tests prohibit either conclusion from being
+   inferred from the other.
+
+   All TECH-069 semantics, every TECH-059 and TECH-060 slice, all current
+   evidence rows, and the exact TECH-069 requirement and authority chain are
+   retained. The final gate's direct fan-in fell from 69 to 5; the five domain
+   fan-ins are 17, 14, 13, 10, and 7. Every one of the former 69 direct
+   dependencies remains in `M-134`'s transitive dependency closure.
+
+2. **`M-077` 38-way fan-in sanity check — addressed without changing
+   `M-077`.**
+
+   `M-077` remains one coherent public-facade integration: its dependencies
+   are the callable owners and lifecycle implementations that it wires into
+   one consumer surface, not independent evidence reports suitable for
+   hierarchical aggregation. Splitting that implementation boundary would
+   fragment the complete facade and weaken reviewability. `M-130` therefore
+   consumes `M-077` as the single `complete_consumer_facade` row and keeps all
+   separate TECH-060 proof slices independent.
+
+### Exact `docs/issues.json` changes
+
+- Preserved `M-001` through `M-128` unchanged, including `M-077`.
+- Replaced the former `M-129` gate entry with the canonical/GPU domain
+  evaluator and added domain evaluators `M-130` through `M-133`.
+- Renumbered only the former final gate from `M-129` to `M-134`, replaced its
+  69 direct dependencies with `M-129` through `M-133`, and required the five
+  exact typed reports plus separate coverage and completeness conclusions.
+- Increased the manifest from 129 to 134 sequential dependency-ordered
+  entries. Every new issue cites only TECH-069 with the unchanged exact
+  REQ-021, REQ-022, REQ-023, REQ-026, REQ-044 and authority chain.
+
+### Authority-boundary disposition
+
+No finding requires changing a source, seed, vision, design requirement,
+technical contract, claim, decision, TDD, authority ledger, source manifest,
+or digest. Both findings were satisfied solely by correcting
+`docs/issues.json`; there is no unsatisfied finding or upstream-authority
+conflict requiring human resolution.
