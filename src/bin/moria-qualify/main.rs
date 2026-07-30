@@ -2,7 +2,8 @@
 
 use moria as _;
 
-fn main() {
-    eprintln!("moria-qualify commands are not available in the scaffold");
-    std::process::exit(2);
+mod scaffold;
+
+fn main() -> std::process::ExitCode {
+    scaffold::run(std::env::args().skip(1))
 }
