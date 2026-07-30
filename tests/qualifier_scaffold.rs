@@ -13,6 +13,14 @@ fn qualify(arguments: &[&str]) -> Output {
         .expect("moria-qualify should start")
 }
 
+fn qualify_with_target_dir(arguments: &[&str], target_directory: &PathBuf) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_moria-qualify"))
+        .args(arguments)
+        .env("CARGO_TARGET_DIR", target_directory)
+        .output()
+        .expect("moria-qualify should start")
+}
+
 fn evidence_directory(name: &str) -> PathBuf {
     std::env::temp_dir()
         .join("qualifier-scaffold-tests")
@@ -20,47 +28,54 @@ fn evidence_directory(name: &str) -> PathBuf {
 }
 
 #[test]
-fn documented_scaffold_commands_validate_inputs_and_write_evidence() {
+fn documented_scaffold_commands_write_external_evidence() {
     let shaders = qualify(&["shaders", "validate"]);
     assert!(shaders.status.success());
     assert!(String::from_utf8_lossy(&shaders.stdout).contains("PASS shaders validate"));
 
-    let replay_evidence = evidence_directory("replay");
-    let replay = qualify(&[
-        "replay",
-        "verify",
-        "--fixture",
-        "fixtures/replay/core-v1",
-        "--runs",
-        "8",
-        "--evidence",
-        replay_evidence.to_str().expect("test path is UTF-8"),
-    ]);
-    assert!(replay.status.success());
-    assert!(String::from_utf8_lossy(&replay.stdout).contains("PASS replay verify"));
-    let replay_receipt = fs::read_to_string(replay_evidence.join("replay-scaffold-v1.txt"))
-        .expect("replay evidence should be readable");
-    assert!(replay_receipt.contains("claim=scaffold-fixture-repeatability"));
+    let target_directory = evidence_directory("target");
+    let replay = qualify_with_target_dir(
+        &[
+            "replay",
+            "verify",
+            "--fixture",
+            "fixtures/replay/core-v1",
+            "--runs",
+            "8",
+            "--evidence",
+            "target/moria-evidence/replay",
+        ],
+        &target_directory,
+    );
+    assert!(!replay.status.success());
+    assert!(String::from_utf8_lossy(&replay.stderr).contains("UNAVAILABLE"));
+    let replay_receipt =
+        fs::read_to_string(target_directory.join("moria-evidence/replay/replay-scaffold-v1.txt"))
+            .expect("replay evidence should be readable");
+    assert!(replay_receipt.contains("claim=replay-verification"));
+    assert!(replay_receipt.contains("result=unavailable"));
     assert!(replay_receipt.contains("replay_grade=false"));
 
-    let scenario_evidence = evidence_directory("scenario");
-    let scenario = qualify(&[
-        "scenario",
-        "public-boundary",
-        "--mode",
-        "candidate",
-        "--evidence",
-        scenario_evidence.to_str().expect("test path is UTF-8"),
-    ]);
+    let scenario = qualify_with_target_dir(
+        &[
+            "scenario",
+            "public-boundary",
+            "--mode",
+            "candidate",
+            "--evidence",
+            "target/moria-evidence/dev",
+        ],
+        &target_directory,
+    );
     assert!(scenario.status.success());
     assert!(String::from_utf8_lossy(&scenario.stdout).contains("PASS scenario public-boundary"));
-    let scenario_receipt =
-        fs::read_to_string(scenario_evidence.join("public-boundary-scaffold-v1.txt"))
-            .expect("scenario evidence should be readable");
+    let scenario_receipt = fs::read_to_string(
+        target_directory.join("moria-evidence/dev/public-boundary-scaffold-v1.txt"),
+    )
+    .expect("scenario evidence should be readable");
     assert!(scenario_receipt.contains("claim=public-crate-linkage"));
 
-    fs::remove_dir_all(replay_evidence).expect("replay evidence should be removable");
-    fs::remove_dir_all(scenario_evidence).expect("scenario evidence should be removable");
+    fs::remove_dir_all(target_directory).expect("evidence should be removable");
 }
 
 #[test]

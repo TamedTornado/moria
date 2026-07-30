@@ -170,23 +170,21 @@ fn replay_verify(fixture: &Path, runs: u32, evidence: &Path) -> Result<String, S
         ));
     }
 
-    let expected_digest = fixture_digest(&fixture_bytes);
-    for _ in 1..runs {
-        if fixture_digest(&fixture_bytes) != expected_digest {
-            return Err("fixture digest diverged between runs".to_owned());
-        }
-    }
+    let fixture_digest = fixture_digest(&fixture_bytes);
 
     write_evidence(
         evidence,
         "replay-scaffold-v1.txt",
         &format!(
-            "schema=moria-scaffold-evidence-v1\nclaim=scaffold-fixture-repeatability\nreplay_grade=false\ngpu_execution=not-claimed\nfixture={}\nruns={runs}\ndigest={expected_digest:016x}\n",
+            "schema=moria-scaffold-evidence-v1\nclaim=replay-verification\nresult=unavailable\nreplay_grade=false\ngpu_execution=not-executed\nfixture={}\nrequested_runs={runs}\nfixture_digest={fixture_digest:016x}\n",
             fixture_path.display()
         ),
     )?;
 
-    Ok("scaffold fixture repeated consistently; no replay-grade GPU claim is made".to_owned())
+    Err(
+        "UNAVAILABLE: the scaffold does not execute independent public real-GPU replay runs"
+            .to_owned(),
+    )
 }
 
 fn public_boundary_scenario(evidence: &Path) -> Result<String, String> {
@@ -199,7 +197,8 @@ fn public_boundary_scenario(evidence: &Path) -> Result<String, String> {
 }
 
 fn write_evidence(directory: &Path, name: &str, contents: &str) -> Result<(), String> {
-    fs::create_dir_all(directory).map_err(|error| {
+    let directory = resolve_evidence_directory(directory);
+    fs::create_dir_all(&directory).map_err(|error| {
         format!(
             "cannot create evidence directory `{}`: {error}",
             directory.display()
@@ -208,6 +207,14 @@ fn write_evidence(directory: &Path, name: &str, contents: &str) -> Result<(), St
     let path = directory.join(name);
     fs::write(&path, contents)
         .map_err(|error| format!("cannot write evidence `{}`: {error}", path.display()))
+}
+
+fn resolve_evidence_directory(directory: &Path) -> PathBuf {
+    let target_relative = directory.strip_prefix("target").ok();
+    match (target_relative, std::env::var_os("CARGO_TARGET_DIR")) {
+        (Some(relative), Some(target_directory)) => PathBuf::from(target_directory).join(relative),
+        _ => directory.to_owned(),
+    }
 }
 
 fn fixture_digest(bytes: &[u8]) -> u64 {
