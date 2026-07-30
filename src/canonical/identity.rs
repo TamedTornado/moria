@@ -263,31 +263,54 @@ digest!(ContractDigest, "A canonical-contract digest.");
 digest!(SchemaDigest, "A schema digest.");
 digest!(BlobDigest, "An immutable blob digest.");
 
-#[cfg(test)]
 /// Errors emitted while assigning the fixed canonical volume serials.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum VolumeRegistryError {
+pub enum VolumeRegistryError {
+    /// Genesis claimed the same stable volume ID more than once.
     DuplicateGenesisId(VolumeId),
+    /// The registry has no remaining capacity or no representable next serial.
     Exhausted,
 }
 
-#[cfg(test)]
 /// Bounded serial allocation state used while validating a world's volume registry.
 ///
-/// This remains internal until the world-configuration facade owns registry
-/// construction. It nevertheless keeps the TECH-005 uniqueness and exhaustion
-/// rules in one canonical implementation rather than reproducing them at each
-/// caller.
+/// Genesis IDs must be unique. The next serial is one above the greatest
+/// genesis ID, and IDs are never reused. `capacity` bounds the total number of
+/// claimed IDs for the lifetime of this registry.
+///
+/// # Errors
+///
+/// [`Self::from_genesis`] returns [`VolumeRegistryError::DuplicateGenesisId`]
+/// for repeated genesis IDs and [`VolumeRegistryError::Exhausted`] when their
+/// count exceeds `capacity`. [`Self::allocate_next`] returns `Exhausted`
+/// without mutation when the capacity or `u64` serial space is exhausted.
+///
+/// # Examples
+///
+/// ```
+/// use moria::canonical::{VolumeId, VolumeIdRegistry};
+///
+/// let genesis = VolumeId::try_from_raw(4).unwrap();
+/// let mut registry = VolumeIdRegistry::from_genesis(2, &[genesis]).unwrap();
+/// assert_eq!(registry.allocate_next().unwrap().get(), 5);
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct VolumeIdRegistry {
+pub struct VolumeIdRegistry {
     claimed: std::collections::BTreeSet<VolumeId>,
     capacity: usize,
     next_volume_serial: Option<VolumeId>,
 }
 
-#[cfg(test)]
 impl VolumeIdRegistry {
-    fn from_genesis(capacity: usize, genesis: &[VolumeId]) -> Result<Self, VolumeRegistryError> {
+    /// Creates a bounded registry from the IDs claimed at world genesis.
+    ///
+    /// The supplied IDs remain claimed for the registry lifetime. See
+    /// [`Self`] for the uniqueness and capacity error contract.
+    #[must_use = "the canonical registry owns future volume serial allocation"]
+    pub fn from_genesis(
+        capacity: usize,
+        genesis: &[VolumeId],
+    ) -> Result<Self, VolumeRegistryError> {
         let mut claimed = std::collections::BTreeSet::new();
         for &id in genesis {
             if !claimed.insert(id) {
@@ -317,11 +340,32 @@ impl VolumeIdRegistry {
         })
     }
 
-    fn next_volume_serial(&self) -> Option<VolumeId> {
+    /// Returns the next unclaimed serial, or `None` when `u64` serial space is exhausted.
+    ///
+    /// This inspection never mutates the registry. Capacity exhaustion is
+    /// reported only by [`Self::allocate_next`].
+    #[must_use]
+    pub fn next_volume_serial(&self) -> Option<VolumeId> {
         self.next_volume_serial
     }
 
-    fn allocate_next(&mut self) -> Result<VolumeId, VolumeRegistryError> {
+    /// Claims and returns the next serial in canonical order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VolumeRegistryError::Exhausted`] without mutation when the
+    /// configured capacity is full or no greater `VolumeId` is representable.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use moria::canonical::VolumeIdRegistry;
+    ///
+    /// let mut registry = VolumeIdRegistry::from_genesis(1, &[]).unwrap();
+    /// assert_eq!(registry.allocate_next().unwrap().get(), 1);
+    /// ```
+    #[must_use = "the returned ID is the registry's canonical claim"]
+    pub fn allocate_next(&mut self) -> Result<VolumeId, VolumeRegistryError> {
         if self.claimed.len() == self.capacity {
             return Err(VolumeRegistryError::Exhausted);
         }
@@ -339,72 +383,5 @@ impl VolumeIdRegistry {
         debug_assert!(inserted, "the next serial follows the greatest claimed ID");
         self.next_volume_serial = next_volume_serial;
         Ok(id)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{VolumeId, VolumeIdRegistry, VolumeRegistryError};
-
-    #[test]
-    fn volume_registry_keeps_genesis_ids_unique_and_allocates_the_next_serial() {
-        let low = VolumeId::try_from_raw(1).unwrap();
-        let high = VolumeId::try_from_raw(41).unwrap();
-        let mut registry = VolumeIdRegistry::from_genesis(3, &[low, high]).unwrap();
-
-        assert_eq!(
-            registry.next_volume_serial(),
-            Some(VolumeId::try_from_raw(42).unwrap())
-        );
-        assert_eq!(
-            registry.allocate_next(),
-            Ok(VolumeId::try_from_raw(42).unwrap())
-        );
-        assert_eq!(
-            registry.next_volume_serial(),
-            Some(VolumeId::try_from_raw(43).unwrap())
-        );
-    }
-
-    #[test]
-    fn volume_registry_reports_exhaustion_without_mutation() {
-        let maximum = VolumeId::try_from_raw(u64::MAX).unwrap();
-        let mut registry = VolumeIdRegistry::from_genesis(2, &[maximum]).unwrap();
-        assert_eq!(registry.next_volume_serial(), None);
-        let before = registry.clone();
-
-        assert_eq!(
-            registry.allocate_next(),
-            Err(VolumeRegistryError::Exhausted)
-        );
-        assert_eq!(registry, before);
-
-        let mut at_capacity =
-            VolumeIdRegistry::from_genesis(1, &[VolumeId::try_from_raw(4).unwrap()]).unwrap();
-        let before = at_capacity.clone();
-        assert_eq!(
-            at_capacity.allocate_next(),
-            Err(VolumeRegistryError::Exhausted)
-        );
-        assert_eq!(at_capacity, before);
-    }
-
-    #[test]
-    fn invalid_genesis_registrations_do_not_create_a_registry() {
-        let duplicate = VolumeId::try_from_raw(7).unwrap();
-        assert_eq!(
-            VolumeIdRegistry::from_genesis(2, &[duplicate, duplicate]),
-            Err(VolumeRegistryError::DuplicateGenesisId(duplicate))
-        );
-        assert_eq!(
-            VolumeIdRegistry::from_genesis(
-                1,
-                &[
-                    VolumeId::try_from_raw(1).unwrap(),
-                    VolumeId::try_from_raw(2).unwrap(),
-                ],
-            ),
-            Err(VolumeRegistryError::Exhausted)
-        );
     }
 }

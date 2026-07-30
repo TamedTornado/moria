@@ -1,7 +1,7 @@
 use moria::canonical::{
     BlobDigest, CanonicalHash, CanonicalOrder, ContentDigest, ContractDigest, DeviceGeneration,
     InputSourceId, MaterialId, NewtypeValueError, ParticipantId, ReceiptId, RngStreamId,
-    SchemaDigest, Tick, VolumeId, VolumeRevision, WorldId,
+    SchemaDigest, Tick, VolumeId, VolumeIdRegistry, VolumeRegistryError, VolumeRevision, WorldId,
 };
 
 #[test]
@@ -92,4 +92,66 @@ fn world_and_every_digest_preserve_required_byte_patterns() {
         assert_eq!(BlobDigest::from_bytes(bytes).as_bytes(), &bytes);
         assert_eq!(BlobDigest::from_bytes(bytes).to_bytes(), bytes);
     }
+}
+
+#[test]
+fn volume_registry_keeps_genesis_ids_unique_and_allocates_the_next_serial() {
+    let low = VolumeId::try_from_raw(1).unwrap();
+    let high = VolumeId::try_from_raw(41).unwrap();
+    let mut registry = VolumeIdRegistry::from_genesis(3, &[low, high]).unwrap();
+
+    assert_eq!(
+        registry.next_volume_serial(),
+        Some(VolumeId::try_from_raw(42).unwrap())
+    );
+    assert_eq!(
+        registry.allocate_next(),
+        Ok(VolumeId::try_from_raw(42).unwrap())
+    );
+    assert_eq!(
+        registry.next_volume_serial(),
+        Some(VolumeId::try_from_raw(43).unwrap())
+    );
+}
+
+#[test]
+fn volume_registry_reports_exhaustion_without_mutation() {
+    let maximum = VolumeId::try_from_raw(u64::MAX).unwrap();
+    let mut registry = VolumeIdRegistry::from_genesis(2, &[maximum]).unwrap();
+    assert_eq!(registry.next_volume_serial(), None);
+    let before = registry.clone();
+
+    assert_eq!(
+        registry.allocate_next(),
+        Err(VolumeRegistryError::Exhausted)
+    );
+    assert_eq!(registry, before);
+
+    let mut at_capacity =
+        VolumeIdRegistry::from_genesis(1, &[VolumeId::try_from_raw(4).unwrap()]).unwrap();
+    let before = at_capacity.clone();
+    assert_eq!(
+        at_capacity.allocate_next(),
+        Err(VolumeRegistryError::Exhausted)
+    );
+    assert_eq!(at_capacity, before);
+}
+
+#[test]
+fn invalid_genesis_registrations_do_not_create_a_registry() {
+    let duplicate = VolumeId::try_from_raw(7).unwrap();
+    assert_eq!(
+        VolumeIdRegistry::from_genesis(2, &[duplicate, duplicate]),
+        Err(VolumeRegistryError::DuplicateGenesisId(duplicate))
+    );
+    assert_eq!(
+        VolumeIdRegistry::from_genesis(
+            1,
+            &[
+                VolumeId::try_from_raw(1).unwrap(),
+                VolumeId::try_from_raw(2).unwrap(),
+            ],
+        ),
+        Err(VolumeRegistryError::Exhausted)
+    );
 }
