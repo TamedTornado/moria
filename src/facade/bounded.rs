@@ -107,9 +107,9 @@ mod tests {
         assert_eq!(bytes.len(), 2);
         assert_eq!(bytes.as_slice(), [9, 10]);
         let shared = bytes.clone();
-        let bytes = bytes.into_arc();
+        let bytes: std::sync::Arc<[u8]> = bytes.into_arc();
         let shared = shared.into_arc();
-        assert!(triomphe::Arc::ptr_eq(&bytes, &shared));
+        assert!(std::sync::Arc::ptr_eq(&bytes, &shared));
         assert_eq!(&*bytes, [9, 10]);
 
         let rejected = OwnedBytes::try_from_vec(vec![9, 10], 1).unwrap_err();
@@ -139,11 +139,14 @@ mod tests {
             usize::try_from(u32::MAX).unwrap(),
             u32::MAX
         ));
-        assert!(!super::fits_capacity(usize::MAX, u32::MAX));
+        if usize::BITS > u32::BITS {
+            assert!(!super::fits_capacity(usize::MAX, u32::MAX));
+        } else {
+            assert!(super::fits_capacity(usize::MAX, u32::MAX));
+        }
     }
 }
-use super::SharedArc;
-use std::mem::size_of;
+use std::{mem::size_of, sync::Arc};
 
 /// The reason construction or bounded growth was rejected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -480,11 +483,11 @@ impl<const N: usize> BoundedUtf8<N> {
 
 /// Immutable, shareable bytes whose length is checked before ownership transfers.
 ///
-/// The stored allocation is shared through a [`SharedArc`] slice. Clones share the
+/// The stored allocation is shared through an [`Arc`] slice. Clones share the
 /// same immutable allocation, and no spare growable capacity is exposed.
 #[derive(Clone, Debug)]
 pub struct OwnedBytes {
-    bytes: SharedArc<[u8]>,
+    bytes: Arc<[u8]>,
     length: u64,
 }
 
@@ -511,11 +514,7 @@ impl OwnedBytes {
                 reason: BoundedOwnerError::LengthExceedsCapacity,
             });
         }
-        try_shared_owned_bytes_with(bytes, length, |bytes| {
-            SharedArc::try_from_header_and_slice((), bytes)
-                .map(Into::into)
-                .map_err(|_| ())
-        })
+        try_shared_owned_bytes_with(bytes, length, |bytes| Ok(Arc::from(bytes)))
     }
 
     /// Returns the immutable bytes.
@@ -534,7 +533,7 @@ impl OwnedBytes {
     }
 
     /// Transfers the immutable shared root to the caller.
-    pub fn into_arc(self) -> SharedArc<[u8]> {
+    pub fn into_arc(self) -> Arc<[u8]> {
         self.bytes
     }
 }
@@ -542,7 +541,7 @@ impl OwnedBytes {
 fn try_shared_owned_bytes_with(
     bytes: Vec<u8>,
     length: u64,
-    allocate: impl FnOnce(&[u8]) -> Result<SharedArc<[u8]>, ()>,
+    allocate: impl FnOnce(&[u8]) -> Result<Arc<[u8]>, ()>,
 ) -> Result<OwnedBytes, BytesConstructionRejected> {
     let root = match allocate(&bytes) {
         Ok(root) => root,
