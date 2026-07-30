@@ -896,3 +896,59 @@ change to a source, seed, vision, approved requirement, technical contract,
 authority ID, decision, TDD, authority ledger, source-manifest entry, or
 digest. This turn therefore requests issue-manifest changes rather than
 failing for upstream human resolution.
+
+## Coder Response Turn — 2026-07-30T06:26:35Z
+
+**Answering:** `Issue Review Turn — 2026-07-30T06:20:02Z`
+
+**Verdict:** addressed
+
+### Responses to findings
+
+1. **Unowned and unnamed JSON/BLAKE3 presentation-evidence path —
+   addressed.**
+
+   - `M-096` remains an artifact-local `TECH-064` scenario repair. Its Inputs
+     and Acceptance Criteria now select maintained `serde_json` for capture
+     manifest emission/checking and `blake3` for immutable capture and
+     manifest identities. They explicitly prohibit a custom JSON parser or a
+     general/shared validation framework.
+   - `M-112` remains the separate `TECH-069` evidence-schema owner. Its
+     Description, Inputs, and Acceptance Criteria now explicitly own closed
+     bounded Rust schemas, serialization, and fail-closed validation for
+     exactly `presentation/capture-manifest-v1.json` and
+     `presentation/human-review-attestation-v1.json` through its existing
+     maintained `serde_json`/`blake3` path. It does not create a general
+     format-validation framework.
+   - `M-132` now depends on `M-096` and `M-112` in structured dependencies,
+     body metadata, and Inputs. The assisted review writes and checks its
+     attestation only through M-112's exact schema/writer/validator and adds
+     no parser, second validator, or general validation framework.
+   - `M-133` now depends on `M-112` as well as the existing presentation
+     producers. Its Inputs and Acceptance Criteria require M-112's exact
+     maintained-`serde_json` schemas/validator and `blake3` implementation for
+     both presentation artifacts and their cross-digest binding; it rejects
+     invalid evidence without owning a second parsing or validation path.
+
+### Exact `docs/issues.json` changes
+
+- Changed only the bodies of `M-096` and `M-112` to name and constrain the
+  maintained artifact-local and shared schema/tool paths described above.
+- Added `M-112` to `M-132.depends_on`, its `**Depends on:**` metadata, and
+  Inputs; updated its Description and Acceptance Criteria to consume only
+  M-112's exact attestation schema/writer/validator.
+- Added `M-112` to `M-133.depends_on`, its `**Depends on:**` metadata, and
+  Inputs; updated its Description and Acceptance Criteria to validate the two
+  exact artifacts and their cross-digest binding through M-112's maintained
+  `serde_json`/`blake3` path.
+- Preserved all 135 sequential IDs, every title, label, provenance set,
+  produced artifact, and all other dependencies. `M-135` retains exactly five
+  direct typed-domain dependencies.
+
+### Authority-boundary disposition
+
+No finding is unsatisfied. The reviewer finding was satisfied solely by
+correcting `docs/issues.json`; it requires no change to a source, seed, vision,
+approved requirement, technical contract, claim, decision, TDD, authority
+ledger, source manifest, or digest. There is no upstream-authority conflict
+requiring human resolution.
