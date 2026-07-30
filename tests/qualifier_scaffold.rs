@@ -2,7 +2,7 @@
 
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{Command, Output},
 };
 
@@ -14,7 +14,7 @@ fn qualify(arguments: &[&str]) -> Output {
 }
 
 fn evidence_directory(name: &str) -> PathBuf {
-    Path::new("target")
+    std::env::temp_dir()
         .join("qualifier-scaffold-tests")
         .join(format!("{name}-{}", std::process::id()))
 }
