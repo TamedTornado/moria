@@ -314,7 +314,7 @@ impl BoundedBytes64 {
 /// assert_eq!(text.as_str(), "moria");
 /// # Ok::<(), moria::facade::BytesConstructionRejected>(())
 /// ```
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct BoundedUtf8<const N: usize> {
     text: String,
 }
@@ -471,6 +471,10 @@ impl OwnedBytes {
 }
 
 fn reserve_capacity<T>(capacity: u32) -> Result<Vec<T>, BoundedOwnerError> {
+    if capacity_allocation_failure_requested() {
+        return Err(BoundedOwnerError::AllocationFailed);
+    }
+
     let capacity = usize::try_from(capacity).map_err(|_| BoundedOwnerError::CapacityTooLarge)?;
     let element_size = std::mem::size_of::<T>();
     if element_size != 0 && capacity > (isize::MAX as usize) / element_size {
@@ -512,8 +516,19 @@ fn shared_owner_from_backing(bytes: Vec<u8>) -> Result<Arc<Option<Vec<u8>>>, Vec
 
 #[cfg(test)]
 thread_local! {
+    static FORCE_CAPACITY_ALLOCATION_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static FORCE_BACKING_ALLOCATION_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static FORCE_SHARED_OWNER_ALLOCATION_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn capacity_allocation_failure_requested() -> bool {
+    FORCE_CAPACITY_ALLOCATION_FAILURE.replace(false)
+}
+
+#[cfg(not(test))]
+fn capacity_allocation_failure_requested() -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -572,6 +587,54 @@ mod tests {
 
         FORCE_BACKING_ALLOCATION_FAILURE.set(true);
         let rejected = OwnedBytes::try_from_vec(bytes, 5).unwrap_err();
+
+        assert_eq!(rejected.reason, BoundedOwnerError::AllocationFailed);
+        assert_eq!(rejected.bytes, b"moria");
+        assert_eq!(rejected.bytes.as_ptr(), input_pointer);
+        assert_eq!(rejected.bytes.capacity(), input_capacity);
+    }
+
+    #[test]
+    fn bounded_vec_allocation_failure_recovers_the_original_allocation() {
+        let mut values = Vec::with_capacity(128);
+        values.extend_from_slice(b"moria");
+        let input_pointer = values.as_ptr();
+        let input_capacity = values.capacity();
+
+        FORCE_CAPACITY_ALLOCATION_FAILURE.set(true);
+        let rejected = BoundedVec::try_from_vec(values, 5).unwrap_err();
+
+        assert_eq!(rejected.reason, BoundedOwnerError::AllocationFailed);
+        assert_eq!(rejected.values, b"moria");
+        assert_eq!(rejected.values.as_ptr(), input_pointer);
+        assert_eq!(rejected.values.capacity(), input_capacity);
+    }
+
+    #[test]
+    fn bounded_bytes_allocation_failure_recovers_the_original_allocation() {
+        let mut bytes = Vec::with_capacity(128);
+        bytes.extend_from_slice(b"moria");
+        let input_pointer = bytes.as_ptr();
+        let input_capacity = bytes.capacity();
+
+        FORCE_CAPACITY_ALLOCATION_FAILURE.set(true);
+        let rejected = BoundedBytes::try_from_vec(bytes, 5).unwrap_err();
+
+        assert_eq!(rejected.reason, BoundedOwnerError::AllocationFailed);
+        assert_eq!(rejected.bytes, b"moria");
+        assert_eq!(rejected.bytes.as_ptr(), input_pointer);
+        assert_eq!(rejected.bytes.capacity(), input_capacity);
+    }
+
+    #[test]
+    fn bounded_utf8_allocation_failure_recovers_the_original_allocation() {
+        let mut bytes = Vec::with_capacity(128);
+        bytes.extend_from_slice(b"moria");
+        let input_pointer = bytes.as_ptr();
+        let input_capacity = bytes.capacity();
+
+        FORCE_BACKING_ALLOCATION_FAILURE.set(true);
+        let rejected = BoundedUtf8::<5>::try_from_bytes(bytes).unwrap_err();
 
         assert_eq!(rejected.reason, BoundedOwnerError::AllocationFailed);
         assert_eq!(rejected.bytes, b"moria");
