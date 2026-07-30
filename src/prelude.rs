@@ -4,5 +4,5 @@
 
 pub use crate::facade::{
     BoundedBytes, BoundedBytes64, BoundedOwnerError, BoundedPushRejected, BoundedUtf8, BoundedVec,
-    BytesConstructionRejected, OwnedBytes, VecConstructionRejected,
+    BytesConstructionRejected, OwnedBytes, SharedArc, VecConstructionRejected,
 };

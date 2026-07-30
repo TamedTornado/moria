@@ -24,6 +24,9 @@ presentation = ["bevy"]
 bevy = { version = "=0.19.0", default-features = false, optional = true }
 naga = { version = "=29.0.1", default-features = false, features = ["wgsl-in"] }
 wgpu = { version = "=29.0.3", default-features = false }
+# MIT OR Apache-2.0; default features are disabled because Moria needs only its
+# allocator-backed Arc slice, which supports the same `alloc`-based wasm targets.
+triomphe = { version = "=0.1.16", default-features = false }
 zstd = { version = "=0.13.3", optional = true }
 
 [lints.rust]
