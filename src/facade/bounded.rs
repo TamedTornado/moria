@@ -1,6 +1,6 @@
 //! Finite, lossless owners shared by the public facade.
 
-use std::sync::Arc;
+use triomphe::Arc;
 
 /// The reason a finite owner could not accept supplied data.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -401,7 +401,7 @@ impl<const N: usize> BoundedUtf8<N> {
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OwnedBytes {
-    bytes: Arc<Vec<u8>>,
+    bytes: Arc<Option<Vec<u8>>>,
 }
 
 impl OwnedBytes {
@@ -424,27 +424,49 @@ impl OwnedBytes {
             Ok(immutable) => immutable,
             Err(reason) => return Err(BytesConstructionRejected { bytes, reason }),
         };
-        Ok(Self {
-            bytes: Arc::new(immutable),
-        })
+        let bytes = match shared_owner_from_backing(immutable) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                return Err(BytesConstructionRejected {
+                    bytes,
+                    reason: BoundedOwnerError::AllocationFailed,
+                });
+            }
+        };
+        Ok(Self { bytes })
     }
 
     /// Borrows the immutable bytes.
     #[must_use]
     pub fn as_slice(&self) -> &[u8] {
-        self.bytes.as_slice()
+        self.bytes
+            .as_ref()
+            .as_ref()
+            .expect("shared owner is initialized before publication")
+            .as_slice()
     }
 
     /// Returns the exact immutable byte length.
     #[must_use]
     pub fn len(&self) -> u64 {
-        u64::try_from(self.bytes.len()).expect("usize fits u64")
+        u64::try_from(
+            self.bytes
+                .as_ref()
+                .as_ref()
+                .expect("shared owner is initialized before publication")
+                .len(),
+        )
+        .expect("usize fits u64")
     }
 
     /// Reports whether no bytes are stored.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.bytes.is_empty()
+        self.bytes
+            .as_ref()
+            .as_ref()
+            .expect("shared owner is initialized before publication")
+            .is_empty()
     }
 }
 
@@ -463,7 +485,7 @@ fn reserve_capacity<T>(capacity: u32) -> Result<Vec<T>, BoundedOwnerError> {
 }
 
 fn copy_into_exact_backing(bytes: &[u8]) -> Result<Vec<u8>, BoundedOwnerError> {
-    if allocation_failure_requested() {
+    if backing_allocation_failure_requested() {
         return Err(BoundedOwnerError::AllocationFailed);
     }
 
@@ -475,18 +497,42 @@ fn copy_into_exact_backing(bytes: &[u8]) -> Result<Vec<u8>, BoundedOwnerError> {
     Ok(backing)
 }
 
-#[cfg(test)]
-thread_local! {
-    static FORCE_ALLOCATION_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+fn shared_owner_from_backing(bytes: Vec<u8>) -> Result<Arc<Option<Vec<u8>>>, Vec<u8>> {
+    if shared_owner_allocation_failure_requested() {
+        return Err(bytes);
+    }
+
+    let mut owner = match Arc::try_new(None) {
+        Ok(owner) => owner,
+        Err(_) => return Err(bytes),
+    };
+    *Arc::get_mut(&mut owner).expect("a newly constructed shared owner is unique") = Some(bytes);
+    Ok(owner)
 }
 
 #[cfg(test)]
-fn allocation_failure_requested() -> bool {
-    FORCE_ALLOCATION_FAILURE.replace(false)
+thread_local! {
+    static FORCE_BACKING_ALLOCATION_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FORCE_SHARED_OWNER_ALLOCATION_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn backing_allocation_failure_requested() -> bool {
+    FORCE_BACKING_ALLOCATION_FAILURE.replace(false)
 }
 
 #[cfg(not(test))]
-fn allocation_failure_requested() -> bool {
+fn backing_allocation_failure_requested() -> bool {
+    false
+}
+
+#[cfg(test)]
+fn shared_owner_allocation_failure_requested() -> bool {
+    FORCE_SHARED_OWNER_ALLOCATION_FAILURE.replace(false)
+}
+
+#[cfg(not(test))]
+fn shared_owner_allocation_failure_requested() -> bool {
     false
 }
 
@@ -524,7 +570,23 @@ mod tests {
         let input_pointer = bytes.as_ptr();
         let input_capacity = bytes.capacity();
 
-        FORCE_ALLOCATION_FAILURE.set(true);
+        FORCE_BACKING_ALLOCATION_FAILURE.set(true);
+        let rejected = OwnedBytes::try_from_vec(bytes, 5).unwrap_err();
+
+        assert_eq!(rejected.reason, BoundedOwnerError::AllocationFailed);
+        assert_eq!(rejected.bytes, b"moria");
+        assert_eq!(rejected.bytes.as_ptr(), input_pointer);
+        assert_eq!(rejected.bytes.capacity(), input_capacity);
+    }
+
+    #[test]
+    fn shared_owner_allocation_failure_recovers_the_original_byte_allocation() {
+        let mut bytes = Vec::with_capacity(128);
+        bytes.extend_from_slice(b"moria");
+        let input_pointer = bytes.as_ptr();
+        let input_capacity = bytes.capacity();
+
+        FORCE_SHARED_OWNER_ALLOCATION_FAILURE.set(true);
         let rejected = OwnedBytes::try_from_vec(bytes, 5).unwrap_err();
 
         assert_eq!(rejected.reason, BoundedOwnerError::AllocationFailed);

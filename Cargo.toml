@@ -23,6 +23,10 @@ presentation = ["bevy"]
 [dependencies]
 bevy = { version = "=0.19.0", default-features = false, optional = true }
 naga = { version = "=29.0.1", default-features = false, features = ["wgsl-in"] }
+# Supplies the fallible shared-owner allocation required by TECH-070. Its
+# compatible MIT OR Apache-2.0 license and alloc-only, default-feature-free
+# configuration preserve the existing native and wasm target assumptions.
+triomphe = { version = "=0.1.16", default-features = false }
 wgpu = { version = "=29.0.3", default-features = false }
 zstd = { version = "=0.13.3", optional = true }
 
