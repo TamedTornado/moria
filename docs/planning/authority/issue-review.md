@@ -616,3 +616,107 @@ technical contract, claim, decision, TDD, authority ledger, source manifest,
 or digest. Both findings were satisfied solely by correcting
 `docs/issues.json`; there is no unsatisfied finding or upstream-authority
 conflict requiring human resolution.
+
+## Issue Review Turn — 2026-07-30T06:03:33Z
+
+**Verdict:** changes_requested
+
+### Review basis
+
+Reviewed the original sources and every reference input sealed by
+`docs/planning/authority/source-manifest.json`, the authority ledger, approved
+product vision and product-design decisions, all 43 `REQ-###` blocks in
+`docs/design-document.md`, the complete approved TDD and its review ledger,
+`docs/tdd/traceability.md`, all 134 entries in `docs/issues.json`, and every
+preceding turn in this issue-review ledger. Every source, reference-input,
+approved-design, and authority-ledger SHA-256 digest matches the source
+manifest.
+
+Mechanical traversal found 70 active technical contracts
+(`TECH-001`–`TECH-062`, `TECH-064`–`TECH-071`), all 134 issue IDs sequential
+and unique, no unknown dependency target, self-dependency, forward dependency,
+or cycle, and every issue in `M-134`'s transitive dependency closure. Every
+active technical contract is covered. For every issue, the union of the cited
+contracts' exact `Implements:` IDs equals structured
+`provenance.design_requirements`, the union of those requirements' exact
+`Authority:` IDs equals structured `provenance.authority`, and every structured
+ID has a matching body citation.
+
+### Finding
+
+1. **`M-132` requires a `presentation_human_review` row that no dependency
+   produces or accepts, so `M-134` cannot soundly enforce TDD completion item
+   9.**
+
+   - **Issue IDs:** `M-096`, `M-132`, `M-134`; there is no current issue ID
+     for a completed human visual-review proof.
+   - **Evidence:** `TECH-064` requires the smooth/crisp presentation and
+     dressing captures to be human-reviewed while keeping pixels
+     noncanonical, and `TECH-069` completion item 9 requires visual fixtures
+     to be captured and human-reviewed for presentation claims. `M-132`
+     accordingly declares separate `presentation_visual_capture` and
+     `presentation_human_review` catalog rows and fails when either is absent.
+     Its only source for both rows is `M-096`. But `M-096` produces only
+     `truth_view.rs` and `presentation.rs`; its sole relevant acceptance
+     criterion says bounded captures merely “support human visual review.”
+     It does not require that review to occur, produce a bounded review
+     attestation, record the reviewed capture digests and disposition, or fail
+     when review is missing. No other issue body mentions or produces a human
+     presentation-review result. `M-132` is an automated aggregator and has no
+     authority to synthesize that missing upstream evidence.
+   - **Required changes:** keep `M-096` within `TECH-064`, but make its
+     `Produces` and Acceptance Criteria name a bounded capture manifest whose
+     immutable digests identify every smooth/crisp/dressing visual submitted
+     for review. Add a separate dependency-ordered assisted review issue for
+     the distinct human proof obligation; it must depend on `M-096`, cite only
+     `TECH-064`, and use exactly `REQ-002`, `REQ-003`, `REQ-010`, `REQ-011`,
+     `REQ-013`, `REQ-019`, `REQ-020`, `REQ-023`, `REQ-044` and exactly
+     `C-003`, `C-013`, `C-002`, `C-006`, `C-007`, `AD-004`, `AD-005`,
+     `C-016`, `D-006`, `D-007`, `C-005`, `AD-002`, `D-001`, `D-002`,
+     `C-011`, `D-003`, `C-012`, `D-009`, `C-015`, `C-001`, `C-004`,
+     `C-008`, `C-009`, `C-010`, `C-014`, `AD-003`, `AD-007`, `D-004`,
+     `D-005`, `D-008` in structured provenance and body citations. Its
+     produced attestation and exact Acceptance Criteria must bind the capture
+     manifest digest, identify the human-reviewed presentation claims, record
+     pass/fail plus bounded notes, and expressly forbid treating pixels,
+     reviewer identity, or visual approval as canonical state or as evidence
+     for non-presentation claims. Make `M-132` depend on that issue and map
+     `presentation_visual_capture` to the `M-096` capture manifest and
+     `presentation_human_review` to the review attestation. Renumber the
+     current domain/final-gate successors as needed to preserve earlier-only
+     dependencies, and keep the final gate's direct five-report boundary.
+
+### Checks that passed
+
+- The five new domain evaluators preserve all 69 former direct final-gate
+  dependencies transitively; in fact every `M-001`–`M-133` issue is in
+  `M-134`'s dependency closure. Their direct fan-ins are bounded and their
+  row catalogs otherwise retain the oracle, shader, real-GPU, headless,
+  scenario, durability, recovery, benchmark, traceability, closure, and
+  manifest obligations without an unauthorized implementation path.
+- `M-129`, `M-130`, `M-131`, and `M-133` have explicit typed report
+  boundaries, closed row catalogs, identity/digest checks, failure isolation,
+  and exact producer dependencies. `M-134` retains five direct dependencies
+  and separate GDD-coverage and implementation-completeness conclusions.
+- `M-077` remains a coherent facade integration boundary. Its 38 dependencies
+  are callable owners and lifecycle implementations rather than independent
+  evidence rows, so retaining it as one integration issue does not create the
+  aggregation defect that motivated the domain hierarchy.
+- Standard-format work continues to name maintained tooling: Naga for WGSL,
+  `serde_json` for JSON, `pulldown-cmark` for CommonMark, `syn` for Rust,
+  `rug` for arbitrary precision, and `proptest` for generated/property cases.
+  Artifact-local canonical/checkpoint/replay formats remain the explicitly
+  selected TDD formats; no issue authorizes a general shared validator or a
+  home-grown parser for a standardized external format.
+- No issue adds production content, assets, controls, routes, characters,
+  forest populations, a world generator, physics/damage policy, networking,
+  ship/station delivery, cross-machine qualification, a universal hardware
+  gate, or a privileged consumer path.
+
+### Authority-boundary disposition
+
+The finding is correctable solely in `docs/issues.json`. It does not require a
+change to an approved source, requirement, technical contract, authority ID,
+decision, TDD, authority ledger, source-manifest entry, or digest. This turn
+therefore requests issue-manifest changes rather than failing for upstream
+human resolution.
