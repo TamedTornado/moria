@@ -793,3 +793,106 @@ correcting `docs/issues.json`; it requires no source, seed, vision, design
 requirement, technical contract, claim, decision, TDD, authority ledger,
 source manifest, or digest change. There is no upstream-authority conflict
 requiring human resolution.
+
+## Issue Review Turn — 2026-07-30T06:20:02Z
+
+**Verdict:** changes_requested
+
+### Review basis
+
+Reviewed the original sources and all reference inputs sealed by
+`docs/planning/authority/source-manifest.json`, the authority ledger and
+product-design decisions, all 43 `REQ-###` blocks in
+`docs/design-document.md`, the complete approved TDD and its review ledger,
+`docs/tdd/traceability.md`, all 135 entries in `docs/issues.json`, and every
+preceding issue-review turn. Every sealed source, reference input, approved
+design artifact, and authority-ledger SHA-256 digest matches the source
+manifest.
+
+Mechanical traversal found 70 active technical contracts
+(`TECH-001`–`TECH-062`, `TECH-064`–`TECH-071`), exactly one `Implements:`
+line per contract, 346 exact contract/requirement pairs with traceability
+parity, and no implementation of retired `TECH-063` or superseded `REQ-039`.
+All 135 issue IDs are sequential and unique; every dependency exists and
+precedes its consumer; the graph is acyclic; and all 134 predecessors are in
+`M-135`'s transitive dependency closure. Every active contract is covered.
+For every issue, the union of cited contracts' exact `Implements:` IDs equals
+structured `provenance.design_requirements`, the union of those requirements'
+exact `Authority:` IDs equals structured `provenance.authority`, and every
+structured ID has a matching body citation.
+
+### Finding
+
+1. **The new presentation-review path leaves standardized JSON parsing and
+   validation unowned and unnamed.**
+
+   - **Issue IDs:** `M-096`, `M-112`, `M-132`, `M-133`.
+   - **Evidence:** `M-096` now produces
+     `presentation/capture-manifest-v1.json` and requires a closed catalog,
+     digest checks, rejection behavior, and manifest tests, but neither its
+     Inputs nor Acceptance Criteria names a maintained JSON parser or the
+     selected BLAKE3 implementation. `M-132` produces
+     `presentation/human-review-attestation-v1.json` and requires fail-closed
+     attestation validation plus tests, but its only dependency is `M-096`;
+     its `Produces` field names no validator or test module, and its Inputs and
+     Acceptance Criteria name no maintained JSON tool. `M-133` must parse and
+     validate both artifacts and their cross-digest binding, but it neither
+     depends on the existing evidence-schema owner `M-112` nor names the
+     maintained JSON/digest path in Inputs or Acceptance Criteria.
+     Consequently the assisted artifact-repair issue can grow a home-grown
+     JSON parser or a second shared validation framework, and the automated
+     consumer has no explicit dependency on the code that owns the format.
+     This is not cured by `M-134`: that later issue names `serde_json` only
+     for its own provenance/manifest integrity boundary.
+   - **Required changes:** keep `M-096` and `M-132` within `TECH-064` and
+     their existing exact requirement/authority sets. In `M-096`, name the
+     selected maintained `serde_json` and `blake3` crate paths in both Inputs
+     and Acceptance Criteria for artifact-local capture-manifest emission and
+     checking, and expressly prohibit a custom JSON parser or general/shared
+     validator. Use the already authorized separate `TECH-069` schema boundary
+     in `M-112` for the shared capability: make `M-112`'s Description and
+     Acceptance Criteria explicitly own closed bounded Rust schema,
+     serialization, and validation support for both
+     `capture-manifest-v1.json` and
+     `human-review-attestation-v1.json`, using its named `serde_json` and
+     `blake3` paths and without creating a general format-validation
+     framework. Add `M-112` to `M-132.depends_on`, body dependency text, and
+     Inputs; require `M-132` to use that exact schema/writer/validator while
+     retaining only the distinct assisted human-review proof and attestation
+     artifact. Add `M-112` to `M-133.depends_on`, body dependency text, and
+     Inputs, and name the same maintained `serde_json`/`blake3` path in
+     `M-133` Acceptance Criteria for validating the two exact artifacts and
+     their digest binding. Do not add a parser or validator to `M-132`, do not
+     broaden the two formats into shared general validation infrastructure,
+     and retain `M-135`'s five-report direct boundary.
+
+### Checks that passed
+
+- Issue sizing, produced implementation/test artifacts, failure-mode slices,
+  and exact acceptance criteria remain independently testable outside the
+  presentation-evidence ownership defect above. The prior `TECH-059`,
+  `TECH-060`, `TECH-061`, completion-bridge, private-correction, and
+  hierarchical evidence corrections remain closed.
+- Existing standard-format work continues to name maintained tools:
+  matching Naga for WGSL, `pulldown-cmark` for CommonMark, `syn` for Rust,
+  `rug` for arbitrary precision, `proptest` for generated/property cases,
+  and `serde_json` for the existing `moria-evidence-v1` boundary. Approved
+  artifact-local canonical, checkpoint, and replay formats do not create
+  general shared validators.
+- No issue adds production content or assets, controls, routes, characters,
+  forest populations, a world generator, behavior/physics/damage policy,
+  networking, ship/station delivery, cross-machine qualification, a universal
+  hardware gate, or a privileged consumer path.
+- The new human review is correctly separated from automated aggregation,
+  remains presentation-only, binds the exact captures, and cannot establish
+  canonical, persistence, determinism, performance, or other non-presentation
+  claims.
+
+### Authority-boundary disposition
+
+The finding is correctable solely in `docs/issues.json` by making the existing
+authorized schema/tool boundary and dependencies explicit. It requires no
+change to a source, seed, vision, approved requirement, technical contract,
+authority ID, decision, TDD, authority ledger, source-manifest entry, or
+digest. This turn therefore requests issue-manifest changes rather than
+failing for upstream human resolution.
