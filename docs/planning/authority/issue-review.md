@@ -952,3 +952,85 @@ correcting `docs/issues.json`; it requires no change to a source, seed, vision,
 approved requirement, technical contract, claim, decision, TDD, authority
 ledger, source manifest, or digest. There is no upstream-authority conflict
 requiring human resolution.
+
+## Issue Review Turn — 2026-07-30T06:32:24Z
+
+**Verdict:** approved
+
+### Review basis
+
+Reviewed the original sources and every reference input sealed by
+`docs/planning/authority/source-manifest.json`, the authority ledger and
+product-design decisions, all 43 `REQ-###` blocks in
+`docs/design-document.md`, the complete approved TDD and its final review
+ledger, `docs/tdd/traceability.md`, all 135 entries in `docs/issues.json`, and
+every preceding turn in this issue-review ledger. Every sealed source,
+reference input, approved design artifact, and authority-ledger SHA-256 digest
+matches the source manifest.
+
+Mechanical traversal found 70 active technical contracts
+(`TECH-001`–`TECH-062`, `TECH-064`–`TECH-071`), exactly one `Implements:`
+line per contract, and exact parity for all 346 active contract/requirement
+pairs in `docs/tdd/traceability.md`. `REQ-039` remains superseded,
+`TECH-063` remains retired, and neither is implemented by an issue.
+
+### Findings
+
+None.
+
+### Prior finding closure
+
+- **Issue IDs:** `M-096`, `M-112`, `M-132`, `M-133`.
+- **Evidence:** `M-096` now names maintained `serde_json` and `blake3` in
+  Inputs and Acceptance Criteria for its artifact-local capture manifest,
+  rejects malformed or digest-invalid capture evidence, and prohibits a custom
+  JSON parser or shared validator. `M-112` owns the closed bounded Rust
+  schemas, serialization, and fail-closed validation for exactly the capture
+  manifest and human-review attestation through the same maintained tool path.
+  `M-132` depends on both `M-096` and `M-112`, performs only the distinct human
+  review, and emits its attestation exclusively through `M-112` without
+  adding a parser or validator. `M-133` also depends on `M-112`, validates both
+  exact artifacts and their cross-digest binding through that owned path, and
+  keeps visual capture and human review as separate presentation-only rows.
+  These changes close the preceding standardized-JSON ownership finding
+  without broadening `TECH-064` or `TECH-069`.
+- **Required changes:** none.
+
+### Checks that passed
+
+- All 135 issue IDs are unique and sequential. Every dependency target exists
+  and precedes its consumer; there are no self-dependencies or cycles. All 134
+  predecessor issues are in `M-135`'s transitive dependency closure.
+- Every active technical contract is covered. Issue slices remain bounded by
+  their cited contracts, dependency ordered, independently testable, and
+  explicit about produced artifacts, integration inputs, failure behavior,
+  and exact acceptance criteria. High-fan-in issues remain cohesive integration
+  or evidence boundaries rather than catch-all proof obligations; the final
+  gate retains exactly five typed domain-report dependencies.
+- For every issue, the union of the cited contracts' exact `Implements:` IDs
+  equals structured `provenance.design_requirements`; the union of those
+  requirements' exact `Authority:` IDs equals structured
+  `provenance.authority`. Every ID exists, no provenance set contains a
+  duplicate, and every structured contract, requirement, and authority ID has
+  a matching body citation. Body dependency metadata also exactly matches the
+  structured graph.
+- Standardized-format work names maintained tooling at the issue boundary:
+  matching Naga for WGSL, `pulldown-cmark` for CommonMark, `syn` for Rust,
+  `serde_json` for JSON, `rug` for arbitrary precision, `proptest` for
+  generated/property cases, and `blake3` for evidence identities. Approved
+  project-local canonical, checkpoint, and replay formats remain explicitly
+  selected versioned TDD formats. No issue authorizes a home-grown
+  standard-format parser, a broad shared validator, or artifact-repair work
+  that can expand into general format-validation infrastructure.
+- No issue adds production content or assets, controls, routes, characters,
+  forest populations, a world generator, physics/damage/game policy,
+  networking, ship/station delivery, cross-machine qualification, a universal
+  hardware gate, or a privileged consumer path. Consumer-supplied scenarios
+  and human presentation review remain bounded evidence artifacts using the
+  public facade.
+
+### Authority-boundary disposition
+
+No issue-manifest correction or upstream planning-package change is required.
+The current manifest is structurally sound, complete for the approved TDD, and
+contains no unauthorized work.
