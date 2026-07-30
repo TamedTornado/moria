@@ -297,7 +297,8 @@ impl<const N: usize> BoundedUtf8<N> {
     /// # Errors
     ///
     /// Rejection returns the original bytes unchanged for an oversized or
-    /// invalid UTF-8 input.
+    /// invalid UTF-8 input, or when the bounded replacement allocation cannot
+    /// be reserved.
     pub fn try_from_bytes(bytes: Vec<u8>) -> Result<Self, BytesConstructionRejected> {
         if bytes.len() > N {
             return Err(BytesConstructionRejected {
@@ -311,7 +312,15 @@ impl<const N: usize> BoundedUtf8<N> {
                 reason: BoundedOwnerError::InvalidUtf8,
             });
         }
-        Ok(Self { bytes })
+        let mut accepted = Vec::new();
+        if accepted.try_reserve_exact(N).is_err() {
+            return Err(BytesConstructionRejected {
+                bytes,
+                reason: BoundedOwnerError::AllocationFailed,
+            });
+        }
+        accepted.extend(bytes);
+        Ok(Self { bytes: accepted })
     }
 
     /// Borrows the validated text.

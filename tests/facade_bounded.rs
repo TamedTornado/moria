@@ -27,6 +27,35 @@ fn bounded_vec_preserves_exact_capacity_and_rejected_value() {
 }
 
 #[test]
+fn zero_capacity_owners_accept_only_empty_values() {
+    let mut values = BoundedVec::<u8>::try_with_capacity(0).unwrap();
+    assert!(values.is_empty());
+    assert_eq!(values.capacity(), 0);
+    assert_eq!(
+        values.try_push(1),
+        Err(BoundedPushRejected {
+            value: 1,
+            reason: BoundedOwnerError::LengthExceedsCapacity,
+        })
+    );
+
+    let mut bytes = BoundedBytes::try_with_capacity(0).unwrap();
+    assert!(bytes.is_empty());
+    assert_eq!(bytes.capacity(), 0);
+    assert_eq!(
+        bytes.try_extend_from_slice(&[1]),
+        Err(BoundedOwnerError::LengthExceedsCapacity)
+    );
+
+    let empty = BoundedUtf8::<0>::try_from_bytes(Vec::new()).unwrap();
+    assert!(empty.is_empty());
+    assert_eq!(empty.as_str(), "");
+    let rejected = BoundedUtf8::<0>::try_from_bytes(vec![b'a']).unwrap_err();
+    assert_eq!(rejected.bytes, b"a");
+    assert_eq!(rejected.reason, BoundedOwnerError::LengthExceedsCapacity);
+}
+
+#[test]
 fn bounded_construction_failures_return_the_original_allocations() {
     let vector = BoundedVec::try_from_vec(vec![1, 2], 1).unwrap_err();
     assert_eq!(vector.values, vec![1, 2]);
@@ -72,17 +101,36 @@ fn fixed_and_utf8_owners_validate_and_preserve_bytes() {
     let oversized = BoundedUtf8::<3>::try_from_bytes(vec![b'a', b'b', b'c', b'd']).unwrap_err();
     assert_eq!(oversized.bytes, b"abcd");
     assert_eq!(oversized.reason, BoundedOwnerError::LengthExceedsCapacity);
-    let text = BoundedUtf8::<3>::try_from_bytes("é".as_bytes().to_vec()).unwrap();
-    assert_eq!(text.as_str(), "é");
-    assert_eq!(text.len(), 2);
-    assert_eq!(text.into_bytes(), "é".as_bytes());
+    let exact = BoundedUtf8::<2>::try_from_bytes("é".as_bytes().to_vec()).unwrap();
+    assert_eq!(exact.as_str(), "é");
+    assert_eq!(exact.len(), 2);
+    assert_eq!(exact.into_bytes(), "é".as_bytes());
 }
 
 #[test]
-fn owned_bytes_are_immutable_and_keep_the_exact_length() {
+fn bounded_utf8_normalizes_spare_capacity_and_maps_allocation_failure() {
+    let mut oversized_allocation = Vec::with_capacity(4_096);
+    oversized_allocation.push(b'a');
+    let text = BoundedUtf8::<1>::try_from_bytes(oversized_allocation).unwrap();
+    let normalized = text.into_bytes();
+    assert_eq!(normalized, b"a");
+    assert!(normalized.capacity() <= 1);
+
+    let rejected = BoundedUtf8::<{ usize::MAX }>::try_from_bytes(vec![b'a']).unwrap_err();
+    assert_eq!(rejected.bytes, b"a");
+    assert_eq!(rejected.reason, BoundedOwnerError::AllocationFailed);
+}
+
+#[test]
+fn owned_bytes_are_immutable_share_clones_and_keep_the_exact_length() {
     let bytes = OwnedBytes::try_from_vec(vec![1, 2, 3], 3).unwrap();
     assert_eq!(bytes.len(), 3);
     assert!(!bytes.is_empty());
     assert_eq!(bytes.as_slice(), &[1, 2, 3]);
-    assert_eq!(&*bytes.into_arc(), &[1, 2, 3]);
+
+    let clone = bytes.clone();
+    let original_arc = bytes.into_arc();
+    let cloned_arc = clone.into_arc();
+    assert!(std::sync::Arc::ptr_eq(&original_arc, &cloned_arc));
+    assert_eq!(&*original_arc, &[1, 2, 3]);
 }
