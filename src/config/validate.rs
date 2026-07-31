@@ -21,8 +21,27 @@ const CHECKPOINT_DESCRIPTOR_BYTES: u64 = 1 + 8 + 32;
 // TECH-044's `{ first_tick, last_tick, record_count, uncompressed_bytes,
 // blob_digest }` replay descriptor.
 const REPLAY_DESCRIPTOR_BYTES: u64 = 4 + 4 + 4 + 8 + 32;
-// `moria-checkpoint-v1` framing: fixed header, declared length, and checksum.
-const MANIFEST_FIXED_OVERHEAD_BYTES: u64 = 64;
+// `moria-checkpoint-v1` framing, schema/configuration commitments, world and
+// store identities, roots, active-history commitment/locator, and completeness
+// totals. This is deliberately separate from the variable collections below:
+// TECH-044 requires every one of these fields even for an otherwise empty
+// manifest.
+const MANIFEST_FIXED_BYTES: u64 = 64 + // framing: magic, version, declared length, checksum
+    6 * 32 + // product, encoding, arithmetic, hash, transition, persistence schemas
+    32 + // per-world configuration fingerprint
+    1 + 4 + 16 + // placement fixed format
+    4 + 32 + 32 + // checkpoint store ID, contract, and visible key
+    4 + 16 + 32 + // world/genesis ID, base lineage, and manifest root
+    8 + 8 + 32 + // confirmed/durable ticks and world root hash
+    8 + // next volume serial
+    32 + 32 + 8 + 32 + // active history, stream key, durable prefix, prefix digest
+    6 * 4 + 8; // completeness counts and total uncompressed bytes
+const MATERIAL_MANIFEST_RECORD_BYTES: u64 = 4 + 32;
+const VOLUME_MANIFEST_RECORD_BYTES: u64 = 160;
+const PARTICIPANT_MANIFEST_RECORD_BYTES: u64 = 160;
+const REPRESENTATION_CONTRACT_MANIFEST_RECORD_BYTES: u64 = 4 + 32;
+const RNG_MANIFEST_RECORD_BYTES: u64 = 32;
+const HISTORY_LOCATOR_MANIFEST_RECORD_BYTES: u64 = 64;
 const BASE_CALLBACK_COMPLETION_BYTES: u64 = 2_048;
 const TERMINAL_RECEIPT_METADATA_BYTES: u64 = 8;
 
@@ -320,27 +339,7 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
     if b.checkpoint.manifest_bytes > b.checkpoint.bytes_per_checkpoint {
         return Err(cross(BudgetGroup::Checkpoint, 10, "manifest bytes"));
     }
-    let manifest_encoded_bytes = checked_sum(
-        checked_sum(
-            checked_product(
-                u128::from(b.checkpoint.manifest_nodes),
-                u128::from(CHECKPOINT_DESCRIPTOR_BYTES),
-                BudgetGroup::Checkpoint,
-                10,
-            )?,
-            checked_product(
-                u128::from(b.checkpoint.manifest_blobs),
-                u128::from(REPLAY_DESCRIPTOR_BYTES),
-                BudgetGroup::Checkpoint,
-                10,
-            )?,
-            BudgetGroup::Checkpoint,
-            10,
-        )?,
-        u128::from(MANIFEST_FIXED_OVERHEAD_BYTES),
-        BudgetGroup::Checkpoint,
-        10,
-    )?;
+    let manifest_encoded_bytes = manifest_encoded_bytes(b)?;
     if manifest_encoded_bytes > u128::from(b.checkpoint.manifest_bytes) {
         return Err(cross(BudgetGroup::Checkpoint, 10, "encoded manifest bytes"));
     }
@@ -364,6 +363,97 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
         ));
     }
     Ok(())
+}
+
+fn manifest_encoded_bytes(budgets: &ResourceBudgets) -> Result<u128, ConfigError> {
+    let checkpoint = BudgetGroup::Checkpoint;
+    let field = 10;
+    let identity = budgets.identity;
+    let descriptor_bytes = checked_sum(
+        checked_product(
+            u128::from(budgets.checkpoint.manifest_nodes),
+            u128::from(CHECKPOINT_DESCRIPTOR_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checked_product(
+            u128::from(budgets.checkpoint.manifest_blobs),
+            u128::from(REPLAY_DESCRIPTOR_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checkpoint,
+        field,
+    )?;
+    let registry_bytes = checked_sum(
+        checked_product(
+            u128::from(identity.materials_per_world),
+            u128::from(MATERIAL_MANIFEST_RECORD_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checked_product(
+            u128::from(identity.volumes_per_world),
+            u128::from(VOLUME_MANIFEST_RECORD_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checkpoint,
+        field,
+    )?;
+    let participant_bytes = checked_sum(
+        checked_product(
+            u128::from(identity.participants_per_world),
+            u128::from(PARTICIPANT_MANIFEST_RECORD_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checked_sum(
+            checked_product(
+                checked_product(
+                    u128::from(identity.participants_per_world),
+                    u128::from(identity.representation_contracts_per_participant),
+                    checkpoint,
+                    field,
+                )?,
+                u128::from(REPRESENTATION_CONTRACT_MANIFEST_RECORD_BYTES),
+                checkpoint,
+                field,
+            )?,
+            checked_product(
+                checked_product(
+                    u128::from(identity.participants_per_world),
+                    u128::from(identity.rng_streams_per_participant),
+                    checkpoint,
+                    field,
+                )?,
+                u128::from(RNG_MANIFEST_RECORD_BYTES),
+                checkpoint,
+                field,
+            )?,
+            checkpoint,
+            field,
+        )?,
+        checkpoint,
+        field,
+    )?;
+    let history_bytes = checked_product(
+        u128::from(budgets.rollback.log_ticks),
+        u128::from(HISTORY_LOCATOR_MANIFEST_RECORD_BYTES),
+        checkpoint,
+        field,
+    )?;
+    checked_sum(
+        checked_sum(descriptor_bytes, registry_bytes, checkpoint, field)?,
+        checked_sum(
+            checked_sum(participant_bytes, history_bytes, checkpoint, field)?,
+            u128::from(MANIFEST_FIXED_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checkpoint,
+        field,
+    )
 }
 
 fn validate_page_limits(
@@ -558,6 +648,11 @@ fn validate_paged_bytes(
     let page_allocation_bytes = (page_range_bytes + u128::from(alignment - 1))
         / u128::from(alignment)
         * u128::from(alignment);
+    if page_allocation_bytes > u128::from(limits.max_buffer_size)
+        || page_allocation_bytes > u128::from(limits.max_storage_buffer_binding_size)
+    {
+        return Err(cross(group, field, "page allocation"));
+    }
     let allocated_bytes =
         checked_product(u128::from(page_count), page_allocation_bytes, group, field)?;
     if allocated_bytes < bytes {
@@ -793,9 +888,9 @@ fn overflow(group: BudgetGroup, field_code: u16) -> ConfigError {
 mod tests {
     use super::{
         BudgetGroup, CHECKPOINT_DESCRIPTOR_BYTES, DENSE_BRICK_BYTES, DIRECTORY_BUCKET_BYTES,
-        MANIFEST_FIXED_OVERHEAD_BYTES, RADIX_NODE_BYTES, REPLAY_DESCRIPTOR_BYTES,
-        TERMINAL_RECEIPT_METADATA_BYTES, UNIFORM_BRICK_BYTES, checked_product, checked_sum, cross,
-        invalid, validate_field_ranges, validate_paged_bytes,
+        RADIX_NODE_BYTES, REPLAY_DESCRIPTOR_BYTES, TERMINAL_RECEIPT_METADATA_BYTES,
+        UNIFORM_BRICK_BYTES, checked_product, checked_sum, cross, invalid, manifest_encoded_bytes,
+        validate_field_ranges, validate_paged_bytes,
         validate_resource_budgets as validate_resource_budgets_with_limits,
     };
     use crate::{
@@ -1134,20 +1229,24 @@ mod tests {
     }
 
     #[test]
-    fn manifest_budget_reserves_framing_and_canonical_descriptor_bytes() {
+    fn manifest_budget_reserves_every_tech_044_field_and_collection() {
         let mut budgets = ResourceBudgets::default();
         budgets.checkpoint.manifest_nodes = 1;
         budgets.checkpoint.manifest_blobs = 1;
-        let required =
-            MANIFEST_FIXED_OVERHEAD_BYTES + CHECKPOINT_DESCRIPTOR_BYTES + REPLAY_DESCRIPTOR_BYTES;
-        budgets.checkpoint.manifest_bytes = required - 1;
+        let required = manifest_encoded_bytes(&budgets).expect("bounded manifest arithmetic");
+        assert!(required > u128::from(64 + CHECKPOINT_DESCRIPTOR_BYTES + REPLAY_DESCRIPTOR_BYTES));
+        budgets.checkpoint.manifest_bytes = (required - 1)
+            .try_into()
+            .expect("manifest bound fits configured byte field");
 
         assert_eq!(
             validate_resource_budgets(&budgets, &rollback()),
             Err(cross(BudgetGroup::Checkpoint, 10, "encoded manifest bytes")),
         );
 
-        budgets.checkpoint.manifest_bytes = required;
+        budgets.checkpoint.manifest_bytes = required
+            .try_into()
+            .expect("manifest bound fits configured byte field");
         assert!(validate_resource_budgets(&budgets, &rollback()).is_ok());
     }
 
@@ -1186,6 +1285,24 @@ mod tests {
         assert_eq!(
             validate_resource_budgets_with_limits(&budgets, &rollback, &unaligned),
             Err(cross(BudgetGroup::Content, 9, "storage offset alignment")),
+        );
+
+        let post_alignment_too_large = DevicePageLimits {
+            max_buffer_size: 2_048,
+            min_storage_buffer_offset_alignment: 4_096,
+            ..baseline
+        };
+        assert_eq!(
+            validate_paged_bytes(
+                2_048,
+                4,
+                32 << 20,
+                4_096,
+                &post_alignment_too_large,
+                BudgetGroup::Canonical,
+                8,
+            ),
+            Err(cross(BudgetGroup::Canonical, 8, "page allocation")),
         );
     }
 
@@ -1402,13 +1519,16 @@ mod tests {
         assert_cross!(budgets, Participant, 7, "event bytes");
 
         let mut budgets = ResourceBudgets::default();
-        budgets.checkpoint.bytes_per_checkpoint =
-            MANIFEST_FIXED_OVERHEAD_BYTES + CHECKPOINT_DESCRIPTOR_BYTES + REPLAY_DESCRIPTOR_BYTES;
-        budgets.checkpoint.bytes_per_blob = 1;
         budgets.checkpoint.manifest_nodes = 1;
         budgets.checkpoint.manifest_blobs = 1;
-        budgets.checkpoint.manifest_bytes =
-            MANIFEST_FIXED_OVERHEAD_BYTES + CHECKPOINT_DESCRIPTOR_BYTES + REPLAY_DESCRIPTOR_BYTES;
+        let manifest_bytes = manifest_encoded_bytes(&budgets).expect("bounded manifest arithmetic");
+        budgets.checkpoint.bytes_per_checkpoint = manifest_bytes
+            .try_into()
+            .expect("manifest bound fits configured byte field");
+        budgets.checkpoint.bytes_per_blob = 1;
+        budgets.checkpoint.manifest_bytes = manifest_bytes
+            .try_into()
+            .expect("manifest bound fits configured byte field");
         budgets.participant.snapshot_bytes_per_checkpoint =
             budgets.checkpoint.bytes_per_checkpoint + 1;
         assert_cross!(budgets, Participant, 9, "snapshot checkpoint bytes");
@@ -1436,7 +1556,10 @@ mod tests {
         budgets.identity.terminal_receipt_bytes_per_world = u64::MAX;
         budgets.checkpoint.manifest_nodes = 2_000_000;
         budgets.checkpoint.manifest_blobs = 2_000_000;
-        assert_eq!(super::validate_cross_limits(&budgets), Ok(()));
+        assert_eq!(
+            super::validate_cross_limits(&budgets),
+            Err(cross(BudgetGroup::Checkpoint, 10, "encoded manifest bytes")),
+        );
     }
 
     #[test]
