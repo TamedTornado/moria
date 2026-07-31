@@ -2,7 +2,7 @@
 
 use std::sync::{
     Arc, Mutex, Weak,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use crate::canonical::{DeviceGeneration, ReceiptId};
@@ -221,9 +221,11 @@ pub(crate) struct Operation<T, E> {
         Arc<dyn Fn(ReceiptId, ReceiptFamily, DeviceGeneration) -> E + Send + Sync>,
     state: Mutex<OperationState<T, E>>,
     // Store/device callbacks can be outstanding before their corresponding
-    // lifecycle phase is entered. Keep that invocation as a separate atomic
-    // latch so cancellation cannot mistake it for work that was never begun.
-    submission_or_invocation: AtomicBool,
+    // lifecycle phase is entered. Their completion is independent of the
+    // receipt lifecycle: cancellation must wait for a started callback, but
+    // must not require unrelated later phases after it returns.
+    invocation_started: AtomicBool,
+    outstanding_invocations: AtomicUsize,
     terminal_signal: Arc<AtomicBool>,
     retainer: TerminalRetainer<T, E>,
     reservation_active: AtomicBool,
@@ -257,7 +259,8 @@ impl<T, E> Operation<T, E> {
                 abort_requested: false,
                 terminal: Terminal::Pending,
             }),
-            submission_or_invocation: AtomicBool::new(false),
+            invocation_started: AtomicBool::new(false),
+            outstanding_invocations: AtomicUsize::new(0),
             terminal_signal: Arc::new(AtomicBool::new(false)),
             retainer,
             reservation_active: AtomicBool::new(false),
@@ -312,26 +315,40 @@ impl<T, E> Operation<T, E> {
         state.blocker = None;
         if work_started(self.policy.family, phase) {
             state.submitted = true;
-            self.submission_or_invocation.store(true, Ordering::Release);
         }
         state.cancellation_cutoff_reached |= cancellation_cutoff_reached(self.policy.family, phase);
         Ok(())
     }
 
-    /// Latches that the driver invoked checkpoint-store or device work.
+    /// Records that the driver invoked checkpoint-store or device work.
     ///
     /// Drivers must call this before invoking an asynchronous provider callback.
     /// In particular, restore loads can invoke a provider while their receipt is
-    /// still in `Loading` or `Verifying`; a subsequent cancellation must drain
-    /// that private work rather than terminalizing immediately.
+    /// still in `Loading` or `Verifying`; a subsequent cancellation must wait
+    /// for that private work to return rather than terminalizing immediately.
+    /// Each successful call must be paired with
+    /// [`Self::drain_submission_or_invocation`] after its callback returns.
     pub(crate) fn mark_submission_or_invocation(&self) -> Result<(), TransitionError> {
-        let mut state = self.state.lock().expect("operation state mutex poisoned");
+        let state = self.state.lock().expect("operation state mutex poisoned");
         if !matches!(state.terminal, Terminal::Pending) {
             return Err(TransitionError::AlreadyTerminal);
         }
-        self.submission_or_invocation.store(true, Ordering::Release);
-        state.submitted = true;
+        self.invocation_started.store(true, Ordering::Release);
+        self.outstanding_invocations.fetch_add(1, Ordering::Release);
         Ok(())
+    }
+
+    /// Records completion of one previously invoked checkpoint-store or device callback.
+    pub(crate) fn drain_submission_or_invocation(&self) {
+        let result = self.outstanding_invocations.fetch_update(
+            Ordering::AcqRel,
+            Ordering::Acquire,
+            |count| count.checked_sub(1),
+        );
+        assert!(
+            result.is_ok(),
+            "invocation completion requires a matching invocation"
+        );
     }
 
     /// Records a query readiness blocker while the query waits for readiness.
@@ -417,8 +434,7 @@ impl<T, E> Operation<T, E> {
                     return CancelResult::DeliverySuppressed;
                 }
                 CancellationCutoff::AbortAfterSubmission
-                    if !self.submission_or_invocation.load(Ordering::Acquire)
-                        && !state.submitted =>
+                    if !self.invocation_started.load(Ordering::Acquire) && !state.submitted =>
                 {
                     state.terminal =
                         Terminal::Cancelled(cancelled(self.receipt, state.phase, false));
@@ -426,7 +442,6 @@ impl<T, E> Operation<T, E> {
                     CancelResult::CancelledBeforeSubmit
                 }
                 CancellationCutoff::AbortAfterSubmission => {
-                    state.submitted |= self.submission_or_invocation.load(Ordering::Acquire);
                     state.abort_requested = true;
                     return CancelResult::AbortRequested;
                 }
@@ -434,8 +449,7 @@ impl<T, E> Operation<T, E> {
                     return CancelResult::NotCancellable;
                 }
                 CancellationCutoff::BeforeCorrectionExport
-                    if !self.submission_or_invocation.load(Ordering::Acquire)
-                        && !state.submitted =>
+                    if !self.invocation_started.load(Ordering::Acquire) && !state.submitted =>
                 {
                     state.terminal =
                         Terminal::Cancelled(cancelled(self.receipt, state.phase, false));
@@ -443,7 +457,6 @@ impl<T, E> Operation<T, E> {
                     CancelResult::CancelledBeforeSubmit
                 }
                 CancellationCutoff::BeforeCorrectionExport => {
-                    state.submitted |= self.submission_or_invocation.load(Ordering::Acquire);
                     state.abort_requested = true;
                     return CancelResult::AbortRequested;
                 }
@@ -506,16 +519,20 @@ impl<T, E> Operation<T, E> {
                         return Err(TransitionError::AlreadyTerminal);
                     }
                     if state.delivery_suppressed || state.abort_requested {
-                        let submitted = state.submitted
-                            || self.submission_or_invocation.load(Ordering::Acquire);
-                        if submitted && !drain_complete(self.policy.family, state.phase) {
+                        let invocation_started = self.invocation_started.load(Ordering::Acquire);
+                        if self.outstanding_invocations.load(Ordering::Acquire) != 0
+                            || (state.submitted && !drain_complete(self.policy.family, state.phase))
+                        {
                             return Err(TransitionError::DrainIncomplete {
                                 family: self.policy.family,
                                 phase: state.phase,
                             });
                         }
-                        state.terminal =
-                            Terminal::Cancelled(cancelled(self.receipt, state.phase, submitted));
+                        state.terminal = Terminal::Cancelled(cancelled(
+                            self.receipt,
+                            state.phase,
+                            state.submitted || invocation_started,
+                        ));
                     } else {
                         if matches!(terminal, Terminal::Ready(_))
                             && state.phase != final_phase(self.policy.family)

@@ -684,7 +684,7 @@ fn submitted_cancellation_only_reports_drain_after_its_milestone() {
 }
 
 #[test]
-fn restore_store_callback_cancellation_waits_for_private_drain() {
+fn restore_successful_store_callback_can_drain_cancellation_in_loading() {
     let restore = receipt(ReceiptFamily::Restore);
     let callback_invoked = Arc::new(Barrier::new(2));
     let release_callback = Arc::new(Barrier::new(2));
@@ -698,15 +698,7 @@ fn restore_store_callback_cancellation_waits_for_private_drain() {
         callback_operation.mark_submission_or_invocation().unwrap();
         callback_invoked_by_provider.wait();
         release_provider.wait();
-        callback_operation
-            .advance(OperationPhase::Verifying)
-            .unwrap();
-        callback_operation
-            .advance(OperationPhase::Rebuilding)
-            .unwrap();
-        callback_operation
-            .advance(OperationPhase::RestoringParticipants)
-            .unwrap();
+        callback_operation.drain_submission_or_invocation();
     });
 
     callback_invoked.wait();
@@ -726,7 +718,47 @@ fn restore_store_callback_cancellation_waits_for_private_drain() {
     assert!(matches!(
         restore.poll(),
         ReceiptState::Cancelled(cancelled)
-            if cancelled.last_phase == OperationPhase::RestoringParticipants
+            if cancelled.last_phase == OperationPhase::Loading
+                && cancelled.submitted_work_drained
+    ));
+}
+
+#[test]
+fn restore_failed_store_callback_can_drain_cancellation_in_loading() {
+    let restore = receipt(ReceiptFamily::Restore);
+    let callback_invoked = Arc::new(Barrier::new(2));
+    let release_callback = Arc::new(Barrier::new(2));
+    let callback_operation = restore.operation();
+    let callback_invoked_by_provider = Arc::clone(&callback_invoked);
+    let release_provider = Arc::clone(&release_callback);
+
+    let provider = thread::spawn(move || {
+        callback_operation.mark_submission_or_invocation().unwrap();
+        callback_invoked_by_provider.wait();
+        release_provider.wait();
+        callback_operation.drain_submission_or_invocation();
+    });
+
+    callback_invoked.wait();
+    assert_eq!(restore.cancel(), CancelResult::AbortRequested);
+    assert_eq!(
+        restore.operation().complete_failed("store failure"),
+        Err(TransitionError::DrainIncomplete {
+            family: ReceiptFamily::Restore,
+            phase: OperationPhase::Loading,
+        })
+    );
+
+    release_callback.wait();
+    provider.join().unwrap();
+    restore
+        .operation()
+        .complete_failed("store failure")
+        .unwrap();
+    assert!(matches!(
+        restore.poll(),
+        ReceiptState::Cancelled(cancelled)
+            if cancelled.last_phase == OperationPhase::Loading
                 && cancelled.submitted_work_drained
     ));
 }
