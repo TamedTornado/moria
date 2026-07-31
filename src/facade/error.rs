@@ -507,10 +507,7 @@ impl CorrectionError {
                 || error.scope != FailureScope::Provider(ProviderId::ReplaySink(export.sink))
                 || error.retryability != Retryability::Never
                 || !export.failure.is_replay_export_failure()
-                || !matches!(
-                    export.request.range,
-                    ReplayAppendRange::CorrectionBranch { .. }
-                ))
+                || !correction_branch_append_matches_frontier(export.request, original_frontier))
         {
             return Err(FailureRecordError::CorrectionExportFailure);
         }
@@ -519,6 +516,39 @@ impl CorrectionError {
             error,
             replay_export_failure,
         })
+    }
+}
+
+fn correction_branch_append_matches_frontier(
+    request: ReplaySinkRequest,
+    original_frontier: FrontierSummary,
+) -> bool {
+    let FrontierPosition::Confirmed(original_live_tick) = original_frontier.position else {
+        return false;
+    };
+    let ReplayAppendRange::CorrectionBranch {
+        target_tick,
+        superseded_through,
+        corrected_through,
+        record_count,
+    } = request.range
+    else {
+        return false;
+    };
+
+    if request.sequence == 0
+        || target_tick >= superseded_through
+        || superseded_through != corrected_through
+        || corrected_through != original_live_tick
+    {
+        return false;
+    }
+
+    match corrected_through.get().checked_sub(target_tick.get()) {
+        Some(expected_count) if expected_count <= u64::from(u32::MAX) => {
+            record_count == expected_count as u32
+        }
+        _ => false,
     }
 }
 

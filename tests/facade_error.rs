@@ -410,7 +410,7 @@ fn correction_error_preserves_only_legal_correction_branch_export_failures() {
                         target_tick: Tick::from_raw(2),
                         superseded_through: Tick::from_raw(4),
                         corrected_through: Tick::from_raw(4),
-                        record_count: 3,
+                        record_count: 2,
                     },
                     failure,
                 )),
@@ -423,7 +423,7 @@ fn correction_error_preserves_only_legal_correction_branch_export_failures() {
                         target_tick: Tick::from_raw(2),
                         superseded_through: Tick::from_raw(4),
                         corrected_through: Tick::from_raw(4),
-                        record_count: 3,
+                        record_count: 2,
                     },
                     failure,
                 )),
@@ -439,9 +439,116 @@ fn correction_error_preserves_only_legal_correction_branch_export_failures() {
                     target_tick: Tick::from_raw(2),
                     superseded_through: Tick::from_raw(4),
                     corrected_through: Tick::from_raw(4),
-                    record_count: 3,
+                    record_count: 2,
                 },
                 ErrorCode::DeviceLost
+            )),
+        ),
+        Err(FailureRecordError::CorrectionExportFailure),
+    );
+    for (sequence, range) in [
+        (
+            0,
+            ReplayAppendRange::CorrectionBranch {
+                target_tick: Tick::from_raw(2),
+                superseded_through: Tick::from_raw(4),
+                corrected_through: Tick::from_raw(4),
+                record_count: 2,
+            },
+        ),
+        (
+            4,
+            ReplayAppendRange::CorrectionBranch {
+                target_tick: Tick::from_raw(4),
+                superseded_through: Tick::from_raw(4),
+                corrected_through: Tick::from_raw(4),
+                record_count: 0,
+            },
+        ),
+        (
+            4,
+            ReplayAppendRange::CorrectionBranch {
+                target_tick: Tick::from_raw(5),
+                superseded_through: Tick::from_raw(4),
+                corrected_through: Tick::from_raw(4),
+                record_count: 0,
+            },
+        ),
+        (
+            4,
+            ReplayAppendRange::CorrectionBranch {
+                target_tick: Tick::from_raw(2),
+                superseded_through: Tick::from_raw(4),
+                corrected_through: Tick::from_raw(3),
+                record_count: 1,
+            },
+        ),
+        (
+            4,
+            ReplayAppendRange::CorrectionBranch {
+                target_tick: Tick::from_raw(2),
+                superseded_through: Tick::from_raw(4),
+                corrected_through: Tick::from_raw(4),
+                record_count: 1,
+            },
+        ),
+        (
+            4,
+            ReplayAppendRange::CorrectionBranch {
+                target_tick: Tick::from_raw(2),
+                superseded_through: Tick::from_raw(3),
+                corrected_through: Tick::from_raw(3),
+                record_count: 1,
+            },
+        ),
+    ] {
+        assert_eq!(
+            CorrectionError::try_new(
+                original,
+                error(),
+                Some(ReplayExportFailure {
+                    sink,
+                    request: ReplaySinkRequest {
+                        stream,
+                        sequence,
+                        range,
+                        bytes: 32,
+                        digest: BlobDigest::from_bytes([4; 32]),
+                    },
+                    failure: ErrorCode::StoreFailure,
+                }),
+            ),
+            Err(FailureRecordError::CorrectionExportFailure),
+        );
+    }
+    assert_eq!(
+        CorrectionError::try_new(
+            frontier(FrontierPosition::Genesis),
+            error(),
+            Some(export(
+                ReplayAppendRange::CorrectionBranch {
+                    target_tick: Tick::from_raw(2),
+                    superseded_through: Tick::from_raw(4),
+                    corrected_through: Tick::from_raw(4),
+                    record_count: 2,
+                },
+                ErrorCode::StoreFailure,
+            )),
+        ),
+        Err(FailureRecordError::CorrectionExportFailure),
+    );
+    assert_eq!(
+        CorrectionError::try_new(
+            frontier(FrontierPosition::Confirmed(Tick::from_raw(u64::MAX))),
+            error(),
+            Some(export(
+                ReplayAppendRange::CorrectionBranch {
+                    target_tick: Tick::from_raw(0),
+                    superseded_through: Tick::from_raw(u64::MAX),
+                    corrected_through: Tick::from_raw(u64::MAX),
+                    record_count: u32::MAX,
+                },
+                ErrorCode::StoreFailure,
             )),
         ),
         Err(FailureRecordError::CorrectionExportFailure),
