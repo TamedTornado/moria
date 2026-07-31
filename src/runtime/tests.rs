@@ -1,25 +1,335 @@
-use std::sync::Arc;
+use std::{sync::Arc, thread};
 
 use crate::canonical::{DeviceGeneration, ReceiptId};
 
 use super::{
     CancelResult, OperationPhase, ProgressBlocker, ReceiptFamily, ReceiptPolicy, ReceiptState,
-    TerminalCache,
+    TerminalCache, TransitionError,
 };
 
+const PHASES: &[OperationPhase] = &[
+    OperationPhase::Verifying,
+    OperationPhase::Queued,
+    OperationPhase::Applying,
+    OperationPhase::WaitingForReadiness,
+    OperationPhase::Pinning,
+    OperationPhase::Loading,
+    OperationPhase::LoadingOwnedRecords,
+    OperationPhase::VerifyingHeader,
+    OperationPhase::ExportingReplayHeader,
+    OperationPhase::ExportingReplayPrefix,
+    OperationPhase::ExportingCorrectionBranch,
+    OperationPhase::Reading,
+    OperationPhase::Materializing,
+    OperationPhase::Preparing,
+    OperationPhase::Encoding,
+    OperationPhase::Encoded,
+    OperationPhase::Submitting,
+    OperationPhase::Submitted,
+    OperationPhase::GpuComplete,
+    OperationPhase::Mapping,
+    OperationPhase::Decoding,
+    OperationPhase::StoringBlobs,
+    OperationPhase::CommittingManifest,
+    OperationPhase::RestoringPrivate,
+    OperationPhase::ReplayingPrivate,
+    OperationPhase::ComparingExpected,
+    OperationPhase::Comparing,
+    OperationPhase::Querying,
+    OperationPhase::Rebuilding,
+    OperationPhase::RestoringParticipants,
+    OperationPhase::ValidatingFinal,
+    OperationPhase::Publishing,
+    OperationPhase::CreatingGeneration,
+    OperationPhase::LoadingAnchor,
+    OperationPhase::Replaying,
+    OperationPhase::ClosingAdmission,
+    OperationPhase::Draining,
+    OperationPhase::FinalCheckpoint,
+    OperationPhase::Releasing,
+];
+
+const LIFECYCLES: &[(ReceiptFamily, &[OperationPhase])] = &[
+    (
+        ReceiptFamily::Genesis,
+        &[
+            OperationPhase::Verifying,
+            OperationPhase::Materializing,
+            OperationPhase::Submitting,
+            OperationPhase::ExportingReplayHeader,
+        ],
+    ),
+    (
+        ReceiptFamily::Tick,
+        &[
+            OperationPhase::Queued,
+            OperationPhase::Preparing,
+            OperationPhase::Encoded,
+            OperationPhase::Submitted,
+            OperationPhase::GpuComplete,
+            OperationPhase::Decoding,
+        ],
+    ),
+    (
+        ReceiptFamily::Interest,
+        &[OperationPhase::Queued, OperationPhase::Applying],
+    ),
+    (
+        ReceiptFamily::Query,
+        &[
+            OperationPhase::Queued,
+            OperationPhase::WaitingForReadiness,
+            OperationPhase::Encoded,
+            OperationPhase::Submitted,
+            OperationPhase::Mapping,
+            OperationPhase::Decoding,
+        ],
+    ),
+    (
+        ReceiptFamily::ObservationResnapshot,
+        &[
+            OperationPhase::Queued,
+            OperationPhase::Pinning,
+            OperationPhase::Querying,
+            OperationPhase::Encoding,
+        ],
+    ),
+    (
+        ReceiptFamily::Checkpoint,
+        &[
+            OperationPhase::Queued,
+            OperationPhase::Pinning,
+            OperationPhase::Reading,
+            OperationPhase::StoringBlobs,
+            OperationPhase::CommittingManifest,
+        ],
+    ),
+    (
+        ReceiptFamily::Correction,
+        &[
+            OperationPhase::Queued,
+            OperationPhase::RestoringPrivate,
+            OperationPhase::ReplayingPrivate,
+            OperationPhase::ValidatingFinal,
+            OperationPhase::ExportingCorrectionBranch,
+            OperationPhase::Publishing,
+        ],
+    ),
+    (
+        ReceiptFamily::Restore,
+        &[
+            OperationPhase::Loading,
+            OperationPhase::Verifying,
+            OperationPhase::Rebuilding,
+            OperationPhase::RestoringParticipants,
+            OperationPhase::ExportingReplayHeader,
+            OperationPhase::Publishing,
+        ],
+    ),
+    (
+        ReceiptFamily::Replay,
+        &[
+            OperationPhase::LoadingOwnedRecords,
+            OperationPhase::VerifyingHeader,
+            OperationPhase::ReplayingPrivate,
+            OperationPhase::ComparingExpected,
+            OperationPhase::ExportingReplayHeader,
+            OperationPhase::ExportingReplayPrefix,
+            OperationPhase::Publishing,
+        ],
+    ),
+    (
+        ReceiptFamily::Recovery,
+        &[
+            OperationPhase::Queued,
+            OperationPhase::CreatingGeneration,
+            OperationPhase::LoadingAnchor,
+            OperationPhase::Replaying,
+            OperationPhase::Comparing,
+        ],
+    ),
+    (
+        ReceiptFamily::Shutdown,
+        &[
+            OperationPhase::ClosingAdmission,
+            OperationPhase::Draining,
+            OperationPhase::FinalCheckpoint,
+            OperationPhase::Releasing,
+        ],
+    ),
+];
+
+fn receipt(family: ReceiptFamily) -> super::Receipt<u32, &'static str> {
+    TerminalCache::try_new(1, 8)
+        .unwrap()
+        .admit(
+            ReceiptId::from_raw(1),
+            DeviceGeneration::from_raw(1),
+            ReceiptPolicy::for_family(family),
+            8,
+        )
+        .unwrap()
+}
+
+fn advance_to(
+    receipt: &super::Receipt<u32, &'static str>,
+    phases: &[OperationPhase],
+    index: usize,
+) {
+    for phase in &phases[1..=index] {
+        receipt.operation().advance(*phase).unwrap();
+    }
+}
+
 #[test]
-fn cloned_receipts_share_idempotent_terminal_result_until_cache_eviction() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(1, 16).unwrap();
+fn lifecycle_matrices_admit_exactly_the_documented_phases() {
+    for (family, lifecycle) in LIFECYCLES {
+        for phase in PHASES {
+            assert_eq!(
+                ReceiptPolicy::for_family(*family).allows_phase(*phase),
+                lifecycle.contains(phase),
+                "{family:?} phase {phase:?}",
+            );
+        }
+    }
+}
+
+#[test]
+fn lifecycle_matrices_allow_every_edge_and_reject_every_non_edge() {
+    for (family, lifecycle) in LIFECYCLES {
+        for (index, from) in lifecycle.iter().enumerate() {
+            for to in PHASES {
+                let receipt = receipt(*family);
+                advance_to(&receipt, lifecycle, index);
+                let result = receipt.operation().advance(*to);
+                if lifecycle.get(index + 1) == Some(to) {
+                    assert!(result.is_ok(), "{family:?}: {from:?} -> {to:?}");
+                } else if lifecycle.contains(to) {
+                    assert_eq!(
+                        result,
+                        Err(TransitionError::InvalidTransition {
+                            family: *family,
+                            from: *from,
+                            to: *to,
+                        }),
+                        "{family:?}: {from:?} -> {to:?}",
+                    );
+                } else {
+                    assert_eq!(
+                        result,
+                        Err(TransitionError::InvalidPhase {
+                            family: *family,
+                            phase: *to,
+                        }),
+                        "{family:?}: {from:?} -> {to:?}",
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn query_blockers_are_visible_only_during_waiting_for_readiness() {
+    let query = receipt(ReceiptFamily::Query);
+    assert!(query.operation().set_query_blocker().is_err());
+    query
+        .operation()
+        .advance(OperationPhase::WaitingForReadiness)
+        .unwrap();
+    query.operation().set_query_blocker().unwrap();
+    let ReceiptState::Pending(progress) = query.poll() else {
+        panic!("waiting query stays pending")
+    };
+    assert_eq!(progress.blocker, Some(ProgressBlocker::Query));
+    query.operation().advance(OperationPhase::Encoded).unwrap();
+    let ReceiptState::Pending(progress) = query.poll() else {
+        panic!("encoded query stays pending")
+    };
+    assert_eq!(progress.blocker, None);
+}
+
+#[test]
+fn checkpoint_and_correction_cancellation_cutoffs_latch_irreversibly() {
+    for phase in [
+        OperationPhase::Reading,
+        OperationPhase::StoringBlobs,
+        OperationPhase::CommittingManifest,
+    ] {
+        let checkpoint = receipt(ReceiptFamily::Checkpoint);
+        let lifecycle = LIFECYCLES[5].1;
+        advance_to(
+            &checkpoint,
+            lifecycle,
+            lifecycle
+                .iter()
+                .position(|candidate| *candidate == phase)
+                .unwrap(),
+        );
+        assert_eq!(
+            checkpoint.cancel(),
+            CancelResult::AbortRequested,
+            "checkpoint at {phase:?}"
+        );
+    }
+
+    let correction_lifecycle = LIFECYCLES[6].1;
+    for phase in [
+        OperationPhase::RestoringPrivate,
+        OperationPhase::ReplayingPrivate,
+        OperationPhase::ValidatingFinal,
+    ] {
+        let correction = receipt(ReceiptFamily::Correction);
+        advance_to(
+            &correction,
+            correction_lifecycle,
+            correction_lifecycle
+                .iter()
+                .position(|candidate| *candidate == phase)
+                .unwrap(),
+        );
+        assert_eq!(
+            correction.cancel(),
+            CancelResult::AbortRequested,
+            "correction at {phase:?}"
+        );
+    }
+    for phase in [
+        OperationPhase::ExportingCorrectionBranch,
+        OperationPhase::Publishing,
+    ] {
+        let correction = receipt(ReceiptFamily::Correction);
+        advance_to(
+            &correction,
+            correction_lifecycle,
+            correction_lifecycle
+                .iter()
+                .position(|candidate| *candidate == phase)
+                .unwrap(),
+        );
+        assert_eq!(
+            correction.cancel(),
+            CancelResult::NotCancellable,
+            "correction at {phase:?}"
+        );
+    }
+}
+
+#[test]
+fn cancellation_and_completion_race_to_one_retained_terminal_state() {
+    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
     let receipt = cache
         .admit(
-            ReceiptId::from_raw(7),
-            DeviceGeneration::from_raw(2),
+            ReceiptId::from_raw(1),
+            DeviceGeneration::from_raw(1),
             ReceiptPolicy::for_family(ReceiptFamily::Query),
-            16,
+            8,
         )
         .unwrap();
-    let clone = receipt.clone();
-
+    receipt
+        .operation()
+        .advance(OperationPhase::WaitingForReadiness)
+        .unwrap();
     receipt
         .operation()
         .advance(OperationPhase::Encoded)
@@ -28,227 +338,27 @@ fn cloned_receipts_share_idempotent_terminal_result_until_cache_eviction() {
         .operation()
         .advance(OperationPhase::Submitted)
         .unwrap();
-    assert_eq!(receipt.cancel(), CancelResult::DeliverySuppressed);
-    receipt.operation().complete_ready(41).unwrap();
-
-    let ReceiptState::Cancelled(cancelled) = receipt.poll() else {
-        panic!("suppressed delivery must be terminally cancelled");
-    };
-    assert_eq!(cancelled.receipt, ReceiptId::from_raw(7));
-    assert!(cancelled.submitted_work_drained);
-    assert!(matches!(clone.poll(), ReceiptState::Cancelled(_)));
-    drop(receipt);
-    assert!(matches!(clone.poll(), ReceiptState::Cancelled(_)));
+    let operation = receipt.operation();
+    let canceller = receipt.clone();
+    let complete = thread::spawn(move || operation.complete_ready(9));
+    let cancelled = thread::spawn(move || canceller.cancel());
+    let completion = complete.join().unwrap();
+    let cancellation = cancelled.join().unwrap();
+    assert!(completion.is_ok() || matches!(completion, Err(TransitionError::AlreadyTerminal)));
+    assert!(matches!(
+        cancellation,
+        CancelResult::DeliverySuppressed | CancelResult::AlreadyTerminal
+    ));
+    assert!(matches!(
+        receipt.poll(),
+        ReceiptState::Ready(_) | ReceiptState::Cancelled(_)
+    ));
 }
 
 #[test]
-fn query_blockers_are_visible_only_during_waiting_for_readiness() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
-    let query = cache
-        .admit(
-            ReceiptId::from_raw(1),
-            DeviceGeneration::from_raw(1),
-            ReceiptPolicy::for_family(ReceiptFamily::Query),
-            8,
-        )
-        .unwrap();
-    assert!(query.operation().set_query_blocker().is_err());
-    query
-        .operation()
-        .advance(OperationPhase::WaitingForReadiness)
-        .unwrap();
-    query.operation().set_query_blocker().unwrap();
-    let ReceiptState::Pending(progress) = query.poll() else {
-        panic!("waiting query stays pending");
-    };
-    assert_eq!(progress.blocker, Some(ProgressBlocker::Query));
-    query.operation().advance(OperationPhase::Encoded).unwrap();
-    let ReceiptState::Pending(progress) = query.poll() else {
-        panic!("encoded query stays pending");
-    };
-    assert_eq!(progress.blocker, None);
-}
-
-#[test]
-fn lifecycle_phase_matrix_rejects_cross_family_phases() {
-    assert!(
-        ReceiptPolicy::for_family(ReceiptFamily::Genesis)
-            .allows_phase(OperationPhase::ExportingReplayHeader)
-    );
-    assert!(
-        ReceiptPolicy::for_family(ReceiptFamily::Tick).allows_phase(OperationPhase::GpuComplete)
-    );
-    assert!(
-        ReceiptPolicy::for_family(ReceiptFamily::Interest).allows_phase(OperationPhase::Applying)
-    );
-    assert!(
-        ReceiptPolicy::for_family(ReceiptFamily::Query)
-            .allows_phase(OperationPhase::WaitingForReadiness)
-    );
-    assert!(
-        ReceiptPolicy::for_family(ReceiptFamily::ObservationResnapshot)
-            .allows_phase(OperationPhase::Pinning)
-    );
-    assert!(
-        ReceiptPolicy::for_family(ReceiptFamily::Checkpoint)
-            .allows_phase(OperationPhase::CommittingManifest)
-    );
-    assert!(
-        ReceiptPolicy::for_family(ReceiptFamily::Correction)
-            .allows_phase(OperationPhase::ExportingCorrectionBranch)
-    );
-    assert!(
-        ReceiptPolicy::for_family(ReceiptFamily::Restore)
-            .allows_phase(OperationPhase::RestoringParticipants)
-    );
-    assert!(
-        ReceiptPolicy::for_family(ReceiptFamily::Replay)
-            .allows_phase(OperationPhase::ComparingExpected)
-    );
-    assert!(
-        ReceiptPolicy::for_family(ReceiptFamily::Recovery)
-            .allows_phase(OperationPhase::CreatingGeneration)
-    );
-    assert!(
-        ReceiptPolicy::for_family(ReceiptFamily::Shutdown)
-            .allows_phase(OperationPhase::ClosingAdmission)
-    );
-    assert!(
-        !ReceiptPolicy::for_family(ReceiptFamily::Tick)
-            .allows_phase(OperationPhase::FinalCheckpoint)
-    );
-    assert!(
-        !ReceiptPolicy::for_family(ReceiptFamily::Shutdown)
-            .allows_phase(OperationPhase::Publishing)
-    );
-}
-
-#[test]
-fn result_capacity_is_reserved_at_admission_and_reclaimed_only_after_eviction() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
-    let receipt = cache
-        .admit(
-            ReceiptId::from_raw(1),
-            DeviceGeneration::from_raw(1),
-            ReceiptPolicy::for_family(ReceiptFamily::Interest),
-            8,
-        )
-        .unwrap();
-
-    assert!(
-        cache
-            .admit(
-                ReceiptId::from_raw(2),
-                DeviceGeneration::from_raw(1),
-                ReceiptPolicy::for_family(ReceiptFamily::Interest),
-                1,
-            )
-            .is_err()
-    );
-    receipt.operation().complete_ready(9).unwrap();
-    drop(receipt);
-
-    assert!(
-        cache
-            .admit(
-                ReceiptId::from_raw(2),
-                DeviceGeneration::from_raw(1),
-                ReceiptPolicy::for_family(ReceiptFamily::Interest),
-                8,
-            )
-            .is_ok()
-    );
-}
-
-#[test]
-fn pre_submission_cancellation_is_immediate_but_tick_and_shutdown_are_not_cancellable() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(3, 24).unwrap();
-    let query = cache
-        .admit(
-            ReceiptId::from_raw(1),
-            DeviceGeneration::from_raw(1),
-            ReceiptPolicy::for_family(ReceiptFamily::Query),
-            8,
-        )
-        .unwrap();
-    assert_eq!(query.cancel(), CancelResult::CancelledBeforeSubmit);
-    assert!(matches!(query.poll(), ReceiptState::Cancelled(_)));
-
-    let tick = cache
-        .admit(
-            ReceiptId::from_raw(2),
-            DeviceGeneration::from_raw(1),
-            ReceiptPolicy::for_family(ReceiptFamily::Tick),
-            8,
-        )
-        .unwrap();
-    assert_eq!(tick.cancel(), CancelResult::NotCancellable);
-
-    let shutdown = cache
-        .admit(
-            ReceiptId::from_raw(3),
-            DeviceGeneration::from_raw(1),
-            ReceiptPolicy::for_family(ReceiptFamily::Shutdown),
-            8,
-        )
-        .unwrap();
-    assert_eq!(shutdown.cancel(), CancelResult::NotCancellable);
-}
-
-#[test]
-fn cancellation_cutoffs_distinguish_applied_and_encoded_work() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(3, 24).unwrap();
-    let interest = cache
-        .admit(
-            ReceiptId::from_raw(1),
-            DeviceGeneration::from_raw(1),
-            ReceiptPolicy::for_family(ReceiptFamily::Interest),
-            8,
-        )
-        .unwrap();
-    interest
-        .operation()
-        .advance(OperationPhase::Applying)
-        .unwrap();
-    assert_eq!(interest.cancel(), CancelResult::NotCancellable);
-
-    let query = cache
-        .admit(
-            ReceiptId::from_raw(2),
-            DeviceGeneration::from_raw(1),
-            ReceiptPolicy::for_family(ReceiptFamily::Query),
-            8,
-        )
-        .unwrap();
-    query.operation().advance(OperationPhase::Encoded).unwrap();
-    assert_eq!(query.cancel(), CancelResult::DeliverySuppressed);
-    query.operation().complete_failed("ignored").unwrap();
-    assert!(matches!(query.poll(), ReceiptState::Cancelled(_)));
-
-    let correction = cache
-        .admit(
-            ReceiptId::from_raw(3),
-            DeviceGeneration::from_raw(1),
-            ReceiptPolicy::for_family(ReceiptFamily::Correction),
-            8,
-        )
-        .unwrap();
-    correction
-        .operation()
-        .advance(OperationPhase::Submitted)
-        .unwrap();
-    assert_eq!(correction.cancel(), CancelResult::AbortRequested);
-    correction
-        .operation()
-        .advance(OperationPhase::ExportingCorrectionBranch)
-        .unwrap();
-    assert_eq!(correction.cancel(), CancelResult::NotCancellable);
-}
-
-#[test]
-fn stale_generation_cannot_publish_and_invalid_phase_transition_is_rejected() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
-    let receipt = cache
+fn generation_is_checked_atomically_for_every_completion_path() {
+    let cache = TerminalCache::<u32, &'static str>::try_new(2, 16).unwrap();
+    let stale = cache
         .admit(
             ReceiptId::from_raw(1),
             DeviceGeneration::from_raw(4),
@@ -256,26 +366,208 @@ fn stale_generation_cannot_publish_and_invalid_phase_transition_is_rejected() {
             8,
         )
         .unwrap();
+    cache.set_current_generation(DeviceGeneration::from_raw(5));
+    assert_eq!(
+        stale
+            .operation()
+            .complete_ready_for_generation(DeviceGeneration::from_raw(4), 1),
+        Err(TransitionError::StaleGeneration {
+            expected: DeviceGeneration::from_raw(5),
+            actual: DeviceGeneration::from_raw(4)
+        })
+    );
+    assert_eq!(
+        stale.operation().complete_ready(1),
+        Err(TransitionError::StaleGeneration {
+            expected: DeviceGeneration::from_raw(5),
+            actual: DeviceGeneration::from_raw(4)
+        })
+    );
 
-    assert!(
-        receipt
-            .operation()
-            .advance(OperationPhase::Publishing)
-            .is_err()
-    );
-    assert!(
-        receipt
-            .operation()
-            .complete_ready_for_generation(DeviceGeneration::from_raw(3), 1)
-            .is_err()
-    );
-    receipt
-        .operation()
-        .complete_ready_for_generation(DeviceGeneration::from_raw(4), 1)
+    let current = cache
+        .admit(
+            ReceiptId::from_raw(2),
+            DeviceGeneration::from_raw(5),
+            ReceiptPolicy::for_family(ReceiptFamily::Interest),
+            8,
+        )
         .unwrap();
-    let ReceiptState::Ready(value) = receipt.poll() else {
-        panic!("matching generation publishes the result");
+    current
+        .operation()
+        .complete_ready_for_generation(DeviceGeneration::from_raw(5), 2)
+        .unwrap();
+    assert!(matches!(current.poll(), ReceiptState::Ready(value) if *value == 2));
+}
+
+#[test]
+fn cloned_after_terminal_receipts_retain_the_shared_terminal_result() {
+    let receipt = receipt(ReceiptFamily::Interest);
+    receipt.operation().complete_ready(9).unwrap();
+    let clone = receipt.clone();
+    drop(receipt);
+    let ReceiptState::Ready(value) = clone.poll() else {
+        panic!("terminal result must be shared")
     };
-    assert_eq!(*value, 1);
+    assert_eq!(*value, 9);
     assert_eq!(Arc::strong_count(&value), 2);
+}
+
+#[test]
+fn dropped_pending_and_submitted_receipts_remain_owned_by_the_runtime_driver() {
+    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+    let pending = cache
+        .admit(
+            ReceiptId::from_raw(1),
+            DeviceGeneration::from_raw(1),
+            ReceiptPolicy::for_family(ReceiptFamily::Interest),
+            8,
+        )
+        .unwrap();
+    let pending_driver = pending.operation();
+    drop(pending);
+    assert!(
+        cache
+            .admit(
+                ReceiptId::from_raw(2),
+                DeviceGeneration::from_raw(1),
+                ReceiptPolicy::for_family(ReceiptFamily::Interest),
+                8
+            )
+            .is_err()
+    );
+    drop(pending_driver);
+    assert!(
+        cache
+            .admit(
+                ReceiptId::from_raw(2),
+                DeviceGeneration::from_raw(1),
+                ReceiptPolicy::for_family(ReceiptFamily::Interest),
+                8
+            )
+            .is_ok()
+    );
+
+    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+    let submitted = cache
+        .admit(
+            ReceiptId::from_raw(1),
+            DeviceGeneration::from_raw(1),
+            ReceiptPolicy::for_family(ReceiptFamily::Query),
+            8,
+        )
+        .unwrap();
+    submitted
+        .operation()
+        .advance(OperationPhase::WaitingForReadiness)
+        .unwrap();
+    submitted
+        .operation()
+        .advance(OperationPhase::Encoded)
+        .unwrap();
+    submitted
+        .operation()
+        .advance(OperationPhase::Submitted)
+        .unwrap();
+    let driver = submitted.operation();
+    drop(submitted);
+    assert!(matches!(driver.poll(), ReceiptState::Pending(_)));
+    driver.complete_ready(1).unwrap();
+    assert!(
+        cache
+            .admit(
+                ReceiptId::from_raw(2),
+                DeviceGeneration::from_raw(1),
+                ReceiptPolicy::for_family(ReceiptFamily::Interest),
+                8
+            )
+            .is_err()
+    );
+    drop(driver);
+    assert!(
+        cache
+            .admit(
+                ReceiptId::from_raw(2),
+                DeviceGeneration::from_raw(1),
+                ReceiptPolicy::for_family(ReceiptFamily::Interest),
+                8
+            )
+            .is_ok()
+    );
+}
+
+#[test]
+fn result_capacity_rejects_every_count_and_byte_saturation_boundary() {
+    let zero = TerminalCache::<u32, &'static str>::try_new(0, 0).unwrap();
+    assert!(
+        zero.admit(
+            ReceiptId::from_raw(1),
+            DeviceGeneration::from_raw(1),
+            ReceiptPolicy::for_family(ReceiptFamily::Interest),
+            0
+        )
+        .is_err()
+    );
+
+    let count = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+    let first = count
+        .admit(
+            ReceiptId::from_raw(1),
+            DeviceGeneration::from_raw(1),
+            ReceiptPolicy::for_family(ReceiptFamily::Interest),
+            8,
+        )
+        .unwrap();
+    assert!(
+        count
+            .admit(
+                ReceiptId::from_raw(2),
+                DeviceGeneration::from_raw(1),
+                ReceiptPolicy::for_family(ReceiptFamily::Interest),
+                0
+            )
+            .is_err()
+    );
+    drop(first);
+
+    let bytes = TerminalCache::<u32, &'static str>::try_new(2, 8).unwrap();
+    let exact = bytes
+        .admit(
+            ReceiptId::from_raw(1),
+            DeviceGeneration::from_raw(1),
+            ReceiptPolicy::for_family(ReceiptFamily::Interest),
+            8,
+        )
+        .unwrap();
+    assert!(
+        bytes
+            .admit(
+                ReceiptId::from_raw(2),
+                DeviceGeneration::from_raw(1),
+                ReceiptPolicy::for_family(ReceiptFamily::Interest),
+                1
+            )
+            .is_err()
+    );
+    drop(exact);
+
+    let maximum = TerminalCache::<u32, &'static str>::try_new(2, u64::MAX).unwrap();
+    let exact = maximum
+        .admit(
+            ReceiptId::from_raw(1),
+            DeviceGeneration::from_raw(1),
+            ReceiptPolicy::for_family(ReceiptFamily::Interest),
+            u64::MAX,
+        )
+        .unwrap();
+    assert!(
+        maximum
+            .admit(
+                ReceiptId::from_raw(2),
+                DeviceGeneration::from_raw(1),
+                ReceiptPolicy::for_family(ReceiptFamily::Interest),
+                1
+            )
+            .is_err()
+    );
+    drop(exact);
 }

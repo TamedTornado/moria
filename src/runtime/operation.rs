@@ -111,9 +111,10 @@ impl ReceiptPolicy {
                 CancellationCutoff::Never
             }
             ReceiptFamily::Interest => CancellationCutoff::BeforeSubmission,
-            ReceiptFamily::Query
-            | ReceiptFamily::ObservationResnapshot
-            | ReceiptFamily::Checkpoint => CancellationCutoff::SuppressAfterSubmission,
+            ReceiptFamily::Query | ReceiptFamily::ObservationResnapshot => {
+                CancellationCutoff::SuppressAfterSubmission
+            }
+            ReceiptFamily::Checkpoint => CancellationCutoff::AbortAfterSubmission,
             ReceiptFamily::Correction => CancellationCutoff::BeforeCorrectionExport,
             ReceiptFamily::Restore | ReceiptFamily::Replay | ReceiptFamily::Recovery => {
                 CancellationCutoff::AbortAfterSubmission
@@ -153,6 +154,15 @@ pub enum TransitionError {
         family: ReceiptFamily,
         phase: OperationPhase,
     },
+    /// The requested phase is legal for the family but is not its next phase.
+    InvalidTransition {
+        /// The receipt family whose lifecycle rejected the transition.
+        family: ReceiptFamily,
+        /// The operation's current pending phase.
+        from: OperationPhase,
+        /// The requested next phase.
+        to: OperationPhase,
+    },
     /// A terminal operation cannot be advanced or completed again.
     AlreadyTerminal,
     /// A stale device generation attempted to publish a result.
@@ -173,6 +183,7 @@ struct OperationState<T, E> {
     phase: OperationPhase,
     blocker: Option<ProgressBlocker>,
     submitted: bool,
+    cancellation_cutoff_reached: bool,
     delivery_suppressed: bool,
     abort_requested: bool,
     terminal: Terminal<T, E>,
@@ -183,6 +194,7 @@ pub struct Operation<T, E> {
     receipt: ReceiptId,
     generation: DeviceGeneration,
     policy: ReceiptPolicy,
+    current_generation: Arc<Mutex<Option<DeviceGeneration>>>,
     state: Mutex<OperationState<T, E>>,
     pub(super) cache: std::sync::Weak<TerminalCache<T, E>>,
     result_bytes: u64,
@@ -193,6 +205,7 @@ impl<T, E> Operation<T, E> {
         receipt: ReceiptId,
         generation: DeviceGeneration,
         policy: ReceiptPolicy,
+        current_generation: Arc<Mutex<Option<DeviceGeneration>>>,
         cache: std::sync::Weak<TerminalCache<T, E>>,
         result_bytes: u64,
     ) -> Self {
@@ -200,10 +213,12 @@ impl<T, E> Operation<T, E> {
             receipt,
             generation,
             policy,
+            current_generation,
             state: Mutex::new(OperationState {
                 phase: initial_phase(policy.family),
                 blocker: None,
                 submitted: false,
+                cancellation_cutoff_reached: false,
                 delivery_suppressed: false,
                 abort_requested: false,
                 terminal: Terminal::Pending,
@@ -237,9 +252,17 @@ impl<T, E> Operation<T, E> {
         if !matches!(state.terminal, Terminal::Pending) {
             return Err(TransitionError::AlreadyTerminal);
         }
+        if !phase_successor(self.policy.family, state.phase, phase) {
+            return Err(TransitionError::InvalidTransition {
+                family: self.policy.family,
+                from: state.phase,
+                to: phase,
+            });
+        }
         state.phase = phase;
         state.blocker = None;
-        state.submitted |= is_submitted_phase(phase);
+        state.submitted |= work_started(self.policy.family, phase);
+        state.cancellation_cutoff_reached |= cancellation_cutoff_reached(self.policy.family, phase);
         Ok(())
     }
 
@@ -306,9 +329,7 @@ impl<T, E> Operation<T, E> {
                     state.abort_requested = true;
                     return CancelResult::AbortRequested;
                 }
-                CancellationCutoff::BeforeCorrectionExport
-                    if state.phase == OperationPhase::ExportingCorrectionBranch =>
-                {
+                CancellationCutoff::BeforeCorrectionExport if state.cancellation_cutoff_reached => {
                     return CancelResult::NotCancellable;
                 }
                 CancellationCutoff::BeforeCorrectionExport if !state.submitted => {
@@ -329,7 +350,7 @@ impl<T, E> Operation<T, E> {
 
     /// Completes successfully, retaining the shared result while handles or cache retain it.
     pub fn complete_ready(self: &Arc<Self>, value: T) -> Result<(), TransitionError> {
-        self.finish(Terminal::Ready(Arc::new(value)))
+        self.finish(self.generation, Terminal::Ready(Arc::new(value)))
     }
 
     /// Completes successfully only when the producing generation is current.
@@ -338,13 +359,12 @@ impl<T, E> Operation<T, E> {
         generation: DeviceGeneration,
         value: T,
     ) -> Result<(), TransitionError> {
-        self.ensure_generation(generation)?;
-        self.complete_ready(value)
+        self.finish(generation, Terminal::Ready(Arc::new(value)))
     }
 
     /// Completes with a typed failure.
     pub fn complete_failed(self: &Arc<Self>, error: E) -> Result<(), TransitionError> {
-        self.finish(Terminal::Failed(Arc::new(error)))
+        self.finish(self.generation, Terminal::Failed(Arc::new(error)))
     }
 
     /// Completes with a typed failure only when the producing generation is current.
@@ -353,23 +373,26 @@ impl<T, E> Operation<T, E> {
         generation: DeviceGeneration,
         error: E,
     ) -> Result<(), TransitionError> {
-        self.ensure_generation(generation)?;
-        self.complete_failed(error)
+        self.finish(generation, Terminal::Failed(Arc::new(error)))
     }
 
-    fn ensure_generation(&self, generation: DeviceGeneration) -> Result<(), TransitionError> {
-        if generation == self.generation {
-            Ok(())
-        } else {
-            Err(TransitionError::StaleGeneration {
-                expected: self.generation,
-                actual: generation,
-            })
-        }
-    }
-
-    fn finish(self: &Arc<Self>, terminal: Terminal<T, E>) -> Result<(), TransitionError> {
+    fn finish(
+        self: &Arc<Self>,
+        producing_generation: DeviceGeneration,
+        terminal: Terminal<T, E>,
+    ) -> Result<(), TransitionError> {
         {
+            let current_generation = self
+                .current_generation
+                .lock()
+                .expect("device generation mutex poisoned")
+                .expect("admitted operation has a device generation");
+            if self.generation != current_generation || producing_generation != current_generation {
+                return Err(TransitionError::StaleGeneration {
+                    expected: current_generation,
+                    actual: producing_generation,
+                });
+            }
             let mut state = self.state.lock().expect("operation state mutex poisoned");
             if !matches!(state.terminal, Terminal::Pending) {
                 return Err(TransitionError::AlreadyTerminal);
@@ -431,25 +454,37 @@ const fn initial_phase(family: ReceiptFamily) -> OperationPhase {
         ReceiptFamily::ObservationResnapshot
         | ReceiptFamily::Checkpoint
         | ReceiptFamily::Correction => OperationPhase::Queued,
-        ReceiptFamily::Restore | ReceiptFamily::Replay => OperationPhase::Loading,
+        ReceiptFamily::Restore => OperationPhase::Loading,
+        ReceiptFamily::Replay => OperationPhase::LoadingOwnedRecords,
         ReceiptFamily::Recovery => OperationPhase::Queued,
         ReceiptFamily::Shutdown => OperationPhase::ClosingAdmission,
     }
 }
 
-const fn is_submitted_phase(phase: OperationPhase) -> bool {
+const fn work_started(family: ReceiptFamily, phase: OperationPhase) -> bool {
+    use OperationPhase::*;
+    match family {
+        ReceiptFamily::Genesis => matches!(phase, Submitting),
+        ReceiptFamily::Tick | ReceiptFamily::Query => matches!(phase, Submitted),
+        ReceiptFamily::Interest => false,
+        ReceiptFamily::ObservationResnapshot => matches!(phase, Encoding),
+        ReceiptFamily::Checkpoint => matches!(phase, Reading),
+        ReceiptFamily::Correction => matches!(phase, RestoringPrivate),
+        ReceiptFamily::Restore => matches!(phase, Rebuilding),
+        ReceiptFamily::Replay => matches!(phase, ReplayingPrivate),
+        ReceiptFamily::Recovery => matches!(phase, Replaying),
+        ReceiptFamily::Shutdown => false,
+    }
+}
+
+const fn cancellation_cutoff_reached(family: ReceiptFamily, phase: OperationPhase) -> bool {
     matches!(
-        phase,
-        OperationPhase::Submitted
-            | OperationPhase::GpuComplete
-            | OperationPhase::Mapping
-            | OperationPhase::Decoding
-            | OperationPhase::StoringBlobs
-            | OperationPhase::CommittingManifest
-            | OperationPhase::ExportingReplayHeader
-            | OperationPhase::ExportingReplayPrefix
-            | OperationPhase::ExportingCorrectionBranch
-            | OperationPhase::Publishing
+        (family, phase),
+        (ReceiptFamily::Checkpoint, OperationPhase::Reading)
+            | (
+                ReceiptFamily::Correction,
+                OperationPhase::ExportingCorrectionBranch
+            )
     )
 }
 
@@ -476,40 +511,23 @@ const fn phase_allowed(family: ReceiptFamily, phase: OperationPhase) -> bool {
     match family {
         ReceiptFamily::Genesis => matches!(
             phase,
-            Verifying | Materializing | Submitting | Submitted | ExportingReplayHeader | Publishing
+            Verifying | Materializing | Submitting | ExportingReplayHeader
         ),
         ReceiptFamily::Tick => matches!(
             phase,
-            Queued
-                | Preparing
-                | Encoding
-                | Encoded
-                | Submitting
-                | Submitted
-                | GpuComplete
-                | Mapping
-                | Decoding
-                | Publishing
+            Queued | Preparing | Encoded | Submitted | GpuComplete | Decoding
         ),
         ReceiptFamily::Interest => matches!(phase, Queued | Applying),
         ReceiptFamily::Query => matches!(
             phase,
-            Queued
-                | WaitingForReadiness
-                | Encoded
-                | Submitting
-                | Submitted
-                | Mapping
-                | Decoding
-                | Querying
+            Queued | WaitingForReadiness | Encoded | Submitted | Mapping | Decoding
         ),
-        ReceiptFamily::ObservationResnapshot => matches!(
-            phase,
-            Queued | Pinning | Querying | Encoding | Encoded | Submitting | Submitted
-        ),
+        ReceiptFamily::ObservationResnapshot => {
+            matches!(phase, Queued | Pinning | Querying | Encoding)
+        }
         ReceiptFamily::Checkpoint => matches!(
             phase,
-            Queued | Pinning | Reading | StoringBlobs | CommittingManifest | Submitted
+            Queued | Pinning | Reading | StoringBlobs | CommittingManifest
         ),
         ReceiptFamily::Correction => matches!(
             phase,
@@ -519,7 +537,6 @@ const fn phase_allowed(family: ReceiptFamily, phase: OperationPhase) -> bool {
                 | ValidatingFinal
                 | ExportingCorrectionBranch
                 | Publishing
-                | Submitted
         ),
         ReceiptFamily::Restore => matches!(
             phase,
@@ -529,7 +546,6 @@ const fn phase_allowed(family: ReceiptFamily, phase: OperationPhase) -> bool {
                 | RestoringParticipants
                 | ExportingReplayHeader
                 | Publishing
-                | Submitted
         ),
         ReceiptFamily::Replay => matches!(
             phase,
@@ -540,15 +556,89 @@ const fn phase_allowed(family: ReceiptFamily, phase: OperationPhase) -> bool {
                 | ExportingReplayHeader
                 | ExportingReplayPrefix
                 | Publishing
-                | Submitted
         ),
         ReceiptFamily::Recovery => matches!(
             phase,
-            Queued | CreatingGeneration | LoadingAnchor | Replaying | Comparing | Submitted
+            Queued | CreatingGeneration | LoadingAnchor | Replaying | Comparing
         ),
         ReceiptFamily::Shutdown => matches!(
             phase,
             ClosingAdmission | Draining | FinalCheckpoint | Releasing
         ),
     }
+}
+
+const fn phase_successor(family: ReceiptFamily, from: OperationPhase, to: OperationPhase) -> bool {
+    use OperationPhase::*;
+    matches!(
+        (family, from, to),
+        (ReceiptFamily::Genesis, Verifying, Materializing)
+            | (ReceiptFamily::Genesis, Materializing, Submitting)
+            | (ReceiptFamily::Genesis, Submitting, ExportingReplayHeader)
+            | (ReceiptFamily::Tick, Queued, Preparing)
+            | (ReceiptFamily::Tick, Preparing, Encoded)
+            | (ReceiptFamily::Tick, Encoded, Submitted)
+            | (ReceiptFamily::Tick, Submitted, GpuComplete)
+            | (ReceiptFamily::Tick, GpuComplete, Decoding)
+            | (ReceiptFamily::Interest, Queued, Applying)
+            | (ReceiptFamily::Query, Queued, WaitingForReadiness)
+            | (ReceiptFamily::Query, WaitingForReadiness, Encoded)
+            | (ReceiptFamily::Query, Encoded, Submitted)
+            | (ReceiptFamily::Query, Submitted, Mapping)
+            | (ReceiptFamily::Query, Mapping, Decoding)
+            | (ReceiptFamily::ObservationResnapshot, Queued, Pinning)
+            | (ReceiptFamily::ObservationResnapshot, Pinning, Querying)
+            | (ReceiptFamily::ObservationResnapshot, Querying, Encoding)
+            | (ReceiptFamily::Checkpoint, Queued, Pinning)
+            | (ReceiptFamily::Checkpoint, Pinning, Reading)
+            | (ReceiptFamily::Checkpoint, Reading, StoringBlobs)
+            | (ReceiptFamily::Checkpoint, StoringBlobs, CommittingManifest)
+            | (ReceiptFamily::Correction, Queued, RestoringPrivate)
+            | (
+                ReceiptFamily::Correction,
+                RestoringPrivate,
+                ReplayingPrivate
+            )
+            | (ReceiptFamily::Correction, ReplayingPrivate, ValidatingFinal)
+            | (
+                ReceiptFamily::Correction,
+                ValidatingFinal,
+                ExportingCorrectionBranch
+            )
+            | (
+                ReceiptFamily::Correction,
+                ExportingCorrectionBranch,
+                Publishing
+            )
+            | (ReceiptFamily::Restore, Loading, Verifying)
+            | (ReceiptFamily::Restore, Verifying, Rebuilding)
+            | (ReceiptFamily::Restore, Rebuilding, RestoringParticipants)
+            | (
+                ReceiptFamily::Restore,
+                RestoringParticipants,
+                ExportingReplayHeader
+            )
+            | (ReceiptFamily::Restore, ExportingReplayHeader, Publishing)
+            | (ReceiptFamily::Replay, LoadingOwnedRecords, VerifyingHeader)
+            | (ReceiptFamily::Replay, VerifyingHeader, ReplayingPrivate)
+            | (ReceiptFamily::Replay, ReplayingPrivate, ComparingExpected)
+            | (
+                ReceiptFamily::Replay,
+                ComparingExpected,
+                ExportingReplayHeader
+            )
+            | (
+                ReceiptFamily::Replay,
+                ExportingReplayHeader,
+                ExportingReplayPrefix
+            )
+            | (ReceiptFamily::Replay, ExportingReplayPrefix, Publishing)
+            | (ReceiptFamily::Recovery, Queued, CreatingGeneration)
+            | (ReceiptFamily::Recovery, CreatingGeneration, LoadingAnchor)
+            | (ReceiptFamily::Recovery, LoadingAnchor, Replaying)
+            | (ReceiptFamily::Recovery, Replaying, Comparing)
+            | (ReceiptFamily::Shutdown, ClosingAdmission, Draining)
+            | (ReceiptFamily::Shutdown, Draining, FinalCheckpoint)
+            | (ReceiptFamily::Shutdown, FinalCheckpoint, Releasing)
+    )
 }

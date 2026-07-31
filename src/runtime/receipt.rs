@@ -77,6 +77,7 @@ struct CacheState<T, E> {
 pub struct TerminalCache<T, E> {
     record_capacity: u32,
     byte_capacity: u64,
+    current_generation: Arc<Mutex<Option<DeviceGeneration>>>,
     state: Mutex<CacheState<T, E>>,
 }
 
@@ -95,6 +96,7 @@ impl<T, E> TerminalCache<T, E> {
         Ok(Arc::new(Self {
             record_capacity,
             byte_capacity,
+            current_generation: Arc::new(Mutex::new(None)),
             state: Mutex::new(CacheState {
                 entries,
                 used_records: 0,
@@ -111,6 +113,15 @@ impl<T, E> TerminalCache<T, E> {
         policy: ReceiptPolicy,
         result_bytes: u64,
     ) -> Result<Receipt<T, E>, ResultBackpressure> {
+        {
+            let mut current_generation = self
+                .current_generation
+                .lock()
+                .expect("device generation mutex poisoned");
+            if current_generation.is_none() {
+                *current_generation = Some(generation);
+            }
+        }
         loop {
             let victim = {
                 let mut state = self.state.lock().expect("terminal cache mutex poisoned");
@@ -141,11 +152,23 @@ impl<T, E> TerminalCache<T, E> {
                 receipt,
                 generation,
                 policy,
+                Arc::clone(&self.current_generation),
                 Arc::downgrade(self),
                 result_bytes,
             ));
             return Ok(Receipt { operation });
         }
+    }
+
+    /// Atomically changes the generation that may complete this cache's operations.
+    ///
+    /// Existing operations from an earlier generation remain drainable but cannot
+    /// publish a ready or failed terminal result.
+    pub fn set_current_generation(&self, generation: DeviceGeneration) {
+        *self
+            .current_generation
+            .lock()
+            .expect("device generation mutex poisoned") = Some(generation);
     }
 
     pub(super) fn retain_terminal(&self, operation: Arc<Operation<T, E>>) {
