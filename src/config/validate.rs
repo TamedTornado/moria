@@ -17,6 +17,7 @@ const DIRECTORY_BUCKET_BYTES: u64 = 32;
 const PRESENTATION_VERTEX_BYTES: u64 = 32;
 const PRESENTATION_INDEX_BYTES: u64 = 4;
 const MANIFEST_ENTRY_BYTES: u64 = 32;
+const BASE_CALLBACK_COMPLETION_BYTES: u64 = 2_048;
 
 /// Device allocation limits granted for a Moria page allocator.
 ///
@@ -198,12 +199,12 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
         return Err(cross(BudgetGroup::Identity, 15, "operation records"));
     }
     if u128::from(b.content.base_completion_bytes_in_flight)
-        < 2_048_u128 * u128::from(b.content.base_requests_in_flight)
+        < u128::from(BASE_CALLBACK_COMPLETION_BYTES) * u128::from(b.content.base_requests_in_flight)
     {
         return Err(cross(BudgetGroup::Content, 3, "base completion bytes"));
     }
     let largest_callback = [
-        b.content.base_completion_bytes_in_flight,
+        BASE_CALLBACK_COMPLETION_BYTES,
         b.participant.effect_bytes_per_tick,
         b.participant.event_bytes_per_tick,
         b.participant.state_and_snapshot_bytes_per_frontier,
@@ -1301,5 +1302,21 @@ mod tests {
         budgets.checkpoint.manifest_nodes = 4_194_304;
         budgets.checkpoint.manifest_blobs = 4_194_304;
         assert_eq!(super::validate_cross_limits(&budgets), Ok(()));
+    }
+
+    #[test]
+    fn base_callback_pool_is_bounded_per_callback_not_by_the_aggregate_pool() {
+        let mut budgets = ResourceBudgets::default();
+        budgets.content.base_requests_in_flight = 128;
+        budgets.content.base_completion_bytes_in_flight = 128 * 2_048;
+        budgets.participant.effect_bytes_per_tick = 2_048;
+        budgets.participant.event_bytes_per_tick = 2_048;
+        budgets.participant.bytes_per_event = 2_048;
+        budgets.participant.state_and_snapshot_bytes_per_frontier = 2_048;
+        budgets.participant.snapshot_bytes_per_checkpoint = 2_048;
+        budgets.checkpoint.bytes_per_blob = 2_048;
+        budgets.runtime.callback_completion_bytes = 2_048;
+
+        assert!(validate_resource_budgets(&budgets, &rollback()).is_ok());
     }
 }
