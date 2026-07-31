@@ -164,7 +164,7 @@ pub struct CheckpointBudgets {
     pub bytes_per_checkpoint: u64,            // default 1 GiB; max 4 GiB
     pub manifest_nodes: u32,                  // default 1,048,576; max 16,777,216
     pub manifest_blobs: u32,                  // default 1,048,576; max 16,777,216
-    pub manifest_bytes: u64,                  // default 64 MiB; max 256 MiB
+    pub manifest_bytes: u64,                  // default 128 MiB; max 256 MiB
 }
 
 pub struct RollbackBudgets {

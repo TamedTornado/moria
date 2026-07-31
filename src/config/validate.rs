@@ -16,10 +16,32 @@ const RADIX_NODE_BYTES: u64 = 1_024;
 const DIRECTORY_BUCKET_BYTES: u64 = 32;
 const PRESENTATION_VERTEX_BYTES: u64 = 32;
 const PRESENTATION_INDEX_BYTES: u64 = 4;
-// TECH-044 bounds the two variable manifest collections by canonical
-// content-addressed references. Their fixed-width on-wire entries are a
-// 32-byte digest; all record payloads remain in their referenced blobs.
-const MANIFEST_REFERENCE_BYTES: u64 = 32;
+// TECH-044's `{ kind, uncompressed_bytes, blob_digest }` descriptor.
+const CHECKPOINT_DESCRIPTOR_BYTES: u64 = 1 + 8 + 32;
+// TECH-044's `{ first_tick, last_tick, record_count, uncompressed_bytes,
+// blob_digest }` replay descriptor.
+const REPLAY_DESCRIPTOR_BYTES: u64 = 4 + 4 + 4 + 8 + 32;
+// `moria-checkpoint-v1` framing, schema/configuration commitments, world and
+// store identities, roots, active-history commitment/locator, and completeness
+// totals. This is deliberately separate from the variable collections below:
+// TECH-044 requires every one of these fields even for an otherwise empty
+// manifest.
+const MANIFEST_FIXED_BYTES: u64 = 64 + // framing: magic, version, declared length, checksum
+    6 * 32 + // product, encoding, arithmetic, hash, transition, persistence schemas
+    32 + // per-world configuration fingerprint
+    1 + 4 + 16 + // placement fixed format
+    4 + 32 + 32 + // checkpoint store ID, contract, and visible key
+    4 + 16 + 32 + // world/genesis ID, base lineage, and manifest root
+    8 + 8 + 32 + // confirmed/durable ticks and world root hash
+    8 + // next volume serial
+    32 + 32 + 8 + 32 + // active history, stream key, durable prefix, prefix digest
+    6 * 4 + 8; // completeness counts and total uncompressed bytes
+const MATERIAL_MANIFEST_RECORD_BYTES: u64 = 4 + 32;
+const VOLUME_MANIFEST_RECORD_BYTES: u64 = 160;
+const PARTICIPANT_MANIFEST_RECORD_BYTES: u64 = 160;
+const REPRESENTATION_CONTRACT_MANIFEST_RECORD_BYTES: u64 = 4 + 32;
+const RNG_MANIFEST_RECORD_BYTES: u64 = 32;
+const HISTORY_LOCATOR_MANIFEST_RECORD_BYTES: u64 = 64;
 // Genesis-resident canonical records. These fixed reserves cover the complete
 // registrations named by TECH-036, including the root table and allocator.
 const GENESIS_MATERIAL_RECORD_BYTES: u64 = 64;
@@ -28,8 +50,13 @@ const GENESIS_VOLUME_RECORD_BYTES: u64 = 256;
 const GENESIS_DIRECTORY_ROOT_RECORD_BYTES: u64 = 64;
 const GENESIS_ALLOCATOR_RECORD_BYTES: u64 = 8;
 const GENESIS_PARTICIPANT_RECORD_BYTES: u64 = 256;
-const GENESIS_REPRESENTATION_CONTRACT_RECORD_BYTES: u64 = 64;
-const GENESIS_RNG_RECORD_BYTES: u64 = 64;
+// `ParticipantRepresentationContract { representation_id, quantity_schema,
+// representation_contract }` (TECH-017).
+const GENESIS_REPRESENTATION_CONTRACT_RECORD_BYTES: u64 = 4 + 32 + 32;
+// `ParticipantRngContract { stream, algorithm_id, algorithm_version,
+// algorithm_contract, state_schema, seed }` (TECH-017). `BoundedBytes64`
+// carries its canonical u8 length followed by its 64-byte maximum seed.
+const GENESIS_RNG_RECORD_BYTES: u64 = 4 + 16 + 4 + 32 + 32 + 1 + 64;
 const BASE_CALLBACK_COMPLETION_BYTES: u64 = 2_048;
 const TERMINAL_RECEIPT_METADATA_BYTES: u64 = 8;
 
@@ -355,17 +382,105 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
 }
 
 fn manifest_encoded_bytes(budgets: &ResourceBudgets) -> Result<u128, ConfigError> {
-    checked_product(
-        u128::from(budgets.checkpoint.manifest_nodes)
-            .checked_add(u128::from(budgets.checkpoint.manifest_blobs))
-            .ok_or_else(|| overflow(BudgetGroup::Checkpoint, 10))?,
-        u128::from(MANIFEST_REFERENCE_BYTES),
-        BudgetGroup::Checkpoint,
-        10,
+    let checkpoint = BudgetGroup::Checkpoint;
+    let field = 10;
+    let identity = budgets.identity;
+    let descriptor_bytes = checked_sum(
+        checked_product(
+            u128::from(budgets.checkpoint.manifest_nodes),
+            u128::from(CHECKPOINT_DESCRIPTOR_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checked_product(
+            u128::from(budgets.checkpoint.manifest_blobs),
+            u128::from(REPLAY_DESCRIPTOR_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checkpoint,
+        field,
+    )?;
+    let registry_bytes = checked_sum(
+        checked_product(
+            u128::from(identity.materials_per_world),
+            u128::from(MATERIAL_MANIFEST_RECORD_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checked_product(
+            u128::from(identity.volumes_per_world),
+            u128::from(VOLUME_MANIFEST_RECORD_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checkpoint,
+        field,
+    )?;
+    let participant_bytes = checked_sum(
+        checked_product(
+            u128::from(identity.participants_per_world),
+            u128::from(PARTICIPANT_MANIFEST_RECORD_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checked_sum(
+            checked_product(
+                checked_product(
+                    u128::from(identity.participants_per_world),
+                    u128::from(identity.representation_contracts_per_participant),
+                    checkpoint,
+                    field,
+                )?,
+                u128::from(REPRESENTATION_CONTRACT_MANIFEST_RECORD_BYTES),
+                checkpoint,
+                field,
+            )?,
+            checked_product(
+                checked_product(
+                    u128::from(identity.participants_per_world),
+                    u128::from(identity.rng_streams_per_participant),
+                    checkpoint,
+                    field,
+                )?,
+                u128::from(RNG_MANIFEST_RECORD_BYTES),
+                checkpoint,
+                field,
+            )?,
+            checkpoint,
+            field,
+        )?,
+        checkpoint,
+        field,
+    )?;
+    let history_bytes = checked_product(
+        u128::from(budgets.rollback.log_ticks),
+        u128::from(HISTORY_LOCATOR_MANIFEST_RECORD_BYTES),
+        checkpoint,
+        field,
+    )?;
+    checked_sum(
+        checked_sum(descriptor_bytes, registry_bytes, checkpoint, field)?,
+        checked_sum(
+            checked_sum(participant_bytes, history_bytes, checkpoint, field)?,
+            u128::from(MANIFEST_FIXED_BYTES),
+            checkpoint,
+            field,
+        )?,
+        checkpoint,
+        field,
     )
 }
 
 fn validate_genesis_persistent_bytes(budgets: &ResourceBudgets) -> Result<(), ConfigError> {
+    let required = genesis_persistent_bytes(budgets)?;
+    if required > u128::from(budgets.rollback.genesis_persistent_bytes) {
+        return Err(cross(BudgetGroup::Rollback, 3, "genesis persistent bytes"));
+    }
+    Ok(())
+}
+
+fn genesis_persistent_bytes(budgets: &ResourceBudgets) -> Result<u128, ConfigError> {
     let identity = budgets.identity;
     let providers = [
         identity.input_sources_per_world,
@@ -461,10 +576,7 @@ fn validate_genesis_persistent_bytes(budgets: &ResourceBudgets) -> Result<(), Co
         BudgetGroup::Rollback,
         3,
     )?;
-    if required > u128::from(budgets.rollback.genesis_persistent_bytes) {
-        return Err(cross(BudgetGroup::Rollback, 3, "genesis persistent bytes"));
-    }
-    Ok(())
+    Ok(required)
 }
 
 fn validate_page_limits(
@@ -931,11 +1043,12 @@ fn overflow(group: BudgetGroup, field_code: u16) -> ConfigError {
 #[cfg(test)]
 mod tests {
     use super::{
-        BudgetGroup, DENSE_BRICK_BYTES, DIRECTORY_BUCKET_BYTES, MANIFEST_REFERENCE_BYTES,
-        RADIX_NODE_BYTES, TERMINAL_RECEIPT_METADATA_BYTES, UNIFORM_BRICK_BYTES, checked_product,
-        checked_sum, cross, invalid, manifest_encoded_bytes, validate_field_ranges,
-        validate_page_ceiling, validate_paged_bytes,
-        validate_resource_budgets as validate_resource_budgets_with_limits,
+        BudgetGroup, CHECKPOINT_DESCRIPTOR_BYTES, DENSE_BRICK_BYTES, DIRECTORY_BUCKET_BYTES,
+        GENESIS_REPRESENTATION_CONTRACT_RECORD_BYTES, GENESIS_RNG_RECORD_BYTES,
+        MANIFEST_FIXED_BYTES, RADIX_NODE_BYTES, REPLAY_DESCRIPTOR_BYTES,
+        TERMINAL_RECEIPT_METADATA_BYTES, UNIFORM_BRICK_BYTES, checked_product, checked_sum, cross,
+        invalid, manifest_encoded_bytes, validate_field_ranges, validate_page_ceiling,
+        validate_paged_bytes, validate_resource_budgets as validate_resource_budgets_with_limits,
     };
     use crate::{
         config::{DevicePageLimits, ResourceBudgets, RollbackConfig},
@@ -1273,12 +1386,17 @@ mod tests {
     }
 
     #[test]
-    fn manifest_budget_reserves_the_canonical_reference_collections() {
+    fn manifest_budget_reserves_every_tech_044_field_and_collection() {
         let mut budgets = ResourceBudgets::default();
         budgets.checkpoint.manifest_nodes = 1;
         budgets.checkpoint.manifest_blobs = 1;
         let required = manifest_encoded_bytes(&budgets).expect("bounded manifest arithmetic");
-        assert_eq!(required, 2 * u128::from(MANIFEST_REFERENCE_BYTES));
+        assert!(
+            required
+                > u128::from(
+                    MANIFEST_FIXED_BYTES + CHECKPOINT_DESCRIPTOR_BYTES + REPLAY_DESCRIPTOR_BYTES
+                )
+        );
         budgets.checkpoint.manifest_bytes = (required - 1)
             .try_into()
             .expect("manifest bound fits configured byte field");
@@ -1298,11 +1416,38 @@ mod tests {
     fn genesis_persistent_reserve_covers_every_configured_registration() {
         let mut budgets = ResourceBudgets::default();
         budgets.identity.volumes_per_world = 1_048_576;
+        budgets.checkpoint.manifest_bytes = 256 << 20;
 
         assert_eq!(
             validate_resource_budgets(&budgets, &rollback()),
             Err(cross(BudgetGroup::Rollback, 3, "genesis persistent bytes",)),
         );
+    }
+
+    #[test]
+    fn genesis_persistent_budget_reserves_max_seed_rng_and_representation_layouts() {
+        let mut budgets = ResourceBudgets::default();
+        budgets.identity.participants_per_world = 1;
+        budgets.identity.representation_contracts_per_participant = 1;
+        budgets.identity.rng_streams_per_participant = 1;
+
+        let required = super::genesis_persistent_bytes(&budgets)
+            .expect("bounded genesis registration arithmetic");
+        assert_eq!(GENESIS_REPRESENTATION_CONTRACT_RECORD_BYTES, 4 + 32 + 32);
+        assert_eq!(GENESIS_RNG_RECORD_BYTES, 4 + 16 + 4 + 32 + 32 + 1 + 64);
+
+        budgets.rollback.genesis_persistent_bytes = (required - 1)
+            .try_into()
+            .expect("tight genesis reserve fits configured byte field");
+        assert_eq!(
+            validate_resource_budgets(&budgets, &rollback()),
+            Err(cross(BudgetGroup::Rollback, 3, "genesis persistent bytes")),
+        );
+
+        budgets.rollback.genesis_persistent_bytes = required
+            .try_into()
+            .expect("exact genesis reserve fits configured byte field");
+        assert!(validate_resource_budgets(&budgets, &rollback()).is_ok());
     }
 
     #[test]
