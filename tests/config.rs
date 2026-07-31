@@ -5,7 +5,7 @@ use moria::{
         ExecutionPolicy, PlacementFixedFormat, ResourceBudgets, SimulationUnitId,
         WorldGenesisConfig,
     },
-    facade::ResourceBudgetField,
+    facade::{BoundedUtf8, ConfigError, ConfigErrorCode, ConfigField, ResourceBudgetField},
 };
 
 macro_rules! assert_fields {
@@ -201,21 +201,174 @@ fn resource_budget_defaults_match_the_normative_tech_017_values() {
 
 #[test]
 fn budget_field_ordinals_remain_closed_and_declaration_ordered() {
-    for (group, last) in [
-        (BudgetGroup::Identity, 19),
-        (BudgetGroup::Canonical, 8),
-        (BudgetGroup::Content, 9),
-        (BudgetGroup::Query, 7),
-        (BudgetGroup::Observation, 10),
-        (BudgetGroup::Presentation, 8),
-        (BudgetGroup::Checkpoint, 10),
-        (BudgetGroup::Rollback, 18),
-        (BudgetGroup::Participant, 11),
-        (BudgetGroup::Runtime, 4),
-    ] {
-        assert!(ResourceBudgetField::try_new(group, 1).is_ok());
-        assert!(ResourceBudgetField::try_new(group, last).is_ok());
-        assert!(ResourceBudgetField::try_new(group, last + 1).is_err());
+    let declared_fields = [
+        (
+            BudgetGroup::Identity,
+            &[
+                "worlds",
+                "retired_replay_streams_per_client",
+                "materials_per_world",
+                "volumes_per_world",
+                "participants_per_world",
+                "input_sources_per_world",
+                "base_sources_per_world",
+                "base_authorities_per_world",
+                "content_blob_stores_per_world",
+                "checkpoint_stores_per_world",
+                "replay_sinks_per_world",
+                "rng_streams_per_participant",
+                "representation_contracts_per_participant",
+                "interests_per_world",
+                "operation_records_per_world",
+                "terminal_receipts_per_world",
+                "terminal_receipt_bytes_per_world",
+                "root_leases_per_world",
+                "artifact_leases_per_world",
+            ][..],
+        ),
+        (
+            BudgetGroup::Canonical,
+            &[
+                "pending_ticks",
+                "inputs_per_tick",
+                "encoded_bytes_per_tick",
+                "correlation_bytes_per_tick",
+                "bricks_per_command",
+                "cells_per_command",
+                "changed_bricks_per_tick",
+                "scratch_bytes",
+            ][..],
+        ),
+        (
+            BudgetGroup::Content,
+            &[
+                "base_request_queue",
+                "base_requests_in_flight",
+                "base_completion_bytes_in_flight",
+                "materialization_bricks_per_job",
+                "resident_dense_bricks",
+                "resident_uniform_bricks",
+                "resident_radix_nodes",
+                "resident_directory_buckets",
+                "authoritative_gpu_bytes",
+            ][..],
+        ),
+        (
+            BudgetGroup::Query,
+            &[
+                "queued_requests",
+                "in_flight_requests",
+                "bricks_per_request",
+                "records_per_result",
+                "bytes_per_result",
+                "volume_revisions_per_request",
+                "readback_bytes_in_flight",
+            ][..],
+        ),
+        (
+            BudgetGroup::Observation,
+            &[
+                "records_per_world",
+                "payload_bytes_per_world",
+                "bytes_per_record",
+                "subscriptions_per_world",
+                "volumes_per_subscription",
+                "records_per_poll",
+                "bytes_per_poll",
+                "resnapshot_volume_summaries",
+                "resnapshot_region_summaries",
+                "resnapshot_bytes",
+            ][..],
+        ),
+        (
+            BudgetGroup::Presentation,
+            &[
+                "queued_chunks",
+                "resident_chunks",
+                "in_flight_jobs",
+                "vertices_per_job",
+                "indices_per_job",
+                "bytes_per_job",
+                "resident_bytes",
+                "dressing_records_per_chunk",
+            ][..],
+        ),
+        (
+            BudgetGroup::Checkpoint,
+            &[
+                "queued_requests",
+                "active_requests",
+                "staging_slots",
+                "mapped_bytes_in_flight",
+                "store_bytes_in_flight",
+                "bytes_per_blob",
+                "bytes_per_checkpoint",
+                "manifest_nodes",
+                "manifest_blobs",
+                "manifest_bytes",
+            ][..],
+        ),
+        (
+            BudgetGroup::Rollback,
+            &[
+                "retained_frontiers",
+                "retained_bytes",
+                "genesis_persistent_bytes",
+                "frontier_metadata_bytes",
+                "log_ticks",
+                "log_bytes",
+                "replay_sink_records_in_flight",
+                "replay_sink_bytes_in_flight",
+                "active_public_replays",
+                "ticks_per_public_replay",
+                "bytes_per_public_replay",
+                "result_bytes_per_public_replay",
+                "divergence_artifact_bytes",
+                "active_corrections",
+                "ticks_per_correction",
+                "bytes_per_correction",
+                "result_bytes_per_correction",
+                "recovery_replay_ticks",
+            ][..],
+        ),
+        (
+            BudgetGroup::Participant,
+            &[
+                "operations_in_flight",
+                "input_bytes_per_tick",
+                "effects_per_tick",
+                "effect_bytes_per_tick",
+                "events_per_tick",
+                "event_bytes_per_tick",
+                "bytes_per_event",
+                "state_and_snapshot_bytes_per_frontier",
+                "snapshot_bytes_per_checkpoint",
+                "artifact_records_per_tick",
+                "artifact_bytes_per_tick",
+            ][..],
+        ),
+        (
+            BudgetGroup::Runtime,
+            &[
+                "interest_control_queue",
+                "callback_completion_slots",
+                "callback_completion_bytes",
+                "render_completion_cells",
+            ][..],
+        ),
+    ];
+
+    for (group, fields) in declared_fields {
+        for (index, field_name) in fields.iter().enumerate() {
+            let field_code = u16::try_from(index + 1).unwrap();
+            assert_eq!(
+                ResourceBudgetField::try_new(group, field_code),
+                Ok(ResourceBudgetField { group, field_code }),
+                "{group:?}.{field_name} must retain ordinal {field_code}",
+            );
+        }
+        let next_ordinal = u16::try_from(fields.len() + 1).unwrap();
+        assert!(ResourceBudgetField::try_new(group, next_ordinal).is_err());
     }
 }
 
@@ -225,22 +378,94 @@ fn compiled_maxima_keep_fixed_and_variable_budget_limits_distinct() {
     assert_fields!(maxima.identity,
         worlds: 16, retired_replay_streams_per_client: 64, materials_per_world: 65_535,
         volumes_per_world: 1_048_576, participants_per_world: 1_024,
-        terminal_receipt_bytes_per_world: 512 << 20, artifact_leases_per_world: 1_024,
+        input_sources_per_world: 65_535, base_sources_per_world: 1_024,
+        base_authorities_per_world: 1_048_576, content_blob_stores_per_world: 16,
+        checkpoint_stores_per_world: 16, replay_sinks_per_world: 16,
+        rng_streams_per_participant: 256, representation_contracts_per_participant: 256,
+        interests_per_world: 16_384, operation_records_per_world: 65_536,
+        terminal_receipts_per_world: 65_536, terminal_receipt_bytes_per_world: 512 << 20,
+        root_leases_per_world: 16_384, artifact_leases_per_world: 1_024,
     );
     assert_fields!(maxima.canonical,
         pending_ticks: 1, inputs_per_tick: 4_096, encoded_bytes_per_tick: 8 << 20,
         correlation_bytes_per_tick: 320 << 10, bricks_per_command: 64,
         cells_per_command: 32_768, changed_bricks_per_tick: 16_384, scratch_bytes: 1 << 30,
     );
+    assert_fields!(maxima.content,
+        base_request_queue: 1_024, base_requests_in_flight: 128,
+        base_completion_bytes_in_flight: 256 << 10, materialization_bricks_per_job: 16_384,
+        resident_dense_bricks: 4_194_304, resident_uniform_bricks: 4_194_304,
+        resident_radix_nodes: 16_777_216, resident_directory_buckets: 16_777_216,
+        authoritative_gpu_bytes: 16 << 30,
+    );
+    assert_fields!(maxima.query,
+        queued_requests: 1_024, in_flight_requests: 8, bricks_per_request: 16_384,
+        records_per_result: 262_144, bytes_per_result: 16 << 20,
+        volume_revisions_per_request: 1_024, readback_bytes_in_flight: 128 << 20,
+    );
+    assert_fields!(maxima.observation,
+        records_per_world: 65_536, payload_bytes_per_world: 256 << 20,
+        bytes_per_record: 64 << 10, subscriptions_per_world: 256,
+        volumes_per_subscription: 16_384, records_per_poll: 4_096, bytes_per_poll: 16 << 20,
+        resnapshot_volume_summaries: 16_384, resnapshot_region_summaries: 65_536,
+        resnapshot_bytes: 256 << 20,
+    );
+    assert_fields!(maxima.presentation,
+        queued_chunks: 16_384, resident_chunks: 1_048_576, in_flight_jobs: 8,
+        vertices_per_job: 4_194_304, indices_per_job: 25_165_824,
+        bytes_per_job: 256 << 20, resident_bytes: 8 << 30,
+        dressing_records_per_chunk: 262_144,
+    );
+    assert_fields!(maxima.checkpoint,
+        queued_requests: 16, active_requests: 1, staging_slots: 3,
+        mapped_bytes_in_flight: 64 << 20, store_bytes_in_flight: 256 << 20,
+        bytes_per_blob: 64 << 20, bytes_per_checkpoint: 4 << 30,
+        manifest_nodes: 16_777_216, manifest_blobs: 16_777_216, manifest_bytes: 256 << 20,
+    );
     assert_fields!(maxima.rollback,
-        retained_frontiers: 256, retained_bytes: 16 << 30, log_ticks: 65_536,
-        active_corrections: 1, ticks_per_correction: 4_096, bytes_per_correction: 4 << 30,
-        recovery_replay_ticks: 4_096,
+        retained_frontiers: 256, retained_bytes: 16 << 30, genesis_persistent_bytes: 2 << 30,
+        frontier_metadata_bytes: 64 << 20, log_ticks: 65_536, log_bytes: 4 << 30,
+        replay_sink_records_in_flight: 1_024, replay_sink_bytes_in_flight: 512 << 20,
+        active_public_replays: 16, ticks_per_public_replay: 4_096,
+        bytes_per_public_replay: 4 << 30, result_bytes_per_public_replay: 512 << 20,
+        divergence_artifact_bytes: 256 << 20, active_corrections: 1,
+        ticks_per_correction: 4_096, bytes_per_correction: 4 << 30,
+        result_bytes_per_correction: 512 << 20, recovery_replay_ticks: 4_096,
+    );
+    assert_fields!(maxima.participant,
+        operations_in_flight: 1_024, input_bytes_per_tick: 8 << 20, effects_per_tick: 4_096,
+        effect_bytes_per_tick: 8 << 20, events_per_tick: 16_384, event_bytes_per_tick: 16 << 20,
+        bytes_per_event: 4 << 10, state_and_snapshot_bytes_per_frontier: 64 << 20,
+        snapshot_bytes_per_checkpoint: 64 << 20, artifact_records_per_tick: 4_194_304,
+        artifact_bytes_per_tick: 256 << 20,
     );
     assert_fields!(maxima.runtime,
         interest_control_queue: 16_384, callback_completion_slots: 256,
         callback_completion_bytes: 512 << 20, render_completion_cells: 32,
     );
+}
+
+#[test]
+fn config_errors_preserve_the_exact_budget_field_and_bounded_diagnostic() {
+    let diagnostic_text = "x".repeat(160);
+    let error = ConfigError {
+        code: ConfigErrorCode::CrossLimitViolation,
+        field: ConfigField::Budgets(
+            ResourceBudgetField::try_new(BudgetGroup::Checkpoint, 7).unwrap(),
+        ),
+        diagnostic: BoundedUtf8::try_from_str(&diagnostic_text).unwrap(),
+    };
+
+    assert_eq!(error.code, ConfigErrorCode::CrossLimitViolation);
+    assert_eq!(
+        error.field,
+        ConfigField::Budgets(ResourceBudgetField {
+            group: BudgetGroup::Checkpoint,
+            field_code: 7,
+        }),
+    );
+    assert_eq!(error.diagnostic.len(), 160);
+    assert_eq!(error.diagnostic.as_str(), diagnostic_text);
 }
 
 #[test]
