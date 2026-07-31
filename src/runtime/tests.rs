@@ -684,6 +684,54 @@ fn submitted_cancellation_only_reports_drain_after_its_milestone() {
 }
 
 #[test]
+fn restore_store_callback_cancellation_waits_for_private_drain() {
+    let restore = receipt(ReceiptFamily::Restore);
+    let callback_invoked = Arc::new(Barrier::new(2));
+    let release_callback = Arc::new(Barrier::new(2));
+    let callback_operation = restore.operation();
+    let callback_invoked_by_provider = Arc::clone(&callback_invoked);
+    let release_provider = Arc::clone(&release_callback);
+
+    let provider = thread::spawn(move || {
+        // The provider has accepted the load but has not delivered its callback
+        // result, so the restore remains in Loading.
+        callback_operation.mark_submission_or_invocation().unwrap();
+        callback_invoked_by_provider.wait();
+        release_provider.wait();
+        callback_operation
+            .advance(OperationPhase::Verifying)
+            .unwrap();
+        callback_operation
+            .advance(OperationPhase::Rebuilding)
+            .unwrap();
+        callback_operation
+            .advance(OperationPhase::RestoringParticipants)
+            .unwrap();
+    });
+
+    callback_invoked.wait();
+    assert_eq!(restore.cancel(), CancelResult::AbortRequested);
+    assert!(matches!(restore.poll(), ReceiptState::Pending(_)));
+    assert_eq!(
+        restore.operation().complete_ready(1),
+        Err(TransitionError::DrainIncomplete {
+            family: ReceiptFamily::Restore,
+            phase: OperationPhase::Loading,
+        })
+    );
+
+    release_callback.wait();
+    provider.join().unwrap();
+    restore.operation().complete_ready(1).unwrap();
+    assert!(matches!(
+        restore.poll(),
+        ReceiptState::Cancelled(cancelled)
+            if cancelled.last_phase == OperationPhase::RestoringParticipants
+                && cancelled.submitted_work_drained
+    ));
+}
+
+#[test]
 fn generation_change_terminalizes_old_receipts_and_rejects_late_publication() {
     let cache = cache_with::<u32, &'static str>(3, 24, |_, _, _| "device lost");
     let stale_ready = cache
