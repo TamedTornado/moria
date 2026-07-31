@@ -93,7 +93,7 @@ budget_struct!(CheckpointBudgets {
     bytes_per_checkpoint: u64 = 1 << 30,
     manifest_nodes: u32 = 1_048_576,
     manifest_blobs: u32 = 1_048_576,
-    manifest_bytes: u64 = 128 << 20,
+    manifest_bytes: u64 = 64 << 20,
 });
 budget_struct!(RollbackBudgets {
     retained_frontiers: u32 = 32,

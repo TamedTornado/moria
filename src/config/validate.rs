@@ -16,32 +16,20 @@ const RADIX_NODE_BYTES: u64 = 1_024;
 const DIRECTORY_BUCKET_BYTES: u64 = 32;
 const PRESENTATION_VERTEX_BYTES: u64 = 32;
 const PRESENTATION_INDEX_BYTES: u64 = 4;
-// TECH-044's `{ kind, uncompressed_bytes, blob_digest }` descriptor.
-const CHECKPOINT_DESCRIPTOR_BYTES: u64 = 1 + 8 + 32;
-// TECH-044's `{ first_tick, last_tick, record_count, uncompressed_bytes,
-// blob_digest }` replay descriptor.
-const REPLAY_DESCRIPTOR_BYTES: u64 = 4 + 4 + 4 + 8 + 32;
-// `moria-checkpoint-v1` framing, schema/configuration commitments, world and
-// store identities, roots, active-history commitment/locator, and completeness
-// totals. This is deliberately separate from the variable collections below:
-// TECH-044 requires every one of these fields even for an otherwise empty
-// manifest.
-const MANIFEST_FIXED_BYTES: u64 = 64 + // framing: magic, version, declared length, checksum
-    6 * 32 + // product, encoding, arithmetic, hash, transition, persistence schemas
-    32 + // per-world configuration fingerprint
-    1 + 4 + 16 + // placement fixed format
-    4 + 32 + 32 + // checkpoint store ID, contract, and visible key
-    4 + 16 + 32 + // world/genesis ID, base lineage, and manifest root
-    8 + 8 + 32 + // confirmed/durable ticks and world root hash
-    8 + // next volume serial
-    32 + 32 + 8 + 32 + // active history, stream key, durable prefix, prefix digest
-    6 * 4 + 8; // completeness counts and total uncompressed bytes
-const MATERIAL_MANIFEST_RECORD_BYTES: u64 = 4 + 32;
-const VOLUME_MANIFEST_RECORD_BYTES: u64 = 160;
-const PARTICIPANT_MANIFEST_RECORD_BYTES: u64 = 160;
-const REPRESENTATION_CONTRACT_MANIFEST_RECORD_BYTES: u64 = 4 + 32;
-const RNG_MANIFEST_RECORD_BYTES: u64 = 32;
-const HISTORY_LOCATOR_MANIFEST_RECORD_BYTES: u64 = 64;
+// TECH-044 bounds the two variable manifest collections by canonical
+// content-addressed references. Their fixed-width on-wire entries are a
+// 32-byte digest; all record payloads remain in their referenced blobs.
+const MANIFEST_REFERENCE_BYTES: u64 = 32;
+// Genesis-resident canonical records. These fixed reserves cover the complete
+// registrations named by TECH-036, including the root table and allocator.
+const GENESIS_MATERIAL_RECORD_BYTES: u64 = 64;
+const GENESIS_PROVIDER_RECORD_BYTES: u64 = 64;
+const GENESIS_VOLUME_RECORD_BYTES: u64 = 256;
+const GENESIS_DIRECTORY_ROOT_RECORD_BYTES: u64 = 64;
+const GENESIS_ALLOCATOR_RECORD_BYTES: u64 = 8;
+const GENESIS_PARTICIPANT_RECORD_BYTES: u64 = 256;
+const GENESIS_REPRESENTATION_CONTRACT_RECORD_BYTES: u64 = 64;
+const GENESIS_RNG_RECORD_BYTES: u64 = 64;
 const BASE_CALLBACK_COMPLETION_BYTES: u64 = 2_048;
 const TERMINAL_RECEIPT_METADATA_BYTES: u64 = 8;
 
@@ -118,6 +106,7 @@ pub fn validate_resource_budgets(
         ));
     }
     validate_cross_limits(budgets)?;
+    validate_genesis_persistent_bytes(budgets)?;
     validate_page_limits(budgets, device_limits)?;
     let required = required_twenty_frontier_bytes(budgets)?;
     if required > u128::from(budgets.rollback.retained_bytes) {
@@ -366,94 +355,116 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
 }
 
 fn manifest_encoded_bytes(budgets: &ResourceBudgets) -> Result<u128, ConfigError> {
-    let checkpoint = BudgetGroup::Checkpoint;
-    let field = 10;
+    checked_product(
+        u128::from(budgets.checkpoint.manifest_nodes)
+            .checked_add(u128::from(budgets.checkpoint.manifest_blobs))
+            .ok_or_else(|| overflow(BudgetGroup::Checkpoint, 10))?,
+        u128::from(MANIFEST_REFERENCE_BYTES),
+        BudgetGroup::Checkpoint,
+        10,
+    )
+}
+
+fn validate_genesis_persistent_bytes(budgets: &ResourceBudgets) -> Result<(), ConfigError> {
     let identity = budgets.identity;
-    let descriptor_bytes = checked_sum(
-        checked_product(
-            u128::from(budgets.checkpoint.manifest_nodes),
-            u128::from(CHECKPOINT_DESCRIPTOR_BYTES),
-            checkpoint,
-            field,
-        )?,
-        checked_product(
-            u128::from(budgets.checkpoint.manifest_blobs),
-            u128::from(REPLAY_DESCRIPTOR_BYTES),
-            checkpoint,
-            field,
-        )?,
-        checkpoint,
-        field,
-    )?;
-    let registry_bytes = checked_sum(
-        checked_product(
-            u128::from(identity.materials_per_world),
-            u128::from(MATERIAL_MANIFEST_RECORD_BYTES),
-            checkpoint,
-            field,
-        )?,
-        checked_product(
-            u128::from(identity.volumes_per_world),
-            u128::from(VOLUME_MANIFEST_RECORD_BYTES),
-            checkpoint,
-            field,
-        )?,
-        checkpoint,
-        field,
-    )?;
-    let participant_bytes = checked_sum(
+    let providers = [
+        identity.input_sources_per_world,
+        identity.base_sources_per_world,
+        identity.base_authorities_per_world,
+        identity.content_blob_stores_per_world,
+        identity.checkpoint_stores_per_world,
+        identity.replay_sinks_per_world,
+    ]
+    .into_iter()
+    .try_fold(0_u128, |total, count| total.checked_add(u128::from(count)))
+    .ok_or_else(|| overflow(BudgetGroup::Rollback, 3))?;
+    let participants = checked_sum(
         checked_product(
             u128::from(identity.participants_per_world),
-            u128::from(PARTICIPANT_MANIFEST_RECORD_BYTES),
-            checkpoint,
-            field,
+            u128::from(GENESIS_PARTICIPANT_RECORD_BYTES),
+            BudgetGroup::Rollback,
+            3,
         )?,
         checked_sum(
             checked_product(
-                checked_product(
-                    u128::from(identity.participants_per_world),
-                    u128::from(identity.representation_contracts_per_participant),
-                    checkpoint,
-                    field,
-                )?,
-                u128::from(REPRESENTATION_CONTRACT_MANIFEST_RECORD_BYTES),
-                checkpoint,
-                field,
+                u128::from(identity.participants_per_world)
+                    .checked_mul(u128::from(
+                        identity.representation_contracts_per_participant,
+                    ))
+                    .ok_or_else(|| overflow(BudgetGroup::Rollback, 3))?,
+                u128::from(GENESIS_REPRESENTATION_CONTRACT_RECORD_BYTES),
+                BudgetGroup::Rollback,
+                3,
             )?,
             checked_product(
-                checked_product(
-                    u128::from(identity.participants_per_world),
-                    u128::from(identity.rng_streams_per_participant),
-                    checkpoint,
-                    field,
-                )?,
-                u128::from(RNG_MANIFEST_RECORD_BYTES),
-                checkpoint,
-                field,
+                u128::from(identity.participants_per_world)
+                    .checked_mul(u128::from(identity.rng_streams_per_participant))
+                    .ok_or_else(|| overflow(BudgetGroup::Rollback, 3))?,
+                u128::from(GENESIS_RNG_RECORD_BYTES),
+                BudgetGroup::Rollback,
+                3,
             )?,
-            checkpoint,
-            field,
+            BudgetGroup::Rollback,
+            3,
         )?,
-        checkpoint,
-        field,
+        BudgetGroup::Rollback,
+        3,
     )?;
-    let history_bytes = checked_product(
-        u128::from(budgets.rollback.log_ticks),
-        u128::from(HISTORY_LOCATOR_MANIFEST_RECORD_BYTES),
-        checkpoint,
-        field,
-    )?;
-    checked_sum(
-        checked_sum(descriptor_bytes, registry_bytes, checkpoint, field)?,
+    let required = checked_sum(
         checked_sum(
-            checked_sum(participant_bytes, history_bytes, checkpoint, field)?,
-            u128::from(MANIFEST_FIXED_BYTES),
-            checkpoint,
-            field,
+            checked_product(
+                u128::from(identity.materials_per_world),
+                u128::from(GENESIS_MATERIAL_RECORD_BYTES),
+                BudgetGroup::Rollback,
+                3,
+            )?,
+            checked_product(
+                providers,
+                u128::from(GENESIS_PROVIDER_RECORD_BYTES),
+                BudgetGroup::Rollback,
+                3,
+            )?,
+            BudgetGroup::Rollback,
+            3,
         )?,
-        checkpoint,
-        field,
-    )
+        checked_sum(
+            checked_product(
+                u128::from(identity.volumes_per_world),
+                u128::from(GENESIS_VOLUME_RECORD_BYTES),
+                BudgetGroup::Rollback,
+                3,
+            )?,
+            checked_sum(
+                checked_product(
+                    u128::from(identity.volumes_per_world),
+                    u128::from(GENESIS_DIRECTORY_ROOT_RECORD_BYTES),
+                    BudgetGroup::Rollback,
+                    3,
+                )?,
+                checked_sum(
+                    checked_product(
+                        u128::from(identity.volumes_per_world),
+                        u128::from(GENESIS_ALLOCATOR_RECORD_BYTES),
+                        BudgetGroup::Rollback,
+                        3,
+                    )?,
+                    participants,
+                    BudgetGroup::Rollback,
+                    3,
+                )?,
+                BudgetGroup::Rollback,
+                3,
+            )?,
+            BudgetGroup::Rollback,
+            3,
+        )?,
+        BudgetGroup::Rollback,
+        3,
+    )?;
+    if required > u128::from(budgets.rollback.genesis_persistent_bytes) {
+        return Err(cross(BudgetGroup::Rollback, 3, "genesis persistent bytes"));
+    }
+    Ok(())
 }
 
 fn validate_page_limits(
@@ -509,7 +520,7 @@ fn validate_page_limits(
         return Err(cross(BudgetGroup::Content, 9, "resident page bytes"));
     }
 
-    let pages = [
+    let content_page_allocations = [
         (
             dense_brick_bytes,
             DENSE_BRICK_BYTES,
@@ -538,6 +549,32 @@ fn validate_page_limits(
             BudgetGroup::Content,
             9,
         ),
+    ]
+    .into_iter()
+    .try_fold(
+        0_u128,
+        |total, (bytes, record_bytes, baseline_page_bytes, group, field)| {
+            checked_sum(
+                total,
+                validate_paged_bytes(
+                    bytes,
+                    record_bytes,
+                    baseline_page_bytes,
+                    alignment,
+                    limits,
+                    group,
+                    field,
+                )?,
+                BudgetGroup::Content,
+                9,
+            )
+        },
+    )?;
+    if content_page_allocations > u128::from(budgets.content.authoritative_gpu_bytes) {
+        return Err(cross(BudgetGroup::Content, 9, "resident page bytes"));
+    }
+
+    let pages = [
         (
             u128::from(budgets.canonical.scratch_bytes),
             4,
@@ -610,7 +647,7 @@ fn validate_page_limits(
         ),
     ];
     for (bytes, record_bytes, baseline_page_bytes, group, field) in pages {
-        validate_paged_bytes(
+        let allocated_bytes = validate_paged_bytes(
             bytes,
             record_bytes,
             baseline_page_bytes,
@@ -619,6 +656,7 @@ fn validate_page_limits(
             group,
             field,
         )?;
+        validate_page_ceiling(allocated_bytes, bytes, group, field)?;
     }
     Ok(())
 }
@@ -631,12 +669,11 @@ fn validate_paged_bytes(
     limits: &DevicePageLimits,
     group: BudgetGroup,
     field: u16,
-) -> Result<(), ConfigError> {
+) -> Result<u128, ConfigError> {
     // Binding ranges may be smaller than offset alignment. Page placement uses
     // a padded stride, while each binding exposes only this effective range.
     let page_range_bytes = bytes
         .min(u128::from(baseline_page_bytes))
-        .min(u128::from(limits.max_buffer_size))
         .min(u128::from(limits.max_storage_buffer_binding_size));
     if page_range_bytes < u128::from(record_bytes) {
         return Err(cross(group, field, "page capacity"));
@@ -648,15 +685,22 @@ fn validate_paged_bytes(
     let page_allocation_bytes = (page_range_bytes + u128::from(alignment - 1))
         / u128::from(alignment)
         * u128::from(alignment);
-    if page_allocation_bytes > u128::from(limits.max_buffer_size)
-        || page_allocation_bytes > u128::from(limits.max_storage_buffer_binding_size)
-    {
+    if page_allocation_bytes > u128::from(limits.max_buffer_size) {
         return Err(cross(group, field, "page allocation"));
     }
     let allocated_bytes =
         checked_product(u128::from(page_count), page_allocation_bytes, group, field)?;
-    if allocated_bytes < bytes {
-        return Err(cross(group, field, "page bytes"));
+    Ok(allocated_bytes)
+}
+
+fn validate_page_ceiling(
+    allocated_bytes: u128,
+    byte_ceiling: u128,
+    group: BudgetGroup,
+    field: u16,
+) -> Result<(), ConfigError> {
+    if allocated_bytes > byte_ceiling {
+        return Err(cross(group, field, "aligned page bytes"));
     }
     Ok(())
 }
@@ -887,10 +931,10 @@ fn overflow(group: BudgetGroup, field_code: u16) -> ConfigError {
 #[cfg(test)]
 mod tests {
     use super::{
-        BudgetGroup, CHECKPOINT_DESCRIPTOR_BYTES, DENSE_BRICK_BYTES, DIRECTORY_BUCKET_BYTES,
-        RADIX_NODE_BYTES, REPLAY_DESCRIPTOR_BYTES, TERMINAL_RECEIPT_METADATA_BYTES,
-        UNIFORM_BRICK_BYTES, checked_product, checked_sum, cross, invalid, manifest_encoded_bytes,
-        validate_field_ranges, validate_paged_bytes,
+        BudgetGroup, DENSE_BRICK_BYTES, DIRECTORY_BUCKET_BYTES, MANIFEST_REFERENCE_BYTES,
+        RADIX_NODE_BYTES, TERMINAL_RECEIPT_METADATA_BYTES, UNIFORM_BRICK_BYTES, checked_product,
+        checked_sum, cross, invalid, manifest_encoded_bytes, validate_field_ranges,
+        validate_page_ceiling, validate_paged_bytes,
         validate_resource_budgets as validate_resource_budgets_with_limits,
     };
     use crate::{
@@ -1229,12 +1273,12 @@ mod tests {
     }
 
     #[test]
-    fn manifest_budget_reserves_every_tech_044_field_and_collection() {
+    fn manifest_budget_reserves_the_canonical_reference_collections() {
         let mut budgets = ResourceBudgets::default();
         budgets.checkpoint.manifest_nodes = 1;
         budgets.checkpoint.manifest_blobs = 1;
         let required = manifest_encoded_bytes(&budgets).expect("bounded manifest arithmetic");
-        assert!(required > u128::from(64 + CHECKPOINT_DESCRIPTOR_BYTES + REPLAY_DESCRIPTOR_BYTES));
+        assert_eq!(required, 2 * u128::from(MANIFEST_REFERENCE_BYTES));
         budgets.checkpoint.manifest_bytes = (required - 1)
             .try_into()
             .expect("manifest bound fits configured byte field");
@@ -1248,6 +1292,17 @@ mod tests {
             .try_into()
             .expect("manifest bound fits configured byte field");
         assert!(validate_resource_budgets(&budgets, &rollback()).is_ok());
+    }
+
+    #[test]
+    fn genesis_persistent_reserve_covers_every_configured_registration() {
+        let mut budgets = ResourceBudgets::default();
+        budgets.identity.volumes_per_world = 1_048_576;
+
+        assert_eq!(
+            validate_resource_budgets(&budgets, &rollback()),
+            Err(cross(BudgetGroup::Rollback, 3, "genesis persistent bytes",)),
+        );
     }
 
     #[test]
@@ -1266,7 +1321,7 @@ mod tests {
         };
         assert_eq!(
             validate_resource_budgets_with_limits(&budgets, &rollback, &too_small_buffer),
-            Err(cross(BudgetGroup::Content, 9, "page capacity")),
+            Err(cross(BudgetGroup::Content, 9, "page allocation")),
         );
 
         let too_small_binding = DevicePageLimits {
@@ -1303,6 +1358,30 @@ mod tests {
                 8,
             ),
             Err(cross(BudgetGroup::Canonical, 8, "page allocation")),
+        );
+
+        let padded_binding = DevicePageLimits {
+            max_buffer_size: 4_096,
+            max_storage_buffer_binding_size: 2_048,
+            min_storage_buffer_offset_alignment: 4_096,
+        };
+        assert_eq!(
+            validate_page_ceiling(
+                validate_paged_bytes(
+                    2_048,
+                    4,
+                    32 << 20,
+                    4_096,
+                    &padded_binding,
+                    BudgetGroup::Canonical,
+                    8,
+                )
+                .expect("page allocation fits the device buffer"),
+                2_048,
+                BudgetGroup::Canonical,
+                8,
+            ),
+            Err(cross(BudgetGroup::Canonical, 8, "aligned page bytes")),
         );
     }
 
@@ -1554,8 +1633,8 @@ mod tests {
         budgets.rollback.retained_bytes = u64::MAX;
         budgets.content.authoritative_gpu_bytes = u64::MAX;
         budgets.identity.terminal_receipt_bytes_per_world = u64::MAX;
-        budgets.checkpoint.manifest_nodes = 2_000_000;
-        budgets.checkpoint.manifest_blobs = 2_000_000;
+        budgets.checkpoint.manifest_nodes = 5_000_000;
+        budgets.checkpoint.manifest_blobs = 5_000_000;
         assert_eq!(
             super::validate_cross_limits(&budgets),
             Err(cross(BudgetGroup::Checkpoint, 10, "encoded manifest bytes")),
