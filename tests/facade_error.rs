@@ -110,6 +110,27 @@ fn admission_context_requires_consistent_boundary_facts() {
         },
     );
     invalid(
+        AdmissionCode::CorrectionHashCountMismatch,
+        AdmissionContext::CorrectionExpectedHashCount {
+            replacement_batches: 2,
+            expected_hashes: 0,
+        },
+    );
+    invalid(
+        AdmissionCode::CorrectionHashCountMismatch,
+        AdmissionContext::CorrectionExpectedHashCount {
+            replacement_batches: 0,
+            expected_hashes: 2,
+        },
+    );
+    invalid(
+        AdmissionCode::CorrectionHashCountMismatch,
+        AdmissionContext::CorrectionExpectedHashCount {
+            replacement_batches: 0,
+            expected_hashes: 0,
+        },
+    );
+    invalid(
         AdmissionCode::InterestTooLarge,
         AdmissionContext::InterestCapacity {
             required: InterestCapacity { bricks: 2 },
@@ -148,6 +169,25 @@ fn admission_context_requires_consistent_boundary_facts() {
                 supplied: Tick::from_raw(3),
                 expected_next: Tick::from_raw(2),
             },
+        )
+        .is_ok()
+    );
+    assert!(
+        AdmissionError::try_new(
+            AdmissionCode::CorrectionHashCountMismatch,
+            Retryability::RetryNewRequest,
+            AdmissionContext::CorrectionExpectedHashCount {
+                replacement_batches: 2,
+                expected_hashes: 1,
+            },
+        )
+        .is_ok()
+    );
+    assert!(
+        AdmissionError::try_new(
+            AdmissionCode::InvalidRequest,
+            Retryability::RetryNewRequest,
+            AdmissionContext::None,
         )
         .is_ok()
     );

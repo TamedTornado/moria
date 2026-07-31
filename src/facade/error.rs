@@ -967,7 +967,11 @@ impl AdmissionContext {
                     replacement_batches,
                     expected_hashes,
                 },
-            ) => replacement_batches != expected_hashes,
+            ) => {
+                *replacement_batches != 0
+                    && *expected_hashes != 0
+                    && replacement_batches != expected_hashes
+            }
             (
                 AdmissionCode::RetiredReplayStreamCapacity,
                 Self::BudgetCapacity {
