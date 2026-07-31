@@ -1,4 +1,4 @@
-use super::wide::WideI64;
+use super::{fixed::FixedI32, wide::WideI64};
 use crate::facade::CanonicalFailure;
 use std::{
     future::Future,
@@ -192,6 +192,124 @@ fn exact_oracle(case: FixedParityCase, fractional_bits: u32) -> (i32, u32, u32) 
     }
 }
 
+fn production_failure(error: CanonicalFailure) -> (i32, u32, u32) {
+    oracle_failure(error)
+}
+
+fn production_i32(result: Result<i32, CanonicalFailure>) -> (i32, u32, u32) {
+    result.map_or_else(production_failure, |value| oracle_wire(i64::from(value)))
+}
+
+fn production_shift(shift: u32) -> Result<u8, CanonicalFailure> {
+    u8::try_from(shift).map_err(|_| CanonicalFailure::InvalidShift)
+}
+
+fn production_fixed<const FRACTIONAL_BITS: u8>(case: FixedParityCase) -> (i32, u32, u32) {
+    let left = match i32::try_from(case.left) {
+        Ok(value) => value,
+        Err(_) => return production_failure(CanonicalFailure::Nonrepresentable),
+    };
+    let right = match i32::try_from(case.right) {
+        Ok(value) => value,
+        Err(_) => return production_failure(CanonicalFailure::Nonrepresentable),
+    };
+    let left = match FixedI32::<FRACTIONAL_BITS>::try_from_raw(left) {
+        Ok(value) => value,
+        Err(error) => return production_failure(error),
+    };
+    let right = match FixedI32::<FRACTIONAL_BITS>::try_from_raw(right) {
+        Ok(value) => value,
+        Err(error) => return production_failure(error),
+    };
+    match case.operation {
+        0 => production_i32(left.try_add(right).map(FixedI32::raw)),
+        1 => production_i32(left.try_mul(right).map(FixedI32::raw)),
+        2 => production_i32(left.try_div(right).map(FixedI32::raw)),
+        3 => production_i32(left.try_sqrt().map(FixedI32::raw)),
+        4 => production_i32(production_shift(case.shift).and_then(|shift| left.try_narrow(shift))),
+        5 => production_i32(left.try_sub(right).map(FixedI32::raw)),
+        6 => production_i32(left.try_neg().map(FixedI32::raw)),
+        7 => production_i32(left.try_abs().map(FixedI32::raw)),
+        8 => production_i32(super::fixed::floor_div(left.raw(), right.raw())),
+        9 => production_i32(
+            production_shift(case.shift)
+                .and_then(|shift| super::fixed::floor_shift_right(left.raw(), shift)),
+        ),
+        _ => production_failure(CanonicalFailure::InvalidShift),
+    }
+}
+
+fn production_wide(case: FixedParityCase) -> (i32, u32, u32) {
+    let left = WideI64::from_i64(case.left);
+    let right = WideI64::from_i64(case.right);
+    let result = match case.operation {
+        10 => left.checked_add(right).map(WideI64::to_i64),
+        11 => left.checked_sub(right).map(WideI64::to_i64),
+        13 => production_shift(case.shift)
+            .and_then(|shift| left.floor_shift_right(shift))
+            .map(WideI64::to_i64),
+        14 => left.floor_div(right).map(WideI64::to_i64),
+        15 => Ok(order_word(left.cmp_signed(right))),
+        16 => Ok(order_word(
+            left.to_i64()
+                .cast_unsigned()
+                .cmp(&right.to_i64().cast_unsigned()),
+        )),
+        17 => case
+            .left
+            .checked_neg()
+            .ok_or(CanonicalFailure::ArithmeticOverflow),
+        _ => Err(CanonicalFailure::InvalidShift),
+    };
+    result.map_or_else(production_failure, oracle_wire)
+}
+
+fn production_fixed_dispatch(case: FixedParityCase, fractional_bits: u32) -> (i32, u32, u32) {
+    macro_rules! call {
+        ($fractional_bits:literal) => {
+            production_fixed::<$fractional_bits>(case)
+        };
+    }
+    match fractional_bits {
+        0 => call!(0),
+        1 => call!(1),
+        2 => call!(2),
+        3 => call!(3),
+        4 => call!(4),
+        5 => call!(5),
+        6 => call!(6),
+        7 => call!(7),
+        8 => call!(8),
+        9 => call!(9),
+        10 => call!(10),
+        11 => call!(11),
+        12 => call!(12),
+        13 => call!(13),
+        14 => call!(14),
+        15 => call!(15),
+        16 => call!(16),
+        _ => match FixedI32::<17>::try_from_raw(0) {
+            Err(error) => production_failure(error),
+            Ok(_) => unreachable!("an out-of-contract fixed split must be rejected"),
+        },
+    }
+}
+
+fn run_cpu_parity(cases: &[FixedParityCase], fractional_bits: u32) {
+    for (index, case) in cases.iter().copied().enumerate() {
+        let expected = exact_oracle(case, fractional_bits);
+        let actual = if case.operation <= 9 {
+            production_fixed_dispatch(case, fractional_bits)
+        } else {
+            production_wide(case)
+        };
+        assert_eq!(
+            actual, expected,
+            "production Rust parity mismatch for split {fractional_bits}, case {index}: {case:?}"
+        );
+    }
+}
+
 fn generated_fixed_cases(fractional_bits: u32) -> Vec<FixedParityCase> {
     let edges = [
         i32::MIN,
@@ -275,6 +393,24 @@ fn generated_fixed_cases(fractional_bits: u32) -> Vec<FixedParityCase> {
     }
     cases.extend([
         FixedParityCase {
+            left: i64::from(i32::MAX),
+            right: 1,
+            shift: 0,
+            operation: 0,
+        },
+        FixedParityCase {
+            left: i64::from(i32::MIN),
+            right: 1,
+            shift: 0,
+            operation: 5,
+        },
+        FixedParityCase {
+            left: i64::from(i32::MAX),
+            right: i64::from(i32::MAX),
+            shift: 0,
+            operation: 1,
+        },
+        FixedParityCase {
             left: 0,
             right: 0,
             shift: 0,
@@ -297,6 +433,33 @@ fn generated_fixed_cases(fractional_bits: u32) -> Vec<FixedParityCase> {
             right: 0,
             shift: 0,
             operation: 0,
+        },
+    ]);
+    let divisor = 1_i64 << (fractional_bits + 1);
+    cases.extend([
+        FixedParityCase {
+            left: 1,
+            right: divisor,
+            shift: 0,
+            operation: 2,
+        },
+        FixedParityCase {
+            left: -1,
+            right: divisor,
+            shift: 0,
+            operation: 2,
+        },
+        FixedParityCase {
+            left: 6,
+            right: 0,
+            shift: 2,
+            operation: 4,
+        },
+        FixedParityCase {
+            left: -6,
+            right: 0,
+            shift: 2,
+            operation: 4,
         },
     ]);
     cases
@@ -489,15 +652,16 @@ fn generated_cpu_wgsl_parity_covers_every_split_and_two_word_operation() {
     }))
     .expect("a GPU device is required for CPU/WGSL parity coverage");
     for fractional_bits in 0..=16 {
-        run_gpu_parity(
-            &device,
-            &queue,
-            &generated_fixed_cases(fractional_bits),
-            fractional_bits,
-        );
+        let cases = generated_fixed_cases(fractional_bits);
+        run_cpu_parity(&cases, fractional_bits);
+        run_gpu_parity(&device, &queue, &cases, fractional_bits);
     }
-    run_gpu_parity(&device, &queue, &generated_wide_cases(), 0);
-    run_gpu_parity(&device, &queue, &generated_fixed_cases(0), 17);
+    let wide_cases = generated_wide_cases();
+    run_cpu_parity(&wide_cases, 0);
+    run_gpu_parity(&device, &queue, &wide_cases, 0);
+    let invalid_format_cases = generated_fixed_cases(0);
+    run_cpu_parity(&invalid_format_cases, 17);
+    run_gpu_parity(&device, &queue, &invalid_format_cases, 17);
 }
 
 #[test]

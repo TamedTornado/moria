@@ -15,4 +15,3 @@ pub use identity::{
     InputSourceId, MaterialId, NewtypeValueError, ParticipantId, ReceiptId, RngStreamId,
     SchemaDigest, Tick, VolumeId, VolumeRevision, WorldId,
 };
-pub use math::{PlacementFixedFormat, PlacementScalar};
