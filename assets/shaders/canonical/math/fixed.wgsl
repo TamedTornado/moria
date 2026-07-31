@@ -1,9 +1,22 @@
-// TECH-071 fixed-point helpers. `low` then `high` is the canonical wide ABI.
+// TECH-071 fixed-point helpers and differential-parity compute entry point.
+// `low` then `high` is the canonical signed-wide ABI.
 override FRACTIONAL_BITS: u32 = 0u;
+
+const FIXED_OK: u32 = 0u;
+const FIXED_ARITHMETIC_OVERFLOW: u32 = 1u;
+const FIXED_DIVISION_BY_ZERO: u32 = 2u;
+const FIXED_INVALID_SHIFT: u32 = 3u;
+const FIXED_NEGATIVE_SQUARE_ROOT: u32 = 4u;
+const FIXED_NONREPRESENTABLE: u32 = 5u;
 
 struct WideI64 {
     low: u32,
     high: u32,
+}
+
+struct WideDivision {
+    quotient: WideI64,
+    remainder: WideI64,
 }
 
 fn wide_add(left: WideI64, right: WideI64) -> WideI64 {
@@ -28,6 +41,13 @@ fn wide_not(value: WideI64) -> WideI64 {
 
 fn wide_neg(value: WideI64) -> WideI64 {
     return wide_add(wide_not(value), WideI64(1u, 0u));
+}
+
+fn wide_abs(value: WideI64) -> WideI64 {
+    if (wide_negative(value)) {
+        return wide_neg(value);
+    }
+    return value;
 }
 
 // The 16-bit decomposition produces the complete low 64 product without a
@@ -63,13 +83,13 @@ fn wide_cmp_unsigned(left: WideI64, right: WideI64) -> i32 {
     return 0;
 }
 
-fn wide_cmp_signed(left: WideI64, right: WideI64) -> i32 {
-    let left_negative = wide_negative(left);
-    let right_negative = wide_negative(right);
-    if (left_negative != right_negative) {
-        return select(1, -1, left_negative);
+fn wide_shl(value: WideI64, shift: u32) -> WideI64 {
+    if (shift == 0u) { return value; }
+    if (shift < 32u) {
+        return WideI64(value.low << shift, (value.high << shift) | (value.low >> (32u - shift)));
     }
-    return wide_cmp_unsigned(left, right);
+    if (shift < 64u) { return WideI64(0u, value.low << (shift - 32u)); }
+    return WideI64(0u, 0u);
 }
 
 fn wide_shr_floor(value: WideI64, shift: u32) -> WideI64 {
@@ -82,22 +102,144 @@ fn wide_shr_floor(value: WideI64, shift: u32) -> WideI64 {
     return WideI64(fill, fill);
 }
 
-// Performs a fixed 64-step unsigned long division. The caller rejects zero
-// divisors and applies the sign and ties-to-even rounding policy separately.
-fn wide_div_unsigned(dividend: WideI64, divisor: WideI64) -> WideI64 {
+// Performs a fixed 64-step unsigned long division.
+fn wide_div_unsigned(dividend: WideI64, divisor: WideI64) -> WideDivision {
     var quotient = WideI64(0u, 0u);
     var remainder = WideI64(0u, 0u);
     var bit = 64u;
     loop {
         if (bit == 0u) { break; }
         bit = bit - 1u;
-        let source = select((dividend.low >> bit) & 1u, (dividend.high >> (bit - 32u)) & 1u, bit >= 32u);
-        remainder = wide_add(WideI64(remainder.low << 1u, (remainder.high << 1u) | (remainder.low >> 31u)), WideI64(source, 0u));
+        var source = 0u;
+        if (bit < 32u) {
+            source = (dividend.low >> bit) & 1u;
+        } else {
+            source = (dividend.high >> (bit - 32u)) & 1u;
+        }
+        remainder = wide_add(wide_shl(remainder, 1u), WideI64(source, 0u));
         if (wide_cmp_unsigned(remainder, divisor) >= 0) {
             remainder = wide_sub(remainder, divisor);
             if (bit < 32u) { quotient.low = quotient.low | (1u << bit); }
-            if (bit >= 32u) { quotient.high = quotient.high | (1u << (bit - 32u)); }
+            else { quotient.high = quotient.high | (1u << (bit - 32u)); }
         }
     }
+    return WideDivision(quotient, remainder);
+}
+
+fn wide_to_i32(value: WideI64) -> i32 {
+    return bitcast<i32>(value.low);
+}
+
+fn wide_fits_i32(value: WideI64) -> bool {
+    return (value.high == 0u && value.low <= 0x7fffffffu)
+        || (value.high == 0xffffffffu && value.low >= 0x80000000u);
+}
+
+// Rounds a signed wide integer divided by 2^shift to nearest, ties to even.
+fn fixed_round_power_of_two(value: WideI64, shift: u32) -> WideI64 {
+    if (shift == 0u) { return value; }
+    let negative = wide_negative(value);
+    let magnitude = wide_abs(value);
+    var quotient = wide_shr_floor(magnitude, shift);
+    let remainder = wide_sub(magnitude, wide_shl(quotient, shift));
+    let half = WideI64(1u << (shift - 1u), 0u);
+    let comparison = wide_cmp_unsigned(remainder, half);
+    if (comparison > 0 || (comparison == 0 && (quotient.low & 1u) != 0u)) {
+        quotient = wide_add(quotient, WideI64(1u, 0u));
+    }
+    if (negative) { return wide_neg(quotient); }
     return quotient;
+}
+
+fn fixed_add(left: i32, right: i32) -> vec2<u32> {
+    let result = left + right;
+    if (((left ^ result) & (right ^ result)) < 0) {
+        return vec2<u32>(0u, FIXED_ARITHMETIC_OVERFLOW);
+    }
+    return vec2<u32>(bitcast<u32>(result), FIXED_OK);
+}
+
+fn fixed_mul(left: i32, right: i32, fractional_bits: u32) -> vec2<u32> {
+    let result = fixed_round_power_of_two(wide_mul_i32(left, right), fractional_bits);
+    if (!wide_fits_i32(result)) { return vec2<u32>(0u, FIXED_NONREPRESENTABLE); }
+    return vec2<u32>(bitcast<u32>(wide_to_i32(result)), FIXED_OK);
+}
+
+fn fixed_div(left: i32, right: i32, fractional_bits: u32) -> vec2<u32> {
+    if (right == 0) { return vec2<u32>(0u, FIXED_DIVISION_BY_ZERO); }
+    let numerator = wide_shl(WideI64(bitcast<u32>(left), select(0u, 0xffffffffu, left < 0)), fractional_bits);
+    let numerator_negative = wide_negative(numerator);
+    let denominator_negative = right < 0;
+    let quotient_and_remainder = wide_div_unsigned(wide_abs(numerator), WideI64(select(bitcast<u32>(right), 0u - bitcast<u32>(right), denominator_negative), 0u));
+    var quotient = quotient_and_remainder.quotient;
+    let complement = wide_sub(WideI64(select(bitcast<u32>(right), 0u - bitcast<u32>(right), denominator_negative), 0u), quotient_and_remainder.remainder);
+    let comparison = wide_cmp_unsigned(quotient_and_remainder.remainder, complement);
+    if (comparison > 0 || (comparison == 0 && (quotient.low & 1u) != 0u)) {
+        quotient = wide_add(quotient, WideI64(1u, 0u));
+    }
+    if (numerator_negative != denominator_negative) { quotient = wide_neg(quotient); }
+    if (!wide_fits_i32(quotient)) { return vec2<u32>(0u, FIXED_NONREPRESENTABLE); }
+    return vec2<u32>(bitcast<u32>(wide_to_i32(quotient)), FIXED_OK);
+}
+
+fn fixed_sqrt(value: i32, fractional_bits: u32) -> vec2<u32> {
+    if (value < 0) { return vec2<u32>(0u, FIXED_NEGATIVE_SQUARE_ROOT); }
+    let radicand = wide_shl(WideI64(bitcast<u32>(value), 0u), fractional_bits);
+    var lower = 0u;
+    var bit = 32u;
+    loop {
+        if (bit == 0u) { break; }
+        bit = bit - 1u;
+        let candidate = lower | (1u << bit);
+        if (wide_cmp_unsigned(wide_mul_i32(bitcast<i32>(candidate), bitcast<i32>(candidate)), radicand) <= 0) {
+            lower = candidate;
+        }
+    }
+    let lower_squared = wide_mul_i32(bitcast<i32>(lower), bitcast<i32>(lower));
+    let upper = lower + 1u;
+    let upper_squared = wide_mul_i32(bitcast<i32>(upper), bitcast<i32>(upper));
+    let lower_distance = wide_sub(radicand, lower_squared);
+    let upper_distance = wide_sub(upper_squared, radicand);
+    let comparison = wide_cmp_unsigned(lower_distance, upper_distance);
+    let chosen = select(upper, lower, comparison < 0 || (comparison == 0 && (lower & 1u) == 0u));
+    return vec2<u32>(chosen, FIXED_OK);
+}
+
+fn fixed_narrow(value: i32, shift: u32) -> vec2<u32> {
+    if (shift > 31u) { return vec2<u32>(0u, FIXED_INVALID_SHIFT); }
+    let result = fixed_round_power_of_two(WideI64(bitcast<u32>(value), select(0u, 0xffffffffu, value < 0)), shift);
+    if (!wide_fits_i32(result)) { return vec2<u32>(0u, FIXED_NONREPRESENTABLE); }
+    return vec2<u32>(bitcast<u32>(wide_to_i32(result)), FIXED_OK);
+}
+
+struct FixedParityInput {
+    left: i32,
+    right: i32,
+    fractional_bits: u32,
+    shift: u32,
+    operation: u32,
+}
+
+struct FixedParityOutput {
+    value: i32,
+    failure: u32,
+}
+
+@group(0) @binding(0) var<storage, read> fixed_inputs: array<FixedParityInput>;
+@group(0) @binding(1) var<storage, read_write> fixed_outputs: array<FixedParityOutput>;
+
+@compute @workgroup_size(1)
+fn fixed_parity(@builtin(global_invocation_id) invocation: vec3<u32>) {
+    if (invocation.x >= arrayLength(&fixed_inputs)) { return; }
+    let input = fixed_inputs[invocation.x];
+    var result = vec2<u32>(0u, FIXED_INVALID_SHIFT);
+    switch input.operation {
+        case 0u: { result = fixed_add(input.left, input.right); }
+        case 1u: { result = fixed_mul(input.left, input.right, input.fractional_bits); }
+        case 2u: { result = fixed_div(input.left, input.right, input.fractional_bits); }
+        case 3u: { result = fixed_sqrt(input.left, input.fractional_bits); }
+        case 4u: { result = fixed_narrow(input.left, input.shift); }
+        default: {}
+    }
+    fixed_outputs[invocation.x] = FixedParityOutput(bitcast<i32>(result.x), result.y);
 }

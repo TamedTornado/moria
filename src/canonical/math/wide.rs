@@ -74,10 +74,19 @@ impl WideI64 {
         if divisor == 0 {
             return Err(CanonicalFailure::DivisionByZero);
         }
-        self.to_i64()
-            .checked_div_euclid(divisor)
-            .map(Self::from_i64)
-            .ok_or(CanonicalFailure::ArithmeticOverflow)
+        let dividend = self.to_i64();
+        let quotient = dividend
+            .checked_div(divisor)
+            .ok_or(CanonicalFailure::ArithmeticOverflow)?;
+        let remainder = dividend % divisor;
+        if remainder != 0 && (dividend < 0) != (divisor < 0) {
+            quotient
+                .checked_sub(1)
+                .map(Self::from_i64)
+                .ok_or(CanonicalFailure::ArithmeticOverflow)
+        } else {
+            Ok(Self::from_i64(quotient))
+        }
     }
 
     /// Shifts right toward negative infinity.

@@ -27,7 +27,9 @@ naga = { version = "=29.0.1", default-features = false, features = ["wgsl-in"] }
 # compatible MIT OR Apache-2.0 license and alloc-only, default-feature-free
 # configuration preserve the existing native and wasm target assumptions.
 triomphe = { version = "=0.1.16", default-features = false }
-wgpu = { version = "=29.0.3", default-features = false }
+# The CPU/WGSL differential test executes the canonical WGSL source through
+# wgpu, so its source-language frontend is part of this direct contract.
+wgpu = { version = "=29.0.3", default-features = false, features = ["wgsl", "vulkan", "gles"] }
 zstd = { version = "=0.13.3", optional = true }
 
 [lints.rust]

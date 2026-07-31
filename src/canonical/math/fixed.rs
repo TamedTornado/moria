@@ -113,6 +113,9 @@ impl<const FRACTIONAL_BITS: u8> FixedI32<FRACTIONAL_BITS> {
     ///
     /// Returns [`CanonicalFailure::InvalidShift`] for shifts above 31.
     pub fn try_narrow(self, shift: u8) -> Result<i32, CanonicalFailure> {
+        if shift > 31 {
+            return Err(CanonicalFailure::InvalidShift);
+        }
         round_by_power_of_two(i64::from(self.0), shift).and_then(i32_from_i64)
     }
 
@@ -131,9 +134,17 @@ pub fn floor_div(value: i32, divisor: i32) -> Result<i32, CanonicalFailure> {
     if divisor == 0 {
         return Err(CanonicalFailure::DivisionByZero);
     }
-    value
-        .checked_div_euclid(divisor)
-        .ok_or(CanonicalFailure::ArithmeticOverflow)
+    let quotient = value
+        .checked_div(divisor)
+        .ok_or(CanonicalFailure::ArithmeticOverflow)?;
+    let remainder = value % divisor;
+    if remainder != 0 && (value < 0) != (divisor < 0) {
+        quotient
+            .checked_sub(1)
+            .ok_or(CanonicalFailure::ArithmeticOverflow)
+    } else {
+        Ok(quotient)
+    }
 }
 
 /// Shifts right with floor semantics, distinct from ties-to-even narrowing.
@@ -145,7 +156,7 @@ pub fn floor_shift_right(value: i32, shift: u8) -> Result<i32, CanonicalFailure>
     if shift > 31 {
         return Err(CanonicalFailure::InvalidShift);
     }
-    floor_div(value, 1_i32 << shift)
+    Ok(value >> shift)
 }
 
 fn i32_from_i64(value: i64) -> Result<i32, CanonicalFailure> {
