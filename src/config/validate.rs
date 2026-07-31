@@ -33,6 +33,13 @@ pub fn validate_resource_budgets(
             "rollback capacity does not match retained frontiers",
         ));
     }
+    if budgets.rollback.log_ticks != rollback.log_ticks {
+        return Err(error(
+            ConfigErrorCode::CrossLimitViolation,
+            ConfigField::Rollback,
+            "rollback log does not match budget",
+        ));
+    }
     validate_cross_limits(budgets)?;
     let required = required_twenty_frontier_bytes(budgets)?;
     if required > u128::from(budgets.rollback.retained_bytes) {
@@ -146,6 +153,8 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
     }
     let largest_callback = [
         b.content.base_completion_bytes_in_flight,
+        b.participant.effect_bytes_per_tick,
+        b.participant.event_bytes_per_tick,
         b.participant.state_and_snapshot_bytes_per_frontier,
         b.participant.snapshot_bytes_per_checkpoint,
         b.checkpoint.bytes_per_blob,
@@ -193,18 +202,14 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
     if b.observation.records_per_poll > b.observation.records_per_world {
         return Err(cross(BudgetGroup::Observation, 6, "poll records"));
     }
-    if b.observation.resnapshot_volume_summaries > b.identity.volumes_per_world {
-        return Err(cross(
-            BudgetGroup::Observation,
-            8,
-            "resnapshot volume summaries",
-        ));
+    if b.observation.volumes_per_subscription > b.identity.volumes_per_world {
+        return Err(cross(BudgetGroup::Observation, 5, "world volume capacity"));
     }
-    if b.observation.resnapshot_volume_summaries > b.observation.volumes_per_subscription {
+    if b.observation.volumes_per_subscription > b.observation.resnapshot_volume_summaries {
         return Err(cross(
             BudgetGroup::Observation,
-            8,
-            "subscription volume capacity",
+            5,
+            "resnapshot volume capacity",
         ));
     }
     if b.presentation.resident_bytes < b.presentation.bytes_per_job {
@@ -804,6 +809,20 @@ mod tests {
                 .unwrap(),
             })
         );
+
+        rollback_config = rollback();
+        rollback_config.log_ticks = 1;
+        assert_eq!(
+            validate_resource_budgets(&ResourceBudgets::default(), &rollback_config),
+            Err(ConfigError {
+                code: ConfigErrorCode::CrossLimitViolation,
+                field: ConfigField::Rollback,
+                diagnostic: crate::facade::BoundedUtf8::try_from_str(
+                    "rollback log does not match budget",
+                )
+                .unwrap(),
+            })
+        );
     }
 
     #[test]
@@ -827,6 +846,25 @@ mod tests {
 
         let mut budgets = ResourceBudgets::default();
         budgets.runtime.callback_completion_bytes = 1;
+        assert_cross!(budgets, Runtime, 3, "callback completion bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.participant.state_and_snapshot_bytes_per_frontier = 1;
+        budgets.participant.snapshot_bytes_per_checkpoint = 1;
+        budgets.checkpoint.bytes_per_blob = 1;
+        budgets.checkpoint.bytes_per_checkpoint = 1;
+        budgets.checkpoint.manifest_bytes = 1;
+        budgets.runtime.callback_completion_bytes = budgets.participant.effect_bytes_per_tick - 1;
+        assert_cross!(budgets, Runtime, 3, "callback completion bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.participant.effect_bytes_per_tick = 1;
+        budgets.participant.state_and_snapshot_bytes_per_frontier = 1;
+        budgets.participant.snapshot_bytes_per_checkpoint = 1;
+        budgets.checkpoint.bytes_per_blob = 1;
+        budgets.checkpoint.bytes_per_checkpoint = 1;
+        budgets.checkpoint.manifest_bytes = 1;
+        budgets.runtime.callback_completion_bytes = budgets.participant.event_bytes_per_tick - 1;
         assert_cross!(budgets, Runtime, 3, "callback completion bytes");
 
         let mut budgets = ResourceBudgets::default();
@@ -858,11 +896,12 @@ mod tests {
 
         let mut budgets = ResourceBudgets::default();
         budgets.identity.volumes_per_world = 1;
-        assert_cross!(budgets, Observation, 8, "resnapshot volume summaries");
+        budgets.observation.resnapshot_volume_summaries = 1;
+        assert_cross!(budgets, Observation, 5, "world volume capacity");
 
         let mut budgets = ResourceBudgets::default();
-        budgets.observation.volumes_per_subscription = 1;
-        assert_cross!(budgets, Observation, 8, "subscription volume capacity");
+        budgets.observation.resnapshot_volume_summaries = 1;
+        assert_cross!(budgets, Observation, 5, "resnapshot volume capacity");
 
         let mut budgets = ResourceBudgets::default();
         budgets.presentation.resident_bytes = 1;
@@ -898,7 +937,12 @@ mod tests {
 
         let mut budgets = ResourceBudgets::default();
         budgets.rollback.log_ticks = 1;
-        assert_cross!(budgets, Rollback, 1, "retained frontiers");
+        let mut rollback_config = rollback();
+        rollback_config.log_ticks = 1;
+        assert_eq!(
+            validate_resource_budgets(&budgets, &rollback_config),
+            Err(cross(BudgetGroup::Rollback, 1, "retained frontiers")),
+        );
 
         let mut budgets = ResourceBudgets::default();
         budgets.rollback.recovery_replay_ticks = 257;
