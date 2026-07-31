@@ -12,180 +12,214 @@ use std::{
 // TECH-071 ledger.  Each fingerprint covers the little-endian `(x, y, z)`
 // words of one iteration, so changing a recurrence step cannot be hidden by
 // a matching CPU/WGSL implementation change.
-#[allow(dead_code)]
 const ZERO_ITERATIONS: [u64; 32] = [
     0x55f2b6460e784a11,
-    0x4bb283928fd33357,
-    0xce473ced0ee33e31,
-    0x1ab480e004ea4fca,
-    0xd59d8eb500cc7b7f,
-    0xdc6b4ff41feba112,
-    0x6662fe89b5858f60,
-    0x7062c3adc8e6237b,
-    0x7328b6a4e648e443,
-    0xc9f05511fa8cefe4,
-    0x66a11556c3ccdaba,
-    0xb5a9e5ca833a8dcd,
-    0xde77cfd7fc83157c,
-    0xa5b00cbfb928099b,
-    0x28d980e9383b8be4,
-    0xdfc4dd5d241205cc,
-    0xc12f9f04a2134683,
-    0x564751b8dac7c1ee,
-    0x391f309757b4d2f2,
-    0xfe2825fc6e583944,
-    0x731fccaedaed5913,
-    0x7bbda025271057c0,
-    0x80c4be8f6990f91c,
-    0x8f39f24d1450ad82,
-    0xbb2446a00dc7cb37,
-    0x8642a5050b076a1a,
-    0xcf38ff704c0387a1,
-    0xea0430d01d1a8927,
-    0xc6843d1357555d20,
-    0xd5488d669cdb5b85,
-    0x9b3cbbd90386db44,
-    0xf199b05df0946530,
+    0x59347f5ef38f1dd3,
+    0x776339ecdd922386,
+    0x09606b85867d311d,
+    0x4cb9676c5915fe50,
+    0xac5d111110cfd4ad,
+    0xd7213c09a80a62e1,
+    0xd77fbfacaf5bee36,
+    0x3591098a570a44f3,
+    0x2c0004ac84ecbfe8,
+    0xdceb45a7f5bfd4d5,
+    0xa2f5d0a041785511,
+    0x8750f6b950df5861,
+    0x712bed2cf0230815,
+    0x96d212d5f5a480e6,
+    0x258162724fafc430,
+    0x988423a9c73c99b4,
+    0xa70a2324828e5dbc,
+    0x3ffcc0223c54b047,
+    0x6951e7ccadca3c87,
+    0x6cb336f7fef43af3,
+    0xbaa0c7fc0d02099d,
+    0x3d437049b61de799,
+    0x6d1ef03f8b8c1e0b,
+    0xed31d54a6422bee3,
+    0xbfd7565f36b99f98,
+    0xed528d613c367259,
+    0x0e442e9b0405ad10,
+    0xd9b404859e79fbc6,
+    0x282176b57b6bed77,
+    0x49a97fe229eebc12,
+    0xcb0772401b545ba3,
 ];
-#[allow(dead_code)]
+
+const ABOVE_CENTER_ITERATIONS: [u64; 32] = [
+    0x81ad00e562556f51,
+    0x8afdc5d32f6f7093,
+    0xf9976b1ffadac646,
+    0x8d81c73865bd1e5d,
+    0x22013209377ed390,
+    0x03a31514581ce358,
+    0x00300ad416c34421,
+    0x9c97d368416f1931,
+    0xca58819c0423ec2e,
+    0xfcf63a05d0c042a8,
+    0xaccae5cc6cbcf215,
+    0xcce71b46f150ee51,
+    0x5b982c19fd04bfa1,
+    0x4121c020044bd455,
+    0x1651e1a2d9cf25a6,
+    0x8872d620f8cbf7e1,
+    0xc43cee491b173274,
+    0xd393f1e796bbac7c,
+    0x19982002ad563e07,
+    0x3aef215874cdec47,
+    0x3a2c9f2e9fe8a1b3,
+    0xf9676be0223d22ba,
+    0x68fc3ae909f88059,
+    0x416625a037b1854b,
+    0x906c310f5d115370,
+    0x6b2cb20e27474669,
+    0x1cb5e911a7763099,
+    0x39fcf93a57e045d0,
+    0x056ccf24f2549486,
+    0xf0f1b89ed2bb26b7,
+    0xdd6f39ca4bafc576,
+    0x56d4ab97af104965,
+];
+
 const BELOW_MIDPOINT_ITERATIONS: [u64; 32] = [
     0x3eae4460eebb1525,
-    0x1ff920f33bf7984f,
-    0xdc190f8f4b38b8a4,
-    0x1429e1861cf1dad6,
-    0xbc8f45d2a65e2077,
-    0x70f00699f2abed79,
-    0x459946019e535186,
-    0xefcbdfc7d206b8b9,
-    0x757dcb2c191709e1,
-    0x25a5a79a9f1363dc,
-    0x5dbb87d06210f887,
-    0xeeba142221774cd4,
-    0xd10e47384b83d647,
-    0x9528d3bd3cc87188,
-    0xd6e0a5db0a7223a6,
-    0x3c6daabffef55a41,
-    0xa25b95a66dd4fa56,
-    0x766f4e13c12827dd,
-    0xc55a17d184e12914,
-    0x27f619f10892d640,
-    0xe1e1920c55ffd173,
-    0x44157544cc62d2af,
-    0x91dc1699da5256c5,
-    0xc7cf8d5bc8c04868,
-    0xb1b3f0532855f3e2,
-    0xe4de37d2f713388d,
-    0xaec0098f7b9802b9,
-    0x493e41a1cdf65d2a,
-    0x912019baed8ec13a,
-    0x01864936f501e01b,
-    0x52222d7580fd7105,
-    0x8aaaf367a676287b,
+    0x3025e89484d69bbb,
+    0x53d0a53f112d51de,
+    0x0300b3eb556712f5,
+    0x9ec3472f86d1e710,
+    0x79f5d5bd0a08c433,
+    0x7dd4937115f23612,
+    0xe60be2af7d01fe1b,
+    0xc231519af86b985f,
+    0x7213f6ac08ffdf2e,
+    0x392dcaaa87947eba,
+    0xe207f59962a93a47,
+    0xf6ac0072a2544ec9,
+    0xa1d8236e537aad91,
+    0x50aa68278b34a854,
+    0xa00b779edb28a9dd,
+    0x81bf2811890a3a68,
+    0x4d109e3b1c158842,
+    0xea48a1f2f5c734de,
+    0x116b1e4bb0ff8c30,
+    0x7e14d430873495da,
+    0xa08dd2ddd9669bc7,
+    0xeb38d653a4cae3e7,
+    0x8ef4a146981d952d,
+    0x7e092fbc6242303d,
+    0x37238b8a33f9f666,
+    0x60339ac30a2332c7,
+    0xe542232a9a94abcd,
+    0x1306e1c80ffafc60,
+    0x97fa912658806301,
+    0x4989d06706891941,
+    0x6e74fe7ddf9b1f0b,
 ];
-#[allow(dead_code)]
+
 const MIDPOINT_ITERATIONS: [u64; 32] = [
     0xcfd2dcc4242098d8,
-    0x97c945a7b85bbb36,
-    0xf86444ffa452d0c6,
-    0xbd946db7bf12f68a,
-    0xcd60baeb1b149638,
-    0xbe6426ede57b17ea,
-    0xd965b2120221d9c7,
-    0xb60229c5934fe5cc,
-    0x9f256b114303606f,
-    0x06a5a5bd82bd0793,
-    0x29ca2e714f5cc151,
-    0xe20bae3ed019bdc4,
-    0x6420cca9fc058dc2,
-    0xd6b84f211592768f,
-    0x2cba507752851923,
-    0x1ced1f8dcbe86c47,
-    0xdb489ea12bafd7a8,
-    0x1dbcc9f00f541a7a,
-    0x0406c21750576530,
-    0x1e8aa356a3256b98,
-    0x28600d568943bc6f,
-    0xe6ba546c6c618ce2,
-    0x0b69e7a2a03a4b15,
-    0xc5b3c423282345aa,
-    0x3450520d098fe921,
-    0x519ad6f82e301bdc,
-    0x9ed71684c688896d,
-    0xb46028317c0ba85b,
-    0x7a93ccef8b72cbc7,
-    0x748e183df9d178c3,
-    0x7ffc882d7d115b18,
-    0xc90b38b0dd903ae3,
+    0x7d73f261b9b4ad5a,
+    0x158394906385454b,
+    0x3ad37470ec468135,
+    0xc1afb9dcf0217fe3,
+    0x34e71c84f86056f8,
+    0x840dee5142f80cda,
+    0xc867a632c052e026,
+    0x0e4266569a281b89,
+    0x95eec9788a2ecbbb,
+    0x8dc86fc08f8f3dca,
+    0x37712fb5bc38e905,
+    0x2b3e7293ead7f28a,
+    0x54175763260390a0,
+    0x34cdbe74862443d2,
+    0xfb5ba87750dc9632,
+    0x50dcfd197250fdb7,
+    0x69e9c8e3031603e7,
+    0x9b14b53195dff04f,
+    0xc0cd32af72008a5c,
+    0xe0ea780314958a19,
+    0x852a20042e79bd78,
+    0xdd738b124db2082b,
+    0x6d54f1e1eb8131b2,
+    0x13934260d192391a,
+    0x33ef41727c44b413,
+    0x2e27b4f2f0f5224b,
+    0x1add1c0c7c510fbc,
+    0xe6a40db7262c221c,
+    0x328bb6a3d98b2ee0,
+    0x7d87d2dfc95330e9,
+    0x92320213ec9922aa,
 ];
-#[allow(dead_code)]
+
 const ABOVE_MIDPOINT_ITERATIONS: [u64; 32] = [
     0xa41a1224d0460018,
-    0x6b3f76e4a42e6c76,
-    0x035bf4c71c7da735,
-    0xe5ad0dd74f84b04a,
-    0x504ff049561cf778,
-    0x35dbe8d4cbac71aa,
-    0x9e674a562e3ac616,
-    0x33ce789276081c8c,
-    0x26b72d557922bd2f,
-    0xdaecdb1e2ee26ed3,
-    0x5d80ec8f529c8091,
-    0x0cc3e3a1f1b0e884,
-    0x33563253e8456f91,
-    0xaaffb757bc50954f,
-    0x4a42c7f2afab8470,
-    0xebe05d44adca6487,
-    0x0b54cbae178a7168,
-    0xecb007a6f13612ba,
-    0x2c468cbdfec0f670,
-    0xf910db1608e26437,
-    0x002242afdadd912f,
-    0x70e2128ce5130fa2,
-    0x8e9447809bca1555,
-    0x39f5a58c2a7e697b,
-    0x689cdb655f7f93d0,
-    0x25e20c58da55831c,
-    0x731e4be572adf0ad,
-    0xb0329c92c5d3663f,
-    0xa352442a9a05d01a,
-    0xc8beec1f0fcf0b84,
-    0x7c82dffe3585b77d,
-    0x628759ac6829044e,
+    0xa82c27c4db4bd81a,
+    0xe62038dff845870b,
+    0x63e2c33b5b003bf5,
+    0xf45b7c2d6d218aa3,
+    0x5f9f51e819f781b8,
+    0x585523b1ef1d741a,
+    0x0d2d56da3bd85362,
+    0x90761789b76fe4c9,
+    0xbf07b1aa477bd17b,
+    0xb5e08fe020001e0a,
+    0xbef90b689e5cd8c5,
+    0x0eecfbff2438d1f1,
+    0xd497889641d8ebe0,
+    0x60868913d9fedc92,
+    0xd4f70857c1de23f2,
+    0x0650bb51f55086c4,
+    0x92f897ad71cee527,
+    0x697227ae2511fd20,
+    0xf5453495cd960e83,
+    0xc1703003d4cde048,
+    0x08547fe22a0987b8,
+    0x5cf359df31dcaceb,
+    0x419c274297a698f2,
+    0x87d523c9d3ed5ceb,
+    0x60791035907202d3,
+    0xb15214d0ec84ec8b,
+    0x4695e6abd02ba87c,
+    0x69ce6d9521bbec5c,
+    0x5e4481432d65c7a0,
+    0x252cbf2bcb7d524d,
+    0x5ea1aa0c0531fc0c,
 ];
-#[allow(dead_code)]
+
 const MAXIMUM_TURN_ITERATIONS: [u64; 32] = [
     0xf944ec20f894940c,
-    0x6fa6714adebd4e3e,
-    0x2a32b6754a4cba68,
-    0x25aeadad46e5c8f6,
-    0x7479324a84f16939,
-    0x07cda74c63441cae,
-    0xe345626411e601a8,
-    0xbe589bc585321d66,
-    0x9675ff3db2d4f784,
-    0x02f0cc49283c004d,
-    0x48493115118acea3,
-    0x2da42b69a946451c,
-    0x2d9822258d52bfc4,
-    0xe51bdb5b895bb670,
-    0x7580d5c4fff69623,
-    0x5f07924e8faa58d3,
-    0x1b15bb1d84198101,
-    0x8f2dba36cfb200f5,
-    0x2f88381473607712,
-    0x41c8ac278a468707,
-    0x8e56eaab86a53d19,
-    0xa7a3f34301077432,
-    0xe3dbaa606eb03b7c,
-    0xa81a8a2ae128c440,
-    0x61bda2eaf1c859ef,
-    0x9d1db237309569b3,
-    0xcbf80bbebb26dc8b,
-    0x5d811ffa842151d8,
-    0x8918c42f8347d322,
-    0x420ee905429c256c,
-    0x14d5b0ca35bedb2a,
-    0x0cab26371bc1eeb9,
+    0xf4e1a2e15151f032,
+    0xcdf17643aa887877,
+    0x4c95933ee5cff431,
+    0xa76ac6b730b95e7a,
+    0xbc7078436675cb43,
+    0x781f5db4ace925a1,
+    0xa757c399fe054f64,
+    0xf564ae7d7af39de8,
+    0x971c570ad7bd3abb,
+    0xe5dd4080a85bcde9,
+    0x7e373ab326ef726e,
+    0xaffff272eaceb0c3,
+    0x97cfaad2ce57d1da,
+    0x1ec0fc8270efd7ea,
+    0x042082c308f6133a,
+    0x875bfeb8d2ba16b6,
+    0xa0f1a353770e0bdd,
+    0x681f8ec529bb6589,
+    0xfcd77b84ef8699bc,
+    0x4c35fb39e483b73d,
+    0x87163793cfa7eb67,
+    0x17c2fb5cf14f009d,
+    0x184a5db6d0533cda,
+    0xbfaa778c130dbd70,
+    0x4660180da2e05bf8,
+    0xb2186934d0430eff,
+    0x0c62c146d423068f,
+    0xbf680beb2fdb6bec,
+    0x218bd3cc1b25b118,
+    0xbf73b217e4273783,
+    0x149042b3056df3d0,
 ];
 
 fn iteration_fingerprint(words: [i64; 3]) -> u64 {
@@ -197,62 +231,16 @@ fn iteration_fingerprint(words: [i64; 3]) -> u64 {
         })
 }
 
-fn expected_iteration_fingerprints(angle: u32) -> [u64; 32] {
-    // Independent literal regeneration ledger: it intentionally does not
-    // import the checked-in Rust table or CORDIC implementation.
-    const ATAN: [i64; 32] = [
-        576460752303423488,
-        340304653033718298,
-        179807632645220259,
-        91273161881380487,
-        45813697873323707,
-        22929182573009054,
-        11467389120678282,
-        5734044481687724,
-        2867065987018958,
-        1433538461969102,
-        716769914547871,
-        358385042719534,
-        179192532040472,
-        89596267355325,
-        44798133844548,
-        22399066943135,
-        11199533474175,
-        5599766737413,
-        2799883368747,
-        1399941684379,
-        699970842190,
-        349985421095,
-        174992710548,
-        87496355274,
-        43748177637,
-        21874088818,
-        10937044409,
-        5468522205,
-        2734261102,
-        1367130551,
-        683565276,
-        341782638,
-    ];
-    let quadrant = (u64::from(angle) + 0x2000_0000) >> 30;
-    let mut residual = (i64::from(angle) - i64::try_from(quadrant << 30).unwrap()) << 30;
-    let mut x = 1_400_229_935_014_726_477_i64;
-    let mut y = 0_i64;
-    let mut goldens = [0_u64; 32];
-    for (index, atan) in ATAN.into_iter().enumerate() {
-        let (before_x, before_y, before_z) = (x, y, residual);
-        if before_z >= 0 {
-            x = before_x - (before_y >> index);
-            y = before_y + (before_x >> index);
-            residual = before_z - atan;
-        } else {
-            x = before_x + (before_y >> index);
-            y = before_y - (before_x >> index);
-            residual = before_z + atan;
-        }
-        goldens[index] = iteration_fingerprint([x, y, residual]);
+fn retained_iteration_fingerprints(angle: u32) -> &'static [u64; 32] {
+    match angle & 0x3fff_ffff {
+        0 => &ZERO_ITERATIONS,
+        1 => &ABOVE_CENTER_ITERATIONS,
+        0x1fff_ffff => &BELOW_MIDPOINT_ITERATIONS,
+        0x2000_0000 => &MIDPOINT_ITERATIONS,
+        0x2000_0001 => &ABOVE_MIDPOINT_ITERATIONS,
+        0x3fff_ffff => &MAXIMUM_TURN_ITERATIONS,
+        remainder => panic!("no retained CORDIC iteration ledger for {remainder:#010x}"),
     }
-    goldens
 }
 
 #[test]
@@ -283,9 +271,12 @@ fn cordic_retains_center_midpoint_adjacent_and_maximum_turn_goldens() {
 fn cordic_retains_every_iteration_at_all_required_turn_boundaries() {
     use super::cordic::cordic_iterations;
 
-    let centers = [0x0000_0000, 0x4000_0000, 0x8000_0000, 0xc000_0000];
-    let midpoints = [0x2000_0000, 0x6000_0000, 0xa000_0000, 0xe000_0000];
-    let mut angles = Vec::from(centers);
+    let centers: [u32; 4] = [0x0000_0000, 0x4000_0000, 0x8000_0000, 0xc000_0000];
+    let midpoints: [u32; 4] = [0x2000_0000, 0x6000_0000, 0xa000_0000, 0xe000_0000];
+    let mut angles = Vec::new();
+    for center in centers {
+        angles.extend([center.wrapping_sub(1), center, center.wrapping_add(1)]);
+    }
     for midpoint in midpoints {
         angles.extend([midpoint - 1, midpoint, midpoint + 1]);
     }
@@ -295,12 +286,12 @@ fn cordic_retains_every_iteration_at_all_required_turn_boundaries() {
         let actual = cordic_iterations(angle).unwrap();
         for (iteration, (state, expected)) in actual
             .into_iter()
-            .zip(expected_iteration_fingerprints(angle))
+            .zip(retained_iteration_fingerprints(angle))
             .enumerate()
         {
             assert_eq!(
                 iteration_fingerprint(state.words()),
-                expected,
+                *expected,
                 "independent CORDIC iteration golden {iteration} for {angle:#010x}"
             );
         }
@@ -402,33 +393,36 @@ impl CordicParityCase {
 }
 
 fn cordic_parity_cases() -> Vec<CordicParityCase> {
-    let centers = [0x0000_0000, 0x4000_0000, 0x8000_0000, 0xc000_0000];
-    let midpoints = [0x2000_0000, 0x6000_0000, 0xa000_0000, 0xe000_0000];
+    let centers: [u32; 4] = [0x0000_0000, 0x4000_0000, 0x8000_0000, 0xc000_0000];
+    let midpoints: [u32; 4] = [0x2000_0000, 0x6000_0000, 0xa000_0000, 0xe000_0000];
     let axes = [
+        [0, 0, 0],
         [1, 0, 0],
+        [-1, 0, 0],
         [0, 1, 0],
+        [0, 0, -1],
+        [1, 1, 1],
+        [1, 1, 2],
         [i32::MIN, 0, 0],
         [i32::MAX, i32::MIN, i32::MAX],
-        [0, 0, 0],
+        [i32::MAX, i32::MAX, i32::MAX],
+        [2_054_521_149, -1_911_829_703, -38_241_389],
     ];
-    let mut angles = Vec::from(centers);
+    let mut angles = Vec::new();
+    for center in centers {
+        angles.extend([center.wrapping_sub(1), center, center.wrapping_add(1)]);
+    }
     for midpoint in midpoints {
         angles.extend([midpoint - 1, midpoint, midpoint + 1]);
     }
     angles.push(u32::MAX);
-    let mut cases: Vec<_> = angles
+    angles
         .into_iter()
-        .enumerate()
-        .map(|(index, angle)| CordicParityCase {
-            angle,
-            axis: axes[index % axes.len()],
+        .flat_map(|angle| {
+            axes.into_iter()
+                .map(move |axis| CordicParityCase { angle, axis })
         })
-        .collect();
-    cases.push(CordicParityCase {
-        angle: 0,
-        axis: [2_054_521_149, -1_911_829_703, -38_241_389],
-    });
-    cases
+        .collect()
 }
 
 fn run_cordic_gpu_parity(device: &wgpu::Device, queue: &wgpu::Queue, cases: &[CordicParityCase]) {
@@ -512,7 +506,7 @@ fn run_cordic_gpu_parity(device: &wgpu::Device, queue: &wgpu::Queue, cases: &[Co
     readback.unmap();
     for (case_index, case) in cases.iter().enumerate() {
         let base = case_index * CORDIC_PARITY_WORDS * 4;
-        for (iteration, expected) in expected_iteration_fingerprints(case.angle)
+        for (iteration, expected) in retained_iteration_fingerprints(case.angle)
             .iter()
             .enumerate()
         {
@@ -526,6 +520,56 @@ fn run_cordic_gpu_parity(device: &wgpu::Device, queue: &wgpu::Queue, cases: &[Co
                 "independent CORDIC GPU golden {iteration} for {:#010x}",
                 case.angle
             );
+        }
+        let final_offset = base + 192 * 4;
+        let actual_final = [
+            i32::from_le_bytes(actual[final_offset..final_offset + 4].try_into().unwrap()),
+            i32::from_le_bytes(
+                actual[final_offset + 4..final_offset + 8]
+                    .try_into()
+                    .unwrap(),
+            ),
+        ];
+        let expected_final = super::cordic::sine_cosine_q30(case.angle)
+            .map(|(sine, cosine)| [sine, cosine])
+            .expect("all u32 turn words are valid CORDIC inputs");
+        assert_eq!(
+            actual_final, expected_final,
+            "GPU CORDIC final result for {case:?}"
+        );
+
+        let axis_offset = final_offset + 8;
+        let actual_axis = [
+            i32::from_le_bytes(actual[axis_offset..axis_offset + 4].try_into().unwrap()),
+            i32::from_le_bytes(actual[axis_offset + 4..axis_offset + 8].try_into().unwrap()),
+            i32::from_le_bytes(
+                actual[axis_offset + 8..axis_offset + 12]
+                    .try_into()
+                    .unwrap(),
+            ),
+        ];
+        let actual_failure = u32::from_le_bytes(
+            actual[axis_offset + 12..axis_offset + 16]
+                .try_into()
+                .unwrap(),
+        );
+        let expected_axis = super::cordic::normalize_axis_q30(case.axis);
+        match expected_axis {
+            Ok(expected_axis) => {
+                assert_eq!(
+                    actual_axis, expected_axis,
+                    "GPU normalized axis for {case:?}"
+                );
+                assert_eq!(actual_failure, 0, "GPU axis success tag for {case:?}");
+            }
+            Err(expected_failure) => {
+                assert_eq!(actual_axis, [0; 3], "GPU failed axis payload for {case:?}");
+                assert_eq!(
+                    actual_failure,
+                    u32::from(expected_failure.wire_tag()),
+                    "GPU axis failure tag for {case:?}"
+                );
+            }
         }
     }
 }

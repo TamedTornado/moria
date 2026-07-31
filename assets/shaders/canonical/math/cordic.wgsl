@@ -252,12 +252,9 @@ fn cordic_parity(@builtin(global_invocation_id) invocation: vec3<u32>) {
         cordic_outputs[state + 4u] = z.low;
         cordic_outputs[state + 5u] = z.high;
     }
-    let cosine = cordic_q61_to_q30(x);
-    let sine = cordic_q61_to_q30(y);
-    var result = CordicResult(-cosine, sine);
-    if (quadrant == 0u) { result = CordicResult(sine, cosine); }
-    if (quadrant == 1u) { result = CordicResult(cosine, -sine); }
-    if (quadrant == 2u) { result = CordicResult(-sine, -cosine); }
+    // Exercise the production final-remap helper as part of executable parity
+    // coverage; the loop above retains the internal state ledger.
+    let result = cordic_sine_cosine_q30(input.angle);
     let axis = axis_normalize_q30(vec3<i32>(input.axis_x, input.axis_y, input.axis_z));
     cordic_outputs[base + 192u] = bitcast<u32>(result.sin_q30);
     cordic_outputs[base + 193u] = bitcast<u32>(result.cos_q30);
