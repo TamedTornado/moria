@@ -103,10 +103,13 @@ fn axis_mul_u32(left: u32, right: u32) -> AxisProduct {
     let right_low = right & 0xffffu;
     let right_high = right >> 16u;
     let product_low = left_low * right_low;
-    let middle = (product_low >> 16u) + left_low * right_high + left_high * right_low;
+    let middle_first = (product_low >> 16u) + left_low * right_high;
+    let carry_first = select(0u, 1u, middle_first < (product_low >> 16u));
+    let middle = middle_first + left_high * right_low;
+    let carry_middle = carry_first + select(0u, 1u, middle < middle_first);
     return AxisProduct(
         (product_low & 0xffffu) | (middle << 16u),
-        left_high * right_high + (middle >> 16u),
+        left_high * right_high + (middle >> 16u) + (carry_middle << 16u),
     );
 }
 

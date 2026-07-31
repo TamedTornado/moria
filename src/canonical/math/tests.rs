@@ -137,14 +137,19 @@ fn cordic_parity_cases() -> Vec<CordicParityCase> {
         angles.extend([midpoint - 1, midpoint, midpoint + 1]);
     }
     angles.push(u32::MAX);
-    angles
+    let mut cases: Vec<_> = angles
         .into_iter()
         .enumerate()
         .map(|(index, angle)| CordicParityCase {
             angle,
             axis: axes[index % axes.len()],
         })
-        .collect()
+        .collect();
+    cases.push(CordicParityCase {
+        angle: 0,
+        axis: [2_054_521_149, -1_911_829_703, -38_241_389],
+    });
+    cases
 }
 
 fn push_i64_words(bytes: &mut Vec<u8>, value: i64) {
