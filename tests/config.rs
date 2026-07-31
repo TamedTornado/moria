@@ -148,7 +148,7 @@ fn resource_budget_defaults_match_the_normative_tech_017_values() {
             1 << 30,
             1_048_576,
             1_048_576,
-            64 << 20
+            128 << 20
         )
     );
     assert_fields!(budgets.rollback,

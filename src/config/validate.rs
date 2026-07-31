@@ -16,8 +16,15 @@ const RADIX_NODE_BYTES: u64 = 1_024;
 const DIRECTORY_BUCKET_BYTES: u64 = 32;
 const PRESENTATION_VERTEX_BYTES: u64 = 32;
 const PRESENTATION_INDEX_BYTES: u64 = 4;
-const MANIFEST_ENTRY_BYTES: u64 = 32;
+// TECH-044's `{ kind, uncompressed_bytes, blob_digest }` descriptor.
+const CHECKPOINT_DESCRIPTOR_BYTES: u64 = 1 + 8 + 32;
+// TECH-044's `{ first_tick, last_tick, record_count, uncompressed_bytes,
+// blob_digest }` replay descriptor.
+const REPLAY_DESCRIPTOR_BYTES: u64 = 4 + 4 + 4 + 8 + 32;
+// `moria-checkpoint-v1` framing: fixed header, declared length, and checksum.
+const MANIFEST_FIXED_OVERHEAD_BYTES: u64 = 64;
 const BASE_CALLBACK_COMPLETION_BYTES: u64 = 2_048;
+const TERMINAL_RECEIPT_METADATA_BYTES: u64 = 8;
 
 /// Device allocation limits granted for a Moria page allocator.
 ///
@@ -239,7 +246,13 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
     .into_iter()
     .max()
     .expect("nonempty terminal result limits");
-    if b.identity.terminal_receipt_bytes_per_world < largest_terminal_result {
+    let terminal_receipt_bytes = checked_sum(
+        u128::from(largest_terminal_result),
+        u128::from(TERMINAL_RECEIPT_METADATA_BYTES),
+        BudgetGroup::Identity,
+        17,
+    )?;
+    if u128::from(b.identity.terminal_receipt_bytes_per_world) < terminal_receipt_bytes {
         return Err(cross(BudgetGroup::Identity, 17, "terminal receipt bytes"));
     }
     if b.observation.bytes_per_record as u64 > b.observation.payload_bytes_per_world {
@@ -308,18 +321,23 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
         return Err(cross(BudgetGroup::Checkpoint, 10, "manifest bytes"));
     }
     let manifest_encoded_bytes = checked_sum(
-        checked_product(
-            u128::from(b.checkpoint.manifest_nodes),
-            u128::from(MANIFEST_ENTRY_BYTES),
+        checked_sum(
+            checked_product(
+                u128::from(b.checkpoint.manifest_nodes),
+                u128::from(CHECKPOINT_DESCRIPTOR_BYTES),
+                BudgetGroup::Checkpoint,
+                10,
+            )?,
+            checked_product(
+                u128::from(b.checkpoint.manifest_blobs),
+                u128::from(REPLAY_DESCRIPTOR_BYTES),
+                BudgetGroup::Checkpoint,
+                10,
+            )?,
             BudgetGroup::Checkpoint,
             10,
         )?,
-        checked_product(
-            u128::from(b.checkpoint.manifest_blobs),
-            u128::from(MANIFEST_ENTRY_BYTES),
-            BudgetGroup::Checkpoint,
-            10,
-        )?,
+        u128::from(MANIFEST_FIXED_OVERHEAD_BYTES),
         BudgetGroup::Checkpoint,
         10,
     )?;
@@ -768,9 +786,11 @@ fn overflow(group: BudgetGroup, field_code: u16) -> ConfigError {
 #[cfg(test)]
 mod tests {
     use super::{
-        BudgetGroup, DENSE_BRICK_BYTES, DIRECTORY_BUCKET_BYTES, RADIX_NODE_BYTES,
-        UNIFORM_BRICK_BYTES, checked_product, checked_sum, cross, invalid, validate_field_ranges,
-        validate_paged_bytes, validate_resource_budgets as validate_resource_budgets_with_limits,
+        BudgetGroup, CHECKPOINT_DESCRIPTOR_BYTES, DENSE_BRICK_BYTES, DIRECTORY_BUCKET_BYTES,
+        MANIFEST_FIXED_OVERHEAD_BYTES, RADIX_NODE_BYTES, REPLAY_DESCRIPTOR_BYTES,
+        TERMINAL_RECEIPT_METADATA_BYTES, UNIFORM_BRICK_BYTES, checked_product, checked_sum, cross,
+        invalid, validate_field_ranges, validate_paged_bytes,
+        validate_resource_budgets as validate_resource_budgets_with_limits,
     };
     use crate::{
         config::{DevicePageLimits, ResourceBudgets, RollbackConfig},
@@ -1092,6 +1112,40 @@ mod tests {
     }
 
     #[test]
+    fn terminal_receipts_reserve_result_bytes_and_fixed_metadata() {
+        let mut budgets = ResourceBudgets::default();
+        let largest_result = budgets.rollback.result_bytes_per_public_replay;
+        budgets.identity.terminal_receipt_bytes_per_world = largest_result;
+
+        assert_eq!(
+            validate_resource_budgets(&budgets, &rollback()),
+            Err(cross(BudgetGroup::Identity, 17, "terminal receipt bytes")),
+        );
+
+        budgets.identity.terminal_receipt_bytes_per_world =
+            largest_result + TERMINAL_RECEIPT_METADATA_BYTES;
+        assert!(validate_resource_budgets(&budgets, &rollback()).is_ok());
+    }
+
+    #[test]
+    fn manifest_budget_reserves_framing_and_canonical_descriptor_bytes() {
+        let mut budgets = ResourceBudgets::default();
+        budgets.checkpoint.manifest_nodes = 1;
+        budgets.checkpoint.manifest_blobs = 1;
+        let required =
+            MANIFEST_FIXED_OVERHEAD_BYTES + CHECKPOINT_DESCRIPTOR_BYTES + REPLAY_DESCRIPTOR_BYTES;
+        budgets.checkpoint.manifest_bytes = required - 1;
+
+        assert_eq!(
+            validate_resource_budgets(&budgets, &rollback()),
+            Err(cross(BudgetGroup::Checkpoint, 10, "encoded manifest bytes")),
+        );
+
+        budgets.checkpoint.manifest_bytes = required;
+        assert!(validate_resource_budgets(&budgets, &rollback()).is_ok());
+    }
+
+    #[test]
     fn page_limits_reject_unencodable_pages_and_bad_alignment() {
         let budgets = ResourceBudgets::default();
         let rollback = rollback();
@@ -1342,11 +1396,15 @@ mod tests {
         assert_cross!(budgets, Participant, 7, "event bytes");
 
         let mut budgets = ResourceBudgets::default();
-        budgets.checkpoint.bytes_per_checkpoint = 64;
+        budgets.checkpoint.bytes_per_checkpoint =
+            MANIFEST_FIXED_OVERHEAD_BYTES + CHECKPOINT_DESCRIPTOR_BYTES + REPLAY_DESCRIPTOR_BYTES;
         budgets.checkpoint.bytes_per_blob = 1;
         budgets.checkpoint.manifest_nodes = 1;
         budgets.checkpoint.manifest_blobs = 1;
-        budgets.checkpoint.manifest_bytes = 64;
+        budgets.checkpoint.manifest_bytes =
+            MANIFEST_FIXED_OVERHEAD_BYTES + CHECKPOINT_DESCRIPTOR_BYTES + REPLAY_DESCRIPTOR_BYTES;
+        budgets.participant.snapshot_bytes_per_checkpoint =
+            budgets.checkpoint.bytes_per_checkpoint + 1;
         assert_cross!(budgets, Participant, 9, "snapshot checkpoint bytes");
 
         let mut budgets = ResourceBudgets::default();
@@ -1369,8 +1427,9 @@ mod tests {
         let mut budgets = ResourceBudgets::compiled_maxima();
         budgets.rollback.retained_bytes = u64::MAX;
         budgets.content.authoritative_gpu_bytes = u64::MAX;
-        budgets.checkpoint.manifest_nodes = 4_194_304;
-        budgets.checkpoint.manifest_blobs = 4_194_304;
+        budgets.identity.terminal_receipt_bytes_per_world = u64::MAX;
+        budgets.checkpoint.manifest_nodes = 2_000_000;
+        budgets.checkpoint.manifest_blobs = 2_000_000;
         assert_eq!(super::validate_cross_limits(&budgets), Ok(()));
     }
 
