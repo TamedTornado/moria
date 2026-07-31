@@ -2,8 +2,8 @@ use moria::{
     canonical::{CanonicalOrder, ContractDigest, Tick},
     config::{
         BudgetGroup, CandidateDiagnostics, CandidateFaultOnce, CandidateFaultStage,
-        ExecutionPolicy, PlacementFixedFormat, ResourceBudgets, SimulationUnitId,
-        WorldGenesisConfig,
+        DevicePageLimits, ExecutionPolicy, PlacementFixedFormat, ResourceBudgets, RollbackConfig,
+        SimulationUnitId, WorldGenesisConfig, validate_resource_budgets,
     },
     facade::{BoundedUtf8, ConfigError, ConfigErrorCode, ConfigField, ResourceBudgetField},
 };
@@ -12,6 +12,26 @@ macro_rules! assert_fields {
     ($value:expr, $($field:ident: $expected:expr),+ $(,)?) => {
         $(assert_eq!($value.$field, $expected, stringify!($field));)+
     };
+}
+
+#[test]
+fn public_budget_validator_accepts_one_record_content_pools() {
+    let rollback = RollbackConfig::default();
+    let limits = DevicePageLimits::portable_baseline();
+
+    let mut uniform_pool = ResourceBudgets::default();
+    uniform_pool.content.resident_uniform_bricks = 1;
+    assert_eq!(
+        validate_resource_budgets(&uniform_pool, &rollback, &limits),
+        Ok(1_988_100_096),
+    );
+
+    let mut directory_pool = ResourceBudgets::default();
+    directory_pool.content.resident_directory_buckets = 1;
+    assert_eq!(
+        validate_resource_budgets(&directory_pool, &rollback, &limits),
+        Ok(1_988_100_096),
+    );
 }
 
 #[test]

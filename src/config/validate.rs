@@ -542,18 +542,24 @@ fn validate_paged_bytes(
     group: BudgetGroup,
     field: u16,
 ) -> Result<(), ConfigError> {
-    let page_ceiling = bytes
+    // Binding ranges may be smaller than offset alignment. Page placement uses
+    // a padded stride, while each binding exposes only this effective range.
+    let page_range_bytes = bytes
         .min(u128::from(baseline_page_bytes))
         .min(u128::from(limits.max_buffer_size))
         .min(u128::from(limits.max_storage_buffer_binding_size));
-    let page_bytes = page_ceiling / u128::from(alignment) * u128::from(alignment);
-    if page_bytes < u128::from(record_bytes) {
+    if page_range_bytes < u128::from(record_bytes) {
         return Err(cross(group, field, "page capacity"));
     }
-    let page_count =
-        u64::try_from(bytes / page_bytes + u128::from(!bytes.is_multiple_of(page_bytes)))
-            .map_err(|_| overflow(group, field))?;
-    let allocated_bytes = checked_product(u128::from(page_count), page_bytes, group, field)?;
+    let page_count = u64::try_from(
+        bytes / page_range_bytes + u128::from(!bytes.is_multiple_of(page_range_bytes)),
+    )
+    .map_err(|_| overflow(group, field))?;
+    let page_allocation_bytes = (page_range_bytes + u128::from(alignment - 1))
+        / u128::from(alignment)
+        * u128::from(alignment);
+    let allocated_bytes =
+        checked_product(u128::from(page_count), page_allocation_bytes, group, field)?;
     if allocated_bytes < bytes {
         return Err(cross(group, field, "page bytes"));
     }
