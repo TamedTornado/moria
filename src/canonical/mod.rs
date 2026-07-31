@@ -3,7 +3,7 @@
 mod cell;
 mod domain;
 mod identity;
-pub mod math;
+mod math;
 
 pub use cell::{
     BRICK_CELL_COUNT, BRICK_EDGE_CELLS, Brick, BrickDecodeError, CellValidationError, CellWire,

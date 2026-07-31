@@ -1,13 +1,14 @@
 // TECH-071 fixed-point helpers and differential-parity compute entry point.
 // `low` then `high` is the canonical signed-wide ABI.
-override FRACTIONAL_BITS: u32 = 0u;
-
 const FIXED_OK: u32 = 0u;
-const FIXED_ARITHMETIC_OVERFLOW: u32 = 1u;
-const FIXED_DIVISION_BY_ZERO: u32 = 2u;
-const FIXED_INVALID_SHIFT: u32 = 3u;
-const FIXED_NEGATIVE_SQUARE_ROOT: u32 = 4u;
-const FIXED_NONREPRESENTABLE: u32 = 5u;
+// Stable CanonicalFailure v1 wire tags. Keep these in lockstep with
+// CanonicalFailure::wire_tag().
+const FIXED_INVALID_FORMAT: u32 = 7u;
+const FIXED_ARITHMETIC_OVERFLOW: u32 = 8u;
+const FIXED_DIVISION_BY_ZERO: u32 = 9u;
+const FIXED_INVALID_SHIFT: u32 = 10u;
+const FIXED_NEGATIVE_SQUARE_ROOT: u32 = 11u;
+const FIXED_NONREPRESENTABLE: u32 = 12u;
 
 struct WideI64 {
     low: u32,
@@ -83,6 +84,13 @@ fn wide_cmp_unsigned(left: WideI64, right: WideI64) -> i32 {
     return 0;
 }
 
+fn wide_cmp_signed(left: WideI64, right: WideI64) -> i32 {
+    let left_negative = wide_negative(left);
+    let right_negative = wide_negative(right);
+    if (left_negative != right_negative) { return select(1, -1, left_negative); }
+    return wide_cmp_unsigned(left, right);
+}
+
 fn wide_shl(value: WideI64, shift: u32) -> WideI64 {
     if (shift == 0u) { return value; }
     if (shift < 32u) {
@@ -126,6 +134,17 @@ fn wide_div_unsigned(dividend: WideI64, divisor: WideI64) -> WideDivision {
     return WideDivision(quotient, remainder);
 }
 
+fn wide_floor_div(left: WideI64, right: WideI64) -> WideI64 {
+    let quotient_and_remainder = wide_div_unsigned(wide_abs(left), wide_abs(right));
+    var quotient = quotient_and_remainder.quotient;
+    if ((wide_negative(left) != wide_negative(right))
+        && (quotient_and_remainder.remainder.low != 0u || quotient_and_remainder.remainder.high != 0u)) {
+        quotient = wide_add(quotient, WideI64(1u, 0u));
+    }
+    if (wide_negative(left) != wide_negative(right)) { return wide_neg(quotient); }
+    return quotient;
+}
+
 fn wide_to_i32(value: WideI64) -> i32 {
     return bitcast<i32>(value.low);
 }
@@ -157,6 +176,24 @@ fn fixed_add(left: i32, right: i32) -> vec2<u32> {
         return vec2<u32>(0u, FIXED_ARITHMETIC_OVERFLOW);
     }
     return vec2<u32>(bitcast<u32>(result), FIXED_OK);
+}
+
+fn fixed_sub(left: i32, right: i32) -> vec2<u32> {
+    let result = left - right;
+    if (((left ^ right) & (left ^ result)) < 0) {
+        return vec2<u32>(0u, FIXED_ARITHMETIC_OVERFLOW);
+    }
+    return vec2<u32>(bitcast<u32>(result), FIXED_OK);
+}
+
+fn fixed_neg(value: i32) -> vec2<u32> {
+    if (value == -2147483648) { return vec2<u32>(0u, FIXED_ARITHMETIC_OVERFLOW); }
+    return vec2<u32>(bitcast<u32>(-value), FIXED_OK);
+}
+
+fn fixed_abs(value: i32) -> vec2<u32> {
+    if (value < 0) { return fixed_neg(value); }
+    return vec2<u32>(bitcast<u32>(value), FIXED_OK);
 }
 
 fn fixed_mul(left: i32, right: i32, fractional_bits: u32) -> vec2<u32> {
@@ -212,6 +249,22 @@ fn fixed_narrow(value: i32, shift: u32) -> vec2<u32> {
     return vec2<u32>(bitcast<u32>(wide_to_i32(result)), FIXED_OK);
 }
 
+fn fixed_floor_div(left: i32, right: i32) -> vec2<u32> {
+    if (right == 0) { return vec2<u32>(0u, FIXED_DIVISION_BY_ZERO); }
+    if (left == -2147483648 && right == -1) {
+        return vec2<u32>(0u, FIXED_ARITHMETIC_OVERFLOW);
+    }
+    var quotient = left / right;
+    let remainder = left % right;
+    if (remainder != 0 && ((left < 0) != (right < 0))) { quotient = quotient - 1; }
+    return vec2<u32>(bitcast<u32>(quotient), FIXED_OK);
+}
+
+fn fixed_floor_shift(value: i32, shift: u32) -> vec2<u32> {
+    if (shift > 31u) { return vec2<u32>(0u, FIXED_INVALID_SHIFT); }
+    return vec2<u32>(bitcast<u32>(value >> shift), FIXED_OK);
+}
+
 struct FixedParityInput {
     left: i32,
     right: i32,
@@ -222,6 +275,7 @@ struct FixedParityInput {
 
 struct FixedParityOutput {
     value: i32,
+    high: u32,
     failure: u32,
 }
 
@@ -232,14 +286,70 @@ struct FixedParityOutput {
 fn fixed_parity(@builtin(global_invocation_id) invocation: vec3<u32>) {
     if (invocation.x >= arrayLength(&fixed_inputs)) { return; }
     let input = fixed_inputs[invocation.x];
+    if (input.fractional_bits > 16u) {
+        fixed_outputs[invocation.x] = FixedParityOutput(0, 0u, FIXED_INVALID_FORMAT);
+        return;
+    }
     var result = vec2<u32>(0u, FIXED_INVALID_SHIFT);
+    var wide_result = WideI64(0u, 0u);
+    var is_wide = false;
     switch input.operation {
         case 0u: { result = fixed_add(input.left, input.right); }
         case 1u: { result = fixed_mul(input.left, input.right, input.fractional_bits); }
         case 2u: { result = fixed_div(input.left, input.right, input.fractional_bits); }
         case 3u: { result = fixed_sqrt(input.left, input.fractional_bits); }
         case 4u: { result = fixed_narrow(input.left, input.shift); }
+        case 5u: { result = fixed_sub(input.left, input.right); }
+        case 6u: { result = fixed_neg(input.left); }
+        case 7u: { result = fixed_abs(input.left); }
+        case 8u: { result = fixed_floor_div(input.left, input.right); }
+        case 9u: { result = fixed_floor_shift(input.left, input.shift); }
+        case 10u: {
+            wide_result = wide_add(
+                WideI64(bitcast<u32>(input.left), select(0u, 0xffffffffu, input.left < 0)),
+                WideI64(bitcast<u32>(input.right), select(0u, 0xffffffffu, input.right < 0)),
+            );
+            is_wide = true;
+        }
+        case 11u: {
+            wide_result = wide_sub(
+                WideI64(bitcast<u32>(input.left), select(0u, 0xffffffffu, input.left < 0)),
+                WideI64(bitcast<u32>(input.right), select(0u, 0xffffffffu, input.right < 0)),
+            );
+            is_wide = true;
+        }
+        case 12u: { wide_result = wide_mul_i32(input.left, input.right); is_wide = true; }
+        case 13u: {
+            wide_result = wide_shr_floor(wide_mul_i32(input.left, input.right), input.shift);
+            is_wide = true;
+        }
+        case 14u: {
+            if (input.right == 0) { result = vec2<u32>(0u, FIXED_DIVISION_BY_ZERO); }
+            else if (input.left == -2147483648 && input.right == -1) {
+                result = vec2<u32>(0u, FIXED_ARITHMETIC_OVERFLOW);
+            } else {
+                wide_result = wide_floor_div(
+                    WideI64(bitcast<u32>(input.left), select(0u, 0xffffffffu, input.left < 0)),
+                    WideI64(bitcast<u32>(input.right), select(0u, 0xffffffffu, input.right < 0)),
+                );
+                is_wide = true;
+            }
+        }
+        case 15u: {
+            result = vec2<u32>(bitcast<u32>(wide_cmp_signed(
+                WideI64(bitcast<u32>(input.left), select(0u, 0xffffffffu, input.left < 0)),
+                WideI64(bitcast<u32>(input.right), select(0u, 0xffffffffu, input.right < 0)),
+            )), FIXED_OK);
+        }
         default: {}
     }
-    fixed_outputs[invocation.x] = FixedParityOutput(bitcast<i32>(result.x), result.y);
+    if (is_wide) {
+        fixed_outputs[invocation.x] = FixedParityOutput(bitcast<i32>(wide_result.low), wide_result.high, FIXED_OK);
+        return;
+    }
+    fixed_outputs[invocation.x] = FixedParityOutput(
+        bitcast<i32>(result.x),
+        select(0u, 0xffffffffu, bitcast<i32>(result.x) < 0),
+        result.y,
+    );
 }

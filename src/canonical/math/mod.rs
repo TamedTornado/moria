@@ -1,7 +1,9 @@
 //! Checked integer arithmetic for canonical placement values.
 
+#[allow(dead_code)]
 mod fixed;
+#[allow(dead_code)]
 mod wide;
 
-pub use fixed::{FixedI32, floor_div, floor_shift_right};
-pub use wide::WideI64;
+#[cfg(test)]
+mod tests;

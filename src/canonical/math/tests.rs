@@ -1,7 +1,8 @@
-use moria::{
-    canonical::math::{FixedI32, WideI64, floor_div, floor_shift_right},
-    facade::CanonicalFailure,
+use super::{
+    fixed::{FixedI32, floor_div, floor_shift_right},
+    wide::WideI64,
 };
+use crate::facade::CanonicalFailure;
 use std::{
     future::Future,
     pin::pin,
@@ -10,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-const FIXED_PARITY_WGSL: &str = include_str!("../assets/shaders/canonical/math/fixed.wgsl");
+const FIXED_PARITY_WGSL: &str = include_str!("../../../assets/shaders/canonical/math/fixed.wgsl");
 
 #[derive(Clone, Copy)]
 struct FixedParityCase {
@@ -46,7 +47,48 @@ fn wait_for<T>(future: impl Future<Output = T>) -> T {
     panic!("GPU initialization did not complete within the bounded test wait");
 }
 
-fn cpu_fixed_result(case: FixedParityCase) -> (i32, u32) {
+fn cpu_fixed_result(case: FixedParityCase) -> (i32, u32, u32) {
+    if case.fractional_bits > 16 {
+        return (
+            0,
+            0,
+            u32::from(CanonicalFailure::InvalidFixedFormat.wire_tag()),
+        );
+    }
+    if (10..=15).contains(&case.operation) {
+        let wide = match case.operation {
+            10 => i64::from(case.left) + i64::from(case.right),
+            11 => i64::from(case.left) - i64::from(case.right),
+            12 => i64::from(case.left) * i64::from(case.right),
+            13 => (i64::from(case.left) * i64::from(case.right)) >> case.shift,
+            14 if case.right == 0 => {
+                return (0, 0, u32::from(CanonicalFailure::DivisionByZero.wire_tag()));
+            }
+            14 if case.left == i32::MIN && case.right == -1 => {
+                return (
+                    0,
+                    0,
+                    u32::from(CanonicalFailure::ArithmeticOverflow.wire_tag()),
+                );
+            }
+            14 => {
+                let quotient = i64::from(case.left) / i64::from(case.right);
+                let remainder = i64::from(case.left) % i64::from(case.right);
+                if remainder != 0 && ((case.left < 0) != (case.right < 0)) {
+                    quotient - 1
+                } else {
+                    quotient
+                }
+            }
+            15 => match case.left.cmp(&case.right) {
+                core::cmp::Ordering::Less => -1,
+                core::cmp::Ordering::Equal => 0,
+                core::cmp::Ordering::Greater => 1,
+            },
+            _ => unreachable!(),
+        };
+        return (wide as i32, (wide >> 32) as u32, 0);
+    }
     macro_rules! operation_for_split {
         ($fractional_bits:literal) => {{
             let left = FixedI32::<$fractional_bits>::try_from_raw(case.left).unwrap();
@@ -57,16 +99,17 @@ fn cpu_fixed_result(case: FixedParityCase) -> (i32, u32) {
                 2 => left.try_div(right).map(FixedI32::raw),
                 3 => left.try_sqrt().map(FixedI32::raw),
                 4 => left.try_narrow(case.shift as u8),
+                5 => left.try_sub(right).map(FixedI32::raw),
+                6 => left.try_neg().map(FixedI32::raw),
+                7 => left.try_abs().map(FixedI32::raw),
+                8 => floor_div(case.left, case.right),
+                9 => floor_shift_right(case.left, case.shift as u8),
+                10..=15 => unreachable!(),
                 _ => unreachable!(),
             };
             match result {
-                Ok(value) => (value, 0),
-                Err(CanonicalFailure::ArithmeticOverflow) => (0, 1),
-                Err(CanonicalFailure::DivisionByZero) => (0, 2),
-                Err(CanonicalFailure::InvalidShift) => (0, 3),
-                Err(CanonicalFailure::NegativeSquareRoot) => (0, 4),
-                Err(CanonicalFailure::Nonrepresentable) => (0, 5),
-                Err(error) => panic!("unexpected fixed-point failure: {error:?}"),
+                Ok(value) => (value, if value < 0 { u32::MAX } else { 0 }, 0),
+                Err(error) => (0, 0, u32::from(error.wire_tag())),
             }
         }};
     }
@@ -365,6 +408,118 @@ fn fixed_point_cpu_and_wgsl_compute_outputs_are_byte_identical() {
             operation: 4,
         },
         FixedParityCase {
+            left: i32::MIN,
+            right: 1,
+            fractional_bits: 0,
+            shift: 0,
+            operation: 5,
+        },
+        FixedParityCase {
+            left: i32::MIN,
+            right: 0,
+            fractional_bits: 0,
+            shift: 0,
+            operation: 6,
+        },
+        FixedParityCase {
+            left: i32::MIN,
+            right: 0,
+            fractional_bits: 0,
+            shift: 0,
+            operation: 7,
+        },
+        FixedParityCase {
+            left: 1,
+            right: -2,
+            fractional_bits: 0,
+            shift: 0,
+            operation: 8,
+        },
+        FixedParityCase {
+            left: -1,
+            right: 0,
+            fractional_bits: 0,
+            shift: 31,
+            operation: 9,
+        },
+        FixedParityCase {
+            left: 0,
+            right: 0,
+            fractional_bits: 17,
+            shift: 0,
+            operation: 0,
+        },
+        FixedParityCase {
+            left: -1,
+            right: 3,
+            fractional_bits: 1,
+            shift: 0,
+            operation: 1,
+        },
+        FixedParityCase {
+            left: -3,
+            right: 4,
+            fractional_bits: 1,
+            shift: 0,
+            operation: 2,
+        },
+        FixedParityCase {
+            left: -1,
+            right: 1,
+            fractional_bits: 0,
+            shift: 0,
+            operation: 10,
+        },
+        FixedParityCase {
+            left: 0,
+            right: 1,
+            fractional_bits: 0,
+            shift: 0,
+            operation: 11,
+        },
+        FixedParityCase {
+            left: i32::MAX,
+            right: 1,
+            fractional_bits: 0,
+            shift: 0,
+            operation: 10,
+        },
+        FixedParityCase {
+            left: i32::MIN,
+            right: 1,
+            fractional_bits: 0,
+            shift: 0,
+            operation: 11,
+        },
+        FixedParityCase {
+            left: i32::MIN,
+            right: i32::MIN,
+            fractional_bits: 0,
+            shift: 0,
+            operation: 12,
+        },
+        FixedParityCase {
+            left: -3,
+            right: 7,
+            fractional_bits: 0,
+            shift: 3,
+            operation: 13,
+        },
+        FixedParityCase {
+            left: 1,
+            right: -2,
+            fractional_bits: 0,
+            shift: 0,
+            operation: 14,
+        },
+        FixedParityCase {
+            left: i32::MIN,
+            right: i32::MAX,
+            fractional_bits: 0,
+            shift: 0,
+            operation: 15,
+        },
+        FixedParityCase {
             left: i32::MAX,
             right: 1,
             fractional_bits: 0,
@@ -420,11 +575,12 @@ fn fixed_point_cpu_and_wgsl_compute_outputs_are_byte_identical() {
         ]);
     }
     let mut input_bytes = Vec::with_capacity(cases.len() * 20);
-    let mut expected_bytes = Vec::with_capacity(cases.len() * 8);
+    let mut expected_bytes = Vec::with_capacity(cases.len() * 12);
     for case in cases.iter().copied() {
         input_bytes.extend(case.to_le_bytes());
-        let (value, failure) = cpu_fixed_result(case);
+        let (value, high, failure) = cpu_fixed_result(case);
         expected_bytes.extend(value.to_le_bytes());
+        expected_bytes.extend(high.to_le_bytes());
         expected_bytes.extend(failure.to_le_bytes());
     }
 
