@@ -8,5 +8,8 @@ pub mod canonical;
 pub mod config;
 pub mod facade;
 pub mod prelude;
-/// Pollable asynchronous operation receipts and their Bevy notification.
-pub mod runtime;
+// The receipt engine is an implementation detail until the bounded world
+// owner, replay sink, and complete TECH-070 result records are available.
+// Exposing it earlier would let consumers observe results for operations that
+// cannot yet be performed.
+mod runtime;

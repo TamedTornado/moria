@@ -6,14 +6,14 @@ use super::{FrontierSummary, ReplayStreamKey};
 
 /// The replay-stream position made durable by genesis.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ReplayStreamPosition {
+pub(crate) struct ReplayStreamPosition {
     pub stream: ReplayStreamKey,
     pub sequence: u64,
 }
 
 /// The frontier published by a successful genesis operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct GenesisReady {
+pub(crate) struct GenesisReady {
     pub frontier: FrontierSummary,
     pub next_tick: Tick,
     pub replay: ReplayStreamPosition,
@@ -23,7 +23,7 @@ macro_rules! opaque_receipt_result {
     ($($name:ident),+ $(,)?) => {$(
         #[doc = concat!("The bounded ready record for a successful `", stringify!($name), "` operation.")]
         #[derive(Debug, Eq, PartialEq)]
-        pub struct $name {
+        pub(crate) struct $name {
             _private: (),
         }
 
