@@ -33,22 +33,41 @@ fn cordic_retains_center_midpoint_adjacent_and_maximum_turn_goldens() {
 }
 
 #[test]
-fn cordic_retains_the_zero_center_iteration_golden() {
+fn cordic_retains_every_iteration_at_all_required_turn_boundaries() {
     use super::cordic::{CordicIteration, cordic_iterations};
 
-    let actual = cordic_iterations(0).unwrap();
-    assert_eq!(
-        actual[0],
-        CordicIteration::new(
-            1_400_229_935_014_726_477,
-            1_400_229_935_014_726_477,
-            -576_460_752_303_423_488,
-        )
-    );
-    assert_eq!(
-        actual[31],
-        CordicIteration::new(2_305_843_009_213_693_950, 298_783_112, -95_105_615,)
-    );
+    let centers = [0x0000_0000, 0x4000_0000, 0x8000_0000, 0xc000_0000];
+    let midpoints = [0x2000_0000, 0x6000_0000, 0xa000_0000, 0xe000_0000];
+    let mut angles = Vec::from(centers);
+    for midpoint in midpoints {
+        angles.extend([midpoint - 1, midpoint, midpoint + 1]);
+    }
+    angles.push(u32::MAX);
+
+    for angle in angles {
+        let actual = cordic_iterations(angle).unwrap();
+        for (iteration, state) in actual.into_iter().enumerate() {
+            assert_ne!(
+                state,
+                CordicIteration::new(0, 0, 0),
+                "missing retained iteration {iteration} for {angle:#010x}"
+            );
+        }
+        if angle == 0 {
+            assert_eq!(
+                actual[0],
+                CordicIteration::new(
+                    1_400_229_935_014_726_477,
+                    1_400_229_935_014_726_477,
+                    -576_460_752_303_423_488,
+                )
+            );
+            assert_eq!(
+                actual[31],
+                CordicIteration::new(2_305_843_009_213_693_950, 298_783_112, -95_105_615)
+            );
+        }
+    }
 }
 
 #[test]
@@ -82,6 +101,196 @@ fn cordic_wgsl_parses_and_validates() {
     )
     .validate(&module)
     .expect("CORDIC WGSL must validate");
+}
+
+const CORDIC_PARITY_WORDS: usize = 198;
+
+#[derive(Clone, Copy, Debug)]
+struct CordicParityCase {
+    angle: u32,
+    axis: [i32; 3],
+}
+
+impl CordicParityCase {
+    fn to_le_bytes(self) -> [u8; 16] {
+        let mut bytes = [0_u8; 16];
+        bytes[0..4].copy_from_slice(&self.angle.to_le_bytes());
+        bytes[4..8].copy_from_slice(&self.axis[0].to_le_bytes());
+        bytes[8..12].copy_from_slice(&self.axis[1].to_le_bytes());
+        bytes[12..16].copy_from_slice(&self.axis[2].to_le_bytes());
+        bytes
+    }
+}
+
+fn cordic_parity_cases() -> Vec<CordicParityCase> {
+    let centers = [0x0000_0000, 0x4000_0000, 0x8000_0000, 0xc000_0000];
+    let midpoints = [0x2000_0000, 0x6000_0000, 0xa000_0000, 0xe000_0000];
+    let axes = [
+        [1, 0, 0],
+        [0, 1, 0],
+        [i32::MIN, 0, 0],
+        [i32::MAX, i32::MIN, i32::MAX],
+        [0, 0, 0],
+    ];
+    let mut angles = Vec::from(centers);
+    for midpoint in midpoints {
+        angles.extend([midpoint - 1, midpoint, midpoint + 1]);
+    }
+    angles.push(u32::MAX);
+    angles
+        .into_iter()
+        .enumerate()
+        .map(|(index, angle)| CordicParityCase {
+            angle,
+            axis: axes[index % axes.len()],
+        })
+        .collect()
+}
+
+fn push_i64_words(bytes: &mut Vec<u8>, value: i64) {
+    let bits = value as u64;
+    bytes.extend_from_slice(&(bits as u32).to_le_bytes());
+    bytes.extend_from_slice(&((bits >> 32) as u32).to_le_bytes());
+}
+
+fn cordic_expected_bytes(cases: &[CordicParityCase]) -> Vec<u8> {
+    use super::cordic::{cordic_iterations, normalize_axis_q30, sine_cosine_q30};
+
+    let mut bytes = Vec::with_capacity(cases.len() * CORDIC_PARITY_WORDS * 4);
+    for case in cases {
+        for state in cordic_iterations(case.angle).expect("all turn words are valid") {
+            for value in state.words() {
+                push_i64_words(&mut bytes, value);
+            }
+        }
+        let (sine, cosine) = sine_cosine_q30(case.angle).expect("all turn words are valid");
+        bytes.extend_from_slice(&(sine as u32).to_le_bytes());
+        bytes.extend_from_slice(&(cosine as u32).to_le_bytes());
+        match normalize_axis_q30(case.axis) {
+            Ok(axis) => {
+                for component in axis {
+                    bytes.extend_from_slice(&(component as u32).to_le_bytes());
+                }
+                bytes.extend_from_slice(&0_u32.to_le_bytes());
+            }
+            Err(failure) => {
+                bytes.extend_from_slice(&0_u32.to_le_bytes());
+                bytes.extend_from_slice(&0_u32.to_le_bytes());
+                bytes.extend_from_slice(&0_u32.to_le_bytes());
+                bytes.extend_from_slice(&u32::from(failure.wire_tag()).to_le_bytes());
+            }
+        }
+    }
+    bytes
+}
+
+fn run_cordic_gpu_parity(device: &wgpu::Device, queue: &wgpu::Queue, cases: &[CordicParityCase]) {
+    let input_bytes: Vec<_> = cases.iter().flat_map(|case| case.to_le_bytes()).collect();
+    let expected_bytes = cordic_expected_bytes(cases);
+    let input = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("CORDIC parity input"),
+        size: input_bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let output = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("CORDIC parity output"),
+        size: expected_bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("CORDIC parity readback"),
+        size: expected_bytes.len() as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&input, 0, &input_bytes);
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("canonical CORDIC parity"),
+        source: wgpu::ShaderSource::Wgsl(CORDIC_WGSL.into()),
+    });
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("CORDIC parity pipeline"),
+        layout: None,
+        module: &shader,
+        entry_point: Some("cordic_parity"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("CORDIC parity bind group"),
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: input.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: output.as_entire_binding(),
+            },
+        ],
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("CORDIC parity encoder"),
+    });
+    {
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("CORDIC parity pass"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.dispatch_workgroups(cases.len() as u32, 1, 1);
+    }
+    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, expected_bytes.len() as u64);
+    queue.submit([encoder.finish()]);
+    let (mapped, receiver) = mpsc::sync_channel(1);
+    readback
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |result| {
+            mapped
+                .send(result)
+                .expect("CORDIC map receiver remains live");
+        });
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("CORDIC GPU polling succeeds");
+    receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("CORDIC readback completes within the bounded test wait")
+        .expect("CORDIC readback maps successfully");
+    let actual = readback.slice(..).get_mapped_range().to_vec();
+    readback.unmap();
+    for (index, (actual, expected)) in actual
+        .chunks_exact(4)
+        .zip(expected_bytes.chunks_exact(4))
+        .enumerate()
+    {
+        assert_eq!(
+            actual, expected,
+            "CORDIC GPU parity mismatch at word {index}"
+        );
+    }
+}
+
+#[test]
+fn cordic_wgsl_executes_every_iteration_and_axis_golden() {
+    let instance = wgpu::Instance::default();
+    let adapter = wait_for(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
+        .expect("a GPU adapter is required for CORDIC parity coverage");
+    let (device, queue) = wait_for(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("CORDIC CPU/WGSL parity"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::downlevel_defaults(),
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
+        memory_hints: wgpu::MemoryHints::MemoryUsage,
+        trace: wgpu::Trace::Off,
+    }))
+    .expect("a GPU device is required for CORDIC parity coverage");
+    let cases = cordic_parity_cases();
+    run_cordic_gpu_parity(&device, &queue, &cases);
 }
 
 // Keep this test-only wire record beside the WGSL ABI. `left` and `right` are

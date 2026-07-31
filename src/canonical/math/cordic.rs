@@ -23,6 +23,11 @@ impl CordicIteration {
             residual_q62,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) const fn words(self) -> [i64; 3] {
+        [self.x_q61, self.y_q61, self.residual_q62]
+    }
 }
 
 /// Evaluates the fixed 32-step turn recurrence and returns `(sin, cos)` Q1.30.
