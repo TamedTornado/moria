@@ -4,14 +4,14 @@ use crate::facade::{
     BoundedUtf8, BudgetGroup, ConfigError, ConfigErrorCode, ConfigField, ResourceBudgetField,
 };
 
-use super::ResourceBudgets;
+use super::{ResourceBudgets, RollbackConfig};
 
 const READBACK_PAGE_BYTES: u128 = 16 << 20;
 const BRICK_COPY_ON_WRITE_BYTES: u128 = 2_048 + 26 * 1_024;
 const CHANGED_VOLUME_RECORD_BYTES: u128 = 256;
 const REQUIRED_FRONTIERS: u128 = 20;
 
-/// Validates all standalone TECH-036 budget limits before genesis.
+/// Validates all TECH-036 budget limits before genesis.
 ///
 /// The returned value is the conservative allocation reservation for the
 /// required 20 retained frontiers. Callers must perform this check before
@@ -21,8 +21,18 @@ const REQUIRED_FRONTIERS: u128 = 20;
 ///
 /// Returns a field-addressed [`ConfigError`] for a zero, fixed-value, compiled
 /// maximum, cross-limit, or checked-arithmetic violation.
-pub fn validate_resource_budgets(budgets: &ResourceBudgets) -> Result<u128, ConfigError> {
+pub fn validate_resource_budgets(
+    budgets: &ResourceBudgets,
+    rollback: &RollbackConfig,
+) -> Result<u128, ConfigError> {
     validate_field_ranges(budgets)?;
+    if budgets.rollback.retained_frontiers != rollback.capacity_ticks {
+        return Err(error(
+            ConfigErrorCode::CrossLimitViolation,
+            ConfigField::Rollback,
+            "rollback capacity does not match retained frontiers",
+        ));
+    }
     validate_cross_limits(budgets)?;
     let required = required_twenty_frontier_bytes(budgets)?;
     if required > u128::from(budgets.rollback.retained_bytes) {
@@ -44,31 +54,68 @@ pub fn validate_resource_budgets(budgets: &ResourceBudgets) -> Result<u128, Conf
 /// Returns [`ConfigErrorCode::ArithmeticOverflow`] if any required product or
 /// sum cannot be represented in `u128`.
 pub fn required_twenty_frontier_bytes(budgets: &ResourceBudgets) -> Result<u128, ConfigError> {
-    let cow = u128::from(budgets.canonical.changed_bricks_per_tick)
-        .checked_mul(BRICK_COPY_ON_WRITE_BYTES)
-        .ok_or_else(|| overflow(BudgetGroup::Canonical, 7))?;
-    let records = u128::from(budgets.canonical.inputs_per_tick)
-        .checked_add(u128::from(budgets.participant.effects_per_tick))
-        .ok_or_else(|| overflow(BudgetGroup::Participant, 3))?;
-    let volumes = records
-        .checked_mul(CHANGED_VOLUME_RECORD_BYTES)
-        .ok_or_else(|| overflow(BudgetGroup::Participant, 3))?;
-    let frontier = cow
-        .checked_add(volumes)
-        .and_then(|v| v.checked_add(u128::from(budgets.rollback.frontier_metadata_bytes)))
-        .and_then(|v| {
-            v.checked_add(u128::from(
-                budgets.participant.state_and_snapshot_bytes_per_frontier,
-            ))
+    let cow = checked_product(
+        u128::from(budgets.canonical.changed_bricks_per_tick),
+        BRICK_COPY_ON_WRITE_BYTES,
+        BudgetGroup::Canonical,
+        7,
+    )?;
+    let records = checked_sum(
+        u128::from(budgets.canonical.inputs_per_tick),
+        u128::from(budgets.participant.effects_per_tick),
+        BudgetGroup::Participant,
+        3,
+    )?;
+    let volumes = checked_product(
+        records,
+        CHANGED_VOLUME_RECORD_BYTES,
+        BudgetGroup::Participant,
+        3,
+    )?;
+    let frontier = checked_sum(cow, volumes, BudgetGroup::Rollback, 4)
+        .and_then(|value| {
+            checked_sum(
+                value,
+                u128::from(budgets.rollback.frontier_metadata_bytes),
+                BudgetGroup::Rollback,
+                4,
+            )
         })
-        .ok_or_else(|| overflow(BudgetGroup::Rollback, 4))?;
-    u128::from(budgets.rollback.genesis_persistent_bytes)
-        .checked_add(
-            REQUIRED_FRONTIERS
-                .checked_mul(frontier)
-                .ok_or_else(|| overflow(BudgetGroup::Rollback, 2))?,
-        )
-        .ok_or_else(|| overflow(BudgetGroup::Rollback, 2))
+        .and_then(|value| {
+            checked_sum(
+                value,
+                u128::from(budgets.participant.state_and_snapshot_bytes_per_frontier),
+                BudgetGroup::Rollback,
+                4,
+            )
+        })?;
+    let retained = checked_product(REQUIRED_FRONTIERS, frontier, BudgetGroup::Rollback, 2)?;
+    checked_sum(
+        u128::from(budgets.rollback.genesis_persistent_bytes),
+        retained,
+        BudgetGroup::Rollback,
+        2,
+    )
+}
+
+fn checked_sum(
+    left: u128,
+    right: u128,
+    group: BudgetGroup,
+    field_code: u16,
+) -> Result<u128, ConfigError> {
+    left.checked_add(right)
+        .ok_or_else(|| overflow(group, field_code))
+}
+
+fn checked_product(
+    left: u128,
+    right: u128,
+    group: BudgetGroup,
+    field_code: u16,
+) -> Result<u128, ConfigError> {
+    left.checked_mul(right)
+        .ok_or_else(|| overflow(group, field_code))
 }
 
 fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
@@ -134,37 +181,65 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
     if b.identity.terminal_receipt_bytes_per_world < largest_terminal_result {
         return Err(cross(BudgetGroup::Identity, 17, "terminal receipt bytes"));
     }
-    if b.observation.bytes_per_record as u64 > b.observation.payload_bytes_per_world
-        || b.observation.bytes_per_poll > b.observation.payload_bytes_per_world
-        || b.observation.resnapshot_bytes > b.observation.payload_bytes_per_world
-        || b.observation.records_per_poll > b.observation.records_per_world
-        || b.observation.resnapshot_volume_summaries > b.identity.volumes_per_world
-        || b.observation.resnapshot_volume_summaries > b.observation.volumes_per_subscription
-    {
-        return Err(cross(BudgetGroup::Observation, 2, "observation capacity"));
+    if b.observation.bytes_per_record as u64 > b.observation.payload_bytes_per_world {
+        return Err(cross(BudgetGroup::Observation, 3, "record bytes"));
+    }
+    if b.observation.bytes_per_poll > b.observation.payload_bytes_per_world {
+        return Err(cross(BudgetGroup::Observation, 7, "poll bytes"));
+    }
+    if b.observation.resnapshot_bytes > b.observation.payload_bytes_per_world {
+        return Err(cross(BudgetGroup::Observation, 10, "resnapshot bytes"));
+    }
+    if b.observation.records_per_poll > b.observation.records_per_world {
+        return Err(cross(BudgetGroup::Observation, 6, "poll records"));
+    }
+    if b.observation.resnapshot_volume_summaries > b.identity.volumes_per_world {
+        return Err(cross(
+            BudgetGroup::Observation,
+            8,
+            "resnapshot volume summaries",
+        ));
+    }
+    if b.observation.resnapshot_volume_summaries > b.observation.volumes_per_subscription {
+        return Err(cross(
+            BudgetGroup::Observation,
+            8,
+            "subscription volume capacity",
+        ));
     }
     if b.presentation.resident_bytes < b.presentation.bytes_per_job {
         return Err(cross(BudgetGroup::Presentation, 7, "resident bytes"));
     }
-    if b.checkpoint.mapped_bytes_in_flight < READBACK_PAGE_BYTES as u64
-        || b.checkpoint.store_bytes_in_flight < b.checkpoint.bytes_per_blob
-        || b.checkpoint.bytes_per_blob > b.checkpoint.bytes_per_checkpoint
-        || b.checkpoint.manifest_bytes > b.checkpoint.bytes_per_checkpoint
-    {
-        return Err(cross(BudgetGroup::Checkpoint, 4, "checkpoint capacity"));
+    if b.checkpoint.mapped_bytes_in_flight < READBACK_PAGE_BYTES as u64 {
+        return Err(cross(BudgetGroup::Checkpoint, 4, "mapped bytes"));
+    }
+    if b.checkpoint.store_bytes_in_flight < b.checkpoint.bytes_per_blob {
+        return Err(cross(BudgetGroup::Checkpoint, 5, "store bytes"));
+    }
+    if b.checkpoint.bytes_per_blob > b.checkpoint.bytes_per_checkpoint {
+        return Err(cross(BudgetGroup::Checkpoint, 6, "blob bytes"));
+    }
+    if b.checkpoint.manifest_bytes > b.checkpoint.bytes_per_checkpoint {
+        return Err(cross(BudgetGroup::Checkpoint, 10, "manifest bytes"));
     }
     if b.rollback.retained_frontiers > b.rollback.log_ticks {
         return Err(cross(BudgetGroup::Rollback, 1, "retained frontiers"));
     }
-    if b.rollback.recovery_replay_ticks > b.rollback.log_ticks
-        || b.rollback.ticks_per_correction > b.rollback.log_ticks
-    {
-        return Err(cross(BudgetGroup::Rollback, 18, "rollback log"));
+    if b.rollback.recovery_replay_ticks > b.rollback.log_ticks {
+        return Err(cross(BudgetGroup::Rollback, 18, "recovery replay ticks"));
     }
-    if b.participant.bytes_per_event as u64 > b.participant.event_bytes_per_tick
-        || b.participant.snapshot_bytes_per_checkpoint > b.checkpoint.bytes_per_checkpoint
-    {
-        return Err(cross(BudgetGroup::Participant, 7, "participant capacity"));
+    if b.rollback.ticks_per_correction > b.rollback.log_ticks {
+        return Err(cross(BudgetGroup::Rollback, 15, "correction ticks"));
+    }
+    if b.participant.bytes_per_event as u64 > b.participant.event_bytes_per_tick {
+        return Err(cross(BudgetGroup::Participant, 7, "event bytes"));
+    }
+    if b.participant.snapshot_bytes_per_checkpoint > b.checkpoint.bytes_per_checkpoint {
+        return Err(cross(
+            BudgetGroup::Participant,
+            9,
+            "snapshot checkpoint bytes",
+        ));
     }
     Ok(())
 }
@@ -363,80 +438,479 @@ fn check<T: Into<u128> + Copy>(
 fn budget_field(group: BudgetGroup, field_code: u16) -> ResourceBudgetField {
     ResourceBudgetField::try_new(group, field_code).expect("declared budget field")
 }
-fn error(
-    code: ConfigErrorCode,
-    group: BudgetGroup,
-    field_code: u16,
-    message: &'static str,
-) -> ConfigError {
+fn error(code: ConfigErrorCode, field: ConfigField, message: &'static str) -> ConfigError {
     ConfigError {
         code,
-        field: ConfigField::Budgets(budget_field(group, field_code)),
+        field,
         diagnostic: BoundedUtf8::try_from_str(message).expect("short static diagnostic"),
     }
 }
 fn invalid(group: BudgetGroup, field_code: u16) -> ConfigError {
     error(
         ConfigErrorCode::InvalidValue,
-        group,
-        field_code,
+        ConfigField::Budgets(budget_field(group, field_code)),
         "invalid budget value",
     )
 }
 fn cross(group: BudgetGroup, field_code: u16, message: &'static str) -> ConfigError {
     error(
         ConfigErrorCode::CrossLimitViolation,
-        group,
-        field_code,
+        ConfigField::Budgets(budget_field(group, field_code)),
         message,
     )
 }
 fn overflow(group: BudgetGroup, field_code: u16) -> ConfigError {
     error(
         ConfigErrorCode::ArithmeticOverflow,
-        group,
-        field_code,
+        ConfigField::Budgets(budget_field(group, field_code)),
         "budget arithmetic overflow",
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::validate_resource_budgets;
-    use crate::config::ResourceBudgets;
+    use super::{
+        BudgetGroup, checked_product, checked_sum, cross, invalid, validate_field_ranges,
+        validate_resource_budgets,
+    };
+    use crate::{
+        config::{ResourceBudgets, RollbackConfig},
+        facade::{ConfigError, ConfigErrorCode, ConfigField},
+    };
+
+    fn rollback() -> RollbackConfig {
+        RollbackConfig::default()
+    }
+
+    macro_rules! generated_field_boundaries {
+        ($group:ident, $member:ident, $minimum:expr, $first_field_code:expr, $($field:ident),+ $(,)?) => {{
+            let maxima = ResourceBudgets::compiled_maxima();
+            let mut field_code = $first_field_code - 1;
+            $(
+                field_code += 1;
+
+                let mut zero = ResourceBudgets::default();
+                zero.$member.$field = 0;
+                assert_eq!(
+                    validate_field_ranges(&zero),
+                    Err(invalid(BudgetGroup::$group, field_code)),
+                    concat!(stringify!($group), ".", stringify!($field), " zero"),
+                );
+
+                let mut minimum = ResourceBudgets::default();
+                minimum.$member.$field = $minimum;
+                assert_eq!(
+                    validate_field_ranges(&minimum),
+                    Ok(()),
+                    concat!(stringify!($group), ".", stringify!($field), " minimum"),
+                );
+
+                let defaults = ResourceBudgets::default();
+                assert_eq!(
+                    validate_field_ranges(&defaults),
+                    Ok(()),
+                    concat!(stringify!($group), ".", stringify!($field), " default"),
+                );
+
+                let mut maximum = ResourceBudgets::default();
+                maximum.$member.$field = maxima.$member.$field;
+                assert_eq!(
+                    validate_field_ranges(&maximum),
+                    Ok(()),
+                    concat!(stringify!($group), ".", stringify!($field), " maximum"),
+                );
+
+                let mut maximum_plus_one = ResourceBudgets::default();
+                maximum_plus_one.$member.$field = maxima.$member.$field + 1;
+                assert_eq!(
+                    validate_field_ranges(&maximum_plus_one),
+                    Err(invalid(BudgetGroup::$group, field_code)),
+                    concat!(stringify!($group), ".", stringify!($field), " maximum plus one"),
+                );
+            )+
+        }};
+    }
+
+    #[test]
+    fn generated_resource_budget_field_boundaries_are_exact() {
+        generated_field_boundaries!(
+            Identity,
+            identity,
+            1,
+            1,
+            worlds,
+            retired_replay_streams_per_client,
+            materials_per_world,
+            volumes_per_world,
+            participants_per_world,
+            input_sources_per_world,
+            base_sources_per_world,
+            base_authorities_per_world,
+            content_blob_stores_per_world,
+            checkpoint_stores_per_world,
+            replay_sinks_per_world,
+            rng_streams_per_participant,
+            representation_contracts_per_participant,
+            interests_per_world,
+            operation_records_per_world,
+            terminal_receipts_per_world,
+            terminal_receipt_bytes_per_world,
+            root_leases_per_world,
+            artifact_leases_per_world,
+        );
+        generated_field_boundaries!(
+            Canonical,
+            canonical,
+            1,
+            1,
+            pending_ticks,
+            inputs_per_tick,
+            encoded_bytes_per_tick,
+            correlation_bytes_per_tick,
+            bricks_per_command,
+            cells_per_command,
+            changed_bricks_per_tick,
+            scratch_bytes,
+        );
+        generated_field_boundaries!(
+            Content,
+            content,
+            1,
+            1,
+            base_request_queue,
+            base_requests_in_flight,
+            base_completion_bytes_in_flight,
+            materialization_bricks_per_job,
+            resident_dense_bricks,
+            resident_uniform_bricks,
+            resident_radix_nodes,
+            resident_directory_buckets,
+            authoritative_gpu_bytes,
+        );
+        generated_field_boundaries!(
+            Query,
+            query,
+            1,
+            1,
+            queued_requests,
+            in_flight_requests,
+            bricks_per_request,
+            records_per_result,
+            bytes_per_result,
+            volume_revisions_per_request,
+            readback_bytes_in_flight,
+        );
+        generated_field_boundaries!(
+            Observation,
+            observation,
+            1,
+            1,
+            records_per_world,
+            payload_bytes_per_world,
+            bytes_per_record,
+            subscriptions_per_world,
+            volumes_per_subscription,
+            records_per_poll,
+            bytes_per_poll,
+            resnapshot_volume_summaries,
+            resnapshot_region_summaries,
+            resnapshot_bytes,
+        );
+        generated_field_boundaries!(
+            Presentation,
+            presentation,
+            1,
+            1,
+            queued_chunks,
+            resident_chunks,
+            in_flight_jobs,
+            vertices_per_job,
+            indices_per_job,
+            bytes_per_job,
+            resident_bytes,
+            dressing_records_per_chunk,
+        );
+        generated_field_boundaries!(
+            Checkpoint,
+            checkpoint,
+            1,
+            1,
+            queued_requests,
+            active_requests,
+            staging_slots,
+            mapped_bytes_in_flight,
+            store_bytes_in_flight,
+            bytes_per_blob,
+            bytes_per_checkpoint,
+            manifest_nodes,
+            manifest_blobs,
+            manifest_bytes,
+        );
+        generated_field_boundaries!(
+            Rollback,
+            rollback,
+            1,
+            2,
+            retained_bytes,
+            genesis_persistent_bytes,
+            frontier_metadata_bytes,
+            log_ticks,
+            log_bytes,
+            replay_sink_records_in_flight,
+            replay_sink_bytes_in_flight,
+            active_public_replays,
+            ticks_per_public_replay,
+            bytes_per_public_replay,
+            result_bytes_per_public_replay,
+            divergence_artifact_bytes,
+            active_corrections,
+            ticks_per_correction,
+            bytes_per_correction,
+            result_bytes_per_correction,
+            recovery_replay_ticks,
+        );
+        generated_field_boundaries!(
+            Participant,
+            participant,
+            1,
+            1,
+            operations_in_flight,
+            input_bytes_per_tick,
+            effects_per_tick,
+            effect_bytes_per_tick,
+            events_per_tick,
+            event_bytes_per_tick,
+            bytes_per_event,
+            state_and_snapshot_bytes_per_frontier,
+            snapshot_bytes_per_checkpoint,
+            artifact_records_per_tick,
+            artifact_bytes_per_tick,
+        );
+        generated_field_boundaries!(
+            Runtime,
+            runtime,
+            1,
+            1,
+            interest_control_queue,
+            callback_completion_slots,
+            callback_completion_bytes,
+        );
+
+        let maxima = ResourceBudgets::compiled_maxima();
+        let mut retained_frontiers = ResourceBudgets::default();
+        retained_frontiers.rollback.retained_frontiers = 0;
+        assert_eq!(
+            validate_field_ranges(&retained_frontiers),
+            Err(invalid(BudgetGroup::Rollback, 1))
+        );
+        retained_frontiers.rollback.retained_frontiers = 19;
+        assert_eq!(
+            validate_field_ranges(&retained_frontiers),
+            Err(invalid(BudgetGroup::Rollback, 1))
+        );
+        retained_frontiers.rollback.retained_frontiers = 20;
+        assert_eq!(validate_field_ranges(&retained_frontiers), Ok(()));
+        retained_frontiers.rollback.retained_frontiers = 32;
+        assert_eq!(validate_field_ranges(&retained_frontiers), Ok(()));
+        retained_frontiers.rollback.retained_frontiers = maxima.rollback.retained_frontiers;
+        assert_eq!(validate_field_ranges(&retained_frontiers), Ok(()));
+        retained_frontiers.rollback.retained_frontiers += 1;
+        assert_eq!(
+            validate_field_ranges(&retained_frontiers),
+            Err(invalid(BudgetGroup::Rollback, 1))
+        );
+
+        let mut render_cells = ResourceBudgets::default();
+        render_cells.runtime.render_completion_cells = 0;
+        assert_eq!(
+            validate_field_ranges(&render_cells),
+            Err(invalid(BudgetGroup::Runtime, 4))
+        );
+        for value in [1, 31, 33] {
+            render_cells.runtime.render_completion_cells = value;
+            assert_eq!(
+                validate_field_ranges(&render_cells),
+                Err(invalid(BudgetGroup::Runtime, 4))
+            );
+        }
+        render_cells.runtime.render_completion_cells = 32;
+        assert_eq!(validate_field_ranges(&render_cells), Ok(()));
+    }
 
     #[test]
     fn defaults_reserve_the_exact_twenty_frontier_bound() {
         let budgets = ResourceBudgets::default();
-        assert_eq!(validate_resource_budgets(&budgets), Ok(1_988_100_096));
+        assert_eq!(
+            validate_resource_budgets(&budgets, &rollback()),
+            Ok(1_988_100_096)
+        );
     }
 
     #[test]
     fn maximum_changed_bricks_do_not_fit_default_frontier_bytes() {
         let mut budgets = ResourceBudgets::default();
         budgets.canonical.changed_bricks_per_tick = 16_384;
-        assert!(validate_resource_budgets(&budgets).is_err());
+        assert_eq!(
+            validate_resource_budgets(&budgets, &rollback()),
+            Err(cross(BudgetGroup::Rollback, 2, "retained bytes"))
+        );
     }
 
     #[test]
-    fn boundary_values_are_checked_before_cross_limit_accounting() {
-        let maximum = ResourceBudgets::compiled_maxima();
-        let mut zero = ResourceBudgets::default();
-        zero.identity.worlds = 0;
+    fn checked_frontier_arithmetic_reports_the_exact_overflow_field() {
         assert_eq!(
-            validate_resource_budgets(&zero).unwrap_err().code,
-            crate::facade::ConfigErrorCode::InvalidValue
+            checked_product(u128::MAX, 2, BudgetGroup::Canonical, 7),
+            Err(super::overflow(BudgetGroup::Canonical, 7))
+        );
+        assert_eq!(
+            checked_sum(u128::MAX, 1, BudgetGroup::Rollback, 2),
+            Err(super::overflow(BudgetGroup::Rollback, 2))
+        );
+    }
+
+    #[test]
+    fn fixed_values_and_rollback_retention_are_exact() {
+        let mut pending_ticks = ResourceBudgets::default();
+        pending_ticks.canonical.pending_ticks = 2;
+        assert_eq!(
+            validate_resource_budgets(&pending_ticks, &rollback()),
+            Err(invalid(BudgetGroup::Canonical, 1))
         );
 
-        let mut plus_one = ResourceBudgets::default();
-        plus_one.content.base_request_queue = maximum.content.base_request_queue + 1;
+        let mut retained_frontiers = ResourceBudgets::default();
+        retained_frontiers.rollback.retained_frontiers = 19;
         assert_eq!(
-            validate_resource_budgets(&plus_one).unwrap_err().code,
-            crate::facade::ConfigErrorCode::InvalidValue
+            validate_resource_budgets(&retained_frontiers, &rollback()),
+            Err(invalid(BudgetGroup::Rollback, 1))
         );
 
-        let mut minimum = ResourceBudgets::default();
-        minimum.rollback.retained_frontiers = 20;
-        assert!(validate_resource_budgets(&minimum).is_ok());
+        let mut rollback_config = rollback();
+        rollback_config.capacity_ticks = 20;
+        let mut budgets = ResourceBudgets::default();
+        budgets.rollback.retained_frontiers = 20;
+        assert_eq!(
+            validate_resource_budgets(&budgets, &rollback_config),
+            Ok(1_988_100_096)
+        );
+
+        assert_eq!(
+            validate_resource_budgets(&ResourceBudgets::default(), &rollback_config),
+            Err(ConfigError {
+                code: ConfigErrorCode::CrossLimitViolation,
+                field: ConfigField::Rollback,
+                diagnostic: crate::facade::BoundedUtf8::try_from_str(
+                    "rollback capacity does not match retained frontiers",
+                )
+                .unwrap(),
+            })
+        );
+    }
+
+    #[test]
+    fn generated_cross_limit_failures_identify_the_constrained_field() {
+        macro_rules! assert_cross {
+            ($budgets:ident, $group:ident, $field:expr, $message:literal) => {
+                assert_eq!(
+                    validate_resource_budgets(&$budgets, &rollback()),
+                    Err(cross(BudgetGroup::$group, $field, $message)),
+                );
+            };
+        }
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.identity.operation_records_per_world = 1;
+        assert_cross!(budgets, Identity, 15, "operation records");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.content.base_completion_bytes_in_flight = 1;
+        assert_cross!(budgets, Content, 3, "base completion bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.runtime.callback_completion_bytes = 1;
+        assert_cross!(budgets, Runtime, 3, "callback completion bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.query.readback_bytes_in_flight = 1;
+        assert_cross!(budgets, Query, 7, "readback bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.identity.terminal_receipt_bytes_per_world = 1;
+        assert_cross!(budgets, Identity, 17, "terminal receipt bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.observation.payload_bytes_per_world = 1;
+        assert_cross!(budgets, Observation, 3, "record bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.observation.bytes_per_record = 1;
+        budgets.observation.payload_bytes_per_world = 1;
+        assert_cross!(budgets, Observation, 7, "poll bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.observation.bytes_per_record = 1;
+        budgets.observation.bytes_per_poll = 1;
+        budgets.observation.payload_bytes_per_world = 1;
+        assert_cross!(budgets, Observation, 10, "resnapshot bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.observation.records_per_world = 1;
+        assert_cross!(budgets, Observation, 6, "poll records");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.identity.volumes_per_world = 1;
+        assert_cross!(budgets, Observation, 8, "resnapshot volume summaries");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.observation.volumes_per_subscription = 1;
+        assert_cross!(budgets, Observation, 8, "subscription volume capacity");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.presentation.resident_bytes = 1;
+        assert_cross!(budgets, Presentation, 7, "resident bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.checkpoint.mapped_bytes_in_flight = 1;
+        assert_cross!(budgets, Checkpoint, 4, "mapped bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.checkpoint.store_bytes_in_flight = 1;
+        assert_cross!(budgets, Checkpoint, 5, "store bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.checkpoint.bytes_per_checkpoint = 1;
+        budgets.checkpoint.manifest_bytes = 1;
+        assert_cross!(budgets, Checkpoint, 6, "blob bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.checkpoint.bytes_per_checkpoint = 1;
+        budgets.checkpoint.bytes_per_blob = 1;
+        assert_cross!(budgets, Checkpoint, 10, "manifest bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.participant.event_bytes_per_tick = 1;
+        assert_cross!(budgets, Participant, 7, "event bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.checkpoint.bytes_per_checkpoint = 1;
+        budgets.checkpoint.bytes_per_blob = 1;
+        budgets.checkpoint.manifest_bytes = 1;
+        assert_cross!(budgets, Participant, 9, "snapshot checkpoint bytes");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.rollback.log_ticks = 1;
+        assert_cross!(budgets, Rollback, 1, "retained frontiers");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.rollback.recovery_replay_ticks = 257;
+        assert_cross!(budgets, Rollback, 18, "recovery replay ticks");
+
+        let mut budgets = ResourceBudgets::default();
+        budgets.rollback.ticks_per_correction = 257;
+        assert_cross!(budgets, Rollback, 15, "correction ticks");
+
+        let mut budgets = ResourceBudgets::compiled_maxima();
+        budgets.rollback.retained_bytes = u64::MAX;
+        budgets.content.authoritative_gpu_bytes = u64::MAX;
+        assert_eq!(super::validate_cross_limits(&budgets), Ok(()));
     }
 }
