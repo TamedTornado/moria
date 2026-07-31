@@ -1,11 +1,13 @@
 use moria::canonical::{BlobDigest, CanonicalHash, DeviceGeneration, ParticipantId, Tick, WorldId};
 use moria::facade::{
     AdmissionCode, AdmissionContext, AdmissionError, AuthorityStatus, AvailabilityCode, BatchError,
-    BudgetGroup, CanonicalFailure, CommittedEffect, ConfigErrorCode, ConfigField, CorrectionError,
-    ErrorCode, FailedNoAdvance, FailureRecordError, FailureScope, FrontierPosition,
-    FrontierSummary, OperationError, ProviderId, QueryUnavailable, ReplayAppendRange,
-    ReplayExportFailure, ReplaySinkId, ReplaySinkRequest, ReplayStreamKey, ResourceBudgetField,
-    ResourceBudgetFieldError, Retryability, TelemetryError, TickNoAdvanceCause,
+    BudgetGroup, CanonicalFailure, CheckpointError, CommittedEffect, ConfigErrorCode, ConfigField,
+    CorrectionError, ErrorCode, FailedNoAdvance, FailureRecordError, FailureScope,
+    FrontierPosition, FrontierSummary, GenesisError, InterestCapacity, InterestError,
+    ObservationSnapshotError, OperationError, ParticipantError, ProviderId, QueryCapacity,
+    QueryUnavailable, RecoveryError, ReplayAppendRange, ReplayExportFailure, ReplaySinkId,
+    ReplaySinkRequest, ReplayStreamKey, ResourceBudgetField, ResourceBudgetFieldError,
+    RestoreError, Retryability, ShutdownError, TelemetryError, TickNoAdvanceCause,
 };
 
 fn world() -> WorldId {
@@ -35,7 +37,7 @@ fn operation(scope: FailureScope, code: ErrorCode, committed: CommittedEffect) -
 #[test]
 fn admission_context_must_match_its_code() {
     let context = AdmissionContext::TickEligibility {
-        supplied: Tick::from_raw(3),
+        supplied: Tick::from_raw(1),
         expected_next: Tick::from_raw(2),
     };
 
@@ -50,6 +52,107 @@ fn admission_context_must_match_its_code() {
             AdmissionContext::None,
         ),
         Err(FailureRecordError::AdmissionContextMismatch),
+    );
+}
+
+#[test]
+fn admission_context_requires_consistent_boundary_facts() {
+    let invalid = |code, context| {
+        assert_eq!(
+            AdmissionError::try_new(code, Retryability::Never, context),
+            Err(FailureRecordError::AdmissionContextMismatch),
+        );
+    };
+    let query_capacity = |bricks| QueryCapacity {
+        bricks,
+        records: 0,
+        result_bytes: 0,
+        workgroups: 0,
+        volume_revisions: 0,
+    };
+
+    invalid(
+        AdmissionCode::BeforeNextTick,
+        AdmissionContext::TickEligibility {
+            supplied: Tick::from_raw(2),
+            expected_next: Tick::from_raw(2),
+        },
+    );
+    invalid(
+        AdmissionCode::BeforeNextTick,
+        AdmissionContext::TickEligibility {
+            supplied: Tick::from_raw(3),
+            expected_next: Tick::from_raw(2),
+        },
+    );
+    invalid(
+        AdmissionCode::AfterNextTick,
+        AdmissionContext::TickEligibility {
+            supplied: Tick::from_raw(2),
+            expected_next: Tick::from_raw(2),
+        },
+    );
+    invalid(
+        AdmissionCode::AfterNextTick,
+        AdmissionContext::TickEligibility {
+            supplied: Tick::from_raw(1),
+            expected_next: Tick::from_raw(2),
+        },
+    );
+    invalid(
+        AdmissionCode::CorrectionHashCountMismatch,
+        AdmissionContext::CorrectionExpectedHashCount {
+            replacement_batches: 2,
+            expected_hashes: 2,
+        },
+    );
+    invalid(
+        AdmissionCode::InterestTooLarge,
+        AdmissionContext::InterestCapacity {
+            required: InterestCapacity { bricks: 2 },
+            supported: InterestCapacity { bricks: 2 },
+        },
+    );
+    invalid(
+        AdmissionCode::ResultCapacityExceeded,
+        AdmissionContext::QueryCapacity {
+            required: query_capacity(2),
+            supported: query_capacity(2),
+        },
+    );
+    invalid(
+        AdmissionCode::RetiredReplayStreamCapacity,
+        AdmissionContext::BudgetCapacity {
+            field: ResourceBudgetField::try_new(BudgetGroup::Identity, 1).unwrap(),
+            required: 2,
+            supported: 2,
+        },
+    );
+
+    assert!(
+        AdmissionError::try_new(
+            AdmissionCode::AfterNextTick,
+            Retryability::Never,
+            AdmissionContext::TickEligibility {
+                supplied: Tick::from_raw(3),
+                expected_next: Tick::from_raw(2),
+            },
+        )
+        .is_ok()
+    );
+    assert!(
+        AdmissionError::try_new(
+            AdmissionCode::ResultCapacityExceeded,
+            Retryability::Never,
+            AdmissionContext::QueryCapacity {
+                required: QueryCapacity {
+                    records: 1,
+                    ..query_capacity(0)
+                },
+                supported: query_capacity(0),
+            },
+        )
+        .is_ok()
     );
 }
 
@@ -322,7 +425,7 @@ fn resource_budget_field_rejects_unknown_group_tags_and_ordinals() {
         (BudgetGroup::Observation, 10),
         (BudgetGroup::Presentation, 8),
         (BudgetGroup::Checkpoint, 10),
-        (BudgetGroup::Rollback, 19),
+        (BudgetGroup::Rollback, 18),
         (BudgetGroup::Participant, 11),
         (BudgetGroup::Runtime, 4),
     ];
@@ -345,6 +448,50 @@ fn resource_budget_field_rejects_unknown_group_tags_and_ordinals() {
     assert_eq!(
         ResourceBudgetField::try_from_wire_parts(10, 1),
         Err(ResourceBudgetFieldError::UnknownGroupTag(10)),
+    );
+}
+
+#[test]
+fn operation_receipt_error_aliases_are_public_operation_errors() {
+    let _: GenesisError = operation(
+        FailureScope::Configuration,
+        ErrorCode::InvalidConfig,
+        CommittedEffect::None,
+    );
+    let _: InterestError = operation(
+        FailureScope::Configuration,
+        ErrorCode::InvalidConfig,
+        CommittedEffect::None,
+    );
+    let _: ObservationSnapshotError = operation(
+        FailureScope::Configuration,
+        ErrorCode::InvalidConfig,
+        CommittedEffect::None,
+    );
+    let _: CheckpointError = operation(
+        FailureScope::Configuration,
+        ErrorCode::InvalidConfig,
+        CommittedEffect::None,
+    );
+    let _: RestoreError = operation(
+        FailureScope::Configuration,
+        ErrorCode::InvalidConfig,
+        CommittedEffect::None,
+    );
+    let _: ParticipantError = operation(
+        FailureScope::Configuration,
+        ErrorCode::InvalidConfig,
+        CommittedEffect::None,
+    );
+    let _: RecoveryError = operation(
+        FailureScope::Configuration,
+        ErrorCode::InvalidConfig,
+        CommittedEffect::None,
+    );
+    let _: ShutdownError = operation(
+        FailureScope::Configuration,
+        ErrorCode::InvalidConfig,
+        CommittedEffect::None,
     );
 }
 

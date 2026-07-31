@@ -153,7 +153,7 @@ impl BudgetGroup {
             Self::Observation => 10,
             Self::Presentation => 8,
             Self::Checkpoint => 10,
-            Self::Rollback => 19,
+            Self::Rollback => 18,
             Self::Participant => 11,
             Self::Runtime => 4,
         }
@@ -356,6 +356,30 @@ impl OperationError {
         })
     }
 }
+
+/// The terminal error returned by genesis receipt polling.
+pub type GenesisError = OperationError;
+
+/// The terminal error returned by interest receipt polling.
+pub type InterestError = OperationError;
+
+/// The terminal error returned by observation snapshot receipt polling.
+pub type ObservationSnapshotError = OperationError;
+
+/// The terminal error returned by checkpoint receipt polling.
+pub type CheckpointError = OperationError;
+
+/// The terminal error returned by restore receipt polling.
+pub type RestoreError = OperationError;
+
+/// The terminal error returned by participant receipt polling.
+pub type ParticipantError = OperationError;
+
+/// The terminal error returned by recovery receipt polling.
+pub type RecoveryError = OperationError;
+
+/// The terminal error returned by shutdown receipt polling.
+pub type ShutdownError = OperationError;
 
 /// The validation failure for a public failure-record constructor.
 #[derive(Debug, Eq, PartialEq)]
@@ -738,31 +762,53 @@ pub enum AdmissionContext {
 }
 
 impl AdmissionContext {
-    const fn matches(&self, code: AdmissionCode) -> bool {
-        matches!(
-            (code, self),
+    fn matches(&self, code: AdmissionCode) -> bool {
+        match (code, self) {
             (
-                AdmissionCode::BeforeNextTick | AdmissionCode::AfterNextTick,
-                Self::TickEligibility { .. }
-            ) | (AdmissionCode::InvalidBatch, Self::InvalidBatch { .. })
-                | (
-                    AdmissionCode::InterestTooLarge,
-                    Self::InterestCapacity { .. }
-                )
-                | (
-                    AdmissionCode::ResultCapacityExceeded,
-                    Self::QueryCapacity { .. }
-                )
-                | (
-                    AdmissionCode::CorrectionHashCountMismatch,
-                    Self::CorrectionExpectedHashCount { .. }
-                )
-                | (
-                    AdmissionCode::RetiredReplayStreamCapacity,
-                    Self::BudgetCapacity { .. }
-                )
-        ) || (matches!(self, Self::None)
-            && !matches!(
+                AdmissionCode::BeforeNextTick,
+                Self::TickEligibility {
+                    supplied,
+                    expected_next,
+                },
+            ) => supplied < expected_next,
+            (
+                AdmissionCode::AfterNextTick,
+                Self::TickEligibility {
+                    supplied,
+                    expected_next,
+                },
+            ) => supplied > expected_next,
+            (AdmissionCode::InvalidBatch, Self::InvalidBatch { .. }) => true,
+            (
+                AdmissionCode::InterestTooLarge,
+                Self::InterestCapacity {
+                    required,
+                    supported,
+                },
+            ) => required.bricks > supported.bricks,
+            (
+                AdmissionCode::ResultCapacityExceeded,
+                Self::QueryCapacity {
+                    required,
+                    supported,
+                },
+            ) => query_capacity_exceeded(*required, *supported),
+            (
+                AdmissionCode::CorrectionHashCountMismatch,
+                Self::CorrectionExpectedHashCount {
+                    replacement_batches,
+                    expected_hashes,
+                },
+            ) => replacement_batches != expected_hashes,
+            (
+                AdmissionCode::RetiredReplayStreamCapacity,
+                Self::BudgetCapacity {
+                    required,
+                    supported,
+                    ..
+                },
+            ) => required > supported,
+            (_, Self::None) => !matches!(
                 code,
                 AdmissionCode::BeforeNextTick
                     | AdmissionCode::AfterNextTick
@@ -771,8 +817,18 @@ impl AdmissionContext {
                     | AdmissionCode::ResultCapacityExceeded
                     | AdmissionCode::CorrectionHashCountMismatch
                     | AdmissionCode::RetiredReplayStreamCapacity
-            ))
+            ),
+            _ => false,
+        }
     }
+}
+
+const fn query_capacity_exceeded(required: QueryCapacity, supported: QueryCapacity) -> bool {
+    required.bricks > supported.bricks
+        || required.records > supported.records
+        || required.result_bytes > supported.result_bytes
+        || required.workgroups > supported.workgroups
+        || required.volume_revisions > supported.volume_revisions
 }
 
 /// A closed pre-admission rejection classification.
