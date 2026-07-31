@@ -6,7 +6,7 @@ mod identity;
 
 pub use cell::{
     BRICK_CELL_COUNT, BRICK_EDGE_CELLS, Brick, BrickDecodeError, CellValidationError, CellWire,
-    DENSE_BRICK_BYTES,
+    DENSE_BRICK_BYTES, OccupancyClass,
 };
 pub use domain::{BrickAabb, BrickCoord, LocalCellAabb, LocalCellPoint, VolumeDomainError};
 pub use identity::{

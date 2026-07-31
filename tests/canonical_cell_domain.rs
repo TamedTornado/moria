@@ -1,8 +1,9 @@
 use moria::canonical::{
     BRICK_CELL_COUNT, BRICK_EDGE_CELLS, Brick, BrickAabb, BrickCoord, BrickDecodeError,
     CellValidationError, CellWire, DENSE_BRICK_BYTES, LocalCellAabb, LocalCellPoint,
-    VolumeDomainError,
+    OccupancyClass, VolumeDomainError,
 };
+use std::collections::BTreeMap;
 
 #[test]
 fn cells_preserve_the_four_byte_little_endian_wire_and_reject_invalid_matter() {
@@ -38,6 +39,53 @@ fn cells_preserve_the_four_byte_little_endian_wire_and_reject_invalid_matter() {
         .validate_registered(|_| false)
         .is_ok()
     );
+}
+
+#[test]
+fn cells_determine_occupancy_from_registered_immutable_material_facts() {
+    let registry = BTreeMap::from([
+        (7, OccupancyClass::Never),
+        (8, OccupancyClass::SolidAbove { density_q8_8: 10 }),
+    ]);
+
+    assert_eq!(
+        CellWire {
+            material_id: 0,
+            density_q8_8: 0,
+        }
+        .is_occupied(|_| unreachable!()),
+        Ok(false)
+    );
+    assert_eq!(
+        CellWire {
+            material_id: 7,
+            density_q8_8: 1,
+        }
+        .is_occupied(|id| registry.get(&id).copied()),
+        Ok(false)
+    );
+
+    for (density_q8_8, expected) in [(9, false), (10, false), (11, true)] {
+        assert_eq!(
+            CellWire {
+                material_id: 8,
+                density_q8_8,
+            }
+            .is_occupied(|id| registry.get(&id).copied()),
+            Ok(expected)
+        );
+    }
+
+    let registry_before_rejection = registry.clone();
+    assert_eq!(
+        CellWire {
+            material_id: 9,
+            density_q8_8: 1,
+        }
+        .is_occupied(|id| registry.get(&id).copied()),
+        Err(CellValidationError::UnregisteredMaterial { material_id: 9 })
+    );
+    assert_eq!(registry, registry_before_rejection);
 }
 
 #[test]
@@ -119,18 +167,31 @@ fn local_and_brick_aabbs_are_half_open_on_every_edge() {
     let min = LocalCellPoint([-4_095, -4_095, -4_095]);
     let max = LocalCellPoint([4_096, 4_096, 4_096]);
     assert!(LocalCellAabb::try_new(min, max, LocalCellPoint([0, 0, 0])).is_ok());
+    assert_eq!(
+        LocalCellAabb::try_new(
+            LocalCellPoint([3, -4, 10]),
+            LocalCellPoint([4, -3, 11]),
+            LocalCellPoint([0, 0, 0]),
+        ),
+        Ok(LocalCellAabb {
+            min: LocalCellPoint([3, -4, 10]),
+            max: LocalCellPoint([4, -3, 11]),
+        })
+    );
 
     for axis in 0..3 {
-        let mut bad_max = [1, 1, 1];
-        bad_max[axis] = 0;
-        assert_eq!(
-            LocalCellAabb::try_new(
-                LocalCellPoint([0, 0, 0]),
-                LocalCellPoint(bad_max),
-                LocalCellPoint([0, 0, 0])
-            ),
-            Err(VolumeDomainError::EmptyOrInvertedAxis { axis })
-        );
+        for bad_axis_max in [0, -1] {
+            let mut bad_max = [1, 1, 1];
+            bad_max[axis] = bad_axis_max;
+            assert_eq!(
+                LocalCellAabb::try_new(
+                    LocalCellPoint([0, 0, 0]),
+                    LocalCellPoint(bad_max),
+                    LocalCellPoint([0, 0, 0])
+                ),
+                Err(VolumeDomainError::EmptyOrInvertedAxis { axis })
+            );
+        }
 
         let mut too_large = [1, 1, 1];
         too_large[axis] = 8_192;
@@ -162,12 +223,14 @@ fn local_and_brick_aabbs_are_half_open_on_every_edge() {
     );
 
     for axis in 0..3 {
-        let mut max = [1, 1, 1];
-        max[axis] = 0;
-        assert_eq!(
-            BrickAabb::try_new(BrickCoord([0, 0, 0]), BrickCoord(max)),
-            Err(VolumeDomainError::EmptyOrInvertedAxis { axis })
-        );
+        for bad_axis_max in [0, -1] {
+            let mut max = [1, 1, 1];
+            max[axis] = bad_axis_max;
+            assert_eq!(
+                BrickAabb::try_new(BrickCoord([0, 0, 0]), BrickCoord(max)),
+                Err(VolumeDomainError::EmptyOrInvertedAxis { axis })
+            );
+        }
     }
     assert!(
         BrickAabb::try_new(

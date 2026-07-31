@@ -20,6 +20,22 @@ pub struct CellWire {
     pub density_q8_8: i16,
 }
 
+/// Immutable material fact that determines whether a cell contributes occupancy.
+///
+/// `SolidAbove` contributes occupancy only when the cell density is strictly
+/// greater than its threshold. `Never` leaves the material inspectable without
+/// contributing occupancy.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum OccupancyClass {
+    /// Matter is occupied only above the configured signed Q8.8 density.
+    SolidAbove {
+        /// The exclusive signed Q8.8 density threshold.
+        density_q8_8: i16,
+    },
+    /// Matter never contributes occupancy.
+    Never,
+}
+
 /// A reason a canonical cell cannot be admitted.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CellValidationError {
@@ -86,6 +102,54 @@ impl CellWire {
             });
         }
         Ok(())
+    }
+
+    /// Determines occupancy from the cell and its registered immutable material fact.
+    ///
+    /// Empty matter never occupies. A `SolidAbove` material occupies only when
+    /// `density_q8_8` is strictly greater than its threshold; a `Never`
+    /// material does not occupy at any density.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CellValidationError::EmptyMaterialPositiveDensity`] when the
+    /// empty material has positive density, and
+    /// [`CellValidationError::UnregisteredMaterial`] when nonempty material has
+    /// no registered occupancy fact. The callback is only consulted for
+    /// nonzero material IDs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use moria::canonical::{CellWire, OccupancyClass};
+    ///
+    /// let cell = CellWire { material_id: 1, density_q8_8: 257 };
+    /// assert_eq!(
+    ///     cell.is_occupied(|id| {
+    ///         (id == 1).then_some(OccupancyClass::SolidAbove { density_q8_8: 256 })
+    ///     }),
+    ///     Ok(true),
+    /// );
+    /// ```
+    pub fn is_occupied(
+        self,
+        occupancy_for: impl FnOnce(u16) -> Option<OccupancyClass>,
+    ) -> Result<bool, CellValidationError> {
+        if self.material_id == 0 {
+            if self.density_q8_8 > 0 {
+                return Err(CellValidationError::EmptyMaterialPositiveDensity);
+            }
+            return Ok(false);
+        }
+
+        let occupancy =
+            occupancy_for(self.material_id).ok_or(CellValidationError::UnregisteredMaterial {
+                material_id: self.material_id,
+            })?;
+        Ok(match occupancy {
+            OccupancyClass::SolidAbove { density_q8_8 } => self.density_q8_8 > density_q8_8,
+            OccupancyClass::Never => false,
+        })
     }
 }
 
