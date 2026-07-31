@@ -10,6 +10,55 @@ const READBACK_PAGE_BYTES: u128 = 16 << 20;
 const BRICK_COPY_ON_WRITE_BYTES: u128 = 2_048 + 26 * 1_024;
 const CHANGED_VOLUME_RECORD_BYTES: u128 = 256;
 const REQUIRED_FRONTIERS: u128 = 20;
+const DENSE_BRICK_BYTES: u64 = 2_048;
+const UNIFORM_BRICK_BYTES: u64 = 16;
+const RADIX_NODE_BYTES: u64 = 1_024;
+const DIRECTORY_BUCKET_BYTES: u64 = 32;
+const PRESENTATION_VERTEX_BYTES: u64 = 32;
+const PRESENTATION_INDEX_BYTES: u64 = 4;
+const MANIFEST_ENTRY_BYTES: u64 = 32;
+
+/// Device allocation limits granted for a Moria page allocator.
+///
+/// This deliberately mirrors only the portable limits needed by TECH-033 and
+/// TECH-036, keeping backend runtime types out of the public configuration
+/// contract. Pass the values granted by the selected adapter, before any page
+/// allocation.
+///
+/// ```
+/// use moria::config::{DevicePageLimits, ResourceBudgets, RollbackConfig, validate_resource_budgets};
+///
+/// let limits = DevicePageLimits::portable_baseline();
+/// assert!(validate_resource_budgets(
+///     &ResourceBudgets::default(),
+///     &RollbackConfig::default(),
+///     &limits,
+/// ).is_ok());
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DevicePageLimits {
+    pub max_buffer_size: u64,
+    pub max_storage_buffer_binding_size: u64,
+    pub min_storage_buffer_offset_alignment: u32,
+}
+
+impl DevicePageLimits {
+    /// Returns Moria's portable baseline page limits.
+    #[must_use]
+    pub const fn portable_baseline() -> Self {
+        Self {
+            max_buffer_size: 256 << 20,
+            max_storage_buffer_binding_size: 128 << 20,
+            min_storage_buffer_offset_alignment: 256,
+        }
+    }
+}
+
+impl Default for DevicePageLimits {
+    fn default() -> Self {
+        Self::portable_baseline()
+    }
+}
 
 /// Validates all TECH-036 budget limits before genesis.
 ///
@@ -24,6 +73,7 @@ const REQUIRED_FRONTIERS: u128 = 20;
 pub fn validate_resource_budgets(
     budgets: &ResourceBudgets,
     rollback: &RollbackConfig,
+    device_limits: &DevicePageLimits,
 ) -> Result<u128, ConfigError> {
     validate_field_ranges(budgets)?;
     if budgets.rollback.retained_frontiers != rollback.capacity_ticks {
@@ -41,6 +91,7 @@ pub fn validate_resource_budgets(
         ));
     }
     validate_cross_limits(budgets)?;
+    validate_page_limits(budgets, device_limits)?;
     let required = required_twenty_frontier_bytes(budgets)?;
     if required > u128::from(budgets.rollback.retained_bytes) {
         return Err(cross(BudgetGroup::Rollback, 2, "retained bytes"));
@@ -215,6 +266,34 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
     if b.presentation.resident_bytes < b.presentation.bytes_per_job {
         return Err(cross(BudgetGroup::Presentation, 7, "resident bytes"));
     }
+    let presentation_output_bytes = checked_sum(
+        checked_product(
+            u128::from(b.presentation.vertices_per_job),
+            u128::from(PRESENTATION_VERTEX_BYTES),
+            BudgetGroup::Presentation,
+            6,
+        )?,
+        checked_product(
+            u128::from(b.presentation.indices_per_job),
+            u128::from(PRESENTATION_INDEX_BYTES),
+            BudgetGroup::Presentation,
+            6,
+        )?,
+        BudgetGroup::Presentation,
+        6,
+    )?;
+    if presentation_output_bytes > u128::from(b.presentation.bytes_per_job) {
+        return Err(cross(BudgetGroup::Presentation, 6, "encoded job bytes"));
+    }
+    let submitted_presentation_bytes = checked_product(
+        u128::from(b.presentation.in_flight_jobs),
+        u128::from(b.presentation.bytes_per_job),
+        BudgetGroup::Presentation,
+        7,
+    )?;
+    if submitted_presentation_bytes > u128::from(b.presentation.resident_bytes) {
+        return Err(cross(BudgetGroup::Presentation, 7, "in-flight job bytes"));
+    }
     if b.checkpoint.mapped_bytes_in_flight < READBACK_PAGE_BYTES as u64 {
         return Err(cross(BudgetGroup::Checkpoint, 4, "mapped bytes"));
     }
@@ -226,6 +305,25 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
     }
     if b.checkpoint.manifest_bytes > b.checkpoint.bytes_per_checkpoint {
         return Err(cross(BudgetGroup::Checkpoint, 10, "manifest bytes"));
+    }
+    let manifest_encoded_bytes = checked_sum(
+        checked_product(
+            u128::from(b.checkpoint.manifest_nodes),
+            u128::from(MANIFEST_ENTRY_BYTES),
+            BudgetGroup::Checkpoint,
+            10,
+        )?,
+        checked_product(
+            u128::from(b.checkpoint.manifest_blobs),
+            u128::from(MANIFEST_ENTRY_BYTES),
+            BudgetGroup::Checkpoint,
+            10,
+        )?,
+        BudgetGroup::Checkpoint,
+        10,
+    )?;
+    if manifest_encoded_bytes > u128::from(b.checkpoint.manifest_bytes) {
+        return Err(cross(BudgetGroup::Checkpoint, 10, "encoded manifest bytes"));
     }
     if b.rollback.retained_frontiers > b.rollback.log_ticks {
         return Err(cross(BudgetGroup::Rollback, 1, "retained frontiers"));
@@ -245,6 +343,175 @@ fn validate_cross_limits(b: &ResourceBudgets) -> Result<(), ConfigError> {
             9,
             "snapshot checkpoint bytes",
         ));
+    }
+    Ok(())
+}
+
+fn validate_page_limits(
+    budgets: &ResourceBudgets,
+    limits: &DevicePageLimits,
+) -> Result<(), ConfigError> {
+    let alignment = u64::from(limits.min_storage_buffer_offset_alignment);
+    if alignment == 0 || !alignment.is_power_of_two() {
+        return Err(cross(BudgetGroup::Content, 9, "storage offset alignment"));
+    }
+
+    let content_bytes = checked_sum(
+        checked_sum(
+            checked_product(
+                u128::from(budgets.content.resident_dense_bricks),
+                u128::from(DENSE_BRICK_BYTES),
+                BudgetGroup::Content,
+                9,
+            )?,
+            checked_product(
+                u128::from(budgets.content.resident_uniform_bricks),
+                u128::from(UNIFORM_BRICK_BYTES),
+                BudgetGroup::Content,
+                9,
+            )?,
+            BudgetGroup::Content,
+            9,
+        )?,
+        checked_sum(
+            checked_product(
+                u128::from(budgets.content.resident_radix_nodes),
+                u128::from(RADIX_NODE_BYTES),
+                BudgetGroup::Content,
+                9,
+            )?,
+            checked_product(
+                u128::from(budgets.content.resident_directory_buckets),
+                u128::from(DIRECTORY_BUCKET_BYTES),
+                BudgetGroup::Content,
+                9,
+            )?,
+            BudgetGroup::Content,
+            9,
+        )?,
+        BudgetGroup::Content,
+        9,
+    )?;
+    if content_bytes > u128::from(budgets.content.authoritative_gpu_bytes) {
+        return Err(cross(BudgetGroup::Content, 9, "resident page bytes"));
+    }
+
+    let pages = [
+        (
+            content_bytes,
+            DENSE_BRICK_BYTES,
+            32 << 20,
+            BudgetGroup::Content,
+            9,
+        ),
+        (
+            u128::from(budgets.canonical.scratch_bytes),
+            4,
+            32 << 20,
+            BudgetGroup::Canonical,
+            8,
+        ),
+        (
+            u128::from(budgets.query.readback_bytes_in_flight),
+            4,
+            16 << 20,
+            BudgetGroup::Query,
+            7,
+        ),
+        (
+            u128::from(budgets.checkpoint.mapped_bytes_in_flight),
+            4,
+            16 << 20,
+            BudgetGroup::Checkpoint,
+            4,
+        ),
+        (
+            u128::from(budgets.checkpoint.bytes_per_checkpoint),
+            4,
+            16 << 20,
+            BudgetGroup::Checkpoint,
+            7,
+        ),
+        (
+            u128::from(budgets.rollback.retained_bytes),
+            4,
+            32 << 20,
+            BudgetGroup::Rollback,
+            2,
+        ),
+        (
+            u128::from(budgets.presentation.resident_bytes),
+            PRESENTATION_VERTEX_BYTES,
+            32 << 20,
+            BudgetGroup::Presentation,
+            7,
+        ),
+        (
+            u128::from(budgets.participant.input_bytes_per_tick),
+            4,
+            8 << 20,
+            BudgetGroup::Participant,
+            2,
+        ),
+        (
+            u128::from(budgets.participant.effect_bytes_per_tick),
+            4,
+            8 << 20,
+            BudgetGroup::Participant,
+            4,
+        ),
+        (
+            u128::from(budgets.participant.event_bytes_per_tick),
+            4,
+            8 << 20,
+            BudgetGroup::Participant,
+            6,
+        ),
+        (
+            u128::from(budgets.participant.state_and_snapshot_bytes_per_frontier),
+            4,
+            8 << 20,
+            BudgetGroup::Participant,
+            8,
+        ),
+    ];
+    for (bytes, record_bytes, baseline_page_bytes, group, field) in pages {
+        validate_paged_bytes(
+            bytes,
+            record_bytes,
+            baseline_page_bytes,
+            alignment,
+            limits,
+            group,
+            field,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_paged_bytes(
+    bytes: u128,
+    record_bytes: u64,
+    baseline_page_bytes: u64,
+    alignment: u64,
+    limits: &DevicePageLimits,
+    group: BudgetGroup,
+    field: u16,
+) -> Result<(), ConfigError> {
+    let limit = baseline_page_bytes
+        .min(limits.max_buffer_size)
+        .min(limits.max_storage_buffer_binding_size);
+    let page_bytes = limit / alignment * alignment;
+    if page_bytes < record_bytes {
+        return Err(cross(group, field, "page capacity"));
+    }
+    let page_bytes = u128::from(page_bytes);
+    let page_count =
+        u64::try_from(bytes / page_bytes + u128::from(!bytes.is_multiple_of(page_bytes)))
+            .map_err(|_| overflow(group, field))?;
+    let allocated_bytes = checked_product(u128::from(page_count), page_bytes, group, field)?;
+    if allocated_bytes < bytes {
+        return Err(cross(group, field, "page bytes"));
     }
     Ok(())
 }
@@ -476,15 +743,26 @@ fn overflow(group: BudgetGroup, field_code: u16) -> ConfigError {
 mod tests {
     use super::{
         BudgetGroup, checked_product, checked_sum, cross, invalid, validate_field_ranges,
-        validate_resource_budgets,
+        validate_resource_budgets as validate_resource_budgets_with_limits,
     };
     use crate::{
-        config::{ResourceBudgets, RollbackConfig},
+        config::{DevicePageLimits, ResourceBudgets, RollbackConfig},
         facade::{ConfigError, ConfigErrorCode, ConfigField},
     };
 
     fn rollback() -> RollbackConfig {
         RollbackConfig::default()
+    }
+
+    fn validate_resource_budgets(
+        budgets: &ResourceBudgets,
+        rollback: &RollbackConfig,
+    ) -> Result<u128, ConfigError> {
+        validate_resource_budgets_with_limits(
+            budgets,
+            rollback,
+            &DevicePageLimits::portable_baseline(),
+        )
     }
 
     macro_rules! generated_field_boundaries {
@@ -762,6 +1040,69 @@ mod tests {
     }
 
     #[test]
+    fn encoded_output_counts_must_fit_their_declared_byte_budgets() {
+        let mut presentation = ResourceBudgets::default();
+        presentation.presentation.bytes_per_job = 1;
+        presentation.presentation.resident_bytes = 1;
+        assert_eq!(
+            validate_resource_budgets(&presentation, &rollback()),
+            Err(cross(BudgetGroup::Presentation, 6, "encoded job bytes")),
+        );
+
+        let mut manifest = ResourceBudgets::default();
+        manifest.checkpoint.manifest_bytes = 1;
+        assert_eq!(
+            validate_resource_budgets(&manifest, &rollback()),
+            Err(cross(BudgetGroup::Checkpoint, 10, "encoded manifest bytes",)),
+        );
+
+        let mut resident = ResourceBudgets::default();
+        resident.presentation.resident_bytes = resident.presentation.bytes_per_job;
+        assert_eq!(
+            validate_resource_budgets(&resident, &rollback()),
+            Err(cross(BudgetGroup::Presentation, 7, "in-flight job bytes")),
+        );
+    }
+
+    #[test]
+    fn page_limits_reject_unencodable_pages_and_bad_alignment() {
+        let budgets = ResourceBudgets::default();
+        let rollback = rollback();
+        let baseline = DevicePageLimits::portable_baseline();
+        assert_eq!(
+            validate_resource_budgets_with_limits(&budgets, &rollback, &baseline),
+            Ok(1_988_100_096),
+        );
+
+        let too_small_buffer = DevicePageLimits {
+            max_buffer_size: 2_047,
+            ..baseline
+        };
+        assert_eq!(
+            validate_resource_budgets_with_limits(&budgets, &rollback, &too_small_buffer),
+            Err(cross(BudgetGroup::Content, 9, "page capacity")),
+        );
+
+        let too_small_binding = DevicePageLimits {
+            max_storage_buffer_binding_size: 2_047,
+            ..baseline
+        };
+        assert_eq!(
+            validate_resource_budgets_with_limits(&budgets, &rollback, &too_small_binding),
+            Err(cross(BudgetGroup::Content, 9, "page capacity")),
+        );
+
+        let unaligned = DevicePageLimits {
+            min_storage_buffer_offset_alignment: 3,
+            ..baseline
+        };
+        assert_eq!(
+            validate_resource_budgets_with_limits(&budgets, &rollback, &unaligned),
+            Err(cross(BudgetGroup::Content, 9, "storage offset alignment")),
+        );
+    }
+
+    #[test]
     fn checked_frontier_arithmetic_reports_the_exact_overflow_field() {
         assert_eq!(
             checked_product(u128::MAX, 2, BudgetGroup::Canonical, 7),
@@ -930,9 +1271,11 @@ mod tests {
         assert_cross!(budgets, Participant, 7, "event bytes");
 
         let mut budgets = ResourceBudgets::default();
-        budgets.checkpoint.bytes_per_checkpoint = 1;
+        budgets.checkpoint.bytes_per_checkpoint = 64;
         budgets.checkpoint.bytes_per_blob = 1;
-        budgets.checkpoint.manifest_bytes = 1;
+        budgets.checkpoint.manifest_nodes = 1;
+        budgets.checkpoint.manifest_blobs = 1;
+        budgets.checkpoint.manifest_bytes = 64;
         assert_cross!(budgets, Participant, 9, "snapshot checkpoint bytes");
 
         let mut budgets = ResourceBudgets::default();
@@ -955,6 +1298,8 @@ mod tests {
         let mut budgets = ResourceBudgets::compiled_maxima();
         budgets.rollback.retained_bytes = u64::MAX;
         budgets.content.authoritative_gpu_bytes = u64::MAX;
+        budgets.checkpoint.manifest_nodes = 4_194_304;
+        budgets.checkpoint.manifest_blobs = 4_194_304;
         assert_eq!(super::validate_cross_limits(&budgets), Ok(()));
     }
 }
