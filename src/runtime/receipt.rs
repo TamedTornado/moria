@@ -5,22 +5,57 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::canonical::{DeviceGeneration, ReceiptId};
+use crate::{
+    canonical::{DeviceGeneration, ReceiptId, VolumeId, VolumeRevision},
+    facade::{BoundedVec, MissingRange, ResourceBudgetField},
+};
 
 use super::operation::{Operation, OperationPhase, ReceiptPolicy};
 
-/// The query-specific blocker carried by a pending operation.
-///
-/// Query readiness facts are owned by the query feature; this shared lifecycle
-/// layer records only whether the currently pending operation has one.
+/// An unmet minimum revision required by a pending query.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MinimumRevisionGap {
+    /// The queried volume whose revision is too old or unavailable.
+    pub volume: VolumeId,
+    /// The minimum revision accepted by the query.
+    pub required: VolumeRevision,
+    /// The currently available revision, if the volume is ready.
+    pub current: Option<VolumeRevision>,
+}
+
+/// The exact reason a complete query is waiting for readiness.
+#[derive(Debug)]
+pub enum QueryReadinessReason {
+    /// One or more queried ranges are not currently available.
+    Availability {
+        /// The bounded, exact unavailable ranges.
+        missing: BoundedVec<MissingRange>,
+    },
+    /// One or more queried volumes have not reached their required revision.
+    MinimumRevision {
+        /// The bounded, exact revision gaps.
+        unmet: BoundedVec<MinimumRevisionGap>,
+    },
+    /// Completing the query would exceed an admitted resource budget.
+    ResourcePressure {
+        /// The budget field that cannot satisfy the request.
+        field: ResourceBudgetField,
+        /// The exact resource amount required.
+        required: u64,
+        /// The exact resource amount supported.
+        supported: u64,
+    },
+}
+
+/// The query-specific blocker carried by a pending operation.
+#[derive(Clone, Debug)]
 pub enum ProgressBlocker {
     /// A query is waiting for a feature-owned readiness fact.
-    Query,
+    Query(Arc<QueryReadinessReason>),
 }
 
 /// The observable pending phase and optional query blocker.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct OperationProgress {
     /// The operation's current lifecycle phase.
     pub phase: OperationPhase,
@@ -29,7 +64,7 @@ pub struct OperationProgress {
 }
 
 impl OperationProgress {
-    pub(super) const fn new(phase: OperationPhase, blocker: Option<ProgressBlocker>) -> Self {
+    pub(super) fn new(phase: OperationPhase, blocker: Option<ProgressBlocker>) -> Self {
         Self { phase, blocker }
     }
 }
@@ -65,6 +100,7 @@ pub enum ResultBackpressure {
 
 struct CacheState<T, E> {
     entries: VecDeque<Arc<Operation<T, E>>>,
+    operations: VecDeque<std::sync::Weak<Operation<T, E>>>,
     used_records: u32,
     used_bytes: u64,
 }
@@ -93,12 +129,17 @@ impl<T, E> TerminalCache<T, E> {
         entries
             .try_reserve_exact(capacity)
             .map_err(|_| ResultBackpressure::AllocationFailed)?;
+        let mut operations = VecDeque::new();
+        operations
+            .try_reserve_exact(capacity)
+            .map_err(|_| ResultBackpressure::AllocationFailed)?;
         Ok(Arc::new(Self {
             record_capacity,
             byte_capacity,
             current_generation: Arc::new(Mutex::new(None)),
             state: Mutex::new(CacheState {
                 entries,
+                operations,
                 used_records: 0,
                 used_bytes: 0,
             }),
@@ -156,19 +197,50 @@ impl<T, E> TerminalCache<T, E> {
                 Arc::downgrade(self),
                 result_bytes,
             ));
+            let mut state = self.state.lock().expect("terminal cache mutex poisoned");
+            state
+                .operations
+                .retain(|operation| operation.strong_count() != 0);
+            state.operations.push_back(Arc::downgrade(&operation));
             return Ok(Receipt { operation });
         }
     }
 
-    /// Atomically changes the generation that may complete this cache's operations.
+    /// Changes the publishing generation and fails every pending earlier receipt.
     ///
-    /// Existing operations from an earlier generation remain drainable but cannot
-    /// publish a ready or failed terminal result.
-    pub fn set_current_generation(&self, generation: DeviceGeneration) {
-        *self
+    /// `old_generation_failure` must be the caller's typed device-loss or
+    /// no-advance failure. Already terminal receipts remain unchanged, and late
+    /// completion attempts from an old generation are still rejected.
+    pub fn set_current_generation(&self, generation: DeviceGeneration, old_generation_failure: E)
+    where
+        E: Clone,
+    {
+        let mut current_generation = self
             .current_generation
             .lock()
-            .expect("device generation mutex poisoned") = Some(generation);
+            .expect("device generation mutex poisoned");
+        *current_generation = Some(generation);
+
+        let tracked = self
+            .state
+            .lock()
+            .expect("terminal cache mutex poisoned")
+            .operations
+            .len();
+        for index in 0..tracked {
+            let operation = self
+                .state
+                .lock()
+                .expect("terminal cache mutex poisoned")
+                .operations
+                .get(index)
+                .and_then(std::sync::Weak::upgrade);
+            if let Some(operation) =
+                operation.filter(|operation| operation.generation().get() < generation.get())
+            {
+                operation.terminalize_old_generation(old_generation_failure.clone());
+            }
+        }
     }
 
     pub(super) fn retain_terminal(&self, operation: Arc<Operation<T, E>>) {

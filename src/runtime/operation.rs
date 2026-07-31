@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 use crate::canonical::{DeviceGeneration, ReceiptId};
 
 use super::receipt::{
-    CancelledOperation, OperationProgress, ProgressBlocker, ReceiptState, TerminalCache,
+    CancelledOperation, OperationProgress, ProgressBlocker, QueryReadinessReason, ReceiptState,
+    TerminalCache,
 };
 
 /// The finite receipt families defined by TECH-021.
@@ -170,6 +171,13 @@ pub enum TransitionError {
         expected: DeviceGeneration,
         actual: DeviceGeneration,
     },
+    /// Cancellation permits drain work but forbids this externally visible phase.
+    AbortBoundary {
+        /// The cancelled receipt family.
+        family: ReceiptFamily,
+        /// The prohibited phase.
+        phase: OperationPhase,
+    },
 }
 
 enum Terminal<T, E> {
@@ -252,6 +260,12 @@ impl<T, E> Operation<T, E> {
         if !matches!(state.terminal, Terminal::Pending) {
             return Err(TransitionError::AlreadyTerminal);
         }
+        if state.abort_requested && abort_prohibits_phase(self.policy.family, phase) {
+            return Err(TransitionError::AbortBoundary {
+                family: self.policy.family,
+                phase,
+            });
+        }
         if !phase_successor(self.policy.family, state.phase, phase) {
             return Err(TransitionError::InvalidTransition {
                 family: self.policy.family,
@@ -267,7 +281,7 @@ impl<T, E> Operation<T, E> {
     }
 
     /// Records a query readiness blocker while the query waits for readiness.
-    pub fn set_query_blocker(&self) -> Result<(), TransitionError> {
+    pub fn set_query_blocker(&self, reason: QueryReadinessReason) -> Result<(), TransitionError> {
         let mut state = self.state.lock().expect("operation state mutex poisoned");
         if self.policy.family != ReceiptFamily::Query
             || state.phase != OperationPhase::WaitingForReadiness
@@ -280,8 +294,20 @@ impl<T, E> Operation<T, E> {
         if !matches!(state.terminal, Terminal::Pending) {
             return Err(TransitionError::AlreadyTerminal);
         }
-        state.blocker = Some(ProgressBlocker::Query);
+        state.blocker = Some(ProgressBlocker::Query(Arc::new(reason)));
         Ok(())
+    }
+
+    /// Reports whether cancellation requires the owner to stop publication work.
+    ///
+    /// A true result does not cancel submitted GPU work; the driver must continue
+    /// the family-specific drain phases and then complete the receipt.
+    #[must_use]
+    pub fn abort_requested(&self) -> bool {
+        self.state
+            .lock()
+            .expect("operation state mutex poisoned")
+            .abort_requested
     }
 
     /// Takes a nonblocking, idempotent snapshot of this operation.
@@ -290,7 +316,7 @@ impl<T, E> Operation<T, E> {
         let state = self.state.lock().expect("operation state mutex poisoned");
         match &state.terminal {
             Terminal::Pending => {
-                ReceiptState::Pending(OperationProgress::new(state.phase, state.blocker))
+                ReceiptState::Pending(OperationProgress::new(state.phase, state.blocker.clone()))
             }
             Terminal::Ready(value) => ReceiptState::Ready(Arc::clone(value)),
             Terminal::Failed(error) => ReceiptState::Failed(Arc::clone(error)),
@@ -414,6 +440,10 @@ impl<T, E> Operation<T, E> {
         self.set_terminal(Terminal::Cancelled(cancelled))
     }
 
+    pub(super) fn terminalize_old_generation(self: &Arc<Self>, error: E) {
+        self.set_terminal(Terminal::Failed(Arc::new(error)));
+    }
+
     fn set_terminal(self: &Arc<Self>, terminal: Terminal<T, E>) -> bool {
         {
             let mut state = self.state.lock().expect("operation state mutex poisoned");
@@ -504,6 +534,23 @@ const fn before_cancellation_cutoff(family: ReceiptFamily, phase: OperationPhase
         }
         _ => false,
     }
+}
+
+pub(super) const fn abort_prohibits_phase(family: ReceiptFamily, phase: OperationPhase) -> bool {
+    matches!(
+        (family, phase),
+        (
+            ReceiptFamily::Checkpoint,
+            OperationPhase::CommittingManifest
+        ) | (
+            ReceiptFamily::Correction,
+            OperationPhase::ExportingCorrectionBranch
+        ) | (ReceiptFamily::Correction, OperationPhase::Publishing)
+            | (ReceiptFamily::Restore, OperationPhase::Publishing)
+            | (ReceiptFamily::Replay, OperationPhase::ExportingReplayHeader)
+            | (ReceiptFamily::Replay, OperationPhase::ExportingReplayPrefix)
+            | (ReceiptFamily::Replay, OperationPhase::Publishing)
+    )
 }
 
 const fn phase_allowed(family: ReceiptFamily, phase: OperationPhase) -> bool {

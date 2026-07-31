@@ -8,8 +8,8 @@ pub use operation::{
     TransitionError,
 };
 pub use receipt::{
-    CancelledOperation, OperationProgress, ProgressBlocker, Receipt, ReceiptState,
-    ResultBackpressure, TerminalCache,
+    CancelledOperation, MinimumRevisionGap, OperationProgress, ProgressBlocker,
+    QueryReadinessReason, Receipt, ReceiptState, ResultBackpressure, TerminalCache,
 };
 
 #[cfg(test)]
