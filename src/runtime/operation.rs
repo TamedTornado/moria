@@ -9,7 +9,7 @@ use crate::canonical::{DeviceGeneration, ReceiptId};
 
 use super::receipt::{
     CancelledOperation, OperationProgress, ProgressBlocker, QueryReadinessReason, ReceiptState,
-    TerminalCache,
+    TerminalReservation,
 };
 
 /// The finite receipt families defined by TECH-021.
@@ -197,6 +197,8 @@ enum Terminal<T, E> {
     Cancelled(CancelledOperation),
 }
 
+type TerminalRetainer<T, E> = Arc<dyn Fn(Arc<Operation<T, E>>) + Send + Sync>;
+
 struct OperationState<T, E> {
     phase: OperationPhase,
     blocker: Option<ProgressBlocker>,
@@ -212,10 +214,13 @@ pub(crate) struct Operation<T, E> {
     receipt: ReceiptId,
     generation: DeviceGeneration,
     policy: ReceiptPolicy,
-    current_generation: Arc<Mutex<Option<DeviceGeneration>>>,
+    reservation: Arc<TerminalReservation>,
+    old_generation_failure:
+        Arc<dyn Fn(ReceiptId, ReceiptFamily, DeviceGeneration) -> E + Send + Sync>,
     state: Mutex<OperationState<T, E>>,
     terminal_signal: Arc<AtomicBool>,
-    pub(super) cache: std::sync::Weak<TerminalCache<T, E>>,
+    retainer: TerminalRetainer<T, E>,
+    reservation_active: AtomicBool,
     result_bytes: u64,
 }
 
@@ -224,15 +229,19 @@ impl<T, E> Operation<T, E> {
         receipt: ReceiptId,
         generation: DeviceGeneration,
         policy: ReceiptPolicy,
-        current_generation: Arc<Mutex<Option<DeviceGeneration>>>,
-        cache: std::sync::Weak<TerminalCache<T, E>>,
+        reservation: Arc<TerminalReservation>,
+        old_generation_failure: Arc<
+            dyn Fn(ReceiptId, ReceiptFamily, DeviceGeneration) -> E + Send + Sync,
+        >,
+        retainer: TerminalRetainer<T, E>,
         result_bytes: u64,
     ) -> Self {
         Self {
             receipt,
             generation,
             policy,
-            current_generation,
+            reservation,
+            old_generation_failure,
             state: Mutex::new(OperationState {
                 phase: initial_phase(policy.family),
                 blocker: None,
@@ -243,7 +252,8 @@ impl<T, E> Operation<T, E> {
                 terminal: Terminal::Pending,
             }),
             terminal_signal: Arc::new(AtomicBool::new(false)),
-            cache,
+            retainer,
+            reservation_active: AtomicBool::new(false),
             result_bytes,
         }
     }
@@ -445,43 +455,47 @@ impl<T, E> Operation<T, E> {
         terminal: Terminal<T, E>,
     ) -> Result<(), TransitionError> {
         {
-            let current_generation = self
-                .current_generation
-                .lock()
-                .expect("device generation mutex poisoned")
-                .expect("admitted operation has a device generation");
-            if self.generation != current_generation || producing_generation != current_generation {
-                return Err(TransitionError::StaleGeneration {
-                    expected: current_generation,
-                    actual: producing_generation,
-                });
-            }
-            let mut state = self.state.lock().expect("operation state mutex poisoned");
-            if !matches!(state.terminal, Terminal::Pending) {
-                return Err(TransitionError::AlreadyTerminal);
-            }
-            if state.delivery_suppressed || state.abort_requested {
-                if state.submitted && !drain_complete(self.policy.family, state.phase) {
-                    return Err(TransitionError::DrainIncomplete {
-                        family: self.policy.family,
-                        phase: state.phase,
-                    });
-                }
-                state.terminal =
-                    Terminal::Cancelled(cancelled(self.receipt, state.phase, state.submitted));
-            } else {
-                if matches!(terminal, Terminal::Ready(_))
-                    && state.phase != final_phase(self.policy.family)
-                {
-                    return Err(TransitionError::InvalidTransition {
-                        family: self.policy.family,
-                        from: state.phase,
-                        to: final_phase(self.policy.family),
-                    });
-                }
-                state.terminal = terminal;
-            }
-            self.terminal_signal.store(true, Ordering::Release);
+            self.reservation
+                .with_current_generation(|current_generation| {
+                    if self.generation != current_generation
+                        || producing_generation != current_generation
+                    {
+                        return Err(TransitionError::StaleGeneration {
+                            expected: current_generation,
+                            actual: producing_generation,
+                        });
+                    }
+                    let mut state = self.state.lock().expect("operation state mutex poisoned");
+                    if !matches!(state.terminal, Terminal::Pending) {
+                        return Err(TransitionError::AlreadyTerminal);
+                    }
+                    if state.delivery_suppressed || state.abort_requested {
+                        if state.submitted && !drain_complete(self.policy.family, state.phase) {
+                            return Err(TransitionError::DrainIncomplete {
+                                family: self.policy.family,
+                                phase: state.phase,
+                            });
+                        }
+                        state.terminal = Terminal::Cancelled(cancelled(
+                            self.receipt,
+                            state.phase,
+                            state.submitted,
+                        ));
+                    } else {
+                        if matches!(terminal, Terminal::Ready(_))
+                            && state.phase != final_phase(self.policy.family)
+                        {
+                            return Err(TransitionError::InvalidTransition {
+                                family: self.policy.family,
+                                from: state.phase,
+                                to: final_phase(self.policy.family),
+                            });
+                        }
+                        state.terminal = terminal;
+                    }
+                    self.terminal_signal.store(true, Ordering::Release);
+                    Ok(())
+                })?;
         }
         self.retain_terminal();
         Ok(())
@@ -505,17 +519,35 @@ impl<T, E> Operation<T, E> {
     }
 
     fn retain_terminal(self: &Arc<Self>) {
-        if let Some(cache) = self.cache.upgrade() {
-            cache.retain_terminal(Arc::clone(self));
-        }
+        (self.retainer)(Arc::clone(self));
     }
 }
 
 impl<T, E> Drop for Operation<T, E> {
     fn drop(&mut self) {
-        if let Some(cache) = self.cache.upgrade() {
-            cache.release(self.result_bytes);
+        if self.reservation_active.load(Ordering::Acquire) {
+            self.reservation.release(self.result_bytes);
         }
+    }
+}
+
+impl<T, E> super::receipt::TerminalOperation for Operation<T, E>
+where
+    T: Send + Sync + 'static,
+    E: Send + Sync + 'static,
+{
+    fn generation(&self) -> DeviceGeneration {
+        self.generation
+    }
+
+    fn terminalize_old_generation(self: Arc<Self>) {
+        let error =
+            (self.old_generation_failure)(self.receipt, self.policy.family, self.generation);
+        self.set_terminal(Terminal::Failed(Arc::new(error)));
+    }
+
+    fn activate_reservation(&self) {
+        self.reservation_active.store(true, Ordering::Release);
     }
 }
 
@@ -632,6 +664,10 @@ pub(super) const fn abort_prohibits_phase(family: ReceiptFamily, phase: Operatio
             ReceiptFamily::Correction,
             OperationPhase::ExportingCorrectionBranch
         ) | (ReceiptFamily::Correction, OperationPhase::Publishing)
+            | (
+                ReceiptFamily::Restore,
+                OperationPhase::ExportingReplayHeader
+            )
             | (ReceiptFamily::Restore, OperationPhase::Publishing)
             | (ReceiptFamily::Replay, OperationPhase::ExportingReplayHeader)
             | (ReceiptFamily::Replay, OperationPhase::ExportingReplayPrefix)

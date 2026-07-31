@@ -11,7 +11,9 @@ use super::{
 };
 use super::{
     operation::{ReceiptPolicy, TransitionError},
-    receipt::{GenerationTransitionError, Receipt, ResultBackpressure, TerminalCache},
+    receipt::{
+        GenerationTransitionError, Receipt, ResultBackpressure, TerminalCache, TerminalReservation,
+    },
 };
 use crate::facade::{BoundedVec, BudgetGroup, ResourceBudgetField};
 
@@ -195,9 +197,33 @@ const LIFECYCLES: &[(ReceiptFamily, &[OperationPhase])] = &[
     ),
 ];
 
+fn cache<T, E>(records: u32, bytes: u64) -> Arc<TerminalCache<T, E>>
+where
+    T: Send + Sync + 'static,
+    E: Send + Sync + 'static,
+{
+    cache_with(records, bytes, |_, _, _| {
+        panic!("unexpected device-generation rollover")
+    })
+}
+
+fn cache_with<T, E>(
+    records: u32,
+    bytes: u64,
+    failure: impl Fn(ReceiptId, ReceiptFamily, DeviceGeneration) -> E + Send + Sync + 'static,
+) -> Arc<TerminalCache<T, E>>
+where
+    T: Send + Sync + 'static,
+    E: Send + Sync + 'static,
+{
+    TerminalCache::new(
+        TerminalReservation::try_new(records, bytes).unwrap(),
+        failure,
+    )
+}
+
 fn receipt(family: ReceiptFamily) -> Receipt<u32, &'static str> {
-    TerminalCache::try_new(1, 8)
-        .unwrap()
+    cache(1, 8)
         .admit(
             ReceiptId::from_raw(1),
             DeviceGeneration::from_raw(1),
@@ -357,21 +383,38 @@ fn abort_requests_allow_drain_but_block_every_later_visible_effect() {
         })
     );
 
-    let restore = receipt(ReceiptFamily::Restore);
-    advance_to(&restore, LIFECYCLES[7].1, 2);
-    assert_eq!(restore.cancel(), CancelResult::AbortRequested);
-    restore
-        .operation()
-        .advance(OperationPhase::RestoringParticipants)
-        .unwrap();
-    restore
-        .operation()
-        .advance(OperationPhase::ExportingReplayHeader)
-        .unwrap();
-    assert!(matches!(
-        restore.operation().advance(OperationPhase::Publishing),
-        Err(TransitionError::AbortBoundary { .. })
-    ));
+    for phase in [
+        OperationPhase::Rebuilding,
+        OperationPhase::RestoringParticipants,
+    ] {
+        let restore = receipt(ReceiptFamily::Restore);
+        let lifecycle = LIFECYCLES[7].1;
+        advance_to(
+            &restore,
+            lifecycle,
+            lifecycle
+                .iter()
+                .position(|candidate| *candidate == phase)
+                .unwrap(),
+        );
+        assert_eq!(restore.cancel(), CancelResult::AbortRequested);
+        if phase == OperationPhase::Rebuilding {
+            restore
+                .operation()
+                .advance(OperationPhase::RestoringParticipants)
+                .unwrap();
+        }
+        assert_eq!(
+            restore
+                .operation()
+                .advance(OperationPhase::ExportingReplayHeader),
+            Err(TransitionError::AbortBoundary {
+                family: ReceiptFamily::Restore,
+                phase: OperationPhase::ExportingReplayHeader,
+            }),
+            "restore aborted at {phase:?}",
+        );
+    }
 
     let replay = receipt(ReceiptFamily::Replay);
     advance_to(&replay, LIFECYCLES[8].1, 2);
@@ -415,6 +458,10 @@ fn abort_boundary_matrix_covers_every_prohibited_effect_phase() {
             OperationPhase::ExportingCorrectionBranch,
         ),
         (ReceiptFamily::Correction, OperationPhase::Publishing),
+        (
+            ReceiptFamily::Restore,
+            OperationPhase::ExportingReplayHeader,
+        ),
         (ReceiptFamily::Restore, OperationPhase::Publishing),
         (ReceiptFamily::Replay, OperationPhase::ExportingReplayHeader),
         (ReceiptFamily::Replay, OperationPhase::ExportingReplayPrefix),
@@ -500,7 +547,7 @@ fn checkpoint_and_correction_cancellation_cutoffs_latch_irreversibly() {
 
 #[test]
 fn cancellation_and_completion_race_to_one_retained_terminal_state() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+    let cache = cache::<u32, &'static str>(1, 8);
     let receipt = cache
         .admit(
             ReceiptId::from_raw(1),
@@ -552,7 +599,7 @@ fn cancellation_and_completion_race_to_one_retained_terminal_state() {
 #[test]
 fn interest_cancellation_and_application_are_atomic() {
     for receipt_number in 1..=64 {
-        let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+        let cache = cache::<u32, &'static str>(1, 8);
         let receipt = cache
             .admit(
                 ReceiptId::from_raw(receipt_number),
@@ -638,7 +685,7 @@ fn submitted_cancellation_only_reports_drain_after_its_milestone() {
 
 #[test]
 fn generation_change_terminalizes_old_receipts_and_rejects_late_publication() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(3, 24).unwrap();
+    let cache = cache_with::<u32, &'static str>(3, 24, |_, _, _| "device lost");
     let stale_ready = cache
         .admit(
             ReceiptId::from_raw(1),
@@ -656,7 +703,7 @@ fn generation_change_terminalizes_old_receipts_and_rejects_late_publication() {
         )
         .unwrap();
     cache
-        .set_current_generation(DeviceGeneration::from_raw(5), |_, _, _| "device lost")
+        .set_current_generation(DeviceGeneration::from_raw(5))
         .unwrap();
     assert!(matches!(
         stale_ready.poll(),
@@ -718,7 +765,13 @@ fn generation_rollover_builds_a_distinct_non_clone_failure_for_each_operation() 
         generation: DeviceGeneration,
     }
 
-    let cache = TerminalCache::<u32, ContextualFailure>::try_new(2, 16).unwrap();
+    let cache = cache_with::<u32, ContextualFailure>(2, 16, |receipt, family, generation| {
+        ContextualFailure {
+            receipt,
+            family,
+            generation,
+        }
+    });
     let query = cache
         .admit(
             ReceiptId::from_raw(11),
@@ -737,14 +790,7 @@ fn generation_rollover_builds_a_distinct_non_clone_failure_for_each_operation() 
         .unwrap();
 
     cache
-        .set_current_generation(
-            DeviceGeneration::from_raw(5),
-            |receipt, family, generation| ContextualFailure {
-                receipt,
-                family,
-                generation,
-            },
-        )
+        .set_current_generation(DeviceGeneration::from_raw(5))
         .unwrap();
 
     assert!(matches!(
@@ -769,9 +815,9 @@ fn generation_rollover_builds_a_distinct_non_clone_failure_for_each_operation() 
 
 #[test]
 fn generation_mismatched_admission_is_rejected_after_rollover() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+    let cache = cache::<u32, &'static str>(1, 8);
     cache
-        .set_current_generation(DeviceGeneration::from_raw(5), |_, _, _| "device lost")
+        .set_current_generation(DeviceGeneration::from_raw(5))
         .unwrap();
     let admission = cache.admit(
         ReceiptId::from_raw(1),
@@ -793,7 +839,7 @@ fn generation_mismatched_admission_is_rejected_after_rollover() {
 
 #[test]
 fn generation_rollbacks_do_not_revive_terminal_work() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+    let cache = cache_with::<u32, &'static str>(1, 8, |_, _, _| "device lost");
     let receipt = cache
         .admit(
             ReceiptId::from_raw(1),
@@ -803,12 +849,12 @@ fn generation_rollbacks_do_not_revive_terminal_work() {
         )
         .unwrap();
     cache
-        .set_current_generation(DeviceGeneration::from_raw(6), |_, _, _| "device lost")
+        .set_current_generation(DeviceGeneration::from_raw(6))
         .unwrap();
     assert!(matches!(receipt.poll(), ReceiptState::Failed(error) if *error == "device lost"));
 
     assert_eq!(
-        cache.set_current_generation(DeviceGeneration::from_raw(5), |_, _, _| "rollback"),
+        cache.set_current_generation(DeviceGeneration::from_raw(5)),
         Err(GenerationTransitionError {
             current: DeviceGeneration::from_raw(6),
             requested: DeviceGeneration::from_raw(5),
@@ -826,10 +872,132 @@ fn generation_rollbacks_do_not_revive_terminal_work() {
     assert!(matches!(receipt.poll(), ReceiptState::Failed(error) if *error == "device lost"));
 }
 
+#[test]
+fn shared_terminal_reservation_saturates_mixed_receipt_families() {
+    let byte_reservation = TerminalReservation::try_new(3, 12).unwrap();
+    let interest = TerminalCache::<u32, &'static str>::new(
+        Arc::clone(&byte_reservation),
+        |_, _, _| "interest generation lost",
+    );
+    let query = TerminalCache::<u64, &'static str>::new(
+        Arc::clone(&byte_reservation),
+        |_, _, _| "query generation lost",
+    );
+    let _interest_receipt = interest
+        .admit(
+            ReceiptId::from_raw(1),
+            DeviceGeneration::from_raw(4),
+            ReceiptPolicy::for_family(ReceiptFamily::Interest),
+            8,
+        )
+        .unwrap();
+    let _query_receipt = query
+        .admit(
+            ReceiptId::from_raw(2),
+            DeviceGeneration::from_raw(4),
+            ReceiptPolicy::for_family(ReceiptFamily::Query),
+            4,
+        )
+        .unwrap();
+    assert!(matches!(
+        interest.admit(
+            ReceiptId::from_raw(3),
+            DeviceGeneration::from_raw(4),
+            ReceiptPolicy::for_family(ReceiptFamily::Interest),
+            1,
+        ),
+        Err(ResultBackpressure::Full)
+    ));
+
+    let count_reservation = TerminalReservation::try_new(2, 32).unwrap();
+    let restore = TerminalCache::<u32, &'static str>::new(
+        Arc::clone(&count_reservation),
+        |_, _, _| "restore generation lost",
+    );
+    let replay = TerminalCache::<u64, &'static str>::new(
+        count_reservation,
+        |_, _, _| "replay generation lost",
+    );
+    let _restore_receipt = restore
+        .admit(
+            ReceiptId::from_raw(4),
+            DeviceGeneration::from_raw(4),
+            ReceiptPolicy::for_family(ReceiptFamily::Restore),
+            0,
+        )
+        .unwrap();
+    let _replay_receipt = replay
+        .admit(
+            ReceiptId::from_raw(5),
+            DeviceGeneration::from_raw(4),
+            ReceiptPolicy::for_family(ReceiptFamily::Replay),
+            0,
+        )
+        .unwrap();
+    assert!(matches!(
+        restore.admit(
+            ReceiptId::from_raw(6),
+            DeviceGeneration::from_raw(4),
+            ReceiptPolicy::for_family(ReceiptFamily::Restore),
+            0,
+        ),
+        Err(ResultBackpressure::Full)
+    ));
+}
+
+#[test]
+fn shared_generation_rollover_terminalizes_every_receipt_family() {
+    let reservation = TerminalReservation::try_new(2, 16).unwrap();
+    let interest = TerminalCache::<u32, &'static str>::new(
+        Arc::clone(&reservation),
+        |_, _, _| "interest generation lost",
+    );
+    let query =
+        TerminalCache::<u64, &'static str>::new(reservation, |_, _, _| "query generation lost");
+    let interest_receipt = interest
+        .admit(
+            ReceiptId::from_raw(1),
+            DeviceGeneration::from_raw(4),
+            ReceiptPolicy::for_family(ReceiptFamily::Interest),
+            8,
+        )
+        .unwrap();
+    let query_receipt = query
+        .admit(
+            ReceiptId::from_raw(2),
+            DeviceGeneration::from_raw(4),
+            ReceiptPolicy::for_family(ReceiptFamily::Query),
+            8,
+        )
+        .unwrap();
+
+    interest
+        .set_current_generation(DeviceGeneration::from_raw(5))
+        .unwrap();
+
+    assert!(matches!(
+        interest_receipt.poll(),
+        ReceiptState::Failed(error) if *error == "interest generation lost"
+    ));
+    assert!(matches!(
+        query_receipt.poll(),
+        ReceiptState::Failed(error) if *error == "query generation lost"
+    ));
+    assert_eq!(
+        query_receipt
+            .operation()
+            .complete_ready_for_generation(DeviceGeneration::from_raw(4), 7),
+        Err(TransitionError::StaleGeneration {
+            expected: DeviceGeneration::from_raw(5),
+            actual: DeviceGeneration::from_raw(4),
+        })
+    );
+}
+
 #[cfg(feature = "bevy")]
 #[test]
 fn terminal_transition_notifies_a_bevy_message_reader_once() {
-    let cache = TerminalCache::<InterestApplied, InterestError>::try_new(1, 8).unwrap();
+    let cache = cache::<InterestApplied, InterestError>(1, 8);
     let receipt = cache
         .admit_interest(ReceiptId::from_raw(1), DeviceGeneration::from_raw(1), 8)
         .unwrap();
@@ -886,8 +1054,8 @@ fn cloned_after_terminal_receipts_retain_the_shared_terminal_result() {
 
 #[test]
 fn dropped_pending_and_submitted_receipts_remain_owned_by_the_runtime_driver() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
-    let pending = cache
+    let pending_cache = cache::<u32, &'static str>(1, 8);
+    let pending = pending_cache
         .admit(
             ReceiptId::from_raw(1),
             DeviceGeneration::from_raw(1),
@@ -898,7 +1066,7 @@ fn dropped_pending_and_submitted_receipts_remain_owned_by_the_runtime_driver() {
     let pending_driver = pending.operation();
     drop(pending);
     assert!(
-        cache
+        pending_cache
             .admit(
                 ReceiptId::from_raw(2),
                 DeviceGeneration::from_raw(1),
@@ -909,7 +1077,7 @@ fn dropped_pending_and_submitted_receipts_remain_owned_by_the_runtime_driver() {
     );
     drop(pending_driver);
     assert!(
-        cache
+        pending_cache
             .admit(
                 ReceiptId::from_raw(2),
                 DeviceGeneration::from_raw(1),
@@ -919,8 +1087,8 @@ fn dropped_pending_and_submitted_receipts_remain_owned_by_the_runtime_driver() {
             .is_ok()
     );
 
-    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
-    let submitted = cache
+    let submitted_cache = cache::<u32, &'static str>(1, 8);
+    let submitted = submitted_cache
         .admit(
             ReceiptId::from_raw(1),
             DeviceGeneration::from_raw(1),
@@ -953,7 +1121,7 @@ fn dropped_pending_and_submitted_receipts_remain_owned_by_the_runtime_driver() {
     assert!(matches!(driver.poll(), ReceiptState::Pending(_)));
     driver.complete_ready(1).unwrap();
     assert!(
-        cache
+        submitted_cache
             .admit(
                 ReceiptId::from_raw(2),
                 DeviceGeneration::from_raw(1),
@@ -964,7 +1132,7 @@ fn dropped_pending_and_submitted_receipts_remain_owned_by_the_runtime_driver() {
     );
     drop(driver);
     assert!(
-        cache
+        submitted_cache
             .admit(
                 ReceiptId::from_raw(2),
                 DeviceGeneration::from_raw(1),
@@ -977,7 +1145,7 @@ fn dropped_pending_and_submitted_receipts_remain_owned_by_the_runtime_driver() {
 
 #[test]
 fn result_capacity_rejects_every_count_and_byte_saturation_boundary() {
-    let zero = TerminalCache::<u32, &'static str>::try_new(0, 0).unwrap();
+    let zero = cache::<u32, &'static str>(0, 0);
     assert!(
         zero.admit(
             ReceiptId::from_raw(1),
@@ -988,7 +1156,7 @@ fn result_capacity_rejects_every_count_and_byte_saturation_boundary() {
         .is_err()
     );
 
-    let count = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+    let count = cache::<u32, &'static str>(1, 8);
     let first = count
         .admit(
             ReceiptId::from_raw(1),
@@ -1009,7 +1177,7 @@ fn result_capacity_rejects_every_count_and_byte_saturation_boundary() {
     );
     drop(first);
 
-    let bytes = TerminalCache::<u32, &'static str>::try_new(2, 8).unwrap();
+    let bytes = cache::<u32, &'static str>(2, 8);
     let exact = bytes
         .admit(
             ReceiptId::from_raw(1),
@@ -1030,7 +1198,7 @@ fn result_capacity_rejects_every_count_and_byte_saturation_boundary() {
     );
     drop(exact);
 
-    let maximum = TerminalCache::<u32, &'static str>::try_new(2, u64::MAX).unwrap();
+    let maximum = cache::<u32, &'static str>(2, u64::MAX);
     let exact = maximum
         .admit(
             ReceiptId::from_raw(1),

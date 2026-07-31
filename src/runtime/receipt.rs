@@ -121,27 +121,33 @@ pub(crate) struct GenerationTransitionError {
     pub(crate) requested: DeviceGeneration,
 }
 
-struct CacheState<T, E> {
-    entries: VecDeque<Arc<Operation<T, E>>>,
-    operations: VecDeque<std::sync::Weak<Operation<T, E>>>,
+pub(super) trait TerminalOperation: Send + Sync {
+    fn generation(&self) -> DeviceGeneration;
+    fn terminalize_old_generation(self: Arc<Self>);
+    fn activate_reservation(&self);
+}
+
+struct ReservationState {
+    entries: VecDeque<Arc<dyn TerminalOperation>>,
+    operations: VecDeque<std::sync::Weak<dyn TerminalOperation>>,
     used_records: u32,
     used_bytes: u64,
 }
 
-/// A count- and byte-bounded cache of terminal operation records.
+/// Per-world count, byte, and device-generation authority for all receipt families.
 ///
 /// Each admission reserves one record and its declared worst-case terminal
 /// bytes. A terminal cache entry is evicted only when no receipt clone retains
 /// it, so consumers holding old receipts exert explicit backpressure.
-pub(crate) struct TerminalCache<T, E> {
+pub(crate) struct TerminalReservation {
     record_capacity: u32,
     byte_capacity: u64,
     current_generation: Arc<Mutex<Option<DeviceGeneration>>>,
-    state: Mutex<CacheState<T, E>>,
+    state: Mutex<ReservationState>,
 }
 
-impl<T, E> TerminalCache<T, E> {
-    /// Creates a finite cache. Its index capacity is reserved before use.
+impl TerminalReservation {
+    /// Creates a finite shared reservation. Its index capacity is reserved before use.
     pub(crate) fn try_new(
         record_capacity: u32,
         byte_capacity: u64,
@@ -160,7 +166,7 @@ impl<T, E> TerminalCache<T, E> {
             record_capacity,
             byte_capacity,
             current_generation: Arc::new(Mutex::new(None)),
-            state: Mutex::new(CacheState {
+            state: Mutex::new(ReservationState {
                 entries,
                 operations,
                 used_records: 0,
@@ -169,14 +175,12 @@ impl<T, E> TerminalCache<T, E> {
         }))
     }
 
-    /// Admits an operation after reserving one terminal record and all result bytes.
-    pub(crate) fn admit(
-        self: &Arc<Self>,
-        receipt: ReceiptId,
+    fn reserve_and_register(
+        &self,
         generation: DeviceGeneration,
-        policy: ReceiptPolicy,
         result_bytes: u64,
-    ) -> Result<Receipt<T, E>, ResultBackpressure> {
+        operation: Arc<dyn TerminalOperation>,
+    ) -> Result<(), ResultBackpressure> {
         // Keep the generation guard until the operation is registered. A
         // rollover therefore sees every accepted old-generation operation.
         let mut current_generation = self
@@ -219,37 +223,26 @@ impl<T, E> TerminalCache<T, E> {
                 drop(victim);
                 continue;
             }
-            let operation = Arc::new(Operation::new(
-                receipt,
-                generation,
-                policy,
-                Arc::clone(&self.current_generation),
-                Arc::downgrade(self),
-                result_bytes,
-            ));
             let mut state = self.state.lock().expect("terminal cache mutex poisoned");
             state
                 .operations
                 .retain(|operation| operation.strong_count() != 0);
             state.operations.push_back(Arc::downgrade(&operation));
+            operation.activate_reservation();
             drop(current_generation);
-            return Ok(Receipt { operation });
+            return Ok(());
         }
     }
 
     /// Changes the publishing generation and fails every pending earlier receipt.
     ///
-    /// `old_generation_failure` must be the caller's typed device-loss or
-    /// no-advance failure. Already terminal receipts remain unchanged, and late
-    /// completion attempts from an old generation are still rejected.
-    pub(crate) fn set_current_generation<F>(
+    /// Each typed receipt adapter provides its own device-loss failure. Already
+    /// terminal receipts remain unchanged, and late completion attempts from an
+    /// old generation are still rejected.
+    pub(crate) fn set_current_generation(
         &self,
         generation: DeviceGeneration,
-        mut old_generation_failure: F,
-    ) -> Result<(), GenerationTransitionError>
-    where
-        F: FnMut(ReceiptId, super::operation::ReceiptFamily, DeviceGeneration) -> E,
-    {
+    ) -> Result<(), GenerationTransitionError> {
         let mut current_generation = self
             .current_generation
             .lock()
@@ -283,16 +276,12 @@ impl<T, E> TerminalCache<T, E> {
         };
         drop(current_generation);
         for operation in operations {
-            operation.terminalize_old_generation(old_generation_failure(
-                operation.receipt_id(),
-                operation.family(),
-                operation.generation(),
-            ));
+            operation.terminalize_old_generation();
         }
         Ok(())
     }
 
-    pub(super) fn retain_terminal(&self, operation: Arc<Operation<T, E>>) {
+    pub(super) fn retain_terminal(&self, operation: Arc<dyn TerminalOperation>) {
         let mut state = self.state.lock().expect("terminal cache mutex poisoned");
         state.entries.push_back(operation);
     }
@@ -302,16 +291,96 @@ impl<T, E> TerminalCache<T, E> {
         state.used_records -= 1;
         state.used_bytes -= result_bytes;
     }
+
+    pub(super) fn with_current_generation<R>(
+        &self,
+        action: impl FnOnce(DeviceGeneration) -> R,
+    ) -> R {
+        let generation = self
+            .current_generation
+            .lock()
+            .expect("device generation mutex poisoned")
+            .expect("admitted operation has a device generation");
+        action(generation)
+    }
 }
 
-fn has_capacity<T, E>(
-    state: &CacheState<T, E>,
+fn has_capacity(
+    state: &ReservationState,
     record_capacity: u32,
     byte_capacity: u64,
     result_bytes: u64,
 ) -> bool {
     state.used_records < record_capacity
         && result_bytes <= byte_capacity.saturating_sub(state.used_bytes)
+}
+
+/// A typed receipt adapter backed by a shared per-world terminal reservation.
+pub(crate) struct TerminalCache<T, E> {
+    reservation: Arc<TerminalReservation>,
+    old_generation_failure: Arc<
+        dyn Fn(ReceiptId, super::operation::ReceiptFamily, DeviceGeneration) -> E + Send + Sync,
+    >,
+    marker: std::marker::PhantomData<T>,
+}
+
+impl<T, E> TerminalCache<T, E>
+where
+    T: Send + Sync + 'static,
+    E: Send + Sync + 'static,
+{
+    pub(crate) fn new(
+        reservation: Arc<TerminalReservation>,
+        old_generation_failure: impl Fn(
+            ReceiptId,
+            super::operation::ReceiptFamily,
+            DeviceGeneration,
+        ) -> E
+        + Send
+        + Sync
+        + 'static,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            reservation,
+            old_generation_failure: Arc::new(old_generation_failure),
+            marker: std::marker::PhantomData,
+        })
+    }
+
+    /// Admits an operation after reserving one shared terminal record and all result bytes.
+    pub(crate) fn admit(
+        self: &Arc<Self>,
+        receipt: ReceiptId,
+        generation: DeviceGeneration,
+        policy: ReceiptPolicy,
+        result_bytes: u64,
+    ) -> Result<Receipt<T, E>, ResultBackpressure> {
+        let reservation_for_retain = Arc::clone(&self.reservation);
+        let retainer = Arc::new(move |operation: Arc<Operation<T, E>>| {
+            let tracked: Arc<dyn TerminalOperation> = operation;
+            reservation_for_retain.retain_terminal(tracked);
+        });
+        let operation = Arc::new(Operation::new(
+            receipt,
+            generation,
+            policy,
+            Arc::clone(&self.reservation),
+            Arc::clone(&self.old_generation_failure),
+            retainer,
+            result_bytes,
+        ));
+        let tracked: Arc<dyn TerminalOperation> = operation.clone();
+        self.reservation
+            .reserve_and_register(generation, result_bytes, tracked)?;
+        Ok(Receipt { operation })
+    }
+
+    pub(crate) fn set_current_generation(
+        &self,
+        generation: DeviceGeneration,
+    ) -> Result<(), GenerationTransitionError> {
+        self.reservation.set_current_generation(generation)
+    }
 }
 
 /// A cloneable, pollable receipt sharing one operation record.
