@@ -357,36 +357,40 @@ fn validate_page_limits(
         return Err(cross(BudgetGroup::Content, 9, "storage offset alignment"));
     }
 
+    let dense_brick_bytes = checked_product(
+        u128::from(budgets.content.resident_dense_bricks),
+        u128::from(DENSE_BRICK_BYTES),
+        BudgetGroup::Content,
+        9,
+    )?;
+    let uniform_brick_bytes = checked_product(
+        u128::from(budgets.content.resident_uniform_bricks),
+        u128::from(UNIFORM_BRICK_BYTES),
+        BudgetGroup::Content,
+        9,
+    )?;
+    let radix_node_bytes = checked_product(
+        u128::from(budgets.content.resident_radix_nodes),
+        u128::from(RADIX_NODE_BYTES),
+        BudgetGroup::Content,
+        9,
+    )?;
+    let directory_bucket_bytes = checked_product(
+        u128::from(budgets.content.resident_directory_buckets),
+        u128::from(DIRECTORY_BUCKET_BYTES),
+        BudgetGroup::Content,
+        9,
+    )?;
     let content_bytes = checked_sum(
         checked_sum(
-            checked_product(
-                u128::from(budgets.content.resident_dense_bricks),
-                u128::from(DENSE_BRICK_BYTES),
-                BudgetGroup::Content,
-                9,
-            )?,
-            checked_product(
-                u128::from(budgets.content.resident_uniform_bricks),
-                u128::from(UNIFORM_BRICK_BYTES),
-                BudgetGroup::Content,
-                9,
-            )?,
+            dense_brick_bytes,
+            uniform_brick_bytes,
             BudgetGroup::Content,
             9,
         )?,
         checked_sum(
-            checked_product(
-                u128::from(budgets.content.resident_radix_nodes),
-                u128::from(RADIX_NODE_BYTES),
-                BudgetGroup::Content,
-                9,
-            )?,
-            checked_product(
-                u128::from(budgets.content.resident_directory_buckets),
-                u128::from(DIRECTORY_BUCKET_BYTES),
-                BudgetGroup::Content,
-                9,
-            )?,
+            radix_node_bytes,
+            directory_bucket_bytes,
             BudgetGroup::Content,
             9,
         )?,
@@ -399,9 +403,30 @@ fn validate_page_limits(
 
     let pages = [
         (
-            content_bytes,
+            dense_brick_bytes,
             DENSE_BRICK_BYTES,
             32 << 20,
+            BudgetGroup::Content,
+            9,
+        ),
+        (
+            uniform_brick_bytes,
+            UNIFORM_BRICK_BYTES,
+            8 << 20,
+            BudgetGroup::Content,
+            9,
+        ),
+        (
+            radix_node_bytes,
+            RADIX_NODE_BYTES,
+            32 << 20,
+            BudgetGroup::Content,
+            9,
+        ),
+        (
+            directory_bucket_bytes,
+            DIRECTORY_BUCKET_BYTES,
+            16 << 20,
             BudgetGroup::Content,
             9,
         ),
@@ -499,14 +524,14 @@ fn validate_paged_bytes(
     group: BudgetGroup,
     field: u16,
 ) -> Result<(), ConfigError> {
-    let limit = baseline_page_bytes
-        .min(limits.max_buffer_size)
-        .min(limits.max_storage_buffer_binding_size);
-    let page_bytes = limit / alignment * alignment;
-    if page_bytes < record_bytes {
+    let page_ceiling = bytes
+        .min(u128::from(baseline_page_bytes))
+        .min(u128::from(limits.max_buffer_size))
+        .min(u128::from(limits.max_storage_buffer_binding_size));
+    let page_bytes = page_ceiling / u128::from(alignment) * u128::from(alignment);
+    if page_bytes < u128::from(record_bytes) {
         return Err(cross(group, field, "page capacity"));
     }
-    let page_bytes = u128::from(page_bytes);
     let page_count =
         u64::try_from(bytes / page_bytes + u128::from(!bytes.is_multiple_of(page_bytes)))
             .map_err(|_| overflow(group, field))?;
@@ -743,8 +768,9 @@ fn overflow(group: BudgetGroup, field_code: u16) -> ConfigError {
 #[cfg(test)]
 mod tests {
     use super::{
-        BudgetGroup, checked_product, checked_sum, cross, invalid, validate_field_ranges,
-        validate_resource_budgets as validate_resource_budgets_with_limits,
+        BudgetGroup, DENSE_BRICK_BYTES, DIRECTORY_BUCKET_BYTES, RADIX_NODE_BYTES,
+        UNIFORM_BRICK_BYTES, checked_product, checked_sum, cross, invalid, validate_field_ranges,
+        validate_paged_bytes, validate_resource_budgets as validate_resource_budgets_with_limits,
     };
     use crate::{
         config::{DevicePageLimits, ResourceBudgets, RollbackConfig},
@@ -1100,6 +1126,50 @@ mod tests {
         assert_eq!(
             validate_resource_budgets_with_limits(&budgets, &rollback, &unaligned),
             Err(cross(BudgetGroup::Content, 9, "storage offset alignment")),
+        );
+    }
+
+    #[test]
+    fn configured_page_ceiling_must_fit_one_record() {
+        let limits = DevicePageLimits::portable_baseline();
+        let cases = [
+            (1, 4, 32 << 20, BudgetGroup::Canonical, 8),
+            (2_047, DENSE_BRICK_BYTES, 32 << 20, BudgetGroup::Content, 9),
+            (15, UNIFORM_BRICK_BYTES, 8 << 20, BudgetGroup::Content, 9),
+            (1_023, RADIX_NODE_BYTES, 32 << 20, BudgetGroup::Content, 9),
+            (
+                31,
+                DIRECTORY_BUCKET_BYTES,
+                16 << 20,
+                BudgetGroup::Content,
+                9,
+            ),
+        ];
+
+        for (configured_bytes, record_bytes, baseline_page_bytes, group, field) in cases {
+            assert_eq!(
+                validate_paged_bytes(
+                    configured_bytes,
+                    record_bytes,
+                    baseline_page_bytes,
+                    u64::from(limits.min_storage_buffer_offset_alignment),
+                    &limits,
+                    group,
+                    field,
+                ),
+                Err(cross(group, field, "page capacity")),
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_sub_record_scratch_budget_is_rejected_before_paging() {
+        let mut budgets = ResourceBudgets::default();
+        budgets.canonical.scratch_bytes = 1;
+
+        assert_eq!(
+            validate_resource_budgets(&budgets, &rollback()),
+            Err(cross(BudgetGroup::Canonical, 8, "page capacity")),
         );
     }
 
