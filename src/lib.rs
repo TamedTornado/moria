@@ -8,3 +8,5 @@ pub mod canonical;
 pub mod config;
 pub mod facade;
 pub mod prelude;
+#[allow(dead_code, unused_imports)]
+mod runtime;
