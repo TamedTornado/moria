@@ -143,11 +143,123 @@ pub enum BudgetGroup {
     Runtime,
 }
 
+impl BudgetGroup {
+    const fn field_count(self) -> u16 {
+        match self {
+            Self::Identity => 19,
+            Self::Canonical => 8,
+            Self::Content => 9,
+            Self::Query => 7,
+            Self::Observation => 10,
+            Self::Presentation => 8,
+            Self::Checkpoint => 10,
+            Self::Rollback => 19,
+            Self::Participant => 11,
+            Self::Runtime => 4,
+        }
+    }
+
+    /// Decodes a stable resource-budget group tag.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use moria::facade::BudgetGroup;
+    ///
+    /// assert_eq!(BudgetGroup::try_from_wire_tag(0)?, BudgetGroup::Identity);
+    /// # Ok::<(), moria::facade::ResourceBudgetFieldError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceBudgetFieldError::UnknownGroupTag`] when `tag` is not
+    /// a declared v1 resource-budget group.
+    pub const fn try_from_wire_tag(tag: u8) -> Result<Self, ResourceBudgetFieldError> {
+        match tag {
+            0 => Ok(Self::Identity),
+            1 => Ok(Self::Canonical),
+            2 => Ok(Self::Content),
+            3 => Ok(Self::Query),
+            4 => Ok(Self::Observation),
+            5 => Ok(Self::Presentation),
+            6 => Ok(Self::Checkpoint),
+            7 => Ok(Self::Rollback),
+            8 => Ok(Self::Participant),
+            9 => Ok(Self::Runtime),
+            _ => Err(ResourceBudgetFieldError::UnknownGroupTag(tag)),
+        }
+    }
+}
+
+/// The validation failure for a resource-budget field wire locator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResourceBudgetFieldError {
+    /// The resource-budget group tag is not declared in this wire version.
+    UnknownGroupTag(u8),
+    /// The field ordinal is not declared within its resource-budget group.
+    UnknownFieldOrdinal { group: BudgetGroup, field_code: u16 },
+}
+
 /// A stable budget-field locator.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ResourceBudgetField {
     pub group: BudgetGroup,
     pub field_code: u16,
+}
+
+impl ResourceBudgetField {
+    /// Validates a stable resource-budget field locator.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use moria::facade::{BudgetGroup, ResourceBudgetField};
+    ///
+    /// let field = ResourceBudgetField::try_new(BudgetGroup::Identity, 1)?;
+    /// assert_eq!(field.field_code, 1);
+    /// # Ok::<(), moria::facade::ResourceBudgetFieldError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceBudgetFieldError::UnknownFieldOrdinal`] when
+    /// `field_code` is not declared for `group` in this wire version.
+    pub const fn try_new(
+        group: BudgetGroup,
+        field_code: u16,
+    ) -> Result<Self, ResourceBudgetFieldError> {
+        if field_code == 0 || field_code > group.field_count() {
+            return Err(ResourceBudgetFieldError::UnknownFieldOrdinal { group, field_code });
+        }
+        Ok(Self { group, field_code })
+    }
+
+    /// Decodes a stable resource-budget field locator from its wire parts.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use moria::facade::{BudgetGroup, ResourceBudgetField};
+    ///
+    /// let field = ResourceBudgetField::try_from_wire_parts(0, 1)?;
+    /// assert_eq!(field.group, BudgetGroup::Identity);
+    /// # Ok::<(), moria::facade::ResourceBudgetFieldError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceBudgetFieldError::UnknownGroupTag`] for an undeclared
+    /// `group_tag`, or [`ResourceBudgetFieldError::UnknownFieldOrdinal`] for
+    /// an undeclared ordinal in a known group.
+    pub const fn try_from_wire_parts(
+        group_tag: u8,
+        field_code: u16,
+    ) -> Result<Self, ResourceBudgetFieldError> {
+        match BudgetGroup::try_from_wire_tag(group_tag) {
+            Ok(group) => Self::try_new(group, field_code),
+            Err(error) => Err(error),
+        }
+    }
 }
 
 /// Whether retry requires a new request, a dependency, recovery, or is impossible.
@@ -234,8 +346,7 @@ impl OperationError {
         committed: CommittedEffect,
         diagnostic: &str,
     ) -> Result<Self, FailureRecordError> {
-        let text = BoundedUtf8::try_from_bytes(diagnostic.as_bytes().to_vec())
-            .map_err(|rejected| FailureRecordError::Diagnostic(rejected.reason))?;
+        let text = BoundedUtf8::try_from_str(diagnostic).map_err(FailureRecordError::Diagnostic)?;
         Ok(Self {
             code,
             scope,
@@ -353,7 +464,11 @@ impl CorrectionError {
             && (error.code != ErrorCode::StoreFailure
                 || error.scope != FailureScope::Provider(ProviderId::ReplaySink(export.sink))
                 || error.retryability != Retryability::Never
-                || export.failure != ErrorCode::StoreFailure)
+                || export.failure != ErrorCode::StoreFailure
+                || !matches!(
+                    export.request.range,
+                    ReplayAppendRange::CorrectionBranch { .. }
+                ))
         {
             return Err(FailureRecordError::CorrectionExportFailure);
         }
@@ -388,7 +503,7 @@ pub enum TickNoAdvanceCause {
 impl TickNoAdvanceCause {
     fn matches(self, code: ErrorCode) -> bool {
         match self {
-            Self::Canonical(_) => true,
+            Self::Canonical(cause) => cause.error_code() == code,
             Self::Participant { code: cause, .. }
             | Self::Provider { code: cause, .. }
             | Self::Device { code: cause, .. }
@@ -421,6 +536,33 @@ pub enum CanonicalFailure {
     InjectedCandidateFailure,
     ZeroAxis,
     UnrepresentableAxis,
+}
+
+impl CanonicalFailure {
+    const fn error_code(self) -> ErrorCode {
+        match self {
+            Self::MissingIdentity => ErrorCode::MissingId,
+            Self::WrongVolumeKind => ErrorCode::ContractMismatch,
+            Self::StaleRevision => ErrorCode::StaleRevision,
+            Self::StaleSourceHash => ErrorCode::StaleHash,
+            Self::InvalidBounds => ErrorCode::InvalidBounds,
+            Self::InvalidCell => ErrorCode::InvalidCell,
+            Self::InvalidOrientation => ErrorCode::InvalidOrientation,
+            Self::InvalidFixedFormat => ErrorCode::InvalidEncoding,
+            Self::ArithmeticOverflow
+            | Self::DivisionByZero
+            | Self::InvalidShift
+            | Self::NegativeSquareRoot
+            | Self::Nonrepresentable
+            | Self::ZeroAxis
+            | Self::UnrepresentableAxis => ErrorCode::ArithmeticOverflow,
+            Self::LogicalCapacity => ErrorCode::CanonicalBudget,
+            Self::DependencyUnavailable => ErrorCode::DependencyNotReady,
+            Self::ParticipantEffectInvalid => ErrorCode::InvalidEncoding,
+            Self::ParticipantFailed => ErrorCode::ParticipantFailure,
+            Self::InjectedCandidateFailure => ErrorCode::InternalInvariant,
+        }
+    }
 }
 
 /// A failed sealed tick that preserved the source frontier.

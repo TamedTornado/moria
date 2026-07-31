@@ -1,9 +1,11 @@
-use moria::canonical::{CanonicalHash, DeviceGeneration, ParticipantId, Tick, WorldId};
+use moria::canonical::{BlobDigest, CanonicalHash, DeviceGeneration, ParticipantId, Tick, WorldId};
 use moria::facade::{
-    AdmissionCode, AdmissionContext, AdmissionError, AuthorityStatus, CanonicalFailure,
-    CommittedEffect, CorrectionError, ErrorCode, FailedNoAdvance, FailureRecordError, FailureScope,
-    FrontierPosition, FrontierSummary, OperationError, ProviderId, QueryUnavailable, Retryability,
-    TelemetryError, TickNoAdvanceCause,
+    AdmissionCode, AdmissionContext, AdmissionError, AuthorityStatus, AvailabilityCode, BatchError,
+    BudgetGroup, CanonicalFailure, CommittedEffect, ConfigErrorCode, ConfigField, CorrectionError,
+    ErrorCode, FailedNoAdvance, FailureRecordError, FailureScope, FrontierPosition,
+    FrontierSummary, OperationError, ProviderId, QueryUnavailable, ReplayAppendRange,
+    ReplayExportFailure, ReplaySinkId, ReplaySinkRequest, ReplayStreamKey, ResourceBudgetField,
+    ResourceBudgetFieldError, Retryability, TelemetryError, TickNoAdvanceCause,
 };
 
 fn world() -> WorldId {
@@ -113,6 +115,117 @@ fn failed_no_advance_requires_one_uncommitted_matching_tick_failure() {
         ),
         Err(FailureRecordError::NoAdvanceCauseCode),
     );
+
+    let scope = FailureScope::Tick {
+        world: world(),
+        tick: Tick::from_raw(5),
+    };
+    for (failure, code) in [
+        (CanonicalFailure::MissingIdentity, ErrorCode::MissingId),
+        (
+            CanonicalFailure::WrongVolumeKind,
+            ErrorCode::ContractMismatch,
+        ),
+        (CanonicalFailure::StaleRevision, ErrorCode::StaleRevision),
+        (CanonicalFailure::StaleSourceHash, ErrorCode::StaleHash),
+        (CanonicalFailure::InvalidBounds, ErrorCode::InvalidBounds),
+        (CanonicalFailure::InvalidCell, ErrorCode::InvalidCell),
+        (
+            CanonicalFailure::InvalidOrientation,
+            ErrorCode::InvalidOrientation,
+        ),
+        (
+            CanonicalFailure::InvalidFixedFormat,
+            ErrorCode::InvalidEncoding,
+        ),
+        (
+            CanonicalFailure::ArithmeticOverflow,
+            ErrorCode::ArithmeticOverflow,
+        ),
+        (
+            CanonicalFailure::DivisionByZero,
+            ErrorCode::ArithmeticOverflow,
+        ),
+        (
+            CanonicalFailure::InvalidShift,
+            ErrorCode::ArithmeticOverflow,
+        ),
+        (
+            CanonicalFailure::NegativeSquareRoot,
+            ErrorCode::ArithmeticOverflow,
+        ),
+        (
+            CanonicalFailure::Nonrepresentable,
+            ErrorCode::ArithmeticOverflow,
+        ),
+        (
+            CanonicalFailure::LogicalCapacity,
+            ErrorCode::CanonicalBudget,
+        ),
+        (
+            CanonicalFailure::DependencyUnavailable,
+            ErrorCode::DependencyNotReady,
+        ),
+        (
+            CanonicalFailure::ParticipantEffectInvalid,
+            ErrorCode::InvalidEncoding,
+        ),
+        (
+            CanonicalFailure::ParticipantFailed,
+            ErrorCode::ParticipantFailure,
+        ),
+        (
+            CanonicalFailure::InjectedCandidateFailure,
+            ErrorCode::InternalInvariant,
+        ),
+        (CanonicalFailure::ZeroAxis, ErrorCode::ArithmeticOverflow),
+        (
+            CanonicalFailure::UnrepresentableAxis,
+            ErrorCode::ArithmeticOverflow,
+        ),
+    ] {
+        assert!(
+            FailedNoAdvance::try_new(
+                world(),
+                Tick::from_raw(5),
+                source,
+                TickNoAdvanceCause::Canonical(failure),
+                operation(scope, code, CommittedEffect::None),
+            )
+            .is_ok()
+        );
+    }
+}
+
+#[test]
+fn canonical_no_advance_cause_requires_its_declared_error_code() {
+    let source = frontier(FrontierPosition::Confirmed(Tick::from_raw(4)));
+    let scope = FailureScope::Tick {
+        world: world(),
+        tick: Tick::from_raw(5),
+    };
+
+    assert!(
+        FailedNoAdvance::try_new(
+            world(),
+            Tick::from_raw(5),
+            source,
+            TickNoAdvanceCause::Canonical(CanonicalFailure::StaleRevision),
+            operation(scope, ErrorCode::StaleRevision, CommittedEffect::None),
+        )
+        .is_ok()
+    );
+
+    assert_eq!(
+        FailedNoAdvance::try_new(
+            world(),
+            Tick::from_raw(5),
+            source,
+            TickNoAdvanceCause::Canonical(CanonicalFailure::StaleRevision),
+            operation(scope, ErrorCode::DeviceLost, CommittedEffect::None),
+        ),
+        Err(FailureRecordError::NoAdvanceCauseCode),
+    );
 }
 
 #[test]
@@ -127,6 +240,111 @@ fn correction_error_rejects_a_committed_frontier() {
     assert_eq!(
         CorrectionError::try_new(original, error, None),
         Err(FailureRecordError::CorrectionCommittedEffect),
+    );
+}
+
+#[test]
+fn correction_error_accepts_only_correction_branch_export_failures() {
+    let original = frontier(FrontierPosition::Confirmed(Tick::from_raw(4)));
+    let sink = ReplaySinkId::try_from_raw(1).unwrap();
+    let stream = ReplayStreamKey::try_from_bytes([3; 32]).unwrap();
+    let error = || {
+        OperationError::new(
+            ErrorCode::StoreFailure,
+            FailureScope::Provider(ProviderId::ReplaySink(sink)),
+            Retryability::Never,
+            CommittedEffect::None,
+            "fixture",
+        )
+        .unwrap()
+    };
+    let export = |range| ReplayExportFailure {
+        sink,
+        request: ReplaySinkRequest {
+            stream,
+            sequence: 4,
+            range,
+            bytes: 32,
+            digest: BlobDigest::from_bytes([4; 32]),
+        },
+        failure: ErrorCode::StoreFailure,
+    };
+
+    assert!(
+        CorrectionError::try_new(
+            original,
+            error(),
+            Some(export(ReplayAppendRange::CorrectionBranch {
+                target_tick: Tick::from_raw(2),
+                superseded_through: Tick::from_raw(4),
+                corrected_through: Tick::from_raw(4),
+                record_count: 3,
+            })),
+        )
+        .is_ok()
+    );
+    assert_eq!(
+        CorrectionError::try_new(
+            original,
+            error(),
+            Some(export(ReplayAppendRange::Header {
+                starting: FrontierPosition::Genesis,
+                next_tick: Tick::from_raw(0),
+            })),
+        ),
+        Err(FailureRecordError::CorrectionExportFailure),
+    );
+}
+
+#[test]
+fn operation_diagnostic_is_rejected_before_copying_an_over_limit_input() {
+    assert_eq!(
+        OperationError::new(
+            ErrorCode::InvalidConfig,
+            FailureScope::Configuration,
+            Retryability::Never,
+            CommittedEffect::None,
+            &"x".repeat(161),
+        ),
+        Err(FailureRecordError::Diagnostic(
+            moria::facade::BoundedOwnerError::LengthExceedsCapacity,
+        )),
+    );
+}
+
+#[test]
+fn resource_budget_field_rejects_unknown_group_tags_and_ordinals() {
+    let declared = [
+        (BudgetGroup::Identity, 19),
+        (BudgetGroup::Canonical, 8),
+        (BudgetGroup::Content, 9),
+        (BudgetGroup::Query, 7),
+        (BudgetGroup::Observation, 10),
+        (BudgetGroup::Presentation, 8),
+        (BudgetGroup::Checkpoint, 10),
+        (BudgetGroup::Rollback, 19),
+        (BudgetGroup::Participant, 11),
+        (BudgetGroup::Runtime, 4),
+    ];
+    for (tag, (group, final_ordinal)) in declared.into_iter().enumerate() {
+        assert_eq!(
+            ResourceBudgetField::try_from_wire_parts(tag as u8, final_ordinal),
+            Ok(ResourceBudgetField {
+                group,
+                field_code: final_ordinal,
+            }),
+        );
+        assert_eq!(
+            ResourceBudgetField::try_new(group, final_ordinal + 1),
+            Err(ResourceBudgetFieldError::UnknownFieldOrdinal {
+                group,
+                field_code: final_ordinal + 1,
+            }),
+        );
+    }
+    assert_eq!(
+        ResourceBudgetField::try_from_wire_parts(10, 1),
+        Err(ResourceBudgetFieldError::UnknownGroupTag(10)),
     );
 }
 
@@ -295,4 +513,154 @@ fn pattern_matches_all_scopes_and_providers(scope: FailureScope, provider: Provi
         ProviderId::Participant(_) => 6,
     };
     scope + provider
+}
+
+#[allow(dead_code)]
+fn pattern_matches_all_retryability(value: Retryability) -> u8 {
+    match value {
+        Retryability::RetryNewRequest => 0,
+        Retryability::RetryAfterDependency => 1,
+        Retryability::RetryAfterRecovery => 2,
+        Retryability::Never => 3,
+    }
+}
+
+#[allow(dead_code)]
+fn pattern_matches_all_committed_effects(value: CommittedEffect) -> u8 {
+    match value {
+        CommittedEffect::None => 0,
+        CommittedEffect::Frontier(_) => 1,
+    }
+}
+
+#[allow(dead_code)]
+fn pattern_matches_all_admission_contexts(value: AdmissionContext) -> u8 {
+    match value {
+        AdmissionContext::None => 0,
+        AdmissionContext::TickEligibility { .. } => 1,
+        AdmissionContext::InvalidBatch { .. } => 2,
+        AdmissionContext::InterestCapacity { .. } => 3,
+        AdmissionContext::QueryCapacity { .. } => 4,
+        AdmissionContext::CorrectionExpectedHashCount { .. } => 5,
+        AdmissionContext::BudgetCapacity { .. } => 6,
+    }
+}
+
+#[allow(dead_code)]
+fn pattern_matches_all_budget_and_config_variants(group: BudgetGroup, field: ConfigField) -> u8 {
+    let group = match group {
+        BudgetGroup::Identity => 0,
+        BudgetGroup::Canonical => 1,
+        BudgetGroup::Content => 2,
+        BudgetGroup::Query => 3,
+        BudgetGroup::Observation => 4,
+        BudgetGroup::Presentation => 5,
+        BudgetGroup::Checkpoint => 6,
+        BudgetGroup::Rollback => 7,
+        BudgetGroup::Participant => 8,
+        BudgetGroup::Runtime => 9,
+    };
+    let field = match field {
+        ConfigField::Canonical => 0,
+        ConfigField::Budgets(_) => 1,
+        ConfigField::Rollback => 2,
+        ConfigField::Persistence => 3,
+        ConfigField::Presentation => 4,
+        ConfigField::Execution => 5,
+        ConfigField::Material => 6,
+        ConfigField::InputSource => 7,
+        ConfigField::BaseSource => 8,
+        ConfigField::BaseAuthority => 9,
+        ConfigField::ContentBlobStore => 10,
+        ConfigField::CheckpointStore => 11,
+        ConfigField::ReplaySink => 12,
+        ConfigField::Volume => 13,
+        ConfigField::Participant => 14,
+    };
+    group + field
+}
+
+#[allow(dead_code)]
+fn pattern_matches_all_config_error_codes(value: ConfigErrorCode) -> u8 {
+    match value {
+        ConfigErrorCode::DuplicateId => 0,
+        ConfigErrorCode::RetiredReplayStreamCapacity => 1,
+        ConfigErrorCode::MissingReference => 2,
+        ConfigErrorCode::WrongProviderKind => 3,
+        ConfigErrorCode::ContractMismatch => 4,
+        ConfigErrorCode::InvalidValue => 5,
+        ConfigErrorCode::CrossLimitViolation => 6,
+        ConfigErrorCode::UnsupportedCapability => 7,
+        ConfigErrorCode::ArithmeticOverflow => 8,
+    }
+}
+
+#[allow(dead_code)]
+fn pattern_matches_all_replay_and_availability_variants(
+    range: ReplayAppendRange,
+    availability: AvailabilityCode,
+) -> u8 {
+    let range = match range {
+        ReplayAppendRange::Header { .. } => 0,
+        ReplayAppendRange::TickRecords { .. } => 1,
+        ReplayAppendRange::CorrectionBranch { .. } => 2,
+    };
+    let availability = match availability {
+        AvailabilityCode::Cold => 0,
+        AvailabilityCode::Materializing => 1,
+        AvailabilityCode::Failed => 2,
+        AvailabilityCode::FrontierTooOld => 3,
+        AvailabilityCode::DeviceLost => 4,
+        AvailabilityCode::CapacityExceeded => 5,
+    };
+    range + availability
+}
+
+#[allow(dead_code)]
+fn pattern_matches_all_batch_errors(value: BatchError) -> u8 {
+    match value {
+        BatchError::Empty => 0,
+        BatchError::CountMismatch => 1,
+        BatchError::DuplicateCanonicalKey => 2,
+        BatchError::EncodingFailure => 3,
+        BatchError::ReservationMismatch => 4,
+    }
+}
+
+#[allow(dead_code)]
+fn pattern_matches_all_frontier_variants(
+    position: FrontierPosition,
+    status: AuthorityStatus,
+) -> u8 {
+    let position = match position {
+        FrontierPosition::Genesis => 0,
+        FrontierPosition::Confirmed(_) => 1,
+    };
+    let status = match status {
+        AuthorityStatus::ReplayGrade => 0,
+        AuthorityStatus::DiagnosticCandidate => 1,
+    };
+    position + status
+}
+
+#[allow(dead_code)]
+fn pattern_matches_all_failure_record_errors(value: FailureRecordError) -> u8 {
+    match value {
+        FailureRecordError::Diagnostic(_) => 0,
+        FailureRecordError::AdmissionContextMismatch => 1,
+        FailureRecordError::NoAdvanceSourceFrontier => 2,
+        FailureRecordError::NoAdvanceScope => 3,
+        FailureRecordError::NoAdvanceCauseCode => 4,
+        FailureRecordError::NoAdvanceCommittedEffect => 5,
+        FailureRecordError::CorrectionCommittedEffect => 6,
+        FailureRecordError::CorrectionExportFailure => 7,
+    }
+}
+
+#[allow(dead_code)]
+fn pattern_matches_all_budget_field_errors(value: ResourceBudgetFieldError) -> u8 {
+    match value {
+        ResourceBudgetFieldError::UnknownGroupTag(_) => 0,
+        ResourceBudgetFieldError::UnknownFieldOrdinal { .. } => 1,
+    }
 }

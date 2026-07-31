@@ -320,6 +320,33 @@ pub struct BoundedUtf8<const N: usize> {
 }
 
 impl<const N: usize> BoundedUtf8<N> {
+    /// Copies UTF-8 text into a finite owner of at most `N` bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use moria::facade::BoundedUtf8;
+    ///
+    /// let text = BoundedUtf8::<5>::try_from_str("moria")?;
+    /// assert_eq!(text.as_str(), "moria");
+    /// # Ok::<(), moria::facade::BoundedOwnerError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BoundedOwnerError::LengthExceedsCapacity`] before allocating
+    /// when `text` exceeds `N` bytes, or
+    /// [`BoundedOwnerError::AllocationFailed`] when exact backing storage
+    /// cannot be reserved.
+    pub fn try_from_str(text: &str) -> Result<Self, BoundedOwnerError> {
+        if text.len() > N {
+            return Err(BoundedOwnerError::LengthExceedsCapacity);
+        }
+        let normalized = copy_into_exact_backing(text.as_bytes())?;
+        let text = String::from_utf8(normalized).expect("str bytes are valid UTF-8");
+        Ok(Self { text })
+    }
+
     /// Accepts valid UTF-8 of at most `N` bytes.
     ///
     /// # Errors
