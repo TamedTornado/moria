@@ -9,14 +9,13 @@ use std::{
 const USAGE: &str = "usage: moria-qualify shaders validate | replay verify --fixture <path> --runs <positive-integer> --evidence <path> | scenario public-boundary --mode candidate --evidence <path>";
 const REPLAY_FIXTURE_FILE: &str = "fixture.txt";
 const REPLAY_FIXTURE_VERSION: &str = "moria-replay-scaffold-v1";
+const CANONICAL_FIXED_WGSL: &str =
+    include_str!("../../../assets/shaders/canonical/math/fixed.wgsl");
 
 /// Runs the documented qualification commands available in the scaffold.
 pub(crate) fn run(arguments: impl Iterator<Item = String>) -> ExitCode {
     match parse(arguments) {
-        Ok(Command::ShaderValidation) => {
-            println!("PASS shaders validate: the scaffold references no WGSL modules");
-            ExitCode::SUCCESS
-        }
+        Ok(Command::ShaderValidation) => report("shaders validate", validate_shaders()),
         Ok(Command::ReplayVerification {
             fixture,
             runs,
@@ -31,6 +30,18 @@ pub(crate) fn run(arguments: impl Iterator<Item = String>) -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+fn validate_shaders() -> Result<String, String> {
+    let module = naga::front::wgsl::parse_str(CANONICAL_FIXED_WGSL)
+        .map_err(|error| format!("canonical fixed WGSL parse failed: {error}"))?;
+    naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    )
+    .validate(&module)
+    .map_err(|error| format!("canonical fixed WGSL validation failed: {error}"))?;
+    Ok("validated canonical/math/fixed.wgsl".to_owned())
 }
 
 enum Command {
