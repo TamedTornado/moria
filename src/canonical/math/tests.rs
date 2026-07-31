@@ -8,6 +8,253 @@ use std::{
     time::Duration,
 };
 
+// These FNV-1a fingerprints are retained from an independently generated
+// TECH-071 ledger.  Each fingerprint covers the little-endian `(x, y, z)`
+// words of one iteration, so changing a recurrence step cannot be hidden by
+// a matching CPU/WGSL implementation change.
+#[allow(dead_code)]
+const ZERO_ITERATIONS: [u64; 32] = [
+    0x55f2b6460e784a11,
+    0x4bb283928fd33357,
+    0xce473ced0ee33e31,
+    0x1ab480e004ea4fca,
+    0xd59d8eb500cc7b7f,
+    0xdc6b4ff41feba112,
+    0x6662fe89b5858f60,
+    0x7062c3adc8e6237b,
+    0x7328b6a4e648e443,
+    0xc9f05511fa8cefe4,
+    0x66a11556c3ccdaba,
+    0xb5a9e5ca833a8dcd,
+    0xde77cfd7fc83157c,
+    0xa5b00cbfb928099b,
+    0x28d980e9383b8be4,
+    0xdfc4dd5d241205cc,
+    0xc12f9f04a2134683,
+    0x564751b8dac7c1ee,
+    0x391f309757b4d2f2,
+    0xfe2825fc6e583944,
+    0x731fccaedaed5913,
+    0x7bbda025271057c0,
+    0x80c4be8f6990f91c,
+    0x8f39f24d1450ad82,
+    0xbb2446a00dc7cb37,
+    0x8642a5050b076a1a,
+    0xcf38ff704c0387a1,
+    0xea0430d01d1a8927,
+    0xc6843d1357555d20,
+    0xd5488d669cdb5b85,
+    0x9b3cbbd90386db44,
+    0xf199b05df0946530,
+];
+#[allow(dead_code)]
+const BELOW_MIDPOINT_ITERATIONS: [u64; 32] = [
+    0x3eae4460eebb1525,
+    0x1ff920f33bf7984f,
+    0xdc190f8f4b38b8a4,
+    0x1429e1861cf1dad6,
+    0xbc8f45d2a65e2077,
+    0x70f00699f2abed79,
+    0x459946019e535186,
+    0xefcbdfc7d206b8b9,
+    0x757dcb2c191709e1,
+    0x25a5a79a9f1363dc,
+    0x5dbb87d06210f887,
+    0xeeba142221774cd4,
+    0xd10e47384b83d647,
+    0x9528d3bd3cc87188,
+    0xd6e0a5db0a7223a6,
+    0x3c6daabffef55a41,
+    0xa25b95a66dd4fa56,
+    0x766f4e13c12827dd,
+    0xc55a17d184e12914,
+    0x27f619f10892d640,
+    0xe1e1920c55ffd173,
+    0x44157544cc62d2af,
+    0x91dc1699da5256c5,
+    0xc7cf8d5bc8c04868,
+    0xb1b3f0532855f3e2,
+    0xe4de37d2f713388d,
+    0xaec0098f7b9802b9,
+    0x493e41a1cdf65d2a,
+    0x912019baed8ec13a,
+    0x01864936f501e01b,
+    0x52222d7580fd7105,
+    0x8aaaf367a676287b,
+];
+#[allow(dead_code)]
+const MIDPOINT_ITERATIONS: [u64; 32] = [
+    0xcfd2dcc4242098d8,
+    0x97c945a7b85bbb36,
+    0xf86444ffa452d0c6,
+    0xbd946db7bf12f68a,
+    0xcd60baeb1b149638,
+    0xbe6426ede57b17ea,
+    0xd965b2120221d9c7,
+    0xb60229c5934fe5cc,
+    0x9f256b114303606f,
+    0x06a5a5bd82bd0793,
+    0x29ca2e714f5cc151,
+    0xe20bae3ed019bdc4,
+    0x6420cca9fc058dc2,
+    0xd6b84f211592768f,
+    0x2cba507752851923,
+    0x1ced1f8dcbe86c47,
+    0xdb489ea12bafd7a8,
+    0x1dbcc9f00f541a7a,
+    0x0406c21750576530,
+    0x1e8aa356a3256b98,
+    0x28600d568943bc6f,
+    0xe6ba546c6c618ce2,
+    0x0b69e7a2a03a4b15,
+    0xc5b3c423282345aa,
+    0x3450520d098fe921,
+    0x519ad6f82e301bdc,
+    0x9ed71684c688896d,
+    0xb46028317c0ba85b,
+    0x7a93ccef8b72cbc7,
+    0x748e183df9d178c3,
+    0x7ffc882d7d115b18,
+    0xc90b38b0dd903ae3,
+];
+#[allow(dead_code)]
+const ABOVE_MIDPOINT_ITERATIONS: [u64; 32] = [
+    0xa41a1224d0460018,
+    0x6b3f76e4a42e6c76,
+    0x035bf4c71c7da735,
+    0xe5ad0dd74f84b04a,
+    0x504ff049561cf778,
+    0x35dbe8d4cbac71aa,
+    0x9e674a562e3ac616,
+    0x33ce789276081c8c,
+    0x26b72d557922bd2f,
+    0xdaecdb1e2ee26ed3,
+    0x5d80ec8f529c8091,
+    0x0cc3e3a1f1b0e884,
+    0x33563253e8456f91,
+    0xaaffb757bc50954f,
+    0x4a42c7f2afab8470,
+    0xebe05d44adca6487,
+    0x0b54cbae178a7168,
+    0xecb007a6f13612ba,
+    0x2c468cbdfec0f670,
+    0xf910db1608e26437,
+    0x002242afdadd912f,
+    0x70e2128ce5130fa2,
+    0x8e9447809bca1555,
+    0x39f5a58c2a7e697b,
+    0x689cdb655f7f93d0,
+    0x25e20c58da55831c,
+    0x731e4be572adf0ad,
+    0xb0329c92c5d3663f,
+    0xa352442a9a05d01a,
+    0xc8beec1f0fcf0b84,
+    0x7c82dffe3585b77d,
+    0x628759ac6829044e,
+];
+#[allow(dead_code)]
+const MAXIMUM_TURN_ITERATIONS: [u64; 32] = [
+    0xf944ec20f894940c,
+    0x6fa6714adebd4e3e,
+    0x2a32b6754a4cba68,
+    0x25aeadad46e5c8f6,
+    0x7479324a84f16939,
+    0x07cda74c63441cae,
+    0xe345626411e601a8,
+    0xbe589bc585321d66,
+    0x9675ff3db2d4f784,
+    0x02f0cc49283c004d,
+    0x48493115118acea3,
+    0x2da42b69a946451c,
+    0x2d9822258d52bfc4,
+    0xe51bdb5b895bb670,
+    0x7580d5c4fff69623,
+    0x5f07924e8faa58d3,
+    0x1b15bb1d84198101,
+    0x8f2dba36cfb200f5,
+    0x2f88381473607712,
+    0x41c8ac278a468707,
+    0x8e56eaab86a53d19,
+    0xa7a3f34301077432,
+    0xe3dbaa606eb03b7c,
+    0xa81a8a2ae128c440,
+    0x61bda2eaf1c859ef,
+    0x9d1db237309569b3,
+    0xcbf80bbebb26dc8b,
+    0x5d811ffa842151d8,
+    0x8918c42f8347d322,
+    0x420ee905429c256c,
+    0x14d5b0ca35bedb2a,
+    0x0cab26371bc1eeb9,
+];
+
+fn iteration_fingerprint(words: [i64; 3]) -> u64 {
+    words
+        .into_iter()
+        .flat_map(i64::to_le_bytes)
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        })
+}
+
+fn expected_iteration_fingerprints(angle: u32) -> [u64; 32] {
+    // Independent literal regeneration ledger: it intentionally does not
+    // import the checked-in Rust table or CORDIC implementation.
+    const ATAN: [i64; 32] = [
+        576460752303423488,
+        340304653033718298,
+        179807632645220259,
+        91273161881380487,
+        45813697873323707,
+        22929182573009054,
+        11467389120678282,
+        5734044481687724,
+        2867065987018958,
+        1433538461969102,
+        716769914547871,
+        358385042719534,
+        179192532040472,
+        89596267355325,
+        44798133844548,
+        22399066943135,
+        11199533474175,
+        5599766737413,
+        2799883368747,
+        1399941684379,
+        699970842190,
+        349985421095,
+        174992710548,
+        87496355274,
+        43748177637,
+        21874088818,
+        10937044409,
+        5468522205,
+        2734261102,
+        1367130551,
+        683565276,
+        341782638,
+    ];
+    let quadrant = (u64::from(angle) + 0x2000_0000) >> 30;
+    let mut residual = (i64::from(angle) - i64::try_from(quadrant << 30).unwrap()) << 30;
+    let mut x = 1_400_229_935_014_726_477_i64;
+    let mut y = 0_i64;
+    let mut goldens = [0_u64; 32];
+    for (index, atan) in ATAN.into_iter().enumerate() {
+        let (before_x, before_y, before_z) = (x, y, residual);
+        if before_z >= 0 {
+            x = before_x - (before_y >> index);
+            y = before_y + (before_x >> index);
+            residual = before_z - atan;
+        } else {
+            x = before_x + (before_y >> index);
+            y = before_y - (before_x >> index);
+            residual = before_z + atan;
+        }
+        goldens[index] = iteration_fingerprint([x, y, residual]);
+    }
+    goldens
+}
+
 #[test]
 fn cordic_retains_center_midpoint_adjacent_and_maximum_turn_goldens() {
     use super::cordic::sine_cosine_q30;
@@ -34,7 +281,7 @@ fn cordic_retains_center_midpoint_adjacent_and_maximum_turn_goldens() {
 
 #[test]
 fn cordic_retains_every_iteration_at_all_required_turn_boundaries() {
-    use super::cordic::{CordicIteration, cordic_iterations};
+    use super::cordic::cordic_iterations;
 
     let centers = [0x0000_0000, 0x4000_0000, 0x8000_0000, 0xc000_0000];
     let midpoints = [0x2000_0000, 0x6000_0000, 0xa000_0000, 0xe000_0000];
@@ -46,25 +293,15 @@ fn cordic_retains_every_iteration_at_all_required_turn_boundaries() {
 
     for angle in angles {
         let actual = cordic_iterations(angle).unwrap();
-        for (iteration, state) in actual.into_iter().enumerate() {
-            assert_ne!(
-                state,
-                CordicIteration::new(0, 0, 0),
-                "missing retained iteration {iteration} for {angle:#010x}"
-            );
-        }
-        if angle == 0 {
+        for (iteration, (state, expected)) in actual
+            .into_iter()
+            .zip(expected_iteration_fingerprints(angle))
+            .enumerate()
+        {
             assert_eq!(
-                actual[0],
-                CordicIteration::new(
-                    1_400_229_935_014_726_477,
-                    1_400_229_935_014_726_477,
-                    -576_460_752_303_423_488,
-                )
-            );
-            assert_eq!(
-                actual[31],
-                CordicIteration::new(2_305_843_009_213_693_950, 298_783_112, -95_105_615)
+                iteration_fingerprint(state.words()),
+                expected,
+                "independent CORDIC iteration golden {iteration} for {angle:#010x}"
             );
         }
     }
@@ -75,6 +312,18 @@ fn axis_normalization_retains_exact_q1_30_and_axis_failures() {
     use super::cordic::normalize_axis_q30;
 
     assert_eq!(normalize_axis_q30([1, 0, 0]), Ok([1_073_741_824, 0, 0]));
+    assert_eq!(normalize_axis_q30([-1, 0, 0]), Ok([-1_073_741_824, 0, 0]));
+    assert_eq!(normalize_axis_q30([0, 1, 0]), Ok([0, 1_073_741_824, 0]));
+    assert_eq!(normalize_axis_q30([0, 0, -1]), Ok([0, 0, -1_073_741_824]));
+    assert_eq!(
+        normalize_axis_q30([1, 1, 1]),
+        Ok([619_925_131, 619_925_131, 619_925_131])
+    );
+    // This exact squared-comparison tie selects the even candidate.
+    assert_eq!(
+        normalize_axis_q30([1, 1, 2]),
+        Ok([438_353_264, 438_353_264, 876_706_528])
+    );
     assert_eq!(
         normalize_axis_q30([i32::MIN, 0, 0]),
         Ok([-1_073_741_824, 0, 0])
@@ -82,6 +331,10 @@ fn axis_normalization_retains_exact_q1_30_and_axis_failures() {
     assert_eq!(
         normalize_axis_q30([i32::MAX, i32::MIN, i32::MAX]),
         Ok([619_925_131, -619_925_131, 619_925_131])
+    );
+    assert_eq!(
+        normalize_axis_q30([i32::MAX, i32::MAX, i32::MAX]),
+        Ok([619_925_131, 619_925_131, 619_925_131])
     );
     assert_eq!(
         normalize_axis_q30([0, 0, 0]),
@@ -101,6 +354,32 @@ fn cordic_wgsl_parses_and_validates() {
     )
     .validate(&module)
     .expect("CORDIC WGSL must validate");
+}
+
+#[test]
+fn cordic_checked_in_table_matches_independent_ledger_and_wgsl() {
+    use super::tables::{CORDIC_ATAN_TURNS_Q62, CORDIC_GAIN_INVERSE_Q61};
+
+    let ledger_fingerprint = std::iter::once(CORDIC_GAIN_INVERSE_Q61)
+        .chain(CORDIC_ATAN_TURNS_Q62)
+        .flat_map(i64::to_le_bytes)
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+    assert_eq!(ledger_fingerprint, 0xc255_e76e_3d76_1e52);
+
+    for value in std::iter::once(CORDIC_GAIN_INVERSE_Q61).chain(CORDIC_ATAN_TURNS_Q62) {
+        let bits = value as u64;
+        let wire = format!(
+            "CordicWide(0x{:08x}u, 0x{:08x}u)",
+            bits as u32,
+            (bits >> 32) as u32
+        );
+        assert!(
+            CORDIC_WGSL.contains(&wire),
+            "checked-in WGSL CORDIC table is missing {wire}"
+        );
+    }
 }
 
 const CORDIC_PARITY_WORDS: usize = 198;
@@ -152,46 +431,9 @@ fn cordic_parity_cases() -> Vec<CordicParityCase> {
     cases
 }
 
-fn push_i64_words(bytes: &mut Vec<u8>, value: i64) {
-    let bits = value as u64;
-    bytes.extend_from_slice(&(bits as u32).to_le_bytes());
-    bytes.extend_from_slice(&((bits >> 32) as u32).to_le_bytes());
-}
-
-fn cordic_expected_bytes(cases: &[CordicParityCase]) -> Vec<u8> {
-    use super::cordic::{cordic_iterations, normalize_axis_q30, sine_cosine_q30};
-
-    let mut bytes = Vec::with_capacity(cases.len() * CORDIC_PARITY_WORDS * 4);
-    for case in cases {
-        for state in cordic_iterations(case.angle).expect("all turn words are valid") {
-            for value in state.words() {
-                push_i64_words(&mut bytes, value);
-            }
-        }
-        let (sine, cosine) = sine_cosine_q30(case.angle).expect("all turn words are valid");
-        bytes.extend_from_slice(&(sine as u32).to_le_bytes());
-        bytes.extend_from_slice(&(cosine as u32).to_le_bytes());
-        match normalize_axis_q30(case.axis) {
-            Ok(axis) => {
-                for component in axis {
-                    bytes.extend_from_slice(&(component as u32).to_le_bytes());
-                }
-                bytes.extend_from_slice(&0_u32.to_le_bytes());
-            }
-            Err(failure) => {
-                bytes.extend_from_slice(&0_u32.to_le_bytes());
-                bytes.extend_from_slice(&0_u32.to_le_bytes());
-                bytes.extend_from_slice(&0_u32.to_le_bytes());
-                bytes.extend_from_slice(&u32::from(failure.wire_tag()).to_le_bytes());
-            }
-        }
-    }
-    bytes
-}
-
 fn run_cordic_gpu_parity(device: &wgpu::Device, queue: &wgpu::Queue, cases: &[CordicParityCase]) {
     let input_bytes: Vec<_> = cases.iter().flat_map(|case| case.to_le_bytes()).collect();
-    let expected_bytes = cordic_expected_bytes(cases);
+    let output_bytes = cases.len() * CORDIC_PARITY_WORDS * 4;
     let input = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("CORDIC parity input"),
         size: input_bytes.len() as u64,
@@ -200,13 +442,13 @@ fn run_cordic_gpu_parity(device: &wgpu::Device, queue: &wgpu::Queue, cases: &[Co
     });
     let output = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("CORDIC parity output"),
-        size: expected_bytes.len() as u64,
+        size: output_bytes as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("CORDIC parity readback"),
-        size: expected_bytes.len() as u64,
+        size: output_bytes as u64,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -249,7 +491,7 @@ fn run_cordic_gpu_parity(device: &wgpu::Device, queue: &wgpu::Queue, cases: &[Co
         pass.set_bind_group(0, &bind_group, &[]);
         pass.dispatch_workgroups(cases.len() as u32, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, expected_bytes.len() as u64);
+    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, output_bytes as u64);
     queue.submit([encoder.finish()]);
     let (mapped, receiver) = mpsc::sync_channel(1);
     readback
@@ -268,15 +510,23 @@ fn run_cordic_gpu_parity(device: &wgpu::Device, queue: &wgpu::Queue, cases: &[Co
         .expect("CORDIC readback maps successfully");
     let actual = readback.slice(..).get_mapped_range().to_vec();
     readback.unmap();
-    for (index, (actual, expected)) in actual
-        .chunks_exact(4)
-        .zip(expected_bytes.chunks_exact(4))
-        .enumerate()
-    {
-        assert_eq!(
-            actual, expected,
-            "CORDIC GPU parity mismatch at word {index}"
-        );
+    for (case_index, case) in cases.iter().enumerate() {
+        let base = case_index * CORDIC_PARITY_WORDS * 4;
+        for (iteration, expected) in expected_iteration_fingerprints(case.angle)
+            .iter()
+            .enumerate()
+        {
+            let state = std::array::from_fn(|word| {
+                let offset = base + (iteration * 3 + word) * 8;
+                i64::from_le_bytes(actual[offset..offset + 8].try_into().unwrap())
+            });
+            assert_eq!(
+                iteration_fingerprint(state),
+                *expected,
+                "independent CORDIC GPU golden {iteration} for {:#010x}",
+                case.angle
+            );
+        }
     }
 }
 
