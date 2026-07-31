@@ -355,10 +355,14 @@ where
         policy: ReceiptPolicy,
         result_bytes: u64,
     ) -> Result<Receipt<T, E>, ResultBackpressure> {
-        let reservation_for_retain = Arc::clone(&self.reservation);
+        // Completed operations are retained by the reservation. Keep this
+        // callback weak so that retention cannot keep a dead world alive.
+        let reservation_for_retain = Arc::downgrade(&self.reservation);
         let retainer = Arc::new(move |operation: Arc<Operation<T, E>>| {
-            let tracked: Arc<dyn TerminalOperation> = operation;
-            reservation_for_retain.retain_terminal(tracked);
+            if let Some(reservation) = reservation_for_retain.upgrade() {
+                let tracked: Arc<dyn TerminalOperation> = operation;
+                reservation.retain_terminal(tracked);
+            }
         });
         let operation = Arc::new(Operation::new(
             receipt,
@@ -372,7 +376,13 @@ where
         let tracked: Arc<dyn TerminalOperation> = operation.clone();
         self.reservation
             .reserve_and_register(generation, result_bytes, tracked)?;
-        Ok(Receipt { operation })
+        Ok(Receipt {
+            operation,
+            // A live receipt may be driven after a typed cache adapter is
+            // dropped. The receipt, not the cached operation, owns this
+            // keepalive so terminal cache entries cannot form a cycle.
+            reservation: Arc::clone(&self.reservation),
+        })
     }
 
     pub(crate) fn set_current_generation(
@@ -386,12 +396,14 @@ where
 /// A cloneable, pollable receipt sharing one operation record.
 pub(crate) struct Receipt<T, E> {
     operation: Arc<Operation<T, E>>,
+    reservation: Arc<TerminalReservation>,
 }
 
 impl<T, E> Clone for Receipt<T, E> {
     fn clone(&self) -> Self {
         Self {
             operation: Arc::clone(&self.operation),
+            reservation: Arc::clone(&self.reservation),
         }
     }
 }

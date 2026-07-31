@@ -946,6 +946,39 @@ fn shared_terminal_reservation_saturates_mixed_receipt_families() {
 }
 
 #[test]
+fn terminal_cache_drops_completed_operations_with_the_world() {
+    let (operation, reservation) = {
+        let reservation = TerminalReservation::try_new(1, 8).unwrap();
+        let cache = TerminalCache::<u32, &'static str>::new(
+            Arc::clone(&reservation),
+            |_, _, _| "unexpected device-generation rollover",
+        );
+        let receipt = cache
+            .admit(
+                ReceiptId::from_raw(1),
+                DeviceGeneration::from_raw(1),
+                ReceiptPolicy::for_family(ReceiptFamily::Interest),
+                8,
+            )
+            .unwrap();
+        receipt
+            .operation()
+            .advance(OperationPhase::Applying)
+            .unwrap();
+        receipt.operation().complete_ready(1).unwrap();
+
+        let operation = Arc::downgrade(&receipt.operation());
+        let reservation = Arc::downgrade(&reservation);
+        drop(receipt);
+        drop(cache);
+        (operation, reservation)
+    };
+
+    assert!(operation.upgrade().is_none());
+    assert!(reservation.upgrade().is_none());
+}
+
+#[test]
 fn shared_generation_rollover_terminalizes_every_receipt_family() {
     let reservation = TerminalReservation::try_new(2, 16).unwrap();
     let interest = TerminalCache::<u32, &'static str>::new(

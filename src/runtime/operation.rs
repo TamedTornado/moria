@@ -1,7 +1,7 @@
 //! Operation state transitions and cancellation policy.
 
 use std::sync::{
-    Arc, Mutex,
+    Arc, Mutex, Weak,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -214,7 +214,9 @@ pub(crate) struct Operation<T, E> {
     receipt: ReceiptId,
     generation: DeviceGeneration,
     policy: ReceiptPolicy,
-    reservation: Arc<TerminalReservation>,
+    // The terminal cache retains completed operations. This back-reference
+    // must therefore be weak so the cache can be dropped with its world.
+    reservation: Weak<TerminalReservation>,
     old_generation_failure:
         Arc<dyn Fn(ReceiptId, ReceiptFamily, DeviceGeneration) -> E + Send + Sync>,
     state: Mutex<OperationState<T, E>>,
@@ -240,7 +242,7 @@ impl<T, E> Operation<T, E> {
             receipt,
             generation,
             policy,
-            reservation,
+            reservation: Arc::downgrade(&reservation),
             old_generation_failure,
             state: Mutex::new(OperationState {
                 phase: initial_phase(policy.family),
@@ -456,6 +458,8 @@ impl<T, E> Operation<T, E> {
     ) -> Result<(), TransitionError> {
         {
             self.reservation
+                .upgrade()
+                .expect("live operation completion requires its terminal reservation")
                 .with_current_generation(|current_generation| {
                     if self.generation != current_generation
                         || producing_generation != current_generation
@@ -525,8 +529,10 @@ impl<T, E> Operation<T, E> {
 
 impl<T, E> Drop for Operation<T, E> {
     fn drop(&mut self) {
-        if self.reservation_active.load(Ordering::Acquire) {
-            self.reservation.release(self.result_bytes);
+        if self.reservation_active.load(Ordering::Acquire)
+            && let Some(reservation) = self.reservation.upgrade()
+        {
+            reservation.release(self.result_bytes);
         }
     }
 }
