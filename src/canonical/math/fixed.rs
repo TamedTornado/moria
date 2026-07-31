@@ -7,7 +7,7 @@ use crate::facade::CanonicalFailure;
 /// `FRACTIONAL_BITS` must be in `0..=16`. Arithmetic never saturates: an
 /// unrepresentable result returns [`CanonicalFailure`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct FixedI32<const FRACTIONAL_BITS: u8>(i32);
+pub(crate) struct FixedI32<const FRACTIONAL_BITS: u8>(i32);
 
 impl<const FRACTIONAL_BITS: u8> FixedI32<FRACTIONAL_BITS> {
     /// Creates a fixed-point value from its canonical raw integer.
@@ -31,7 +31,7 @@ impl<const FRACTIONAL_BITS: u8> FixedI32<FRACTIONAL_BITS> {
     }
 
     /// Adds two values exactly.
-    pub fn try_add(self, rhs: Self) -> Result<Self, CanonicalFailure> {
+    pub(crate) fn try_add(self, rhs: Self) -> Result<Self, CanonicalFailure> {
         Self::try_from_raw(
             self.0
                 .checked_add(rhs.0)
@@ -40,7 +40,7 @@ impl<const FRACTIONAL_BITS: u8> FixedI32<FRACTIONAL_BITS> {
     }
 
     /// Subtracts two values exactly.
-    pub fn try_sub(self, rhs: Self) -> Result<Self, CanonicalFailure> {
+    pub(crate) fn try_sub(self, rhs: Self) -> Result<Self, CanonicalFailure> {
         Self::try_from_raw(
             self.0
                 .checked_sub(rhs.0)
@@ -49,7 +49,7 @@ impl<const FRACTIONAL_BITS: u8> FixedI32<FRACTIONAL_BITS> {
     }
 
     /// Negates this value exactly.
-    pub fn try_neg(self) -> Result<Self, CanonicalFailure> {
+    pub(crate) fn try_neg(self) -> Result<Self, CanonicalFailure> {
         Self::try_from_raw(
             self.0
                 .checked_neg()
@@ -58,7 +58,7 @@ impl<const FRACTIONAL_BITS: u8> FixedI32<FRACTIONAL_BITS> {
     }
 
     /// Returns this value's exact absolute raw magnitude when representable.
-    pub fn try_abs(self) -> Result<Self, CanonicalFailure> {
+    pub(crate) fn try_abs(self) -> Result<Self, CanonicalFailure> {
         Self::try_from_raw(
             self.0
                 .checked_abs()
@@ -67,13 +67,13 @@ impl<const FRACTIONAL_BITS: u8> FixedI32<FRACTIONAL_BITS> {
     }
 
     /// Multiplies and reduces by `2^FRACTIONAL_BITS` with ties-to-even rounding.
-    pub fn try_mul(self, rhs: Self) -> Result<Self, CanonicalFailure> {
+    pub(crate) fn try_mul(self, rhs: Self) -> Result<Self, CanonicalFailure> {
         let product = i64::from(self.0) * i64::from(rhs.0);
         Self::from_i64(round_by_power_of_two(product, FRACTIONAL_BITS)?)
     }
 
     /// Divides and rounds the exact scaled quotient to nearest, ties to even.
-    pub fn try_div(self, rhs: Self) -> Result<Self, CanonicalFailure> {
+    pub(crate) fn try_div(self, rhs: Self) -> Result<Self, CanonicalFailure> {
         if rhs.0 == 0 {
             return Err(CanonicalFailure::DivisionByZero);
         }
@@ -82,7 +82,7 @@ impl<const FRACTIONAL_BITS: u8> FixedI32<FRACTIONAL_BITS> {
     }
 
     /// Computes the nearest fixed-point square root, with ties to even.
-    pub fn try_sqrt(self) -> Result<Self, CanonicalFailure> {
+    pub(crate) fn try_sqrt(self) -> Result<Self, CanonicalFailure> {
         if self.0 < 0 {
             return Err(CanonicalFailure::NegativeSquareRoot);
         }
@@ -112,7 +112,7 @@ impl<const FRACTIONAL_BITS: u8> FixedI32<FRACTIONAL_BITS> {
     /// # Errors
     ///
     /// Returns [`CanonicalFailure::InvalidShift`] for shifts above 31.
-    pub fn try_narrow(self, shift: u8) -> Result<i32, CanonicalFailure> {
+    pub(crate) fn try_narrow(self, shift: u8) -> Result<i32, CanonicalFailure> {
         if shift > 31 {
             return Err(CanonicalFailure::InvalidShift);
         }
@@ -130,7 +130,7 @@ impl<const FRACTIONAL_BITS: u8> FixedI32<FRACTIONAL_BITS> {
 ///
 /// Returns [`CanonicalFailure::DivisionByZero`] for zero and
 /// [`CanonicalFailure::ArithmeticOverflow`] for `i32::MIN / -1`.
-pub fn floor_div(value: i32, divisor: i32) -> Result<i32, CanonicalFailure> {
+pub(crate) fn floor_div(value: i32, divisor: i32) -> Result<i32, CanonicalFailure> {
     if divisor == 0 {
         return Err(CanonicalFailure::DivisionByZero);
     }
@@ -152,7 +152,7 @@ pub fn floor_div(value: i32, divisor: i32) -> Result<i32, CanonicalFailure> {
 /// # Errors
 ///
 /// Returns [`CanonicalFailure::InvalidShift`] for shifts above 31.
-pub fn floor_shift_right(value: i32, shift: u8) -> Result<i32, CanonicalFailure> {
+pub(crate) fn floor_shift_right(value: i32, shift: u8) -> Result<i32, CanonicalFailure> {
     if shift > 31 {
         return Err(CanonicalFailure::InvalidShift);
     }

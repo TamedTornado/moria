@@ -4,7 +4,7 @@ use crate::facade::CanonicalFailure;
 
 /// A signed two's-complement 64-bit value represented as little-endian words.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct WideI64 {
+pub(crate) struct WideI64 {
     /// Least-significant word.
     pub low: u32,
     /// Most-significant signed word, stored as raw bits.

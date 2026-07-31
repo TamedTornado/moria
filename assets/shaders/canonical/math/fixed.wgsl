@@ -10,6 +10,10 @@ const FIXED_INVALID_SHIFT: u32 = 10u;
 const FIXED_NEGATIVE_SQUARE_ROOT: u32 = 11u;
 const FIXED_NONREPRESENTABLE: u32 = 12u;
 
+// The frozen world split is supplied once when the pipeline is created.  It is
+// never participant input, and the entry point fail-closes a malformed override.
+override FRACTIONAL_BITS: u32 = 0u;
+
 struct WideI64 {
     low: u32,
     high: u32,
@@ -196,15 +200,15 @@ fn fixed_abs(value: i32) -> vec2<u32> {
     return vec2<u32>(bitcast<u32>(value), FIXED_OK);
 }
 
-fn fixed_mul(left: i32, right: i32, fractional_bits: u32) -> vec2<u32> {
-    let result = fixed_round_power_of_two(wide_mul_i32(left, right), fractional_bits);
+fn fixed_mul(left: i32, right: i32) -> vec2<u32> {
+    let result = fixed_round_power_of_two(wide_mul_i32(left, right), FRACTIONAL_BITS);
     if (!wide_fits_i32(result)) { return vec2<u32>(0u, FIXED_NONREPRESENTABLE); }
     return vec2<u32>(bitcast<u32>(wide_to_i32(result)), FIXED_OK);
 }
 
-fn fixed_div(left: i32, right: i32, fractional_bits: u32) -> vec2<u32> {
+fn fixed_div(left: i32, right: i32) -> vec2<u32> {
     if (right == 0) { return vec2<u32>(0u, FIXED_DIVISION_BY_ZERO); }
-    let numerator = wide_shl(WideI64(bitcast<u32>(left), select(0u, 0xffffffffu, left < 0)), fractional_bits);
+    let numerator = wide_shl(WideI64(bitcast<u32>(left), select(0u, 0xffffffffu, left < 0)), FRACTIONAL_BITS);
     let numerator_negative = wide_negative(numerator);
     let denominator_negative = right < 0;
     let quotient_and_remainder = wide_div_unsigned(wide_abs(numerator), WideI64(select(bitcast<u32>(right), 0u - bitcast<u32>(right), denominator_negative), 0u));
@@ -219,9 +223,9 @@ fn fixed_div(left: i32, right: i32, fractional_bits: u32) -> vec2<u32> {
     return vec2<u32>(bitcast<u32>(wide_to_i32(quotient)), FIXED_OK);
 }
 
-fn fixed_sqrt(value: i32, fractional_bits: u32) -> vec2<u32> {
+fn fixed_sqrt(value: i32) -> vec2<u32> {
     if (value < 0) { return vec2<u32>(0u, FIXED_NEGATIVE_SQUARE_ROOT); }
-    let radicand = wide_shl(WideI64(bitcast<u32>(value), 0u), fractional_bits);
+    let radicand = wide_shl(WideI64(bitcast<u32>(value), 0u), FRACTIONAL_BITS);
     var lower = 0u;
     var bit = 32u;
     loop {
@@ -268,7 +272,8 @@ fn fixed_floor_shift(value: i32, shift: u32) -> vec2<u32> {
 struct FixedParityInput {
     left: i32,
     right: i32,
-    fractional_bits: u32,
+    // Reserved in the parity wire ABI; the split is the pipeline override.
+    reserved: u32,
     shift: u32,
     operation: u32,
 }
@@ -286,7 +291,7 @@ struct FixedParityOutput {
 fn fixed_parity(@builtin(global_invocation_id) invocation: vec3<u32>) {
     if (invocation.x >= arrayLength(&fixed_inputs)) { return; }
     let input = fixed_inputs[invocation.x];
-    if (input.fractional_bits > 16u) {
+    if (FRACTIONAL_BITS > 16u) {
         fixed_outputs[invocation.x] = FixedParityOutput(0, 0u, FIXED_INVALID_FORMAT);
         return;
     }
@@ -295,9 +300,9 @@ fn fixed_parity(@builtin(global_invocation_id) invocation: vec3<u32>) {
     var is_wide = false;
     switch input.operation {
         case 0u: { result = fixed_add(input.left, input.right); }
-        case 1u: { result = fixed_mul(input.left, input.right, input.fractional_bits); }
-        case 2u: { result = fixed_div(input.left, input.right, input.fractional_bits); }
-        case 3u: { result = fixed_sqrt(input.left, input.fractional_bits); }
+        case 1u: { result = fixed_mul(input.left, input.right); }
+        case 2u: { result = fixed_div(input.left, input.right); }
+        case 3u: { result = fixed_sqrt(input.left); }
         case 4u: { result = fixed_narrow(input.left, input.shift); }
         case 5u: { result = fixed_sub(input.left, input.right); }
         case 6u: { result = fixed_neg(input.left); }

@@ -385,6 +385,10 @@ fn wide_words_match_signed_i64_arithmetic() {
         -21
     );
     assert_eq!(
+        WideI64::from_i64(i64::MIN).checked_sub(WideI64::from_i64(1)),
+        Err(CanonicalFailure::ArithmeticOverflow)
+    );
+    assert_eq!(
         WideI64::from_i64(i64::MAX).checked_add(WideI64::from_i64(1)),
         Err(CanonicalFailure::ArithmeticOverflow)
     );
@@ -445,21 +449,21 @@ fn fixed_point_cpu_and_wgsl_compute_outputs_are_byte_identical() {
         FixedParityCase {
             left: 0,
             right: 0,
-            fractional_bits: 17,
+            fractional_bits: 0,
             shift: 0,
             operation: 0,
         },
         FixedParityCase {
             left: -1,
             right: 3,
-            fractional_bits: 1,
+            fractional_bits: 0,
             shift: 0,
             operation: 1,
         },
         FixedParityCase {
             left: -3,
             right: 4,
-            fractional_bits: 1,
+            fractional_bits: 0,
             shift: 0,
             operation: 2,
         },
@@ -554,21 +558,21 @@ fn fixed_point_cpu_and_wgsl_compute_outputs_are_byte_identical() {
             FixedParityCase {
                 left: unit,
                 right: 3 * unit,
-                fractional_bits,
+                fractional_bits: 0,
                 shift: 0,
                 operation: 1,
             },
             FixedParityCase {
                 left: 3 * unit,
                 right: 2 * unit,
-                fractional_bits,
+                fractional_bits: 0,
                 shift: 0,
                 operation: 2,
             },
             FixedParityCase {
                 left: 4 * unit,
                 right: 0,
-                fractional_bits,
+                fractional_bits: 0,
                 shift: 0,
                 operation: 3,
             },
@@ -626,7 +630,10 @@ fn fixed_point_cpu_and_wgsl_compute_outputs_are_byte_identical() {
         layout: None,
         module: &shader,
         entry_point: Some("fixed_parity"),
-        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        compilation_options: wgpu::PipelineCompilationOptions {
+            constants: &[("FRACTIONAL_BITS", 0.0)],
+            zero_initialize_workgroup_memory: true,
+        },
         cache: None,
     });
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

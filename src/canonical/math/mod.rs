@@ -1,9 +1,11 @@
 //! Checked integer arithmetic for canonical placement values.
 
-#[allow(dead_code)]
 mod fixed;
-#[allow(dead_code)]
+mod placement;
+#[cfg(test)]
 mod wide;
+
+pub use placement::{PlacementFixedFormat, PlacementScalar};
 
 #[cfg(test)]
 mod tests;
