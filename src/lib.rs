@@ -8,5 +8,5 @@ pub mod canonical;
 pub mod config;
 pub mod facade;
 pub mod prelude;
-#[allow(dead_code, unused_imports)]
-mod runtime;
+/// Pollable asynchronous operation receipts and their Bevy notification.
+pub mod runtime;

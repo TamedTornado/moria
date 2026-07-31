@@ -178,6 +178,13 @@ pub enum TransitionError {
         /// The prohibited phase.
         phase: OperationPhase,
     },
+    /// Submitted work has not reached the family's required drain milestone.
+    DrainIncomplete {
+        /// The receipt family whose drain is incomplete.
+        family: ReceiptFamily,
+        /// The current pending phase.
+        phase: OperationPhase,
+    },
 }
 
 enum Terminal<T, E> {
@@ -246,6 +253,12 @@ impl<T, E> Operation<T, E> {
     #[must_use]
     pub const fn generation(&self) -> DeviceGeneration {
         self.generation
+    }
+
+    /// Returns the immutable lifecycle family selected at admission.
+    #[must_use]
+    pub const fn family(&self) -> ReceiptFamily {
+        self.policy.family
     }
 
     /// Advances a pending operation to a legal family phase.
@@ -326,7 +339,7 @@ impl<T, E> Operation<T, E> {
 
     /// Requests cancellation according to the receipt family's cutoff.
     pub fn cancel(self: &Arc<Self>) -> CancelResult {
-        let terminal = {
+        let result = {
             let mut state = self.state.lock().expect("operation state mutex poisoned");
             if !matches!(state.terminal, Terminal::Pending) {
                 return CancelResult::AlreadyTerminal;
@@ -336,20 +349,26 @@ impl<T, E> Operation<T, E> {
                 CancellationCutoff::BeforeSubmission
                     if before_cancellation_cutoff(self.policy.family, state.phase) =>
                 {
-                    Some(cancelled(self.receipt, state.phase, false))
+                    state.terminal =
+                        Terminal::Cancelled(cancelled(self.receipt, state.phase, false));
+                    CancelResult::CancelledBeforeSubmit
                 }
                 CancellationCutoff::BeforeSubmission => return CancelResult::NotCancellable,
                 CancellationCutoff::SuppressAfterSubmission
                     if before_cancellation_cutoff(self.policy.family, state.phase) =>
                 {
-                    Some(cancelled(self.receipt, state.phase, false))
+                    state.terminal =
+                        Terminal::Cancelled(cancelled(self.receipt, state.phase, false));
+                    CancelResult::CancelledBeforeSubmit
                 }
                 CancellationCutoff::SuppressAfterSubmission => {
                     state.delivery_suppressed = true;
                     return CancelResult::DeliverySuppressed;
                 }
                 CancellationCutoff::AbortAfterSubmission if !state.submitted => {
-                    Some(cancelled(self.receipt, state.phase, false))
+                    state.terminal =
+                        Terminal::Cancelled(cancelled(self.receipt, state.phase, false));
+                    CancelResult::CancelledBeforeSubmit
                 }
                 CancellationCutoff::AbortAfterSubmission => {
                     state.abort_requested = true;
@@ -359,7 +378,9 @@ impl<T, E> Operation<T, E> {
                     return CancelResult::NotCancellable;
                 }
                 CancellationCutoff::BeforeCorrectionExport if !state.submitted => {
-                    Some(cancelled(self.receipt, state.phase, false))
+                    state.terminal =
+                        Terminal::Cancelled(cancelled(self.receipt, state.phase, false));
+                    CancelResult::CancelledBeforeSubmit
                 }
                 CancellationCutoff::BeforeCorrectionExport => {
                     state.abort_requested = true;
@@ -367,11 +388,10 @@ impl<T, E> Operation<T, E> {
                 }
             }
         };
-        if self.set_cancelled(terminal.expect("cancellable branch has a terminal result")) {
-            CancelResult::CancelledBeforeSubmit
-        } else {
-            CancelResult::AlreadyTerminal
+        if result == CancelResult::CancelledBeforeSubmit {
+            self.retain_terminal();
         }
+        result
     }
 
     /// Completes successfully, retaining the shared result while handles or cache retain it.
@@ -424,20 +444,29 @@ impl<T, E> Operation<T, E> {
                 return Err(TransitionError::AlreadyTerminal);
             }
             if state.delivery_suppressed || state.abort_requested {
+                if state.submitted && !drain_complete(self.policy.family, state.phase) {
+                    return Err(TransitionError::DrainIncomplete {
+                        family: self.policy.family,
+                        phase: state.phase,
+                    });
+                }
                 state.terminal =
                     Terminal::Cancelled(cancelled(self.receipt, state.phase, state.submitted));
             } else {
+                if matches!(terminal, Terminal::Ready(_))
+                    && state.phase != final_phase(self.policy.family)
+                {
+                    return Err(TransitionError::InvalidTransition {
+                        family: self.policy.family,
+                        from: state.phase,
+                        to: final_phase(self.policy.family),
+                    });
+                }
                 state.terminal = terminal;
             }
         }
-        if let Some(cache) = self.cache.upgrade() {
-            cache.retain_terminal(Arc::clone(self));
-        }
+        self.retain_terminal();
         Ok(())
-    }
-
-    fn set_cancelled(self: &Arc<Self>, cancelled: CancelledOperation) -> bool {
-        self.set_terminal(Terminal::Cancelled(cancelled))
     }
 
     pub(super) fn terminalize_old_generation(self: &Arc<Self>, error: E) {
@@ -452,10 +481,14 @@ impl<T, E> Operation<T, E> {
             }
             state.terminal = terminal;
         }
+        self.retain_terminal();
+        true
+    }
+
+    fn retain_terminal(self: &Arc<Self>) {
         if let Some(cache) = self.cache.upgrade() {
             cache.retain_terminal(Arc::clone(self));
         }
-        true
     }
 }
 
@@ -488,6 +521,40 @@ const fn initial_phase(family: ReceiptFamily) -> OperationPhase {
         ReceiptFamily::Replay => OperationPhase::LoadingOwnedRecords,
         ReceiptFamily::Recovery => OperationPhase::Queued,
         ReceiptFamily::Shutdown => OperationPhase::ClosingAdmission,
+    }
+}
+
+const fn final_phase(family: ReceiptFamily) -> OperationPhase {
+    use OperationPhase::*;
+    match family {
+        ReceiptFamily::Genesis => ExportingReplayHeader,
+        ReceiptFamily::Tick | ReceiptFamily::Query => Decoding,
+        ReceiptFamily::Interest => Applying,
+        ReceiptFamily::ObservationResnapshot => Encoding,
+        ReceiptFamily::Checkpoint => CommittingManifest,
+        ReceiptFamily::Correction | ReceiptFamily::Restore | ReceiptFamily::Replay => Publishing,
+        ReceiptFamily::Recovery => Comparing,
+        ReceiptFamily::Shutdown => Releasing,
+    }
+}
+
+fn drain_complete(family: ReceiptFamily, phase: OperationPhase) -> bool {
+    use OperationPhase::*;
+    match family {
+        ReceiptFamily::Checkpoint => matches!(phase, StoringBlobs | CommittingManifest),
+        ReceiptFamily::Correction => matches!(
+            phase,
+            ValidatingFinal | ExportingCorrectionBranch | Publishing
+        ),
+        ReceiptFamily::Restore => matches!(
+            phase,
+            RestoringParticipants | ExportingReplayHeader | Publishing
+        ),
+        ReceiptFamily::Replay => matches!(
+            phase,
+            ComparingExpected | ExportingReplayHeader | ExportingReplayPrefix | Publishing
+        ),
+        _ => phase == final_phase(family),
     }
 }
 

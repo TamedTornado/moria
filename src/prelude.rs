@@ -10,3 +10,11 @@ pub use crate::facade::{
     BoundedBytes, BoundedBytes64, BoundedOwnerError, BoundedPushRejected, BoundedUtf8, BoundedVec,
     BytesConstructionRejected, OwnedBytes, VecConstructionRejected,
 };
+pub use crate::runtime::{
+    CancelResult, CheckpointReceipt, CorrectionReceipt, GenesisReceipt, InterestReceipt,
+    ObservationResnapshotReceipt, QueryReceipt, ReceiptState, RecoveryReceipt, ReplayReceipt,
+    RestoreReceipt, ShutdownReceipt, TickReceipt,
+};
+
+#[cfg(feature = "bevy")]
+pub use crate::runtime::ReceiptNotification;

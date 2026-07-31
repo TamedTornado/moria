@@ -1,4 +1,7 @@
-use std::{sync::Arc, thread};
+use std::{
+    sync::{Arc, Barrier},
+    thread,
+};
 
 use crate::canonical::{DeviceGeneration, ReceiptId};
 
@@ -490,13 +493,24 @@ fn cancellation_and_completion_race_to_one_retained_terminal_state() {
         .operation()
         .advance(OperationPhase::Submitted)
         .unwrap();
+    receipt
+        .operation()
+        .advance(OperationPhase::Mapping)
+        .unwrap();
+    receipt
+        .operation()
+        .advance(OperationPhase::Decoding)
+        .unwrap();
     let operation = receipt.operation();
     let canceller = receipt.clone();
     let complete = thread::spawn(move || operation.complete_ready(9));
     let cancelled = thread::spawn(move || canceller.cancel());
     let completion = complete.join().unwrap();
     let cancellation = cancelled.join().unwrap();
-    assert!(completion.is_ok() || matches!(completion, Err(TransitionError::AlreadyTerminal)));
+    assert!(matches!(
+        completion,
+        Ok(()) | Err(TransitionError::AlreadyTerminal)
+    ));
     assert!(matches!(
         cancellation,
         CancelResult::DeliverySuppressed | CancelResult::AlreadyTerminal
@@ -504,6 +518,93 @@ fn cancellation_and_completion_race_to_one_retained_terminal_state() {
     assert!(matches!(
         receipt.poll(),
         ReceiptState::Ready(_) | ReceiptState::Cancelled(_)
+    ));
+}
+
+#[test]
+fn interest_cancellation_and_application_are_atomic() {
+    for receipt_number in 1..=64 {
+        let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+        let receipt = cache
+            .admit(
+                ReceiptId::from_raw(receipt_number),
+                DeviceGeneration::from_raw(1),
+                ReceiptPolicy::for_family(ReceiptFamily::Interest),
+                8,
+            )
+            .unwrap();
+        let start = Arc::new(Barrier::new(3));
+        let advance_operation = receipt.operation();
+        let advance_start = Arc::clone(&start);
+        let advance = thread::spawn(move || {
+            advance_start.wait();
+            advance_operation.advance(OperationPhase::Applying)
+        });
+        let cancel_receipt = receipt.clone();
+        let cancel_start = Arc::clone(&start);
+        let cancel = thread::spawn(move || {
+            cancel_start.wait();
+            cancel_receipt.cancel()
+        });
+        start.wait();
+
+        let advanced = advance.join().unwrap();
+        let cancelled = cancel.join().unwrap();
+        match (advanced, cancelled, receipt.poll()) {
+            (Ok(()), CancelResult::NotCancellable, ReceiptState::Pending(progress)) => {
+                assert_eq!(progress.phase, OperationPhase::Applying);
+            }
+            (
+                Err(TransitionError::AlreadyTerminal),
+                CancelResult::CancelledBeforeSubmit,
+                ReceiptState::Cancelled(cancelled),
+            ) => assert_eq!(cancelled.last_phase, OperationPhase::Queued),
+            outcome => panic!("interest cancel/apply race produced {outcome:?}"),
+        }
+    }
+}
+
+#[test]
+fn successful_completion_requires_each_family_final_phase() {
+    for (family, lifecycle) in LIFECYCLES {
+        let receipt = receipt(*family);
+        let initial = receipt.operation().complete_ready(1);
+        assert_eq!(
+            initial,
+            Err(TransitionError::InvalidTransition {
+                family: *family,
+                from: lifecycle[0],
+                to: *lifecycle.last().unwrap(),
+            })
+        );
+        advance_to(&receipt, lifecycle, lifecycle.len() - 1);
+        receipt.operation().complete_ready(1).unwrap();
+        assert!(matches!(receipt.poll(), ReceiptState::Ready(value) if *value == 1));
+    }
+}
+
+#[test]
+fn submitted_cancellation_only_reports_drain_after_its_milestone() {
+    let checkpoint = receipt(ReceiptFamily::Checkpoint);
+    advance_to(&checkpoint, LIFECYCLES[5].1, 2);
+    assert_eq!(checkpoint.cancel(), CancelResult::AbortRequested);
+    assert_eq!(
+        checkpoint.operation().complete_ready(1),
+        Err(TransitionError::DrainIncomplete {
+            family: ReceiptFamily::Checkpoint,
+            phase: OperationPhase::Reading,
+        })
+    );
+    checkpoint
+        .operation()
+        .advance(OperationPhase::StoringBlobs)
+        .unwrap();
+    checkpoint.operation().complete_ready(1).unwrap();
+    assert!(matches!(
+        checkpoint.poll(),
+        ReceiptState::Cancelled(cancelled)
+            if cancelled.last_phase == OperationPhase::StoringBlobs
+                && cancelled.submitted_work_drained
     ));
 }
 
@@ -569,14 +670,44 @@ fn generation_change_terminalizes_old_receipts_and_rejects_late_publication() {
         .unwrap();
     current
         .operation()
+        .advance(OperationPhase::Applying)
+        .unwrap();
+    current
+        .operation()
         .complete_ready_for_generation(DeviceGeneration::from_raw(5), 2)
         .unwrap();
     assert!(matches!(current.poll(), ReceiptState::Ready(value) if *value == 2));
 }
 
 #[test]
+fn generation_mismatched_admission_is_rejected_after_rollover() {
+    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+    cache.set_current_generation(DeviceGeneration::from_raw(5), "device lost");
+    let admission = cache.admit(
+        ReceiptId::from_raw(1),
+        DeviceGeneration::from_raw(4),
+        ReceiptPolicy::for_family(ReceiptFamily::Interest),
+        8,
+    );
+    let Err(error) = admission else {
+        panic!("stale generation must not be admitted")
+    };
+    assert_eq!(
+        error,
+        super::ResultBackpressure::StaleGeneration {
+            expected: DeviceGeneration::from_raw(5),
+            actual: DeviceGeneration::from_raw(4),
+        }
+    );
+}
+
+#[test]
 fn cloned_after_terminal_receipts_retain_the_shared_terminal_result() {
     let receipt = receipt(ReceiptFamily::Interest);
+    receipt
+        .operation()
+        .advance(OperationPhase::Applying)
+        .unwrap();
     receipt.operation().complete_ready(9).unwrap();
     let clone = receipt.clone();
     drop(receipt);
@@ -642,6 +773,14 @@ fn dropped_pending_and_submitted_receipts_remain_owned_by_the_runtime_driver() {
     submitted
         .operation()
         .advance(OperationPhase::Submitted)
+        .unwrap();
+    submitted
+        .operation()
+        .advance(OperationPhase::Mapping)
+        .unwrap();
+    submitted
+        .operation()
+        .advance(OperationPhase::Decoding)
         .unwrap();
     let driver = submitted.operation();
     drop(submitted);

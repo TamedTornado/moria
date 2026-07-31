@@ -96,6 +96,13 @@ pub enum ResultBackpressure {
     Full,
     /// The cache could not reserve its finite terminal-entry index.
     AllocationFailed,
+    /// The admission named a device generation that is no longer current.
+    StaleGeneration {
+        /// The generation currently accepting new operations.
+        expected: DeviceGeneration,
+        /// The generation attached to the rejected operation.
+        actual: DeviceGeneration,
+    },
 }
 
 struct CacheState<T, E> {
@@ -154,14 +161,21 @@ impl<T, E> TerminalCache<T, E> {
         policy: ReceiptPolicy,
         result_bytes: u64,
     ) -> Result<Receipt<T, E>, ResultBackpressure> {
-        {
-            let mut current_generation = self
-                .current_generation
-                .lock()
-                .expect("device generation mutex poisoned");
-            if current_generation.is_none() {
-                *current_generation = Some(generation);
+        // Keep the generation guard until the operation is registered. A
+        // rollover therefore sees every accepted old-generation operation.
+        let mut current_generation = self
+            .current_generation
+            .lock()
+            .expect("device generation mutex poisoned");
+        match *current_generation {
+            Some(expected) if expected != generation => {
+                return Err(ResultBackpressure::StaleGeneration {
+                    expected,
+                    actual: generation,
+                });
             }
+            Some(_) => {}
+            None => *current_generation = Some(generation),
         }
         loop {
             let victim = {
@@ -202,6 +216,7 @@ impl<T, E> TerminalCache<T, E> {
                 .operations
                 .retain(|operation| operation.strong_count() != 0);
             state.operations.push_back(Arc::downgrade(&operation));
+            drop(current_generation);
             return Ok(Receipt { operation });
         }
     }
@@ -221,25 +236,23 @@ impl<T, E> TerminalCache<T, E> {
             .expect("device generation mutex poisoned");
         *current_generation = Some(generation);
 
-        let tracked = self
-            .state
-            .lock()
-            .expect("terminal cache mutex poisoned")
-            .operations
-            .len();
-        for index in 0..tracked {
-            let operation = self
-                .state
-                .lock()
-                .expect("terminal cache mutex poisoned")
+        // Snapshot while registration is excluded by `current_generation`.
+        // Do not hold cache locks while terminalization retains a cache entry.
+        let operations = {
+            let mut state = self.state.lock().expect("terminal cache mutex poisoned");
+            state
                 .operations
-                .get(index)
-                .and_then(std::sync::Weak::upgrade);
-            if let Some(operation) =
-                operation.filter(|operation| operation.generation().get() < generation.get())
-            {
-                operation.terminalize_old_generation(old_generation_failure.clone());
-            }
+                .retain(|operation| operation.strong_count() != 0);
+            state
+                .operations
+                .iter()
+                .filter_map(std::sync::Weak::upgrade)
+                .filter(|operation| operation.generation().get() < generation.get())
+                .collect::<Vec<_>>()
+        };
+        drop(current_generation);
+        for operation in operations {
+            operation.terminalize_old_generation(old_generation_failure.clone());
         }
     }
 
@@ -295,4 +308,114 @@ impl<T, E> Receipt<T, E> {
     pub fn cancel(&self) -> super::operation::CancelResult {
         self.operation.cancel()
     }
+
+    /// Returns the terminal Bevy notification payload, if this receipt has completed.
+    #[cfg(feature = "bevy")]
+    #[must_use]
+    pub fn terminal_notification(&self) -> Option<ReceiptNotification> {
+        match self.poll() {
+            ReceiptState::Pending(_) => None,
+            ReceiptState::Ready(_) | ReceiptState::Failed(_) | ReceiptState::Cancelled(_) => {
+                Some(ReceiptNotification {
+                    receipt: self.operation.receipt_id(),
+                    family: self.operation.family(),
+                })
+            }
+        }
+    }
 }
+
+/// A Bevy notification that a receipt family has reached a terminal state.
+///
+/// The notification carries identity only; consumers poll their retained
+/// concrete receipt to obtain the shared terminal value.
+#[cfg(feature = "bevy")]
+#[derive(Clone, Copy, Debug, bevy::ecs::message::Message)]
+pub struct ReceiptNotification {
+    /// The terminal receipt's stable identity.
+    pub receipt: ReceiptId,
+    /// The terminal receipt's operation family.
+    pub family: super::operation::ReceiptFamily,
+}
+
+macro_rules! concrete_receipt {
+    ($name:ident, cancellable) => {
+        #[doc = concat!("The public ", stringify!($name), " facade handle.")]
+        pub struct $name<T, E>(Receipt<T, E>);
+
+        impl<T, E> Clone for $name<T, E> {
+            fn clone(&self) -> Self {
+                Self(self.0.clone())
+            }
+        }
+
+        impl<T, E> From<Receipt<T, E>> for $name<T, E> {
+            fn from(receipt: Receipt<T, E>) -> Self {
+                Self(receipt)
+            }
+        }
+
+        impl<T, E> $name<T, E> {
+            /// Returns the family-specialized nonblocking receipt state.
+            #[must_use]
+            pub fn poll(&self) -> ReceiptState<T, E> {
+                self.0.poll()
+            }
+
+            /// Requests cancellation according to this family's policy.
+            pub fn cancel(&self) -> super::operation::CancelResult {
+                self.0.cancel()
+            }
+
+            /// Returns the terminal Bevy notification payload, if complete.
+            #[cfg(feature = "bevy")]
+            #[must_use]
+            pub fn terminal_notification(&self) -> Option<ReceiptNotification> {
+                self.0.terminal_notification()
+            }
+        }
+    };
+    ($name:ident, terminal_only) => {
+        #[doc = concat!("The public ", stringify!($name), " facade handle.")]
+        pub struct $name<T, E>(Receipt<T, E>);
+
+        impl<T, E> Clone for $name<T, E> {
+            fn clone(&self) -> Self {
+                Self(self.0.clone())
+            }
+        }
+
+        impl<T, E> From<Receipt<T, E>> for $name<T, E> {
+            fn from(receipt: Receipt<T, E>) -> Self {
+                Self(receipt)
+            }
+        }
+
+        impl<T, E> $name<T, E> {
+            /// Returns the family-specialized nonblocking receipt state.
+            #[must_use]
+            pub fn poll(&self) -> ReceiptState<T, E> {
+                self.0.poll()
+            }
+
+            /// Returns the terminal Bevy notification payload, if complete.
+            #[cfg(feature = "bevy")]
+            #[must_use]
+            pub fn terminal_notification(&self) -> Option<ReceiptNotification> {
+                self.0.terminal_notification()
+            }
+        }
+    };
+}
+
+concrete_receipt!(GenesisReceipt, terminal_only);
+concrete_receipt!(TickReceipt, cancellable);
+concrete_receipt!(InterestReceipt, cancellable);
+concrete_receipt!(QueryReceipt, cancellable);
+concrete_receipt!(ObservationResnapshotReceipt, cancellable);
+concrete_receipt!(CheckpointReceipt, cancellable);
+concrete_receipt!(CorrectionReceipt, cancellable);
+concrete_receipt!(RestoreReceipt, cancellable);
+concrete_receipt!(ReplayReceipt, cancellable);
+concrete_receipt!(RecoveryReceipt, cancellable);
+concrete_receipt!(ShutdownReceipt, terminal_only);

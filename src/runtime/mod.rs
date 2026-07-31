@@ -8,9 +8,14 @@ pub use operation::{
     TransitionError,
 };
 pub use receipt::{
-    CancelledOperation, MinimumRevisionGap, OperationProgress, ProgressBlocker,
-    QueryReadinessReason, Receipt, ReceiptState, ResultBackpressure, TerminalCache,
+    CancelledOperation, CheckpointReceipt, CorrectionReceipt, GenesisReceipt, InterestReceipt,
+    MinimumRevisionGap, ObservationResnapshotReceipt, OperationProgress, ProgressBlocker,
+    QueryReadinessReason, QueryReceipt, Receipt, ReceiptState, RecoveryReceipt, ReplayReceipt,
+    RestoreReceipt, ResultBackpressure, ShutdownReceipt, TerminalCache, TickReceipt,
 };
+
+#[cfg(feature = "bevy")]
+pub use receipt::ReceiptNotification;
 
 #[cfg(test)]
 mod tests;
