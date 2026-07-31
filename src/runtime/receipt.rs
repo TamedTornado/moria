@@ -5,6 +5,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+#[cfg(feature = "bevy")]
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use crate::{
     canonical::{DeviceGeneration, ReceiptId, VolumeId, VolumeRevision},
     facade::{BoundedVec, MissingRange, ResourceBudgetField},
@@ -105,6 +108,13 @@ pub enum ResultBackpressure {
     },
 }
 
+/// A rejected attempt to move a device generation backwards or repeat it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct GenerationTransitionError {
+    pub(crate) current: DeviceGeneration,
+    pub(crate) requested: DeviceGeneration,
+}
+
 struct CacheState<T, E> {
     entries: VecDeque<Arc<Operation<T, E>>>,
     operations: VecDeque<std::sync::Weak<Operation<T, E>>>,
@@ -117,7 +127,7 @@ struct CacheState<T, E> {
 /// Each admission reserves one record and its declared worst-case terminal
 /// bytes. A terminal cache entry is evicted only when no receipt clone retains
 /// it, so consumers holding old receipts exert explicit backpressure.
-pub struct TerminalCache<T, E> {
+pub(crate) struct TerminalCache<T, E> {
     record_capacity: u32,
     byte_capacity: u64,
     current_generation: Arc<Mutex<Option<DeviceGeneration>>>,
@@ -126,7 +136,7 @@ pub struct TerminalCache<T, E> {
 
 impl<T, E> TerminalCache<T, E> {
     /// Creates a finite cache. Its index capacity is reserved before use.
-    pub fn try_new(
+    pub(crate) fn try_new(
         record_capacity: u32,
         byte_capacity: u64,
     ) -> Result<Arc<Self>, ResultBackpressure> {
@@ -154,7 +164,7 @@ impl<T, E> TerminalCache<T, E> {
     }
 
     /// Admits an operation after reserving one terminal record and all result bytes.
-    pub fn admit(
+    pub(crate) fn admit(
         self: &Arc<Self>,
         receipt: ReceiptId,
         generation: DeviceGeneration,
@@ -226,7 +236,11 @@ impl<T, E> TerminalCache<T, E> {
     /// `old_generation_failure` must be the caller's typed device-loss or
     /// no-advance failure. Already terminal receipts remain unchanged, and late
     /// completion attempts from an old generation are still rejected.
-    pub fn set_current_generation(&self, generation: DeviceGeneration, old_generation_failure: E)
+    pub(crate) fn set_current_generation(
+        &self,
+        generation: DeviceGeneration,
+        old_generation_failure: E,
+    ) -> Result<(), GenerationTransitionError>
     where
         E: Clone,
     {
@@ -234,6 +248,17 @@ impl<T, E> TerminalCache<T, E> {
             .current_generation
             .lock()
             .expect("device generation mutex poisoned");
+        if let Some(current) = *current_generation {
+            // A generation is a monotonic device epoch. Accepting an older or
+            // equal epoch would revive operations terminalized during a prior
+            // rollover and make their late callbacks publishable again.
+            if generation.get() <= current.get() {
+                return Err(GenerationTransitionError {
+                    current,
+                    requested: generation,
+                });
+            }
+        }
         *current_generation = Some(generation);
 
         // Snapshot while registration is excluded by `current_generation`.
@@ -254,6 +279,7 @@ impl<T, E> TerminalCache<T, E> {
         for operation in operations {
             operation.terminalize_old_generation(old_generation_failure.clone());
         }
+        Ok(())
     }
 
     pub(super) fn retain_terminal(&self, operation: Arc<Operation<T, E>>) {
@@ -279,7 +305,7 @@ fn has_capacity<T, E>(
 }
 
 /// A cloneable, pollable receipt sharing one operation record.
-pub struct Receipt<T, E> {
+pub(crate) struct Receipt<T, E> {
     operation: Arc<Operation<T, E>>,
 }
 
@@ -292,9 +318,7 @@ impl<T, E> Clone for Receipt<T, E> {
 }
 
 impl<T, E> Receipt<T, E> {
-    /// Returns an operation view for runtime-owned progress and completion driving.
-    #[must_use]
-    pub fn operation(&self) -> Arc<Operation<T, E>> {
+    pub(super) fn operation(&self) -> Arc<Operation<T, E>> {
         Arc::clone(&self.operation)
     }
 
@@ -308,21 +332,6 @@ impl<T, E> Receipt<T, E> {
     pub fn cancel(&self) -> super::operation::CancelResult {
         self.operation.cancel()
     }
-
-    /// Returns the terminal Bevy notification payload, if this receipt has completed.
-    #[cfg(feature = "bevy")]
-    #[must_use]
-    pub fn terminal_notification(&self) -> Option<ReceiptNotification> {
-        match self.poll() {
-            ReceiptState::Pending(_) => None,
-            ReceiptState::Ready(_) | ReceiptState::Failed(_) | ReceiptState::Cancelled(_) => {
-                Some(ReceiptNotification {
-                    receipt: self.operation.receipt_id(),
-                    family: self.operation.family(),
-                })
-            }
-        }
-    }
 }
 
 /// A Bevy notification that a receipt family has reached a terminal state.
@@ -330,12 +339,98 @@ impl<T, E> Receipt<T, E> {
 /// The notification carries identity only; consumers poll their retained
 /// concrete receipt to obtain the shared terminal value.
 #[cfg(feature = "bevy")]
-#[derive(Clone, Copy, Debug, bevy::ecs::message::Message)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, bevy::ecs::message::Message)]
 pub struct ReceiptNotification {
     /// The terminal receipt's stable identity.
     pub receipt: ReceiptId,
     /// The terminal receipt's operation family.
     pub family: super::operation::ReceiptFamily,
+}
+
+#[cfg(feature = "bevy")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiptNotificationRegistrationError {
+    /// The bridge has reached its declared finite watch capacity.
+    Full,
+    /// The same receipt is already watched by this bridge.
+    AlreadyRegistered,
+}
+
+#[cfg(feature = "bevy")]
+struct WatchedReceipt {
+    receipt: ReceiptId,
+    family: super::operation::ReceiptFamily,
+    terminal_signal: Arc<AtomicBool>,
+}
+
+/// A bounded Bevy bridge that emits one message for each watched receipt's
+/// terminal transition.
+///
+/// Register concrete receipts with their `watch_terminal_notification` method,
+/// add this resource and [`emit_terminal_notifications`] to an app, then read
+/// [`ReceiptNotification`] with a Bevy `MessageReader`. A registration remains
+/// until its terminal message has been emitted.
+#[cfg(feature = "bevy")]
+#[derive(bevy::ecs::prelude::Resource)]
+pub struct ReceiptNotificationBridge {
+    capacity: usize,
+    watched: Vec<WatchedReceipt>,
+}
+
+#[cfg(feature = "bevy")]
+impl ReceiptNotificationBridge {
+    /// Creates a bridge with a finite number of receipt watches.
+    pub fn try_new(capacity: usize) -> Result<Self, ReceiptNotificationRegistrationError> {
+        let mut watched = Vec::new();
+        watched
+            .try_reserve_exact(capacity)
+            .map_err(|_| ReceiptNotificationRegistrationError::Full)?;
+        Ok(Self { capacity, watched })
+    }
+
+    fn watch<T, E>(
+        &mut self,
+        receipt: &Receipt<T, E>,
+    ) -> Result<(), ReceiptNotificationRegistrationError> {
+        let operation = receipt.operation();
+        let receipt_id = operation.receipt_id();
+        if self
+            .watched
+            .iter()
+            .any(|watched| watched.receipt == receipt_id)
+        {
+            return Err(ReceiptNotificationRegistrationError::AlreadyRegistered);
+        }
+        if self.watched.len() == self.capacity {
+            return Err(ReceiptNotificationRegistrationError::Full);
+        }
+        self.watched.push(WatchedReceipt {
+            receipt: receipt_id,
+            family: operation.family(),
+            terminal_signal: operation.terminal_signal(),
+        });
+        Ok(())
+    }
+}
+
+/// Emits one [`ReceiptNotification`] for each watched receipt that becomes
+/// terminal. Add this system to a Bevy schedule after the runtime driver.
+#[cfg(feature = "bevy")]
+pub fn emit_terminal_notifications(
+    mut bridge: bevy::ecs::prelude::ResMut<ReceiptNotificationBridge>,
+    mut notifications: bevy::ecs::message::MessageWriter<ReceiptNotification>,
+) {
+    bridge.watched.retain(|watched| {
+        if watched.terminal_signal.load(Ordering::Acquire) {
+            notifications.write(ReceiptNotification {
+                receipt: watched.receipt,
+                family: watched.family,
+            });
+            false
+        } else {
+            true
+        }
+    });
 }
 
 macro_rules! concrete_receipt {
@@ -349,13 +444,11 @@ macro_rules! concrete_receipt {
             }
         }
 
-        impl<T, E> From<Receipt<T, E>> for $name<T, E> {
-            fn from(receipt: Receipt<T, E>) -> Self {
-                Self(receipt)
-            }
-        }
-
         impl<T, E> $name<T, E> {
+            pub(super) fn operation(&self) -> Arc<Operation<T, E>> {
+                self.0.operation()
+            }
+
             /// Returns the family-specialized nonblocking receipt state.
             #[must_use]
             pub fn poll(&self) -> ReceiptState<T, E> {
@@ -367,11 +460,13 @@ macro_rules! concrete_receipt {
                 self.0.cancel()
             }
 
-            /// Returns the terminal Bevy notification payload, if complete.
+            /// Registers this concrete receipt for a once-only terminal Bevy message.
             #[cfg(feature = "bevy")]
-            #[must_use]
-            pub fn terminal_notification(&self) -> Option<ReceiptNotification> {
-                self.0.terminal_notification()
+            pub fn watch_terminal_notification(
+                &self,
+                bridge: &mut ReceiptNotificationBridge,
+            ) -> Result<(), ReceiptNotificationRegistrationError> {
+                bridge.watch(&self.0)
             }
         }
     };
@@ -385,24 +480,24 @@ macro_rules! concrete_receipt {
             }
         }
 
-        impl<T, E> From<Receipt<T, E>> for $name<T, E> {
-            fn from(receipt: Receipt<T, E>) -> Self {
-                Self(receipt)
-            }
-        }
-
         impl<T, E> $name<T, E> {
+            pub(super) fn operation(&self) -> Arc<Operation<T, E>> {
+                self.0.operation()
+            }
+
             /// Returns the family-specialized nonblocking receipt state.
             #[must_use]
             pub fn poll(&self) -> ReceiptState<T, E> {
                 self.0.poll()
             }
 
-            /// Returns the terminal Bevy notification payload, if complete.
+            /// Registers this concrete receipt for a once-only terminal Bevy message.
             #[cfg(feature = "bevy")]
-            #[must_use]
-            pub fn terminal_notification(&self) -> Option<ReceiptNotification> {
-                self.0.terminal_notification()
+            pub fn watch_terminal_notification(
+                &self,
+                bridge: &mut ReceiptNotificationBridge,
+            ) -> Result<(), ReceiptNotificationRegistrationError> {
+                bridge.watch(&self.0)
             }
         }
     };
@@ -419,3 +514,40 @@ concrete_receipt!(RestoreReceipt, cancellable);
 concrete_receipt!(ReplayReceipt, cancellable);
 concrete_receipt!(RecoveryReceipt, cancellable);
 concrete_receipt!(ShutdownReceipt, terminal_only);
+
+macro_rules! admit_concrete_receipt {
+    ($method:ident, $name:ident, $family:ident) => {
+        impl<T, E> TerminalCache<T, E> {
+            pub(crate) fn $method(
+                self: &Arc<Self>,
+                receipt: ReceiptId,
+                generation: DeviceGeneration,
+                result_bytes: u64,
+            ) -> Result<$name<T, E>, ResultBackpressure> {
+                self.admit(
+                    receipt,
+                    generation,
+                    ReceiptPolicy::for_family(super::operation::ReceiptFamily::$family),
+                    result_bytes,
+                )
+                .map($name)
+            }
+        }
+    };
+}
+
+admit_concrete_receipt!(admit_genesis, GenesisReceipt, Genesis);
+admit_concrete_receipt!(admit_tick, TickReceipt, Tick);
+admit_concrete_receipt!(admit_interest, InterestReceipt, Interest);
+admit_concrete_receipt!(admit_query, QueryReceipt, Query);
+admit_concrete_receipt!(
+    admit_observation_resnapshot,
+    ObservationResnapshotReceipt,
+    ObservationResnapshot
+);
+admit_concrete_receipt!(admit_checkpoint, CheckpointReceipt, Checkpoint);
+admit_concrete_receipt!(admit_correction, CorrectionReceipt, Correction);
+admit_concrete_receipt!(admit_restore, RestoreReceipt, Restore);
+admit_concrete_receipt!(admit_replay, ReplayReceipt, Replay);
+admit_concrete_receipt!(admit_recovery, RecoveryReceipt, Recovery);
+admit_concrete_receipt!(admit_shutdown, ShutdownReceipt, Shutdown);

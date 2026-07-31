@@ -1,6 +1,9 @@
 //! Operation state transitions and cancellation policy.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use crate::canonical::{DeviceGeneration, ReceiptId};
 
@@ -205,12 +208,13 @@ struct OperationState<T, E> {
 }
 
 /// Shared mutable state owned by all clones of one receipt.
-pub struct Operation<T, E> {
+pub(crate) struct Operation<T, E> {
     receipt: ReceiptId,
     generation: DeviceGeneration,
     policy: ReceiptPolicy,
     current_generation: Arc<Mutex<Option<DeviceGeneration>>>,
     state: Mutex<OperationState<T, E>>,
+    terminal_signal: Arc<AtomicBool>,
     pub(super) cache: std::sync::Weak<TerminalCache<T, E>>,
     result_bytes: u64,
 }
@@ -238,6 +242,7 @@ impl<T, E> Operation<T, E> {
                 abort_requested: false,
                 terminal: Terminal::Pending,
             }),
+            terminal_signal: Arc::new(AtomicBool::new(false)),
             cache,
             result_bytes,
         }
@@ -245,24 +250,24 @@ impl<T, E> Operation<T, E> {
 
     /// Returns this operation's immutable accepted receipt identity.
     #[must_use]
-    pub const fn receipt_id(&self) -> ReceiptId {
+    pub(crate) const fn receipt_id(&self) -> ReceiptId {
         self.receipt
     }
 
     /// Returns the device generation allowed to publish this operation.
     #[must_use]
-    pub const fn generation(&self) -> DeviceGeneration {
+    pub(crate) const fn generation(&self) -> DeviceGeneration {
         self.generation
     }
 
     /// Returns the immutable lifecycle family selected at admission.
     #[must_use]
-    pub const fn family(&self) -> ReceiptFamily {
+    pub(crate) const fn family(&self) -> ReceiptFamily {
         self.policy.family
     }
 
     /// Advances a pending operation to a legal family phase.
-    pub fn advance(&self, phase: OperationPhase) -> Result<(), TransitionError> {
+    pub(crate) fn advance(&self, phase: OperationPhase) -> Result<(), TransitionError> {
         if !self.policy.allows_phase(phase) {
             return Err(TransitionError::InvalidPhase {
                 family: self.policy.family,
@@ -294,7 +299,10 @@ impl<T, E> Operation<T, E> {
     }
 
     /// Records a query readiness blocker while the query waits for readiness.
-    pub fn set_query_blocker(&self, reason: QueryReadinessReason) -> Result<(), TransitionError> {
+    pub(crate) fn set_query_blocker(
+        &self,
+        reason: QueryReadinessReason,
+    ) -> Result<(), TransitionError> {
         let mut state = self.state.lock().expect("operation state mutex poisoned");
         if self.policy.family != ReceiptFamily::Query
             || state.phase != OperationPhase::WaitingForReadiness
@@ -316,7 +324,7 @@ impl<T, E> Operation<T, E> {
     /// A true result does not cancel submitted GPU work; the driver must continue
     /// the family-specific drain phases and then complete the receipt.
     #[must_use]
-    pub fn abort_requested(&self) -> bool {
+    pub(crate) fn abort_requested(&self) -> bool {
         self.state
             .lock()
             .expect("operation state mutex poisoned")
@@ -337,6 +345,11 @@ impl<T, E> Operation<T, E> {
         }
     }
 
+    #[cfg(feature = "bevy")]
+    pub(super) fn terminal_signal(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.terminal_signal)
+    }
+
     /// Requests cancellation according to the receipt family's cutoff.
     pub fn cancel(self: &Arc<Self>) -> CancelResult {
         let result = {
@@ -351,6 +364,7 @@ impl<T, E> Operation<T, E> {
                 {
                     state.terminal =
                         Terminal::Cancelled(cancelled(self.receipt, state.phase, false));
+                    self.terminal_signal.store(true, Ordering::Release);
                     CancelResult::CancelledBeforeSubmit
                 }
                 CancellationCutoff::BeforeSubmission => return CancelResult::NotCancellable,
@@ -359,6 +373,7 @@ impl<T, E> Operation<T, E> {
                 {
                     state.terminal =
                         Terminal::Cancelled(cancelled(self.receipt, state.phase, false));
+                    self.terminal_signal.store(true, Ordering::Release);
                     CancelResult::CancelledBeforeSubmit
                 }
                 CancellationCutoff::SuppressAfterSubmission => {
@@ -368,6 +383,7 @@ impl<T, E> Operation<T, E> {
                 CancellationCutoff::AbortAfterSubmission if !state.submitted => {
                     state.terminal =
                         Terminal::Cancelled(cancelled(self.receipt, state.phase, false));
+                    self.terminal_signal.store(true, Ordering::Release);
                     CancelResult::CancelledBeforeSubmit
                 }
                 CancellationCutoff::AbortAfterSubmission => {
@@ -380,6 +396,7 @@ impl<T, E> Operation<T, E> {
                 CancellationCutoff::BeforeCorrectionExport if !state.submitted => {
                     state.terminal =
                         Terminal::Cancelled(cancelled(self.receipt, state.phase, false));
+                    self.terminal_signal.store(true, Ordering::Release);
                     CancelResult::CancelledBeforeSubmit
                 }
                 CancellationCutoff::BeforeCorrectionExport => {
@@ -464,6 +481,7 @@ impl<T, E> Operation<T, E> {
                 }
                 state.terminal = terminal;
             }
+            self.terminal_signal.store(true, Ordering::Release);
         }
         self.retain_terminal();
         Ok(())
@@ -480,6 +498,7 @@ impl<T, E> Operation<T, E> {
                 return false;
             }
             state.terminal = terminal;
+            self.terminal_signal.store(true, Ordering::Release);
         }
         self.retain_terminal();
         true

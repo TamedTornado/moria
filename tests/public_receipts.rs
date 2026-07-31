@@ -1,43 +1,13 @@
-use bevy::{app::App, ecs::message::Messages};
-use moria::{
-    canonical::{DeviceGeneration, ReceiptId},
-    runtime::{
-        CancelResult, InterestReceipt, ReceiptFamily, ReceiptNotification, ReceiptPolicy,
-        ReceiptState, TerminalCache,
-    },
-};
+#![cfg(feature = "bevy")]
+
+use bevy::app::{App, Update};
+use moria::runtime::{ReceiptNotification, ReceiptNotificationBridge, emit_terminal_notifications};
 
 #[test]
-fn public_receipt_facade_polls_cancels_and_integrates_with_headless_bevy_messages() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(2, 16).unwrap();
-    let receipt: InterestReceipt<u32, &'static str> = cache
-        .admit(
-            ReceiptId::from_raw(1),
-            DeviceGeneration::from_raw(1),
-            ReceiptPolicy::for_family(ReceiptFamily::Interest),
-            8,
-        )
-        .unwrap()
-        .into();
-
-    assert!(matches!(receipt.poll(), ReceiptState::Pending(_)));
-    assert_eq!(receipt.cancel(), CancelResult::CancelledBeforeSubmit);
-    assert!(matches!(receipt.poll(), ReceiptState::Cancelled(_)));
-
-    let generic = cache
-        .admit(
-            ReceiptId::from_raw(2),
-            DeviceGeneration::from_raw(1),
-            ReceiptPolicy::for_family(ReceiptFamily::Interest),
-            8,
-        )
-        .unwrap();
-    assert!(generic.terminal_notification().is_none());
-
+fn public_bevy_notification_bridge_is_available_when_bevy_is_enabled() {
     let mut app = App::new();
-    app.add_message::<ReceiptNotification>();
-    app.world_mut()
-        .resource_mut::<Messages<ReceiptNotification>>()
-        .write(receipt.terminal_notification().unwrap());
+    app.insert_resource(ReceiptNotificationBridge::try_new(1).unwrap())
+        .add_message::<ReceiptNotification>()
+        .add_systems(Update, emit_terminal_notifications);
     app.update();
 }

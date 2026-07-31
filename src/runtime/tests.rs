@@ -7,9 +7,38 @@ use crate::canonical::{DeviceGeneration, ReceiptId};
 
 use super::{
     CancelResult, OperationPhase, ProgressBlocker, QueryReadinessReason, ReceiptFamily,
-    ReceiptPolicy, ReceiptState, TerminalCache, TransitionError,
+    ReceiptState,
+};
+use super::{
+    operation::{ReceiptPolicy, TransitionError},
+    receipt::{GenerationTransitionError, Receipt, ResultBackpressure, TerminalCache},
 };
 use crate::facade::{BoundedVec, BudgetGroup, ResourceBudgetField};
+
+#[cfg(feature = "bevy")]
+use bevy::{
+    app::{App, Update},
+    ecs::{
+        message::MessageReader,
+        prelude::{ResMut, Resource},
+        schedule::IntoScheduleConfigs,
+    },
+};
+
+#[cfg(feature = "bevy")]
+use super::{ReceiptNotification, ReceiptNotificationBridge, emit_terminal_notifications};
+
+#[cfg(feature = "bevy")]
+#[derive(Default, Resource)]
+struct ObservedNotifications(Vec<ReceiptNotification>);
+
+#[cfg(feature = "bevy")]
+fn record_terminal_notifications(
+    mut reader: MessageReader<ReceiptNotification>,
+    mut observed: ResMut<ObservedNotifications>,
+) {
+    observed.0.extend(reader.read().copied());
+}
 
 const PHASES: &[OperationPhase] = &[
     OperationPhase::Verifying,
@@ -163,7 +192,7 @@ const LIFECYCLES: &[(ReceiptFamily, &[OperationPhase])] = &[
     ),
 ];
 
-fn receipt(family: ReceiptFamily) -> super::Receipt<u32, &'static str> {
+fn receipt(family: ReceiptFamily) -> Receipt<u32, &'static str> {
     TerminalCache::try_new(1, 8)
         .unwrap()
         .admit(
@@ -175,11 +204,7 @@ fn receipt(family: ReceiptFamily) -> super::Receipt<u32, &'static str> {
         .unwrap()
 }
 
-fn advance_to(
-    receipt: &super::Receipt<u32, &'static str>,
-    phases: &[OperationPhase],
-    index: usize,
-) {
+fn advance_to(receipt: &Receipt<u32, &'static str>, phases: &[OperationPhase], index: usize) {
     for phase in &phases[1..=index] {
         receipt.operation().advance(*phase).unwrap();
     }
@@ -627,7 +652,9 @@ fn generation_change_terminalizes_old_receipts_and_rejects_late_publication() {
             8,
         )
         .unwrap();
-    cache.set_current_generation(DeviceGeneration::from_raw(5), "device lost");
+    cache
+        .set_current_generation(DeviceGeneration::from_raw(5), "device lost")
+        .unwrap();
     assert!(matches!(
         stale_ready.poll(),
         ReceiptState::Failed(error) if *error == "device lost"
@@ -682,7 +709,9 @@ fn generation_change_terminalizes_old_receipts_and_rejects_late_publication() {
 #[test]
 fn generation_mismatched_admission_is_rejected_after_rollover() {
     let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
-    cache.set_current_generation(DeviceGeneration::from_raw(5), "device lost");
+    cache
+        .set_current_generation(DeviceGeneration::from_raw(5), "device lost")
+        .unwrap();
     let admission = cache.admit(
         ReceiptId::from_raw(1),
         DeviceGeneration::from_raw(4),
@@ -694,11 +723,84 @@ fn generation_mismatched_admission_is_rejected_after_rollover() {
     };
     assert_eq!(
         error,
-        super::ResultBackpressure::StaleGeneration {
+        ResultBackpressure::StaleGeneration {
             expected: DeviceGeneration::from_raw(5),
             actual: DeviceGeneration::from_raw(4),
         }
     );
+}
+
+#[test]
+fn generation_rollbacks_do_not_revive_terminal_work() {
+    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+    let receipt = cache
+        .admit(
+            ReceiptId::from_raw(1),
+            DeviceGeneration::from_raw(5),
+            ReceiptPolicy::for_family(ReceiptFamily::Interest),
+            8,
+        )
+        .unwrap();
+    cache
+        .set_current_generation(DeviceGeneration::from_raw(6), "device lost")
+        .unwrap();
+    assert!(matches!(receipt.poll(), ReceiptState::Failed(error) if *error == "device lost"));
+
+    assert_eq!(
+        cache.set_current_generation(DeviceGeneration::from_raw(5), "rollback"),
+        Err(GenerationTransitionError {
+            current: DeviceGeneration::from_raw(6),
+            requested: DeviceGeneration::from_raw(5),
+        })
+    );
+    assert_eq!(
+        receipt
+            .operation()
+            .complete_ready_for_generation(DeviceGeneration::from_raw(5), 1),
+        Err(TransitionError::StaleGeneration {
+            expected: DeviceGeneration::from_raw(6),
+            actual: DeviceGeneration::from_raw(5),
+        })
+    );
+    assert!(matches!(receipt.poll(), ReceiptState::Failed(error) if *error == "device lost"));
+}
+
+#[cfg(feature = "bevy")]
+#[test]
+fn terminal_transition_notifies_a_bevy_message_reader_once() {
+    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+    let receipt = cache
+        .admit_interest(ReceiptId::from_raw(1), DeviceGeneration::from_raw(1), 8)
+        .unwrap();
+    let mut bridge = ReceiptNotificationBridge::try_new(1).unwrap();
+    receipt.watch_terminal_notification(&mut bridge).unwrap();
+
+    let mut app = App::new();
+    app.insert_resource(bridge)
+        .insert_resource(ObservedNotifications::default())
+        .add_message::<ReceiptNotification>()
+        .add_systems(
+            Update,
+            (emit_terminal_notifications, record_terminal_notifications).chain(),
+        );
+    app.update();
+    assert!(app.world().resource::<ObservedNotifications>().0.is_empty());
+
+    receipt
+        .operation()
+        .advance(OperationPhase::Applying)
+        .unwrap();
+    receipt.operation().complete_ready(1).unwrap();
+    app.update();
+    assert_eq!(
+        app.world().resource::<ObservedNotifications>().0.as_slice(),
+        &[ReceiptNotification {
+            receipt: ReceiptId::from_raw(1),
+            family: ReceiptFamily::Interest,
+        }]
+    );
+    app.update();
+    assert_eq!(app.world().resource::<ObservedNotifications>().0.len(), 1);
 }
 
 #[test]
