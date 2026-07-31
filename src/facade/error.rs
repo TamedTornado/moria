@@ -1,8 +1,8 @@
 //! Closed, actionable public failure records.
 
 use crate::canonical::{
-    BlobDigest, CanonicalHash, DeviceGeneration, InputSourceId, NewtypeValueError, ParticipantId,
-    ReceiptId, Tick, VolumeId, WorldId,
+    BlobDigest, CanonicalHash, DeviceGeneration, InputSourceId, LocalCellAabb, NewtypeValueError,
+    ParticipantId, ReceiptId, Tick, VolumeId, WorldId,
 };
 
 use super::{BoundedOwnerError, BoundedUtf8, BoundedVec};
@@ -484,6 +484,15 @@ impl CorrectionError {
         if error.committed != CommittedEffect::None {
             return Err(FailureRecordError::CorrectionCommittedEffect);
         }
+        if error.code == ErrorCode::StoreFailure
+            && matches!(
+                error.scope,
+                FailureScope::Provider(ProviderId::ReplaySink(_))
+            )
+            && replay_export_failure.is_none()
+        {
+            return Err(FailureRecordError::CorrectionExportFailure);
+        }
         if let Some(export) = replay_export_failure
             && (error.code != ErrorCode::StoreFailure
                 || error.scope != FailureScope::Provider(ProviderId::ReplaySink(export.sink))
@@ -562,7 +571,125 @@ pub enum CanonicalFailure {
     UnrepresentableAxis,
 }
 
+/// A failure decoding a stable canonical-failure wire tag.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CanonicalFailureWireError {
+    /// The encoded record contains no canonical-failure tag.
+    MissingTag,
+    /// The canonical-failure tag is not declared in this wire version.
+    UnknownTag(u8),
+    /// Bytes remain after the one-byte canonical-failure record.
+    TrailingData { trailing_bytes: usize },
+}
+
 impl CanonicalFailure {
+    /// Returns this failure's stable v1 wire tag.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use moria::facade::CanonicalFailure;
+    ///
+    /// assert_eq!(CanonicalFailure::MissingIdentity.wire_tag(), 0);
+    /// ```
+    #[must_use]
+    pub const fn wire_tag(self) -> u8 {
+        match self {
+            Self::MissingIdentity => 0,
+            Self::WrongVolumeKind => 1,
+            Self::StaleRevision => 2,
+            Self::StaleSourceHash => 3,
+            Self::InvalidBounds => 4,
+            Self::InvalidCell => 5,
+            Self::InvalidOrientation => 6,
+            Self::InvalidFixedFormat => 7,
+            Self::ArithmeticOverflow => 8,
+            Self::DivisionByZero => 9,
+            Self::InvalidShift => 10,
+            Self::NegativeSquareRoot => 11,
+            Self::Nonrepresentable => 12,
+            Self::LogicalCapacity => 13,
+            Self::DependencyUnavailable => 14,
+            Self::ParticipantEffectInvalid => 15,
+            Self::ParticipantFailed => 16,
+            Self::InjectedCandidateFailure => 17,
+            Self::ZeroAxis => 18,
+            Self::UnrepresentableAxis => 19,
+        }
+    }
+
+    /// Decodes a stable v1 canonical-failure wire tag.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use moria::facade::CanonicalFailure;
+    ///
+    /// assert_eq!(
+    ///     CanonicalFailure::try_from_wire_tag(18)?,
+    ///     CanonicalFailure::ZeroAxis,
+    /// );
+    /// # Ok::<(), moria::facade::CanonicalFailureWireError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CanonicalFailureWireError::UnknownTag`] when `tag` is not
+    /// declared in this wire version.
+    pub const fn try_from_wire_tag(tag: u8) -> Result<Self, CanonicalFailureWireError> {
+        match tag {
+            0 => Ok(Self::MissingIdentity),
+            1 => Ok(Self::WrongVolumeKind),
+            2 => Ok(Self::StaleRevision),
+            3 => Ok(Self::StaleSourceHash),
+            4 => Ok(Self::InvalidBounds),
+            5 => Ok(Self::InvalidCell),
+            6 => Ok(Self::InvalidOrientation),
+            7 => Ok(Self::InvalidFixedFormat),
+            8 => Ok(Self::ArithmeticOverflow),
+            9 => Ok(Self::DivisionByZero),
+            10 => Ok(Self::InvalidShift),
+            11 => Ok(Self::NegativeSquareRoot),
+            12 => Ok(Self::Nonrepresentable),
+            13 => Ok(Self::LogicalCapacity),
+            14 => Ok(Self::DependencyUnavailable),
+            15 => Ok(Self::ParticipantEffectInvalid),
+            16 => Ok(Self::ParticipantFailed),
+            17 => Ok(Self::InjectedCandidateFailure),
+            18 => Ok(Self::ZeroAxis),
+            19 => Ok(Self::UnrepresentableAxis),
+            _ => Err(CanonicalFailureWireError::UnknownTag(tag)),
+        }
+    }
+
+    /// Decodes an exact one-byte canonical-failure record.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use moria::facade::CanonicalFailure;
+    ///
+    /// assert_eq!(
+    ///     CanonicalFailure::try_from_wire_bytes(&[19])?,
+    ///     CanonicalFailure::UnrepresentableAxis,
+    /// );
+    /// # Ok::<(), moria::facade::CanonicalFailureWireError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error for a missing tag, an unknown/corrupt tag, or
+    /// trailing data. It never accepts a prefix of a larger record.
+    pub const fn try_from_wire_bytes(bytes: &[u8]) -> Result<Self, CanonicalFailureWireError> {
+        match bytes {
+            [] => Err(CanonicalFailureWireError::MissingTag),
+            [tag] => Self::try_from_wire_tag(*tag),
+            [_tag, trailing @ ..] => Err(CanonicalFailureWireError::TrailingData {
+                trailing_bytes: trailing.len(),
+            }),
+        }
+    }
+
     const fn error_code(self) -> ErrorCode {
         match self {
             Self::MissingIdentity => ErrorCode::MissingId,
@@ -674,6 +801,8 @@ pub struct InterestCapacity {
 #[derive(Debug)]
 pub struct MissingRange {
     pub volume: VolumeId,
+    /// The exact unavailable half-open range in the queried volume's local cells.
+    pub local: LocalCellAabb,
     pub reason: AvailabilityCode,
 }
 
@@ -803,11 +932,15 @@ impl AdmissionContext {
             (
                 AdmissionCode::RetiredReplayStreamCapacity,
                 Self::BudgetCapacity {
+                    field,
                     required,
                     supported,
-                    ..
                 },
-            ) => required > supported,
+            ) => {
+                field.group == BudgetGroup::Identity
+                    && field.field_code == 2
+                    && required > supported
+            }
             (_, Self::None) => !matches!(
                 code,
                 AdmissionCode::BeforeNextTick

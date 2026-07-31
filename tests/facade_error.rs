@@ -1,9 +1,12 @@
-use moria::canonical::{BlobDigest, CanonicalHash, DeviceGeneration, ParticipantId, Tick, WorldId};
+use moria::canonical::{
+    BlobDigest, CanonicalHash, DeviceGeneration, LocalCellAabb, LocalCellPoint, ParticipantId,
+    Tick, VolumeId, WorldId,
+};
 use moria::facade::{
     AdmissionCode, AdmissionContext, AdmissionError, AuthorityStatus, AvailabilityCode, BatchError,
-    BudgetGroup, CanonicalFailure, CheckpointError, CommittedEffect, ConfigErrorCode, ConfigField,
-    CorrectionError, ErrorCode, FailedNoAdvance, FailureRecordError, FailureScope,
-    FrontierPosition, FrontierSummary, GenesisError, InterestCapacity, InterestError,
+    BudgetGroup, CanonicalFailure, CanonicalFailureWireError, CheckpointError, CommittedEffect,
+    ConfigErrorCode, ConfigField, CorrectionError, ErrorCode, FailedNoAdvance, FailureRecordError,
+    FailureScope, FrontierPosition, FrontierSummary, GenesisError, InterestCapacity, InterestError,
     ObservationSnapshotError, OperationError, ParticipantError, ProviderId, QueryCapacity,
     QueryUnavailable, RecoveryError, ReplayAppendRange, ReplayExportFailure, ReplaySinkId,
     ReplaySinkRequest, ReplayStreamKey, ResourceBudgetField, ResourceBudgetFieldError,
@@ -123,9 +126,17 @@ fn admission_context_requires_consistent_boundary_facts() {
     invalid(
         AdmissionCode::RetiredReplayStreamCapacity,
         AdmissionContext::BudgetCapacity {
-            field: ResourceBudgetField::try_new(BudgetGroup::Identity, 1).unwrap(),
+            field: ResourceBudgetField::try_new(BudgetGroup::Identity, 2).unwrap(),
             required: 2,
             supported: 2,
+        },
+    );
+    invalid(
+        AdmissionCode::RetiredReplayStreamCapacity,
+        AdmissionContext::BudgetCapacity {
+            field: ResourceBudgetField::try_new(BudgetGroup::Identity, 1).unwrap(),
+            required: 2,
+            supported: 1,
         },
     );
 
@@ -136,6 +147,18 @@ fn admission_context_requires_consistent_boundary_facts() {
             AdmissionContext::TickEligibility {
                 supplied: Tick::from_raw(3),
                 expected_next: Tick::from_raw(2),
+            },
+        )
+        .is_ok()
+    );
+    assert!(
+        AdmissionError::try_new(
+            AdmissionCode::RetiredReplayStreamCapacity,
+            Retryability::Never,
+            AdmissionContext::BudgetCapacity {
+                field: ResourceBudgetField::try_new(BudgetGroup::Identity, 2).unwrap(),
+                required: 2,
+                supported: 1,
             },
         )
         .is_ok()
@@ -397,6 +420,90 @@ fn correction_error_accepts_only_correction_branch_export_failures() {
         ),
         Err(FailureRecordError::CorrectionExportFailure),
     );
+    assert_eq!(
+        CorrectionError::try_new(original, error(), None),
+        Err(FailureRecordError::CorrectionExportFailure),
+    );
+}
+
+#[test]
+fn canonical_failure_wire_tags_are_stable_and_exactly_decoded() {
+    let declared = [
+        CanonicalFailure::MissingIdentity,
+        CanonicalFailure::WrongVolumeKind,
+        CanonicalFailure::StaleRevision,
+        CanonicalFailure::StaleSourceHash,
+        CanonicalFailure::InvalidBounds,
+        CanonicalFailure::InvalidCell,
+        CanonicalFailure::InvalidOrientation,
+        CanonicalFailure::InvalidFixedFormat,
+        CanonicalFailure::ArithmeticOverflow,
+        CanonicalFailure::DivisionByZero,
+        CanonicalFailure::InvalidShift,
+        CanonicalFailure::NegativeSquareRoot,
+        CanonicalFailure::Nonrepresentable,
+        CanonicalFailure::LogicalCapacity,
+        CanonicalFailure::DependencyUnavailable,
+        CanonicalFailure::ParticipantEffectInvalid,
+        CanonicalFailure::ParticipantFailed,
+        CanonicalFailure::InjectedCandidateFailure,
+        CanonicalFailure::ZeroAxis,
+        CanonicalFailure::UnrepresentableAxis,
+    ];
+    for (tag, failure) in declared.into_iter().enumerate() {
+        assert_eq!(failure.wire_tag(), tag as u8);
+        assert_eq!(CanonicalFailure::try_from_wire_tag(tag as u8), Ok(failure));
+        assert_eq!(
+            CanonicalFailure::try_from_wire_bytes(&[tag as u8]),
+            Ok(failure)
+        );
+    }
+    assert_eq!(
+        CanonicalFailure::try_from_wire_tag(20),
+        Err(CanonicalFailureWireError::UnknownTag(20)),
+    );
+    assert_eq!(
+        CanonicalFailure::try_from_wire_bytes(&[20]),
+        Err(CanonicalFailureWireError::UnknownTag(20)),
+    );
+    assert_eq!(
+        CanonicalFailure::try_from_wire_bytes(&[]),
+        Err(CanonicalFailureWireError::MissingTag),
+    );
+    assert_eq!(
+        CanonicalFailure::try_from_wire_bytes(&[0, 1]),
+        Err(CanonicalFailureWireError::TrailingData { trailing_bytes: 1 }),
+    );
+}
+
+#[test]
+fn query_missing_ranges_retain_the_exact_local_range() {
+    let local = LocalCellAabb::try_new(
+        LocalCellPoint([-2, 3, 4]),
+        LocalCellPoint([1, 5, 6]),
+        LocalCellPoint([0, 0, 0]),
+    )
+    .unwrap();
+    let unavailable = QueryUnavailable::Availability {
+        error: operation(
+            FailureScope::World(world()),
+            ErrorCode::SourceUnavailable,
+            CommittedEffect::None,
+        ),
+        missing: moria::facade::BoundedVec::try_from_vec(
+            vec![moria::facade::MissingRange {
+                volume: VolumeId::try_from_raw(1).unwrap(),
+                local,
+                reason: AvailabilityCode::Cold,
+            }],
+            1,
+        )
+        .unwrap(),
+    };
+    let QueryUnavailable::Availability { missing, .. } = unavailable else {
+        panic!("expected availability");
+    };
+    assert_eq!(missing.as_slice()[0].local, local);
 }
 
 #[test]
