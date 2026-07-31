@@ -27,8 +27,20 @@ naga = { version = "=29.0.1", default-features = false, features = ["wgsl-in"] }
 # compatible MIT OR Apache-2.0 license and alloc-only, default-feature-free
 # configuration preserve the existing native and wasm target assumptions.
 triomphe = { version = "=0.1.16", default-features = false }
-wgpu = { version = "=29.0.3", default-features = false }
 zstd = { version = "=0.13.3", optional = true }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# Differential parity is test-only. `wgsl` executes the checked source, while
+# each supported native target enables its own first-class backend. These
+# target-specific dev-dependencies do not affect production or wasm builds;
+# this test is not cross-backend qualification evidence.
+wgpu = { version = "=29.0.3", default-features = false, features = ["wgsl", "vulkan"] }
+
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+wgpu = { version = "=29.0.3", default-features = false, features = ["wgsl", "dx12"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dev-dependencies]
+wgpu = { version = "=29.0.3", default-features = false, features = ["wgsl", "metal"] }
 
 [lints.rust]
 unsafe_code = "forbid"
