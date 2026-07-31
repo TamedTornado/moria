@@ -370,7 +370,7 @@ fn correction_error_rejects_a_committed_frontier() {
 }
 
 #[test]
-fn correction_error_accepts_only_correction_branch_export_failures() {
+fn correction_error_preserves_only_legal_correction_branch_export_failures() {
     let original = frontier(FrontierPosition::Confirmed(Tick::from_raw(4)));
     let sink = ReplaySinkId::try_from_raw(1).unwrap();
     let stream = ReplayStreamKey::try_from_bytes([3; 32]).unwrap();
@@ -384,7 +384,7 @@ fn correction_error_accepts_only_correction_branch_export_failures() {
         )
         .unwrap()
     };
-    let export = |range| ReplayExportFailure {
+    let export = |range, failure| ReplayExportFailure {
         sink,
         request: ReplaySinkRequest {
             stream,
@@ -393,30 +393,70 @@ fn correction_error_accepts_only_correction_branch_export_failures() {
             bytes: 32,
             digest: BlobDigest::from_bytes([4; 32]),
         },
-        failure: ErrorCode::StoreFailure,
+        failure,
     };
 
-    assert!(
+    for failure in [
+        ErrorCode::StoreFailure,
+        ErrorCode::ProducerDropped,
+        ErrorCode::ContractMismatch,
+    ] {
+        assert_eq!(
+            CorrectionError::try_new(
+                original,
+                error(),
+                Some(export(
+                    ReplayAppendRange::CorrectionBranch {
+                        target_tick: Tick::from_raw(2),
+                        superseded_through: Tick::from_raw(4),
+                        corrected_through: Tick::from_raw(4),
+                        record_count: 3,
+                    },
+                    failure,
+                )),
+            ),
+            Ok(CorrectionError {
+                original_frontier: original,
+                error: error(),
+                replay_export_failure: Some(export(
+                    ReplayAppendRange::CorrectionBranch {
+                        target_tick: Tick::from_raw(2),
+                        superseded_through: Tick::from_raw(4),
+                        corrected_through: Tick::from_raw(4),
+                        record_count: 3,
+                    },
+                    failure,
+                )),
+            }),
+        );
+    }
+    assert_eq!(
         CorrectionError::try_new(
             original,
             error(),
-            Some(export(ReplayAppendRange::CorrectionBranch {
-                target_tick: Tick::from_raw(2),
-                superseded_through: Tick::from_raw(4),
-                corrected_through: Tick::from_raw(4),
-                record_count: 3,
-            })),
-        )
-        .is_ok()
+            Some(export(
+                ReplayAppendRange::CorrectionBranch {
+                    target_tick: Tick::from_raw(2),
+                    superseded_through: Tick::from_raw(4),
+                    corrected_through: Tick::from_raw(4),
+                    record_count: 3,
+                },
+                ErrorCode::DeviceLost
+            )),
+        ),
+        Err(FailureRecordError::CorrectionExportFailure),
     );
     assert_eq!(
         CorrectionError::try_new(
             original,
             error(),
-            Some(export(ReplayAppendRange::Header {
-                starting: FrontierPosition::Genesis,
-                next_tick: Tick::from_raw(0),
-            })),
+            Some(export(
+                ReplayAppendRange::Header {
+                    starting: FrontierPosition::Genesis,
+                    next_tick: Tick::from_raw(0),
+                },
+                ErrorCode::ProducerDropped
+            )),
         ),
         Err(FailureRecordError::CorrectionExportFailure),
     );

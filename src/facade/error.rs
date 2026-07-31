@@ -105,6 +105,15 @@ pub enum ErrorCode {
     InternalInvariant,
 }
 
+impl ErrorCode {
+    const fn is_replay_export_failure(self) -> bool {
+        matches!(
+            self,
+            Self::StoreFailure | Self::ProducerDropped | Self::ContractMismatch
+        )
+    }
+}
+
 /// The affected durable or operation boundary.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum FailureScope {
@@ -497,7 +506,7 @@ impl CorrectionError {
             && (error.code != ErrorCode::StoreFailure
                 || error.scope != FailureScope::Provider(ProviderId::ReplaySink(export.sink))
                 || error.retryability != Retryability::Never
-                || export.failure != ErrorCode::StoreFailure
+                || !export.failure.is_replay_export_failure()
                 || !matches!(
                     export.request.range,
                     ReplayAppendRange::CorrectionBranch { .. }
