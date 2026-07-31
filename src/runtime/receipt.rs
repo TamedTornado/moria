@@ -10,7 +10,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{
     canonical::{DeviceGeneration, ReceiptId, VolumeId, VolumeRevision},
-    facade::{BoundedVec, MissingRange, ResourceBudgetField},
+    facade::{
+        BoundedVec, CheckpointCommitted, CheckpointError, CorrectionCommitted, CorrectionError,
+        FailedNoAdvance, GenesisError, GenesisReady, InterestApplied, InterestError, MissingRange,
+        ObservationResnapshot, ObservationSnapshotError, QueryResult, QueryUnavailable, Recovered,
+        RecoveryError, ReplayCompleted, ReplayFailure, ResourceBudgetField, RestoreError,
+        RestoreReady, ShutdownError, ShutdownReport, TickConfirmed,
+    },
 };
 
 use super::operation::{Operation, OperationPhase, ReceiptPolicy};
@@ -236,13 +242,13 @@ impl<T, E> TerminalCache<T, E> {
     /// `old_generation_failure` must be the caller's typed device-loss or
     /// no-advance failure. Already terminal receipts remain unchanged, and late
     /// completion attempts from an old generation are still rejected.
-    pub(crate) fn set_current_generation(
+    pub(crate) fn set_current_generation<F>(
         &self,
         generation: DeviceGeneration,
-        old_generation_failure: E,
+        mut old_generation_failure: F,
     ) -> Result<(), GenerationTransitionError>
     where
-        E: Clone,
+        F: FnMut(ReceiptId, super::operation::ReceiptFamily, DeviceGeneration) -> E,
     {
         let mut current_generation = self
             .current_generation
@@ -277,7 +283,11 @@ impl<T, E> TerminalCache<T, E> {
         };
         drop(current_generation);
         for operation in operations {
-            operation.terminalize_old_generation(old_generation_failure.clone());
+            operation.terminalize_old_generation(old_generation_failure(
+                operation.receipt_id(),
+                operation.family(),
+                operation.generation(),
+            ));
         }
         Ok(())
     }
@@ -434,24 +444,24 @@ pub fn emit_terminal_notifications(
 }
 
 macro_rules! concrete_receipt {
-    ($name:ident, cancellable) => {
+    ($name:ident, $ready:ty, $error:ty, cancellable) => {
         #[doc = concat!("The public ", stringify!($name), " facade handle.")]
-        pub struct $name<T, E>(Receipt<T, E>);
+        pub struct $name(Receipt<$ready, $error>);
 
-        impl<T, E> Clone for $name<T, E> {
+        impl Clone for $name {
             fn clone(&self) -> Self {
                 Self(self.0.clone())
             }
         }
 
-        impl<T, E> $name<T, E> {
-            pub(super) fn operation(&self) -> Arc<Operation<T, E>> {
+        impl $name {
+            pub(crate) fn operation(&self) -> Arc<Operation<$ready, $error>> {
                 self.0.operation()
             }
 
             /// Returns the family-specialized nonblocking receipt state.
             #[must_use]
-            pub fn poll(&self) -> ReceiptState<T, E> {
+            pub fn poll(&self) -> ReceiptState<$ready, $error> {
                 self.0.poll()
             }
 
@@ -470,24 +480,24 @@ macro_rules! concrete_receipt {
             }
         }
     };
-    ($name:ident, terminal_only) => {
+    ($name:ident, $ready:ty, $error:ty, terminal_only) => {
         #[doc = concat!("The public ", stringify!($name), " facade handle.")]
-        pub struct $name<T, E>(Receipt<T, E>);
+        pub struct $name(Receipt<$ready, $error>);
 
-        impl<T, E> Clone for $name<T, E> {
+        impl Clone for $name {
             fn clone(&self) -> Self {
                 Self(self.0.clone())
             }
         }
 
-        impl<T, E> $name<T, E> {
-            pub(super) fn operation(&self) -> Arc<Operation<T, E>> {
+        impl $name {
+            pub(crate) fn operation(&self) -> Arc<Operation<$ready, $error>> {
                 self.0.operation()
             }
 
             /// Returns the family-specialized nonblocking receipt state.
             #[must_use]
-            pub fn poll(&self) -> ReceiptState<T, E> {
+            pub fn poll(&self) -> ReceiptState<$ready, $error> {
                 self.0.poll()
             }
 
@@ -503,27 +513,47 @@ macro_rules! concrete_receipt {
     };
 }
 
-concrete_receipt!(GenesisReceipt, terminal_only);
-concrete_receipt!(TickReceipt, cancellable);
-concrete_receipt!(InterestReceipt, cancellable);
-concrete_receipt!(QueryReceipt, cancellable);
-concrete_receipt!(ObservationResnapshotReceipt, cancellable);
-concrete_receipt!(CheckpointReceipt, cancellable);
-concrete_receipt!(CorrectionReceipt, cancellable);
-concrete_receipt!(RestoreReceipt, cancellable);
-concrete_receipt!(ReplayReceipt, cancellable);
-concrete_receipt!(RecoveryReceipt, cancellable);
-concrete_receipt!(ShutdownReceipt, terminal_only);
+concrete_receipt!(GenesisReceipt, GenesisReady, GenesisError, terminal_only);
+concrete_receipt!(TickReceipt, TickConfirmed, FailedNoAdvance, cancellable);
+concrete_receipt!(InterestReceipt, InterestApplied, InterestError, cancellable);
+concrete_receipt!(QueryReceipt, QueryResult, QueryUnavailable, cancellable);
+concrete_receipt!(
+    ObservationResnapshotReceipt,
+    ObservationResnapshot,
+    ObservationSnapshotError,
+    cancellable
+);
+concrete_receipt!(
+    CheckpointReceipt,
+    CheckpointCommitted,
+    CheckpointError,
+    cancellable
+);
+concrete_receipt!(
+    CorrectionReceipt,
+    CorrectionCommitted,
+    CorrectionError,
+    cancellable
+);
+concrete_receipt!(RestoreReceipt, RestoreReady, RestoreError, cancellable);
+concrete_receipt!(ReplayReceipt, ReplayCompleted, ReplayFailure, cancellable);
+concrete_receipt!(RecoveryReceipt, Recovered, RecoveryError, cancellable);
+concrete_receipt!(
+    ShutdownReceipt,
+    ShutdownReport,
+    ShutdownError,
+    terminal_only
+);
 
 macro_rules! admit_concrete_receipt {
-    ($method:ident, $name:ident, $family:ident) => {
-        impl<T, E> TerminalCache<T, E> {
+    ($method:ident, $name:ident, $ready:ty, $error:ty, $family:ident) => {
+        impl TerminalCache<$ready, $error> {
             pub(crate) fn $method(
                 self: &Arc<Self>,
                 receipt: ReceiptId,
                 generation: DeviceGeneration,
                 result_bytes: u64,
-            ) -> Result<$name<T, E>, ResultBackpressure> {
+            ) -> Result<$name, ResultBackpressure> {
                 self.admit(
                     receipt,
                     generation,
@@ -536,18 +566,80 @@ macro_rules! admit_concrete_receipt {
     };
 }
 
-admit_concrete_receipt!(admit_genesis, GenesisReceipt, Genesis);
-admit_concrete_receipt!(admit_tick, TickReceipt, Tick);
-admit_concrete_receipt!(admit_interest, InterestReceipt, Interest);
-admit_concrete_receipt!(admit_query, QueryReceipt, Query);
+admit_concrete_receipt!(
+    admit_genesis,
+    GenesisReceipt,
+    GenesisReady,
+    GenesisError,
+    Genesis
+);
+admit_concrete_receipt!(
+    admit_tick,
+    TickReceipt,
+    TickConfirmed,
+    FailedNoAdvance,
+    Tick
+);
+admit_concrete_receipt!(
+    admit_interest,
+    InterestReceipt,
+    InterestApplied,
+    InterestError,
+    Interest
+);
+admit_concrete_receipt!(
+    admit_query,
+    QueryReceipt,
+    QueryResult,
+    QueryUnavailable,
+    Query
+);
 admit_concrete_receipt!(
     admit_observation_resnapshot,
     ObservationResnapshotReceipt,
+    ObservationResnapshot,
+    ObservationSnapshotError,
     ObservationResnapshot
 );
-admit_concrete_receipt!(admit_checkpoint, CheckpointReceipt, Checkpoint);
-admit_concrete_receipt!(admit_correction, CorrectionReceipt, Correction);
-admit_concrete_receipt!(admit_restore, RestoreReceipt, Restore);
-admit_concrete_receipt!(admit_replay, ReplayReceipt, Replay);
-admit_concrete_receipt!(admit_recovery, RecoveryReceipt, Recovery);
-admit_concrete_receipt!(admit_shutdown, ShutdownReceipt, Shutdown);
+admit_concrete_receipt!(
+    admit_checkpoint,
+    CheckpointReceipt,
+    CheckpointCommitted,
+    CheckpointError,
+    Checkpoint
+);
+admit_concrete_receipt!(
+    admit_correction,
+    CorrectionReceipt,
+    CorrectionCommitted,
+    CorrectionError,
+    Correction
+);
+admit_concrete_receipt!(
+    admit_restore,
+    RestoreReceipt,
+    RestoreReady,
+    RestoreError,
+    Restore
+);
+admit_concrete_receipt!(
+    admit_replay,
+    ReplayReceipt,
+    ReplayCompleted,
+    ReplayFailure,
+    Replay
+);
+admit_concrete_receipt!(
+    admit_recovery,
+    RecoveryReceipt,
+    Recovered,
+    RecoveryError,
+    Recovery
+);
+admit_concrete_receipt!(
+    admit_shutdown,
+    ShutdownReceipt,
+    ShutdownReport,
+    ShutdownError,
+    Shutdown
+);

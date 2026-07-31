@@ -8,7 +8,7 @@ pub use crate::config::{
 };
 pub use crate::facade::{
     BoundedBytes, BoundedBytes64, BoundedOwnerError, BoundedPushRejected, BoundedUtf8, BoundedVec,
-    BytesConstructionRejected, OwnedBytes, VecConstructionRejected,
+    BytesConstructionRejected, MoriaClient, OwnedBytes, VecConstructionRejected, WorldBuilder,
 };
 pub use crate::runtime::{
     CancelResult, CheckpointReceipt, CorrectionReceipt, GenesisReceipt, InterestReceipt,

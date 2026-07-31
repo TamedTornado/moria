@@ -381,6 +381,9 @@ pub type CheckpointError = OperationError;
 /// The terminal error returned by restore receipt polling.
 pub type RestoreError = OperationError;
 
+/// The terminal error returned by public replay receipt polling.
+pub type ReplayFailure = OperationError;
+
 /// The terminal error returned by participant receipt polling.
 pub type ParticipantError = OperationError;
 

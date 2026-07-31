@@ -16,6 +16,9 @@ use super::{
 use crate::facade::{BoundedVec, BudgetGroup, ResourceBudgetField};
 
 #[cfg(feature = "bevy")]
+use crate::facade::{InterestApplied, InterestError};
+
+#[cfg(feature = "bevy")]
 use bevy::{
     app::{App, Update},
     ecs::{
@@ -653,7 +656,7 @@ fn generation_change_terminalizes_old_receipts_and_rejects_late_publication() {
         )
         .unwrap();
     cache
-        .set_current_generation(DeviceGeneration::from_raw(5), "device lost")
+        .set_current_generation(DeviceGeneration::from_raw(5), |_, _, _| "device lost")
         .unwrap();
     assert!(matches!(
         stale_ready.poll(),
@@ -707,10 +710,68 @@ fn generation_change_terminalizes_old_receipts_and_rejects_late_publication() {
 }
 
 #[test]
+fn generation_rollover_builds_a_distinct_non_clone_failure_for_each_operation() {
+    #[derive(Debug, Eq, PartialEq)]
+    struct ContextualFailure {
+        receipt: ReceiptId,
+        family: ReceiptFamily,
+        generation: DeviceGeneration,
+    }
+
+    let cache = TerminalCache::<u32, ContextualFailure>::try_new(2, 16).unwrap();
+    let query = cache
+        .admit(
+            ReceiptId::from_raw(11),
+            DeviceGeneration::from_raw(4),
+            ReceiptPolicy::for_family(ReceiptFamily::Query),
+            8,
+        )
+        .unwrap();
+    let interest = cache
+        .admit(
+            ReceiptId::from_raw(12),
+            DeviceGeneration::from_raw(4),
+            ReceiptPolicy::for_family(ReceiptFamily::Interest),
+            8,
+        )
+        .unwrap();
+
+    cache
+        .set_current_generation(
+            DeviceGeneration::from_raw(5),
+            |receipt, family, generation| ContextualFailure {
+                receipt,
+                family,
+                generation,
+            },
+        )
+        .unwrap();
+
+    assert!(matches!(
+        query.poll(),
+        ReceiptState::Failed(error)
+            if *error == ContextualFailure {
+                receipt: ReceiptId::from_raw(11),
+                family: ReceiptFamily::Query,
+                generation: DeviceGeneration::from_raw(4),
+            }
+    ));
+    assert!(matches!(
+        interest.poll(),
+        ReceiptState::Failed(error)
+            if *error == ContextualFailure {
+                receipt: ReceiptId::from_raw(12),
+                family: ReceiptFamily::Interest,
+                generation: DeviceGeneration::from_raw(4),
+            }
+    ));
+}
+
+#[test]
 fn generation_mismatched_admission_is_rejected_after_rollover() {
     let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
     cache
-        .set_current_generation(DeviceGeneration::from_raw(5), "device lost")
+        .set_current_generation(DeviceGeneration::from_raw(5), |_, _, _| "device lost")
         .unwrap();
     let admission = cache.admit(
         ReceiptId::from_raw(1),
@@ -742,12 +803,12 @@ fn generation_rollbacks_do_not_revive_terminal_work() {
         )
         .unwrap();
     cache
-        .set_current_generation(DeviceGeneration::from_raw(6), "device lost")
+        .set_current_generation(DeviceGeneration::from_raw(6), |_, _, _| "device lost")
         .unwrap();
     assert!(matches!(receipt.poll(), ReceiptState::Failed(error) if *error == "device lost"));
 
     assert_eq!(
-        cache.set_current_generation(DeviceGeneration::from_raw(5), "rollback"),
+        cache.set_current_generation(DeviceGeneration::from_raw(5), |_, _, _| "rollback"),
         Err(GenerationTransitionError {
             current: DeviceGeneration::from_raw(6),
             requested: DeviceGeneration::from_raw(5),
@@ -768,7 +829,7 @@ fn generation_rollbacks_do_not_revive_terminal_work() {
 #[cfg(feature = "bevy")]
 #[test]
 fn terminal_transition_notifies_a_bevy_message_reader_once() {
-    let cache = TerminalCache::<u32, &'static str>::try_new(1, 8).unwrap();
+    let cache = TerminalCache::<InterestApplied, InterestError>::try_new(1, 8).unwrap();
     let receipt = cache
         .admit_interest(ReceiptId::from_raw(1), DeviceGeneration::from_raw(1), 8)
         .unwrap();
@@ -790,7 +851,10 @@ fn terminal_transition_notifies_a_bevy_message_reader_once() {
         .operation()
         .advance(OperationPhase::Applying)
         .unwrap();
-    receipt.operation().complete_ready(1).unwrap();
+    receipt
+        .operation()
+        .complete_ready(InterestApplied::new())
+        .unwrap();
     app.update();
     assert_eq!(
         app.world().resource::<ObservedNotifications>().0.as_slice(),

@@ -6,11 +6,12 @@ mod operation;
 mod receipt;
 
 pub use operation::{CancelResult, OperationPhase, ReceiptFamily};
+pub(crate) use receipt::TerminalCache;
 pub use receipt::{
     CancelledOperation, CheckpointReceipt, CorrectionReceipt, GenesisReceipt, InterestReceipt,
     MinimumRevisionGap, ObservationResnapshotReceipt, OperationProgress, ProgressBlocker,
     QueryReadinessReason, QueryReceipt, ReceiptState, RecoveryReceipt, ReplayReceipt,
-    RestoreReceipt, ShutdownReceipt, TickReceipt,
+    RestoreReceipt, ResultBackpressure, ShutdownReceipt, TickReceipt,
 };
 
 #[cfg(feature = "bevy")]
