@@ -5,5 +5,6 @@
 //! this crate through the same public boundary.
 
 pub mod canonical;
+pub mod config;
 pub mod facade;
 pub mod prelude;
