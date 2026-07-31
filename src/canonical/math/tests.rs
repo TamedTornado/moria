@@ -8,7 +8,81 @@ use std::{
     time::Duration,
 };
 
+#[test]
+fn cordic_retains_center_midpoint_adjacent_and_maximum_turn_goldens() {
+    use super::cordic::sine_cosine_q30;
+
+    let cases = [
+        (0x0000_0000, (0, 1_073_741_824)),
+        (0x0000_0001, (1, 1_073_741_824)),
+        (0x1fff_ffff, (759_250_124, 759_250_126)),
+        (0x2000_0000, (759_250_125, 759_250_125)),
+        (0x2000_0001, (759_250_126, 759_250_124)),
+        (0x4000_0000, (1_073_741_824, 0)),
+        (0x7fff_ffff, (1, -1_073_741_824)),
+        (0x8000_0000, (0, -1_073_741_824)),
+        (0xa000_0000, (-759_250_125, -759_250_125)),
+        (0xc000_0000, (-1_073_741_824, 0)),
+        (0xe000_0000, (-759_250_125, 759_250_125)),
+        (0xffff_ffff, (-1, 1_073_741_824)),
+    ];
+
+    for (angle, expected) in cases {
+        assert_eq!(sine_cosine_q30(angle).unwrap(), expected, "{angle:#010x}");
+    }
+}
+
+#[test]
+fn cordic_retains_the_zero_center_iteration_golden() {
+    use super::cordic::{CordicIteration, cordic_iterations};
+
+    let actual = cordic_iterations(0).unwrap();
+    assert_eq!(
+        actual[0],
+        CordicIteration::new(
+            1_400_229_935_014_726_477,
+            1_400_229_935_014_726_477,
+            -576_460_752_303_423_488,
+        )
+    );
+    assert_eq!(
+        actual[31],
+        CordicIteration::new(2_305_843_009_213_693_950, 298_783_112, -95_105_615,)
+    );
+}
+
+#[test]
+fn axis_normalization_retains_exact_q1_30_and_axis_failures() {
+    use super::cordic::normalize_axis_q30;
+
+    assert_eq!(normalize_axis_q30([1, 0, 0]), Ok([1_073_741_824, 0, 0]));
+    assert_eq!(
+        normalize_axis_q30([i32::MIN, 0, 0]),
+        Ok([-1_073_741_824, 0, 0])
+    );
+    assert_eq!(
+        normalize_axis_q30([i32::MAX, i32::MIN, i32::MAX]),
+        Ok([619_925_131, -619_925_131, 619_925_131])
+    );
+    assert_eq!(
+        normalize_axis_q30([0, 0, 0]),
+        Err(CanonicalFailure::ZeroAxis)
+    );
+}
+
 const FIXED_PARITY_WGSL: &str = include_str!("../../../assets/shaders/canonical/math/fixed.wgsl");
+const CORDIC_WGSL: &str = include_str!("../../../assets/shaders/canonical/math/cordic.wgsl");
+
+#[test]
+fn cordic_wgsl_parses_and_validates() {
+    let module = naga::front::wgsl::parse_str(CORDIC_WGSL).expect("CORDIC WGSL must parse");
+    naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    )
+    .validate(&module)
+    .expect("CORDIC WGSL must validate");
+}
 
 // Keep this test-only wire record beside the WGSL ABI. `left` and `right` are
 // deliberately full signed words; sign-extending i32 inputs would not test the
